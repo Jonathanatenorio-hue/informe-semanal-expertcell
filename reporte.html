@@ -158,6 +158,10 @@
 
   .chart-wrap { position: relative; width: 100%; height: 340px; }
   .chart-wrap.tall { height: 400px; }
+  .chart-scroll-wrap { overflow-x: auto; overflow-y: hidden; width: 100%; }
+  .chart-scroll-wrap::-webkit-scrollbar { height: 8px; }
+  .chart-scroll-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  .chart-scroll-wrap::-webkit-scrollbar-thumb:hover { background: var(--text-soft); }
 
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   thead tr { background: var(--att-navy); color: white; }
@@ -316,6 +320,37 @@
       </table>
     </div>
 
+    <!-- PRODUCTIVIDAD POR AGENTE -->
+    <div class="section">
+      <div class="section-title">Productividad por agente</div>
+      <div class="section-subtitle" id="prod-agente-subtitle"></div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;" id="prod-resumen-cards"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Promedios por supervisor</div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2">Supervisor</th>
+            <th colspan="3" class="center" style="background: var(--att-blue-dark);">Plantilla</th>
+            <th colspan="3" class="center col-divider" style="background: #1E40AF;">Prom / Agente</th>
+            <th colspan="2" class="center col-divider" style="background: #16A34A;">Act / Tipo</th>
+          </tr>
+          <tr class="subhead">
+            <th class="num">Total</th><th class="num">Nuevos</th><th class="num">Exp</th>
+            <th class="num col-divider">Prog</th><th class="num">Act</th><th class="num">Canc</th>
+            <th class="num col-divider">Nuevo</th><th class="num">Exp</th>
+          </tr>
+        </thead>
+        <tbody id="prod-tabla-body"></tbody>
+        <tfoot id="prod-tabla-foot"></tfoot>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Ranking ajustado (activadas por agente)</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Este ranking normaliza por tamaño de equipo. Muestra quién es el supervisor más productivo por persona, no por volumen total.</div>
+      <div class="chart-wrap" style="height: 280px;"><canvas id="chart-ranking-agente"></canvas></div>
+    </div>
+
     <!-- MAPAS DE CALOR -->
     <div class="section">
       <div class="section-title">Mapas de calor: día × supervisor</div>
@@ -343,7 +378,9 @@
     <div class="section">
       <div class="section-title">Estado de cierre por semana</div>
       <div class="section-subtitle">De lo que se programó cada semana, qué porcentaje ya se activó, canceló o sigue pendiente. Lo ideal es que las semanas pasadas estén al 100% entre activadas + canceladas.</div>
-      <div class="chart-wrap tall"><canvas id="chart-estado"></canvas></div>
+      <div class="chart-scroll-wrap">
+        <div class="chart-wrap tall" id="chart-estado-wrap"><canvas id="chart-estado"></canvas></div>
+      </div>
       <table style="margin-top: 20px;">
         <thead>
           <tr>
@@ -399,6 +436,7 @@ const W1_INICIO = new Date('2025-12-29T00:00:00');
 const DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 let ventasData = [];
+let plantillaData = [];
 let semanaSeleccionada = null;
 
 function semanaDeFecha(fechaStr) {
@@ -427,7 +465,7 @@ function diaSemana(fechaStr) {
 }
 
 async function cargarDatos() {
-  document.getElementById('loader-msg').textContent = 'Cargando datos desde Supabase...';
+  document.getElementById('loader-msg').textContent = 'Cargando ventas desde Supabase...';
 
   let allData = [];
   let from = 0;
@@ -436,7 +474,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
+      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
@@ -452,17 +490,19 @@ async function cargarDatos() {
   }
 
   ventasData = allData;
-  document.getElementById('loader-msg').textContent = `${allData.length} registros cargados. Procesando...`;
+  document.getElementById('loader-msg').textContent = `${allData.length} ventas cargadas. Cargando plantilla...`;
 
-  console.log('=== DIAGNÓSTICO ===');
-  console.log('Total registros:', allData.length);
-  if (allData.length > 0) {
-    console.log('Primer registro:', allData[0]);
-    console.log('Último registro:', allData[allData.length - 1]);
-    console.log('Fechas únicas (primeras 5):', [...new Set(allData.slice(0, 5).map(r => r.fecha_bo))]);
-    console.log('Semana calculada del primer registro:', semanaDeFecha(allData[0].fecha_bo));
-    console.log('Semana calculada del último registro:', semanaDeFecha(allData[allData.length - 1].fecha_bo));
+  const { data: plantData, error: plantErr } = await db
+    .from('plantilla')
+    .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus');
+
+  if (plantErr) {
+    document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error en plantilla: ' + plantErr.message + '</span>';
+    throw plantErr;
   }
+
+  plantillaData = plantData;
+  document.getElementById('loader-msg').textContent = `${allData.length} ventas y ${plantData.length} agentes cargados. Procesando...`;
 
   const semanasConDatos = new Set();
   allData.forEach(r => {
@@ -470,10 +510,8 @@ async function cargarDatos() {
     if (w >= 1) semanasConDatos.add(w);
   });
 
-  console.log('Semanas con datos (>= W1):', [...semanasConDatos].sort((a,b) => a-b));
-
   if (semanasConDatos.size === 0) {
-    document.getElementById('loader-msg').innerHTML = '<span style="color:red">No hay semanas válidas con datos. Revisa la consola (F12).</span>';
+    document.getElementById('loader-msg').innerHTML = '<span style="color:red">No hay semanas válidas con datos.</span>';
     return;
   }
 
@@ -489,13 +527,99 @@ async function cargarDatos() {
   const w_current = Math.min(maxSemana, semanaActual);
   const finalSemana = ultimaCompleta >= 2 ? ultimaCompleta : maxSemana;
 
-  console.log('Max semana:', maxSemana, 'Semana actual:', semanaActual, 'Última completa:', ultimaCompleta, 'Final seleccionada:', finalSemana);
-
   semanaSeleccionada = finalSemana;
   renderReporte(finalSemana, w_current);
 
   document.getElementById('loader').style.display = 'none';
   document.getElementById('reporte').style.display = 'block';
+}
+
+function clasificarAgente(fechaIngreso, fechaBaja, inicioSemanaStr, finSemanaStr) {
+  if (!fechaIngreso) return 'inactivo';
+
+  const ingDate = new Date(fechaIngreso + 'T12:00:00');
+  const iniDate = new Date(inicioSemanaStr + 'T12:00:00');
+  const finDate = new Date(finSemanaStr + 'T12:00:00');
+
+  const ingPlus7 = new Date(ingDate);
+  ingPlus7.setDate(ingPlus7.getDate() + 7);
+  if (ingPlus7 > finDate) return 'capa';
+
+  if (fechaBaja) {
+    const bajaDate = new Date(fechaBaja + 'T12:00:00');
+    if (bajaDate < iniDate) return 'inactivo';
+  }
+
+  const diasDesdeIngreso = Math.floor((iniDate - ingDate) / (1000 * 60 * 60 * 24));
+  const semanaDesdeIngreso = Math.floor(diasDesdeIngreso / 7) + 1;
+
+  if (semanaDesdeIngreso <= 1) return 'capa';
+  if (semanaDesdeIngreso <= 6) return 'nuevo';
+  return 'experimentado';
+}
+
+function contarAgentesPorSupervisor(inicioStr, finStr) {
+  const resultado = {};
+  SUPERVISORES.forEach(s => {
+    resultado[s] = { nuevos: 0, experimentados: 0, nuevosNombres: [], expNombres: [] };
+  });
+
+  plantillaData.forEach(p => {
+    if (!p.supervisor || !SUPERVISORES.includes(p.supervisor)) return;
+    const clasif = clasificarAgente(p.fecha_ingreso, p.fecha_baja, inicioStr, finStr);
+    if (clasif === 'nuevo') {
+      resultado[p.supervisor].nuevos++;
+      resultado[p.supervisor].nuevosNombres.push(p.nombre);
+    } else if (clasif === 'experimentado') {
+      resultado[p.supervisor].experimentados++;
+      resultado[p.supervisor].expNombres.push(p.nombre);
+    }
+  });
+
+  return resultado;
+}
+
+function agregarPorTipoAgente(inicioStr, finStr, agentesPorSup) {
+  const resultado = {};
+  SUPERVISORES.forEach(s => {
+    resultado[s] = {
+      nuevos: { prog: 0, act: 0, canc: 0 },
+      experimentados: { prog: 0, act: 0, canc: 0 },
+      total: { prog: 0, act: 0, canc: 0 }
+    };
+  });
+
+  const nombresNuevos = new Set();
+  const nombresExp = new Set();
+  Object.keys(agentesPorSup).forEach(s => {
+    agentesPorSup[s].nuevosNombres.forEach(n => nombresNuevos.add(n));
+    agentesPorSup[s].expNombres.forEach(n => nombresExp.add(n));
+  });
+
+  ventasData.forEach(r => {
+    if (!r.supervisor || !SUPERVISORES.includes(r.supervisor)) return;
+
+    const ejecNuevo = nombresNuevos.has(r.ejecutivo);
+    const ejecExp = nombresExp.has(r.ejecutivo);
+
+    if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
+      resultado[r.supervisor].total.prog++;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.prog++;
+      else if (ejecExp) resultado[r.supervisor].experimentados.prog++;
+    }
+    if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
+      resultado[r.supervisor].total.act++;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.act++;
+      else if (ejecExp) resultado[r.supervisor].experimentados.act++;
+    }
+    if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
+      resultado[r.supervisor].total.canc++;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.canc++;
+      else if (ejecExp) resultado[r.supervisor].experimentados.canc++;
+    }
+  });
+
+  return resultado;
 }
 
 function filtrarPorRango(inicio, fin) {
@@ -576,6 +700,7 @@ function renderReporte(wActual, wCurrent) {
   renderHeaderTags(actual, anterior, wActual, wCurrent);
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
+  renderProductividadAgente(wActual, iniActStr, finActStr);
   renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, wAnterior);
   renderEstadoSemanas(wActual);
   renderHistoricoSupervisores();
@@ -704,6 +829,133 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
   `;
 }
 
+function renderProductividadAgente(wActual, iniStr, finStr) {
+  const rango = fechasDeSemana(wActual);
+  const agentesPorSup = contarAgentesPorSupervisor(iniStr, finStr);
+  const datos = agregarPorTipoAgente(iniStr, finStr, agentesPorSup);
+
+  let totalNuevos = 0, totalExp = 0, totalProg = 0, totalAct = 0, totalCanc = 0;
+  let totalActNuevos = 0, totalActExp = 0;
+  SUPERVISORES.forEach(s => {
+    totalNuevos += agentesPorSup[s].nuevos;
+    totalExp += agentesPorSup[s].experimentados;
+    totalProg += datos[s].total.prog;
+    totalAct += datos[s].total.act;
+    totalCanc += datos[s].total.canc;
+    totalActNuevos += datos[s].nuevos.act;
+    totalActExp += datos[s].experimentados.act;
+  });
+  const totalAgentes = totalNuevos + totalExp;
+
+  document.getElementById('prod-agente-subtitle').textContent =
+    `Plantilla efectiva de W${wActual} (${formatearFecha(rango.inicio)} - ${formatearFecha(rango.fin)}). Los agentes en su primera semana (capacitación) no se cuentan. Nuevos = semanas 2 a 6 desde ingreso. Experimentados = semana 7 en adelante.`;
+
+  document.getElementById('prod-resumen-cards').innerHTML = `
+    <div style="background:var(--bg);padding:14px;border-radius:8px;border-left:4px solid var(--att-blue);">
+      <div style="font-size:11px;color:var(--text-soft);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Agentes activos</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;">${totalAgentes}</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:2px;">en la semana completa</div>
+    </div>
+    <div style="background:var(--bg);padding:14px;border-radius:8px;border-left:4px solid var(--amber);">
+      <div style="font-size:11px;color:var(--text-soft);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Nuevos</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--amber);">${totalNuevos}</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:2px;">semanas 2-6 desde ingreso</div>
+    </div>
+    <div style="background:var(--bg);padding:14px;border-radius:8px;border-left:4px solid var(--green);">
+      <div style="font-size:11px;color:var(--text-soft);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Experimentados</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--green);">${totalExp}</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:2px;">semana 7+ desde ingreso</div>
+    </div>
+    <div style="background:var(--bg);padding:14px;border-radius:8px;border-left:4px solid var(--att-orange);">
+      <div style="font-size:11px;color:var(--text-soft);text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Prom equipo</div>
+      <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--att-orange);">${totalAgentes > 0 ? (totalAct/totalAgentes).toFixed(1) : '0.0'}</div>
+      <div style="font-size:11px;color:var(--text-soft);margin-top:2px;">activadas/agente</div>
+    </div>
+  `;
+
+  const filas = SUPERVISORES.map(s => {
+    const ag = agentesPorSup[s];
+    const d = datos[s];
+    const totalAg = ag.nuevos + ag.experimentados;
+    const progAg = totalAg > 0 ? d.total.prog / totalAg : 0;
+    const actAg = totalAg > 0 ? d.total.act / totalAg : 0;
+    const cancAg = totalAg > 0 ? d.total.canc / totalAg : 0;
+    const actNuevo = ag.nuevos > 0 ? d.nuevos.act / ag.nuevos : 0;
+    const actExp = ag.experimentados > 0 ? d.experimentados.act / ag.experimentados : 0;
+    return { sup: s, totalAg, nuevos: ag.nuevos, exp: ag.experimentados, progAg, actAg, cancAg, actNuevo, actExp };
+  });
+
+  const ordenadas = [...filas].sort((a, b) => b.actAg - a.actAg);
+
+  document.getElementById('prod-tabla-body').innerHTML = ordenadas.map(f => `
+    <tr>
+      <td><strong>${f.sup}</strong></td>
+      <td class="num"><strong>${f.totalAg}</strong></td>
+      <td class="num" style="color:var(--amber);font-weight:600;">${f.nuevos}</td>
+      <td class="num" style="color:var(--green);font-weight:600;">${f.exp}</td>
+      <td class="num col-divider">${f.progAg.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);font-weight:700;">${f.actAg.toFixed(1)}</td>
+      <td class="num" style="color:var(--red);">${f.cancAg.toFixed(1)}</td>
+      <td class="num col-divider" style="color:var(--amber);">${f.actNuevo.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);">${f.actExp.toFixed(1)}</td>
+    </tr>
+  `).join('');
+
+  const progAgTotal = totalAgentes > 0 ? totalProg / totalAgentes : 0;
+  const actAgTotal = totalAgentes > 0 ? totalAct / totalAgentes : 0;
+  const cancAgTotal = totalAgentes > 0 ? totalCanc / totalAgentes : 0;
+  const actNuevoTotal = totalNuevos > 0 ? totalActNuevos / totalNuevos : 0;
+  const actExpTotal = totalExp > 0 ? totalActExp / totalExp : 0;
+
+  document.getElementById('prod-tabla-foot').innerHTML = `
+    <tr style="background:var(--bg);font-weight:700;">
+      <td>TOTAL</td>
+      <td class="num">${totalAgentes}</td>
+      <td class="num" style="color:var(--amber);">${totalNuevos}</td>
+      <td class="num" style="color:var(--green);">${totalExp}</td>
+      <td class="num col-divider">${progAgTotal.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);">${actAgTotal.toFixed(1)}</td>
+      <td class="num" style="color:var(--red);">${cancAgTotal.toFixed(1)}</td>
+      <td class="num col-divider" style="color:var(--amber);">${actNuevoTotal.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);">${actExpTotal.toFixed(1)}</td>
+    </tr>
+  `;
+
+  const ctx = document.getElementById('chart-ranking-agente');
+  if (window.__chartRankingAgente) window.__chartRankingAgente.destroy();
+  window.__chartRankingAgente = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ordenadas.map(f => f.sup),
+      datasets: [{
+        label: 'Activadas por agente',
+        data: ordenadas.map(f => Number(f.actAg.toFixed(2))),
+        backgroundColor: ordenadas.map((_, i) => i === 0 ? '#15803D' : i === 1 ? '#16A34A' : i === 2 ? '#22C55E' : i === ordenadas.length-1 ? '#DC2626' : '#86EFAC'),
+        borderRadius: 6
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const f = ordenadas[ctx.dataIndex];
+              return `${f.actAg.toFixed(1)} act/agente (${f.totalAg} agentes · ${Math.round(f.actAg * f.totalAg)} activadas totales)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } },
+        y: { grid: { display: false }, ticks: { font: { size: 13, weight: '600' } } }
+      }
+    }
+  });
+}
+
 function matrizDiaSup(iniStr, finStr, campo) {
   const m = {};
   DIAS_NOMBRE.forEach(d => {
@@ -781,8 +1033,15 @@ function renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, w
 
 function renderEstadoSemanas(wActual) {
   const semanas = [];
-  const startW = Math.max(1, wActual - 9);
-  for (let w = startW; w <= wActual + 1; w++) {
+  const semanasConDatos = new Set();
+  ventasData.forEach(r => {
+    const w = semanaDeFecha(r.fecha_bo);
+    if (w >= 1) semanasConDatos.add(w);
+  });
+  const maxW = Math.max(...semanasConDatos);
+  const minW = Math.min(...semanasConDatos);
+
+  for (let w = minW; w <= maxW; w++) {
     const rango = fechasDeSemana(w);
     const iniStr = rango.inicio.toISOString().split('T')[0];
     const finStr = rango.fin.toISOString().split('T')[0];
@@ -795,6 +1054,16 @@ function renderEstadoSemanas(wActual) {
   }
 
   const labels = semanas.map(s => `W${s.w}`);
+
+  const minAnchoPorBarra = 50;
+  const anchoMinimo = semanas.length * minAnchoPorBarra;
+  const wrapChart = document.getElementById('chart-estado-wrap');
+  if (anchoMinimo > 1200) {
+    wrapChart.style.width = anchoMinimo + 'px';
+  } else {
+    wrapChart.style.width = '100%';
+  }
+
   const ctx = document.getElementById('chart-estado');
   if (window.__chartEstado) window.__chartEstado.destroy();
   window.__chartEstado = new Chart(ctx, {
