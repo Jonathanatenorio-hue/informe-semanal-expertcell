@@ -430,24 +430,53 @@ function diaSemana(fechaStr) {
 async function cargarDatos() {
   document.getElementById('loader-msg').textContent = 'Cargando datos desde Supabase...';
 
-  const { data, error } = await db
-    .from('ventas_detalle')
-    .select('folio, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
-    .order('fecha_bo');
+  let allData = [];
+  let from = 0;
+  const pageSize = 1000;
 
-  if (error) {
-    document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error: ' + error.message + '</span>';
-    throw error;
+  while (true) {
+    const { data, error } = await db
+      .from('ventas_detalle')
+      .select('folio, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
+      .order('fecha_bo')
+      .range(from, from + pageSize - 1);
+
+    if (error) {
+      document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error: ' + error.message + '</span>';
+      throw error;
+    }
+
+    if (!data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
   }
 
-  ventasData = data;
-  document.getElementById('loader-msg').textContent = `${data.length} registros cargados. Procesando...`;
+  ventasData = allData;
+  document.getElementById('loader-msg').textContent = `${allData.length} registros cargados. Procesando...`;
+
+  console.log('=== DIAGNÓSTICO ===');
+  console.log('Total registros:', allData.length);
+  if (allData.length > 0) {
+    console.log('Primer registro:', allData[0]);
+    console.log('Último registro:', allData[allData.length - 1]);
+    console.log('Fechas únicas (primeras 5):', [...new Set(allData.slice(0, 5).map(r => r.fecha_bo))]);
+    console.log('Semana calculada del primer registro:', semanaDeFecha(allData[0].fecha_bo));
+    console.log('Semana calculada del último registro:', semanaDeFecha(allData[allData.length - 1].fecha_bo));
+  }
 
   const semanasConDatos = new Set();
-  data.forEach(r => {
+  allData.forEach(r => {
     const w = semanaDeFecha(r.fecha_bo);
     if (w >= 1) semanasConDatos.add(w);
   });
+
+  console.log('Semanas con datos (>= W1):', [...semanasConDatos].sort((a,b) => a-b));
+
+  if (semanasConDatos.size === 0) {
+    document.getElementById('loader-msg').innerHTML = '<span style="color:red">No hay semanas válidas con datos. Revisa la consola (F12).</span>';
+    return;
+  }
 
   const maxSemana = Math.max(...semanasConDatos);
   const hoy = new Date();
@@ -459,7 +488,9 @@ async function cargarDatos() {
     ultimaCompleta = maxSemana - 1;
   }
   const w_current = Math.min(maxSemana, semanaActual);
-  const finalSemana = ultimaCompleta >= 1 ? ultimaCompleta : maxSemana;
+  const finalSemana = ultimaCompleta >= 2 ? ultimaCompleta : maxSemana;
+
+  console.log('Max semana:', maxSemana, 'Semana actual:', semanaActual, 'Última completa:', ultimaCompleta, 'Final seleccionada:', finalSemana);
 
   semanaSeleccionada = finalSemana;
   renderReporte(finalSemana, w_current);
