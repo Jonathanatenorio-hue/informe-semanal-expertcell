@@ -270,6 +270,20 @@
     font-weight: 500;
   }
 
+  .metric-btn {
+    background: var(--bg);
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 8px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .metric-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .metric-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
   @media (max-width: 900px) {
     .embudo-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -328,18 +342,21 @@
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;" id="prod-resumen-cards"></div>
 
       <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Promedios por supervisor</div>
+      <div style="display: flex; gap: 8px; margin-bottom: 14px;" id="prod-metric-selector">
+        <button class="metric-btn active" data-metric="act">Activadas</button>
+        <button class="metric-btn" data-metric="prog">Programadas</button>
+        <button class="metric-btn" data-metric="canc">Canceladas</button>
+      </div>
       <table>
         <thead>
           <tr>
             <th rowspan="2">Supervisor</th>
             <th colspan="3" class="center" style="background: var(--att-blue-dark);">Plantilla</th>
-            <th colspan="3" class="center col-divider" style="background: #1E40AF;">Prom / Agente</th>
-            <th colspan="2" class="center col-divider" style="background: #16A34A;">Act / Tipo</th>
+            <th colspan="3" class="center col-divider" id="prod-metric-header" style="background: #16A34A;">Activadas por agente</th>
           </tr>
           <tr class="subhead">
             <th class="num">Total</th><th class="num">Nuevos</th><th class="num">Exp</th>
-            <th class="num col-divider">Prog</th><th class="num">Act</th><th class="num">Canc</th>
-            <th class="num col-divider">Nuevo</th><th class="num">Exp</th>
+            <th class="num col-divider">General</th><th class="num">Nuevos</th><th class="num">Exp</th>
           </tr>
         </thead>
         <tbody id="prod-tabla-body"></tbody>
@@ -834,16 +851,13 @@ function renderProductividadAgente(wActual, iniStr, finStr) {
   const agentesPorSup = contarAgentesPorSupervisor(iniStr, finStr);
   const datos = agregarPorTipoAgente(iniStr, finStr, agentesPorSup);
 
-  let totalNuevos = 0, totalExp = 0, totalProg = 0, totalAct = 0, totalCanc = 0;
-  let totalActNuevos = 0, totalActExp = 0;
+  window.__prodData = { agentesPorSup, datos, wActual };
+
+  let totalNuevos = 0, totalExp = 0, totalAct = 0;
   SUPERVISORES.forEach(s => {
     totalNuevos += agentesPorSup[s].nuevos;
     totalExp += agentesPorSup[s].experimentados;
-    totalProg += datos[s].total.prog;
     totalAct += datos[s].total.act;
-    totalCanc += datos[s].total.canc;
-    totalActNuevos += datos[s].nuevos.act;
-    totalActExp += datos[s].experimentados.act;
   });
   const totalAgentes = totalNuevos + totalExp;
 
@@ -873,19 +887,50 @@ function renderProductividadAgente(wActual, iniStr, finStr) {
     </div>
   `;
 
+  document.querySelectorAll('.metric-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.metric-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderProdTabla(btn.dataset.metric);
+    };
+  });
+
+  renderProdTabla('act');
+  renderRankingAgente();
+}
+
+function renderProdTabla(metrica) {
+  if (!window.__prodData) return;
+  const { agentesPorSup, datos } = window.__prodData;
+
+  const config = {
+    prog: { label: 'Programadas por agente', color: '#1E40AF', bg: '#1E40AF' },
+    act:  { label: 'Activadas por agente',   color: '#16A34A', bg: '#16A34A' },
+    canc: { label: 'Canceladas por agente',  color: '#DC2626', bg: '#DC2626' }
+  };
+  const cfg = config[metrica];
+
+  document.getElementById('prod-metric-header').textContent = cfg.label;
+  document.getElementById('prod-metric-header').style.background = cfg.bg;
+
   const filas = SUPERVISORES.map(s => {
     const ag = agentesPorSup[s];
     const d = datos[s];
     const totalAg = ag.nuevos + ag.experimentados;
-    const progAg = totalAg > 0 ? d.total.prog / totalAg : 0;
-    const actAg = totalAg > 0 ? d.total.act / totalAg : 0;
-    const cancAg = totalAg > 0 ? d.total.canc / totalAg : 0;
-    const actNuevo = ag.nuevos > 0 ? d.nuevos.act / ag.nuevos : 0;
-    const actExp = ag.experimentados > 0 ? d.experimentados.act / ag.experimentados : 0;
-    return { sup: s, totalAg, nuevos: ag.nuevos, exp: ag.experimentados, progAg, actAg, cancAg, actNuevo, actExp };
+    const valTotal = d.total[metrica];
+    const valNuevos = d.nuevos[metrica];
+    const valExp = d.experimentados[metrica];
+    const promGeneral = totalAg > 0 ? valTotal / totalAg : 0;
+    const promNuevo = ag.nuevos > 0 ? valNuevos / ag.nuevos : 0;
+    const promExp = ag.experimentados > 0 ? valExp / ag.experimentados : 0;
+    return { sup: s, totalAg, nuevos: ag.nuevos, exp: ag.experimentados, promGeneral, promNuevo, promExp };
   });
 
-  const ordenadas = [...filas].sort((a, b) => b.actAg - a.actAg);
+  const ordenadas = metrica === 'canc'
+    ? [...filas].sort((a, b) => a.promGeneral - b.promGeneral)
+    : [...filas].sort((a, b) => b.promGeneral - a.promGeneral);
+
+  const colorPrincipal = metrica === 'canc' ? 'var(--red)' : 'var(--green)';
 
   document.getElementById('prod-tabla-body').innerHTML = ordenadas.map(f => `
     <tr>
@@ -893,19 +938,24 @@ function renderProductividadAgente(wActual, iniStr, finStr) {
       <td class="num"><strong>${f.totalAg}</strong></td>
       <td class="num" style="color:var(--amber);font-weight:600;">${f.nuevos}</td>
       <td class="num" style="color:var(--green);font-weight:600;">${f.exp}</td>
-      <td class="num col-divider">${f.progAg.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);font-weight:700;">${f.actAg.toFixed(1)}</td>
-      <td class="num" style="color:var(--red);">${f.cancAg.toFixed(1)}</td>
-      <td class="num col-divider" style="color:var(--amber);">${f.actNuevo.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);">${f.actExp.toFixed(1)}</td>
+      <td class="num col-divider" style="color:${colorPrincipal};font-weight:700;">${f.promGeneral.toFixed(1)}</td>
+      <td class="num" style="color:var(--amber);">${f.promNuevo.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);">${f.promExp.toFixed(1)}</td>
     </tr>
   `).join('');
 
-  const progAgTotal = totalAgentes > 0 ? totalProg / totalAgentes : 0;
-  const actAgTotal = totalAgentes > 0 ? totalAct / totalAgentes : 0;
-  const cancAgTotal = totalAgentes > 0 ? totalCanc / totalAgentes : 0;
-  const actNuevoTotal = totalNuevos > 0 ? totalActNuevos / totalNuevos : 0;
-  const actExpTotal = totalExp > 0 ? totalActExp / totalExp : 0;
+  let totalNuevos = 0, totalExp = 0, totalVal = 0, totalValNuevos = 0, totalValExp = 0;
+  SUPERVISORES.forEach(s => {
+    totalNuevos += agentesPorSup[s].nuevos;
+    totalExp += agentesPorSup[s].experimentados;
+    totalVal += datos[s].total[metrica];
+    totalValNuevos += datos[s].nuevos[metrica];
+    totalValExp += datos[s].experimentados[metrica];
+  });
+  const totalAgentes = totalNuevos + totalExp;
+  const promGen = totalAgentes > 0 ? totalVal / totalAgentes : 0;
+  const promN = totalNuevos > 0 ? totalValNuevos / totalNuevos : 0;
+  const promE = totalExp > 0 ? totalValExp / totalExp : 0;
 
   document.getElementById('prod-tabla-foot').innerHTML = `
     <tr style="background:var(--bg);font-weight:700;">
@@ -913,24 +963,34 @@ function renderProductividadAgente(wActual, iniStr, finStr) {
       <td class="num">${totalAgentes}</td>
       <td class="num" style="color:var(--amber);">${totalNuevos}</td>
       <td class="num" style="color:var(--green);">${totalExp}</td>
-      <td class="num col-divider">${progAgTotal.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);">${actAgTotal.toFixed(1)}</td>
-      <td class="num" style="color:var(--red);">${cancAgTotal.toFixed(1)}</td>
-      <td class="num col-divider" style="color:var(--amber);">${actNuevoTotal.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);">${actExpTotal.toFixed(1)}</td>
+      <td class="num col-divider" style="color:${colorPrincipal};">${promGen.toFixed(1)}</td>
+      <td class="num" style="color:var(--amber);">${promN.toFixed(1)}</td>
+      <td class="num" style="color:var(--green);">${promE.toFixed(1)}</td>
     </tr>
   `;
+}
+
+function renderRankingAgente() {
+  if (!window.__prodData) return;
+  const { agentesPorSup, datos } = window.__prodData;
+
+  const filas = SUPERVISORES.map(s => {
+    const ag = agentesPorSup[s];
+    const totalAg = ag.nuevos + ag.experimentados;
+    const actAg = totalAg > 0 ? datos[s].total.act / totalAg : 0;
+    return { sup: s, totalAg, actAg };
+  }).sort((a, b) => b.actAg - a.actAg);
 
   const ctx = document.getElementById('chart-ranking-agente');
   if (window.__chartRankingAgente) window.__chartRankingAgente.destroy();
   window.__chartRankingAgente = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: ordenadas.map(f => f.sup),
+      labels: filas.map(f => f.sup),
       datasets: [{
         label: 'Activadas por agente',
-        data: ordenadas.map(f => Number(f.actAg.toFixed(2))),
-        backgroundColor: ordenadas.map((_, i) => i === 0 ? '#15803D' : i === 1 ? '#16A34A' : i === 2 ? '#22C55E' : i === ordenadas.length-1 ? '#DC2626' : '#86EFAC'),
+        data: filas.map(f => Number(f.actAg.toFixed(2))),
+        backgroundColor: filas.map((_, i) => i === 0 ? '#15803D' : i === 1 ? '#16A34A' : i === 2 ? '#22C55E' : i === filas.length-1 ? '#DC2626' : '#86EFAC'),
         borderRadius: 6
       }]
     },
@@ -942,7 +1002,7 @@ function renderProductividadAgente(wActual, iniStr, finStr) {
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const f = ordenadas[ctx.dataIndex];
+              const f = filas[ctx.dataIndex];
               return `${f.actAg.toFixed(1)} act/agente (${f.totalAg} agentes · ${Math.round(f.actAg * f.totalAg)} activadas totales)`;
             }
           }
