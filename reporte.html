@@ -88,7 +88,7 @@
   .tag-blue { background: var(--att-blue); color: white; }
   .tag-green { background: var(--green); color: white; }
 
-  .embudo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .embudo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 24px; }
   .funnel-card {
     background: var(--card);
     border-radius: 12px;
@@ -308,7 +308,6 @@
             <th colspan="3" class="center" style="background: #1E40AF;">Programadas</th>
             <th colspan="3" class="center col-divider" style="background: #16A34A;">Activadas</th>
             <th colspan="3" class="center col-divider" style="background: #DC2626;">Canceladas</th>
-            <th rowspan="2" class="center col-divider">Pendientes</th>
           </tr>
           <tr class="subhead" id="tabla-sup-subhead"></tr>
         </thead>
@@ -364,7 +363,7 @@
     <!-- HISTÓRICO POR SUPERVISOR -->
     <div class="section">
       <div class="section-title">Histórico por supervisor</div>
-      <div class="section-subtitle">Evolución semanal de cada supervisor. La línea naranja es el promedio móvil de 4 semanas (tendencia real).</div>
+      <div class="section-subtitle">Evolución semanal de cada supervisor. La línea naranja es el promedio móvil de 4 semanas (tendencia real). El ranking compara las últimas 4 semanas completas contra las 4 previas, excluyendo la semana en curso.</div>
       <div class="legend">
         <div class="legend-item"><div class="legend-swatch" style="background: #B5D4F4;"></div>Programadas</div>
         <div class="legend-item"><div class="legend-swatch" style="background: #16A34A;"></div>Activadas</div>
@@ -611,7 +610,6 @@ function renderEmbudo(actual, anterior) {
     { key: 'prog', label: 'Programadas', icon: '🚀', clase: 'prog', inverso: false },
     { key: 'act', label: 'Activadas', icon: '✅', clase: 'act', inverso: false },
     { key: 'canc', label: 'Canceladas', icon: '⛔', clase: 'canc', inverso: true },
-    { key: 'pend', label: 'Pendientes', icon: '⏳', clase: 'pend', inverso: true },
   ];
 
   section.innerHTML = metricas.map(m => {
@@ -692,7 +690,6 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
       <td class="num">${p.prog}</td><td class="num"><strong>${a.prog}</strong></td>${fmtDelta(a.prog - p.prog)}
       <td class="num col-divider">${p.act}</td><td class="num"><strong>${a.act}</strong></td>${fmtDelta(a.act - p.act)}
       <td class="num col-divider">${p.canc}</td><td class="num"><strong>${a.canc}</strong></td>${fmtDelta(a.canc - p.canc, true)}
-      <td class="num col-divider" style="color:var(--amber);font-weight:700;">${a.pend}</td>
     </tr>`;
   }).join('');
 
@@ -703,7 +700,6 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
       <td class="num">${t_p.prog}</td><td class="num">${t_a.prog}</td>${fmtDelta(t_a.prog - t_p.prog)}
       <td class="num col-divider">${t_p.act}</td><td class="num">${t_a.act}</td>${fmtDelta(t_a.act - t_p.act)}
       <td class="num col-divider">${t_p.canc}</td><td class="num">${t_a.canc}</td>${fmtDelta(t_a.canc - t_p.canc, true)}
-      <td class="num col-divider" style="color:var(--amber);">${t_a.pend}</td>
     </tr>
   `;
 }
@@ -886,13 +882,18 @@ function renderHistoricoSupervisores() {
     });
   };
 
+  const hoy = new Date();
+  const semanaActual = Math.floor((hoy - W1_INICIO) / (1000 * 60 * 60 * 24 * 7)) + 1;
+  const finMaxW = fechasDeSemana(maxW).fin;
+  const maxWCompleta = (hoy < finMaxW || maxW === semanaActual) ? maxW - 1 : maxW;
+
   const ranking = SUPERVISORES.map(s => {
-    const act_ult4 = [maxW - 3, maxW - 2, maxW - 1, maxW].map(w => porSupSemana[s][w]?.act || 0);
-    const act_prev4 = [maxW - 7, maxW - 6, maxW - 5, maxW - 4].map(w => porSupSemana[s][w]?.act || 0);
+    const act_ult4 = [maxWCompleta - 3, maxWCompleta - 2, maxWCompleta - 1, maxWCompleta].map(w => porSupSemana[s][w]?.act || 0);
+    const act_prev4 = [maxWCompleta - 7, maxWCompleta - 6, maxWCompleta - 5, maxWCompleta - 4].map(w => porSupSemana[s][w]?.act || 0);
     const prom_ult = act_ult4.reduce((a,b) => a+b, 0) / 4;
     const prom_prev = act_prev4.reduce((a,b) => a+b, 0) / 4;
     const delta_pct = prom_prev > 0 ? ((prom_ult - prom_prev) / prom_prev) * 100 : 0;
-    return { sup: s, prom_ult, prom_prev, delta_pct };
+    return { sup: s, prom_ult, prom_prev, delta_pct, rangoUlt: `W${maxWCompleta - 3}-W${maxWCompleta}` };
   }).sort((a, b) => b.delta_pct - a.delta_pct);
 
   const container = document.getElementById('sup-individual-charts');
@@ -900,11 +901,11 @@ function renderHistoricoSupervisores() {
     const emoji = r.delta_pct >= 10 ? '🚀' : r.delta_pct >= 0 ? '📈' : r.delta_pct >= -15 ? '⚠️' : '🔻';
     return `
       <div style="background:var(--bg);border-radius:10px;padding:16px 20px;margin-bottom:12px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
           <div style="font-size:15px;font-weight:700;color:var(--att-navy);">${i+1}° ${emoji} ${r.sup}</div>
           <div style="font-size:12px;color:var(--text-soft);">
-            Últimas 4 sem: <strong>${r.prom_ult.toFixed(1)}</strong> act/sem ·
-            Cambio: <strong style="color:${r.delta_pct >= 0 ? 'var(--green)' : 'var(--red)'};">${r.delta_pct >= 0 ? '+' : ''}${r.delta_pct.toFixed(1)}%</strong>
+            ${r.rangoUlt}: <strong>${r.prom_ult.toFixed(1)}</strong> act/sem ·
+            Cambio vs 4 sem previas: <strong style="color:${r.delta_pct >= 0 ? 'var(--green)' : 'var(--red)'};">${r.delta_pct >= 0 ? '+' : ''}${r.delta_pct.toFixed(1)}%</strong>
           </div>
         </div>
         <div style="position:relative;width:100%;height:180px;"><canvas id="hist-${r.sup}"></canvas></div>
