@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cargador de Informe Semanal · ExpertCell</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --att-blue: #00A8E0;
+    --att-blue-dark: #0077A8;
+    --att-orange: #FF7200;
+    --att-navy: #002B5C;
+    --bg: #F5F8FB;
+    --card: #FFFFFF;
+    --text: #1a1a1a;
+    --text-soft: #5a6a7a;
+    --border: #E2E8F0;
+    --green: #16A34A;
+    --green-bg: #DCFCE7;
+    --red: #DC2626;
+    --red-bg: #FEE2E2;
+    --amber: #D97706;
+    --amber-bg: #FEF3C7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1000px; margin: 0 auto; }
+  .header {
+    background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 28px 36px;
+    margin-bottom: 24px;
+  }
+  .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .section {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--att-navy);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--bg);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .step-number {
+    width: 28px; height: 28px;
+    background: var(--att-orange);
+    color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+  .drop-zones {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 20px 14px;
+    text-align: center;
+    transition: all 0.2s;
+    cursor: pointer;
+    background: var(--bg);
+  }
+  .drop-zone:hover { border-color: var(--att-blue); background: #E8F4FC; }
+  .drop-zone.dragover { border-color: var(--att-orange); background: #FFF3E0; }
+  .drop-zone.loaded { border-color: var(--green); border-style: solid; background: var(--green-bg); }
+  .drop-zone-label { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--att-navy); }
+  .drop-zone-hint { font-size: 11px; color: var(--text-soft); }
+  .drop-zone-filename { font-size: 11px; color: var(--green); font-weight: 600; margin-top: 8px; word-break: break-all; }
+  .drop-zone input[type="file"] { display: none; }
+
+  button {
+    background: var(--att-orange);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  button:hover:not(:disabled) { background: #E56500; }
+  button:disabled { background: #D1D5DB; cursor: not-allowed; }
+  button.secondary { background: var(--att-blue-dark); }
+  button.secondary:hover:not(:disabled) { background: #005F85; }
+  button.danger { background: var(--red); }
+  button.success { background: var(--green); }
+
+  .actions { display: flex; gap: 12px; margin-top: 8px; flex-wrap: wrap; }
+
+  .progress {
+    background: var(--bg);
+    border-radius: 8px;
+    height: 8px;
+    overflow: hidden;
+    margin: 12px 0;
+  }
+  .progress-bar {
+    background: var(--att-blue);
+    height: 100%;
+    transition: width 0.3s;
+    width: 0%;
+  }
+
+  .log {
+    background: #0f172a;
+    color: #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .log-line { margin-bottom: 2px; }
+  .log-line.ok { color: #4ADE80; }
+  .log-line.err { color: #F87171; }
+  .log-line.warn { color: #FBBF24; }
+  .log-line.info { color: #60A5FA; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .stat-card {
+    background: var(--bg);
+    padding: 12px 14px;
+    border-radius: 8px;
+    border-left: 4px solid var(--att-blue);
+  }
+  .stat-label { font-size: 11px; color: var(--text-soft); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+  .stat-sub { font-size: 11px; color: var(--text-soft); margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--att-navy); color: white; padding: 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  th.num, td.num { text-align: right; }
+  td { padding: 10px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: #F9FAFB; }
+
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 13px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .alert.warn { background: var(--amber-bg); color: #92400E; border-left: 4px solid var(--amber); }
+  .alert.success { background: var(--green-bg); color: #15803D; border-left: 4px solid var(--green); }
+  .alert.error { background: var(--red-bg); color: #B91C1C; border-left: 4px solid var(--red); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <h1>Cargador de Informe Semanal</h1>
+    <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Actualización semanal del reporte</div>
+  </div>
+
+  <!-- PASO 1: Cargar Excels -->
+  <div class="section">
+    <div class="section-title">
+      <div class="step-number">1</div>
+      Selecciona los 3 archivos Excel
+    </div>
+    <div class="drop-zones">
+      <div class="drop-zone" id="zone-bo" data-tipo="bo">
+        <div class="drop-zone-label">Backoffice (programadas)</div>
+        <div class="drop-zone-hint">Arrastra aquí el Excel de Backoffice</div>
+        <div class="drop-zone-filename" id="name-bo"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-bo">
+      </div>
+      <div class="drop-zone" id="zone-act" data-tipo="act">
+        <div class="drop-zone-label">Activadas</div>
+        <div class="drop-zone-hint">Arrastra aquí el Excel de Activadas</div>
+        <div class="drop-zone-filename" id="name-act"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-act">
+      </div>
+      <div class="drop-zone" id="zone-can" data-tipo="can">
+        <div class="drop-zone-label">Canceladas</div>
+        <div class="drop-zone-hint">Arrastra aquí el Excel de Canceladas</div>
+        <div class="drop-zone-filename" id="name-can"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-can">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-procesar" disabled>Procesar y validar</button>
+      <button class="secondary" id="btn-limpiar" type="button">Limpiar</button>
+    </div>
+  </div>
+
+  <!-- PASO 2: Validación -->
+  <div class="section hidden" id="section-validacion">
+    <div class="section-title">
+      <div class="step-number">2</div>
+      Revisión de datos procesados
+    </div>
+    <div class="stats-grid" id="stats-grid"></div>
+    <div id="alertas-validacion"></div>
+    <div style="margin-top: 14px;">
+      <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Distribución por supervisor:</div>
+      <table id="tabla-supervisores"></table>
+    </div>
+  </div>
+
+  <!-- PASO 3: Carga a Supabase -->
+  <div class="section hidden" id="section-carga">
+    <div class="section-title">
+      <div class="step-number">3</div>
+      Cargar a Supabase
+    </div>
+    <div class="alert warn">
+      <div>⚠️</div>
+      <div><strong>Importante:</strong> Esta acción borrará los datos actuales de Supabase y los reemplazará con los que acabas de procesar. Asegúrate de que el resumen de arriba sea correcto antes de continuar.</div>
+    </div>
+    <div class="actions">
+      <button class="success" id="btn-cargar">Cargar a Supabase (reemplaza todo)</button>
+    </div>
+    <div class="progress hidden" id="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="section hidden" id="section-log">
+    <div class="section-title">
+      <div class="step-number">L</div>
+      Registro de operación
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const SUPERVISORES_OFICIALES = {
+  'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
+  'ALFREDO CABRERA PADRON': 'Alfred',
+  'CARLOS ALBERTO AGUILAR CANO': 'Carlos',
+  'JORGE MIGUEL UREÑA ZARATE': 'Jorge',
+  'MARIA LUISA MEZA GOEL': 'Luisa',
+  'REYNA LIZZETTE MARTINEZ GARCIA': 'Reyna',
+};
+
+const REASIGNACIONES = {
+  'MARIA FERNANDA MARTINEZ BISTRAIN': 'MARIA LUISA MEZA GOEL',
+  'TOMAS ROSAS ROJAS': 'MARIA LUISA MEZA GOEL',
+};
+
+const state = {
+  bo: null,
+  act: null,
+  can: null,
+  bo_data: null,
+  act_data: null,
+  can_data: null,
+  registros: null,
+  asignaciones: null,
+};
+
+function log(msg, tipo = '') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('section-log').classList.remove('hidden');
+}
+
+function setupDropZone(zoneId, fileInputId, tipo) {
+  const zone = document.getElementById(zoneId);
+  const input = document.getElementById(fileInputId);
+  const nameEl = document.getElementById('name-' + tipo);
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.classList.add('dragover');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      input.files = e.dataTransfer.files;
+      handleFile(e.dataTransfer.files[0], tipo, zone, nameEl);
+    }
+  });
+  input.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      handleFile(e.target.files[0], tipo, zone, nameEl);
+    }
+  });
+}
+
+function handleFile(file, tipo, zone, nameEl) {
+  state[tipo] = file;
+  zone.classList.add('loaded');
+  nameEl.textContent = file.name;
+  checkAllFilesLoaded();
+  log(`Archivo cargado: ${file.name} (${tipo})`, 'info');
+}
+
+function checkAllFilesLoaded() {
+  const listo = state.bo && state.act && state.can;
+  document.getElementById('btn-procesar').disabled = !listo;
+}
+
+function limpiarTodo() {
+  state.bo = state.act = state.can = null;
+  state.bo_data = state.act_data = state.can_data = null;
+  state.registros = null;
+  document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('loaded'));
+  document.querySelectorAll('.drop-zone-filename').forEach(n => n.textContent = '');
+  document.querySelectorAll('input[type="file"]').forEach(i => i.value = '');
+  document.getElementById('section-validacion').classList.add('hidden');
+  document.getElementById('section-carga').classList.add('hidden');
+  document.getElementById('btn-procesar').disabled = true;
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('section-log').classList.add('hidden');
+}
+
+async function leerExcel(file) {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: null });
+}
+
+function normalizarFecha(val) {
+  if (!val) return null;
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    if (y === 1900) return null;
+    return val.toISOString().split('T')[0];
+  }
+  if (typeof val === 'string') {
+    const d = new Date(val);
+    if (!isNaN(d.getTime()) && d.getFullYear() !== 1900) {
+      return d.toISOString().split('T')[0];
+    }
+  }
+  return null;
+}
+
+async function resolverSupervisor(ejecutivo, asignaciones) {
+  if (!ejecutivo) return null;
+  if (asignaciones[ejecutivo]) return asignaciones[ejecutivo];
+  return null;
+}
+
+async function procesar() {
+  document.getElementById('btn-procesar').disabled = true;
+  log('Iniciando procesamiento...', 'info');
+
+  try {
+    log('Leyendo asignaciones de supervisor desde Supabase...', 'info');
+    const { data: asigData, error: asigErr } = await supabase
+      .from('asignaciones_supervisor')
+      .select('ejecutivo, supervisor');
+    if (asigErr) throw asigErr;
+    const asignaciones = {};
+    asigData.forEach(a => { asignaciones[a.ejecutivo] = a.supervisor; });
+    state.asignaciones = asignaciones;
+    log(`${Object.keys(asignaciones).length} asignaciones cargadas`, 'ok');
+
+    log('Leyendo Excel de Backoffice...', 'info');
+    state.bo_data = await leerExcel(state.bo);
+    log(`${state.bo_data.length} filas en Backoffice`, 'ok');
+
+    log('Leyendo Excel de Activadas...', 'info');
+    state.act_data = await leerExcel(state.act);
+    const actTerminadas = state.act_data.filter(r => r.ESTATUS === 'Terminada');
+    log(`${state.act_data.length} filas en Activadas (${actTerminadas.length} Terminadas)`, 'ok');
+
+    log('Leyendo Excel de Canceladas...', 'info');
+    state.can_data = await leerExcel(state.can);
+    log(`${state.can_data.length} filas en Canceladas`, 'ok');
+
+    log('Cruzando datos por folio...', 'info');
+
+    const actPorFolio = {};
+    actTerminadas.forEach(r => {
+      const folio = String(r.FOLIO || '').trim();
+      if (folio && folio !== 'null') {
+        actPorFolio[folio] = {
+          fecha: normalizarFecha(r.Fecha),
+          plan: r.PLAN || null,
+          precio: r.PRECIO || null,
+          renta: r['RENTA SIN IMPUESTOS'] || null,
+        };
+      }
+    });
+
+    const canPorFolio = {};
+    const canceladasPreBO = [];
+    state.can_data.forEach(r => {
+      const fechaBO = normalizarFecha(r['Fecha Back Office']);
+      const fechaCanc = normalizarFecha(r['Fecha cancelacion']);
+      if (!fechaBO) {
+        canceladasPreBO.push(r);
+        return;
+      }
+      const folio = String(r.Folio || '').trim();
+      if (folio && folio !== 'null') {
+        canPorFolio[folio] = fechaCanc;
+      }
+    });
+    log(`${Object.keys(canPorFolio).length} canceladas con BO (post-BO)`, 'ok');
+    log(`${canceladasPreBO.length} canceladas pre-BO (se ignoran)`, 'warn');
+
+    const registros = [];
+    const foliosVistos = new Set();
+    let sinSupervisor = 0;
+    const ejecutivosSinResolver = new Set();
+
+    for (const row of state.bo_data) {
+      const folio = String(row.Folio || '').trim();
+      if (!folio || folio === 'null' || foliosVistos.has(folio)) continue;
+      foliosVistos.add(folio);
+
+      const ejecutivo = row.Ejecutivo;
+      const supervisor = await resolverSupervisor(ejecutivo, asignaciones);
+      if (!supervisor) {
+        sinSupervisor++;
+        if (ejecutivo) ejecutivosSinResolver.add(ejecutivo);
+        continue;
+      }
+
+      const fechaBO = normalizarFecha(row['Back Office']);
+      if (!fechaBO) continue;
+
+      const actInfo = actPorFolio[folio];
+      const fechaCan = canPorFolio[folio];
+
+      let estatus = 'pendiente';
+      if (fechaCan) estatus = 'cancelada';
+      else if (actInfo) estatus = 'activada';
+
+      registros.push({
+        folio,
+        ejecutivo,
+        supervisor,
+        fecha_bo: fechaBO,
+        fecha_activacion: actInfo ? actInfo.fecha : null,
+        fecha_cancelacion: fechaCan || null,
+        estatus,
+        centro: row.Centro || null,
+        plan: actInfo ? actInfo.plan : null,
+        precio: actInfo ? actInfo.precio : null,
+        renta_sin_impuestos: actInfo ? actInfo.renta : null,
+      });
+    }
+
+    state.registros = registros;
+    log(`${registros.length} registros válidos generados`, 'ok');
+    if (sinSupervisor > 0) {
+      log(`${sinSupervisor} registros sin supervisor resuelto`, 'warn');
+      log(`Ejecutivos sin resolver: ${[...ejecutivosSinResolver].slice(0, 5).join(', ')}${ejecutivosSinResolver.size > 5 ? '...' : ''}`, 'warn');
+    }
+
+    mostrarValidacion(registros, sinSupervisor, ejecutivosSinResolver, canceladasPreBO.length);
+    document.getElementById('section-validacion').classList.remove('hidden');
+    document.getElementById('section-carga').classList.remove('hidden');
+    document.getElementById('btn-procesar').disabled = false;
+    log('Procesamiento completado. Revisa el resumen antes de cargar.', 'ok');
+
+  } catch (e) {
+    log('Error: ' + e.message, 'err');
+    document.getElementById('btn-procesar').disabled = false;
+  }
+}
+
+function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) {
+  const porEstatus = { activada: 0, cancelada: 0, pendiente: 0 };
+  const porSupervisor = {};
+  registros.forEach(r => {
+    porEstatus[r.estatus]++;
+    if (!porSupervisor[r.supervisor]) {
+      porSupervisor[r.supervisor] = { prog: 0, act: 0, can: 0, pen: 0 };
+    }
+    porSupervisor[r.supervisor].prog++;
+    if (r.estatus === 'activada') porSupervisor[r.supervisor].act++;
+    if (r.estatus === 'cancelada') porSupervisor[r.supervisor].can++;
+    if (r.estatus === 'pendiente') porSupervisor[r.supervisor].pen++;
+  });
+
+  const statsGrid = document.getElementById('stats-grid');
+  statsGrid.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total registros</div>
+      <div class="stat-value">${registros.length.toLocaleString()}</div>
+      <div class="stat-sub">Folios únicos procesados</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Activadas</div>
+      <div class="stat-value" style="color: var(--green);">${porEstatus.activada.toLocaleString()}</div>
+      <div class="stat-sub">${((porEstatus.activada / registros.length) * 100).toFixed(1)}%</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--red);">
+      <div class="stat-label">Canceladas</div>
+      <div class="stat-value" style="color: var(--red);">${porEstatus.cancelada.toLocaleString()}</div>
+      <div class="stat-sub">${((porEstatus.cancelada / registros.length) * 100).toFixed(1)}%</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">Pendientes</div>
+      <div class="stat-value" style="color: var(--amber);">${porEstatus.pendiente.toLocaleString()}</div>
+      <div class="stat-sub">${((porEstatus.pendiente / registros.length) * 100).toFixed(1)}%</div>
+    </div>
+  `;
+
+  const alertasEl = document.getElementById('alertas-validacion');
+  let alertas = '';
+  if (sinSupervisor > 0) {
+    alertas += `<div class="alert warn"><div>⚠️</div><div><strong>${sinSupervisor} registros sin supervisor asignado</strong><br>
+      Ejecutivos sin resolver: ${[...ejecSinResolver].join(', ')}<br>
+      <em>Estos registros NO se cargarán. Si necesitas incluirlos, agrega estos ejecutivos a la tabla de asignaciones primero.</em></div></div>`;
+  }
+  if (canPreBO > 0) {
+    alertas += `<div class="alert warn"><div>ℹ️</div><div>${canPreBO} canceladas pre-BO (sin llegar a backoffice) se ignoraron. No afectan programadas.</div></div>`;
+  }
+  if (!alertas) {
+    alertas = `<div class="alert success"><div>✅</div><div>Todos los registros se resolvieron correctamente.</div></div>`;
+  }
+  alertasEl.innerHTML = alertas;
+
+  const sups = Object.keys(porSupervisor).sort();
+  const tabla = document.getElementById('tabla-supervisores');
+  tabla.innerHTML = `
+    <thead>
+      <tr>
+        <th>Supervisor</th>
+        <th class="num">Programadas</th>
+        <th class="num" style="color: #86EFAC;">Activadas</th>
+        <th class="num" style="color: #FCA5A5;">Canceladas</th>
+        <th class="num" style="color: #FBBF24;">Pendientes</th>
+        <th class="num">% Efectividad</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sups.map(s => {
+        const d = porSupervisor[s];
+        const efect = d.prog > 0 ? ((d.act / d.prog) * 100).toFixed(1) : '0.0';
+        return `<tr>
+          <td><strong>${s}</strong></td>
+          <td class="num">${d.prog.toLocaleString()}</td>
+          <td class="num" style="color: var(--green); font-weight: 600;">${d.act.toLocaleString()}</td>
+          <td class="num" style="color: var(--red); font-weight: 600;">${d.can.toLocaleString()}</td>
+          <td class="num" style="color: var(--amber); font-weight: 600;">${d.pen.toLocaleString()}</td>
+          <td class="num" style="font-weight: 600;">${efect}%</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  `;
+}
+
+async function cargarASupabase() {
+  if (!state.registros) return;
+  if (!confirm('¿Seguro que quieres BORRAR los datos actuales y cargar los nuevos? Esta acción no se puede deshacer.')) return;
+
+  const btn = document.getElementById('btn-cargar');
+  btn.disabled = true;
+  btn.textContent = 'Cargando...';
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressBar = document.getElementById('progress-bar');
+  progressWrap.classList.remove('hidden');
+  progressBar.style.width = '5%';
+
+  try {
+    log('Iniciando carga a Supabase...', 'info');
+
+    log('Borrando registros anteriores de ventas_detalle...', 'info');
+    const { error: delErr } = await supabase
+      .from('ventas_detalle')
+      .delete()
+      .neq('folio', '___imposible___');
+    if (delErr) throw delErr;
+    log('Registros anteriores borrados', 'ok');
+    progressBar.style.width = '15%';
+
+    log(`Insertando ${state.registros.length} registros nuevos...`, 'info');
+
+    const batchSize = 500;
+    const total = state.registros.length;
+    let insertados = 0;
+    for (let i = 0; i < total; i += batchSize) {
+      const batch = state.registros.slice(i, i + batchSize);
+      const { error: insErr } = await supabase
+        .from('ventas_detalle')
+        .insert(batch);
+      if (insErr) throw insErr;
+      insertados += batch.length;
+      const pct = 15 + (insertados / total) * 80;
+      progressBar.style.width = pct + '%';
+      log(`Progreso: ${insertados}/${total} registros`, 'info');
+    }
+
+    progressBar.style.width = '100%';
+    log(`Carga completa: ${insertados} registros insertados`, 'ok');
+
+    const { count: verifyCount } = await supabase
+      .from('ventas_detalle')
+      .select('*', { count: 'exact', head: true });
+    log(`Verificación: ${verifyCount} registros en Supabase`, verifyCount === total ? 'ok' : 'warn');
+
+    btn.textContent = '✓ Carga completada';
+    btn.classList.remove('success');
+    btn.style.background = '#15803D';
+
+    setTimeout(() => {
+      alert(`Carga exitosa. ${insertados} registros cargados en Supabase.`);
+    }, 300);
+
+  } catch (e) {
+    log('Error en carga: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Reintentar carga';
+  }
+}
+
+setupDropZone('zone-bo', 'file-bo', 'bo');
+setupDropZone('zone-act', 'file-act', 'act');
+setupDropZone('zone-can', 'file-can', 'can');
+
+document.getElementById('btn-procesar').addEventListener('click', procesar);
+document.getElementById('btn-limpiar').addEventListener('click', limpiarTodo);
+document.getElementById('btn-cargar').addEventListener('click', cargarASupabase);
+</script>
+</body>
+</html>
