@@ -505,15 +505,49 @@ function filtrarPorRango(inicio, fin) {
   return ventasData.filter(r => r.fecha_bo >= iniStr && r.fecha_bo <= finStr);
 }
 
-function agregar(registros) {
+function agregarPorFechaDeActividad(inicioStr, finStr) {
   const porSup = {};
   SUPERVISORES.forEach(s => {
     porSup[s] = { prog: 0, act: 0, canc: 0, pend: 0 };
   });
   let totProg = 0, totAct = 0, totCanc = 0, totPend = 0;
 
-  registros.forEach(r => {
+  ventasData.forEach(r => {
     if (!porSup[r.supervisor]) return;
+
+    if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
+      porSup[r.supervisor].prog++;
+      totProg++;
+    }
+    if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
+      porSup[r.supervisor].act++;
+      totAct++;
+    }
+    if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
+      porSup[r.supervisor].canc++;
+      totCanc++;
+    }
+  });
+
+  SUPERVISORES.forEach(s => {
+    porSup[s].pend = porSup[s].prog - porSup[s].act - porSup[s].canc;
+  });
+  totPend = totProg - totAct - totCanc;
+
+  return { porSup, totales: { prog: totProg, act: totAct, canc: totCanc, pend: totPend } };
+}
+
+function agregarPorBloqueBO(inicioStr, finStr) {
+  const porSup = {};
+  SUPERVISORES.forEach(s => {
+    porSup[s] = { prog: 0, act: 0, canc: 0, pend: 0 };
+  });
+  let totProg = 0, totAct = 0, totCanc = 0, totPend = 0;
+
+  ventasData.forEach(r => {
+    if (!porSup[r.supervisor]) return;
+    if (r.fecha_bo < inicioStr || r.fecha_bo > finStr) return;
+
     porSup[r.supervisor].prog++;
     totProg++;
     if (r.estatus === 'activada') { porSup[r.supervisor].act++; totAct++; }
@@ -532,13 +566,18 @@ function renderReporte(wActual, wCurrent) {
   document.getElementById('subtitle').textContent =
     `Comparativo W${wActual} (${formatearFecha(rangoActual.inicio)} - ${formatearFecha(rangoActual.fin)}) vs W${wAnterior} (${formatearFecha(rangoAnterior.inicio)} - ${formatearFecha(rangoAnterior.fin)})`;
 
-  const actual = agregar(filtrarPorRango(rangoActual.inicio, rangoActual.fin));
-  const anterior = agregar(filtrarPorRango(rangoAnterior.inicio, rangoAnterior.fin));
+  const iniActStr = rangoActual.inicio.toISOString().split('T')[0];
+  const finActStr = rangoActual.fin.toISOString().split('T')[0];
+  const iniAntStr = rangoAnterior.inicio.toISOString().split('T')[0];
+  const finAntStr = rangoAnterior.fin.toISOString().split('T')[0];
+
+  const actual = agregarPorFechaDeActividad(iniActStr, finActStr);
+  const anterior = agregarPorFechaDeActividad(iniAntStr, finAntStr);
 
   renderHeaderTags(actual, anterior, wActual, wCurrent);
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
-  renderMapasCalor(rangoActual, rangoAnterior, wActual, wAnterior);
+  renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, wAnterior);
   renderEstadoSemanas(wActual);
   renderHistoricoSupervisores();
   renderCalendario(wActual, wCurrent);
@@ -669,20 +708,31 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
   `;
 }
 
-function matrizDiaSup(registros, campo) {
+function matrizDiaSup(iniStr, finStr, campo) {
   const m = {};
   DIAS_NOMBRE.forEach(d => {
     m[d] = {};
     SUPERVISORES.forEach(s => { m[d][s] = 0; });
   });
-  registros.forEach(r => {
-    if (!r.supervisor || !m[DIAS_NOMBRE[diaSemana(r.fecha_bo)]]) return;
-    const dia = DIAS_NOMBRE[diaSemana(r.fecha_bo)];
-    if (!dia) return;
-    if (campo === 'prog') m[dia][r.supervisor]++;
-    else if (campo === 'act' && r.estatus === 'activada') m[dia][r.supervisor]++;
-    else if (campo === 'canc' && r.estatus === 'cancelada') m[dia][r.supervisor]++;
+
+  ventasData.forEach(r => {
+    if (!r.supervisor || !SUPERVISORES.includes(r.supervisor)) return;
+
+    let fechaUsar = null;
+    if (campo === 'prog') fechaUsar = r.fecha_bo;
+    else if (campo === 'act') fechaUsar = r.fecha_activacion;
+    else if (campo === 'canc') fechaUsar = r.fecha_cancelacion;
+
+    if (!fechaUsar) return;
+    if (fechaUsar < iniStr || fechaUsar > finStr) return;
+
+    const idxDia = diaSemana(fechaUsar);
+    if (idxDia < 0 || idxDia > 5) return;
+    const dia = DIAS_NOMBRE[idxDia];
+    if (!m[dia]) return;
+    m[dia][r.supervisor]++;
   });
+
   return m;
 }
 
@@ -727,13 +777,10 @@ function renderHeatmap(tableId, matrizActual, matrizAnterior, invert = false) {
   tabla.innerHTML = html;
 }
 
-function renderMapasCalor(rangoActual, rangoAnterior, wActual, wAnterior) {
-  const regActual = filtrarPorRango(rangoActual.inicio, rangoActual.fin);
-  const regAnterior = filtrarPorRango(rangoAnterior.inicio, rangoAnterior.fin);
-
-  renderHeatmap('heatmap-prog', matrizDiaSup(regActual, 'prog'), matrizDiaSup(regAnterior, 'prog'), false);
-  renderHeatmap('heatmap-act', matrizDiaSup(regActual, 'act'), matrizDiaSup(regAnterior, 'act'), false);
-  renderHeatmap('heatmap-canc', matrizDiaSup(regActual, 'canc'), matrizDiaSup(regAnterior, 'canc'), true);
+function renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, wAnterior) {
+  renderHeatmap('heatmap-prog', matrizDiaSup(iniActStr, finActStr, 'prog'), matrizDiaSup(iniAntStr, finAntStr, 'prog'), false);
+  renderHeatmap('heatmap-act', matrizDiaSup(iniActStr, finActStr, 'act'), matrizDiaSup(iniAntStr, finAntStr, 'act'), false);
+  renderHeatmap('heatmap-canc', matrizDiaSup(iniActStr, finActStr, 'canc'), matrizDiaSup(iniAntStr, finAntStr, 'canc'), true);
 }
 
 function renderEstadoSemanas(wActual) {
@@ -741,9 +788,10 @@ function renderEstadoSemanas(wActual) {
   const startW = Math.max(1, wActual - 9);
   for (let w = startW; w <= wActual + 1; w++) {
     const rango = fechasDeSemana(w);
-    const regs = filtrarPorRango(rango.inicio, rango.fin);
-    if (regs.length === 0) continue;
-    const agg = agregar(regs);
+    const iniStr = rango.inicio.toISOString().split('T')[0];
+    const finStr = rango.fin.toISOString().split('T')[0];
+    const agg = agregarPorBloqueBO(iniStr, finStr);
+    if (agg.totales.prog === 0) continue;
     semanas.push({
       w, rango, totales: agg.totales,
       pctCerrado: agg.totales.prog > 0 ? ((agg.totales.act + agg.totales.canc) / agg.totales.prog) * 100 : 0
@@ -803,14 +851,27 @@ function renderHistoricoSupervisores() {
   SUPERVISORES.forEach(s => { porSupSemana[s] = {}; });
 
   ventasData.forEach(r => {
-    const w = semanaDeFecha(r.fecha_bo);
-    if (w < 1) return;
     if (!porSupSemana[r.supervisor]) return;
-    if (!porSupSemana[r.supervisor][w]) {
-      porSupSemana[r.supervisor][w] = { prog: 0, act: 0 };
+
+    if (r.fecha_bo) {
+      const w_bo = semanaDeFecha(r.fecha_bo);
+      if (w_bo >= 1) {
+        if (!porSupSemana[r.supervisor][w_bo]) {
+          porSupSemana[r.supervisor][w_bo] = { prog: 0, act: 0 };
+        }
+        porSupSemana[r.supervisor][w_bo].prog++;
+      }
     }
-    porSupSemana[r.supervisor][w].prog++;
-    if (r.estatus === 'activada') porSupSemana[r.supervisor][w].act++;
+
+    if (r.fecha_activacion) {
+      const w_act = semanaDeFecha(r.fecha_activacion);
+      if (w_act >= 1) {
+        if (!porSupSemana[r.supervisor][w_act]) {
+          porSupSemana[r.supervisor][w_act] = { prog: 0, act: 0 };
+        }
+        porSupSemana[r.supervisor][w_act].act++;
+      }
+    }
   });
 
   const maxW = Math.max(...ventasData.map(r => semanaDeFecha(r.fecha_bo)));
