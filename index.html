@@ -267,7 +267,7 @@
 const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const SUPERVISORES_OFICIALES = {
   'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
@@ -393,7 +393,7 @@ async function procesar() {
 
   try {
     log('Leyendo asignaciones de supervisor desde Supabase...', 'info');
-    const { data: asigData, error: asigErr } = await supabase
+    const { data: asigData, error: asigErr } = await db
       .from('asignaciones_supervisor')
       .select('ejecutivo, supervisor');
     if (asigErr) throw asigErr;
@@ -608,7 +608,7 @@ async function cargarASupabase() {
     log('Iniciando carga a Supabase...', 'info');
 
     log('Borrando registros anteriores de ventas_detalle...', 'info');
-    const { error: delErr } = await supabase
+    const { error: delErr } = await db
       .from('ventas_detalle')
       .delete()
       .neq('folio', '___imposible___');
@@ -623,7 +623,7 @@ async function cargarASupabase() {
     let insertados = 0;
     for (let i = 0; i < total; i += batchSize) {
       const batch = state.registros.slice(i, i + batchSize);
-      const { error: insErr } = await supabase
+      const { error: insErr } = await db
         .from('ventas_detalle')
         .insert(batch);
       if (insErr) throw insErr;
@@ -636,7 +636,7 @@ async function cargarASupabase() {
     progressBar.style.width = '100%';
     log(`Carga completa: ${insertados} registros insertados`, 'ok');
 
-    const { count: verifyCount } = await supabase
+    const { count: verifyCount } = await db
       .from('ventas_detalle')
       .select('*', { count: 'exact', head: true });
     log(`Verificación: ${verifyCount} registros en Supabase`, verifyCount === total ? 'ok' : 'warn');
