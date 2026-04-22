@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporte Semanal · ExpertCell</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --att-blue: #00A8E0;
+    --att-blue-dark: #0077A8;
+    --att-orange: #FF7200;
+    --att-navy: #002B5C;
+    --bg: #F5F8FB;
+    --card: #FFFFFF;
+    --text: #1a1a1a;
+    --text-soft: #5a6a7a;
+    --border: #E2E8F0;
+    --green: #16A34A;
+    --green-bg: #DCFCE7;
+    --red: #DC2626;
+    --red-bg: #FEE2E2;
+    --amber: #D97706;
+    --amber-bg: #FEF3C7;
+    --prog-color: #1E40AF;
+    --act-color: #16A34A;
+    --canc-color: #DC2626;
+    --pend-color: #D97706;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+  }
+  .container { max-width: 1320px; margin: 0 auto; }
+
+  .loader {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text-soft);
+  }
+  .loader-spinner {
+    width: 40px; height: 40px;
+    border: 4px solid var(--border);
+    border-top-color: var(--att-orange);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 20px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .header {
+    background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 32px 40px;
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    right: -60px; top: -60px;
+    width: 240px; height: 240px;
+    background: var(--att-orange);
+    opacity: 0.12;
+    border-radius: 50%;
+  }
+  .header-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .logo-circle {
+    width: 44px; height: 44px;
+    background: var(--att-blue);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 18px;
+    border: 3px solid white;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .header .subtitle { font-size: 15px; opacity: 0.85; }
+  .header .tag-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .date-tag { display: inline-block; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+  .tag-orange { background: var(--att-orange); color: white; }
+  .tag-blue { background: var(--att-blue); color: white; }
+  .tag-green { background: var(--green); color: white; }
+
+  .embudo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+  .funnel-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px 22px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    border-top: 5px solid;
+    position: relative;
+  }
+  .funnel-card.prog { border-top-color: var(--prog-color); }
+  .funnel-card.act { border-top-color: var(--act-color); }
+  .funnel-card.canc { border-top-color: var(--canc-color); }
+  .funnel-card.pend { border-top-color: var(--pend-color); }
+  .funnel-label { font-size: 11px; color: var(--text-soft); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; margin-bottom: 12px; }
+  .funnel-compare { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .funnel-old { font-size: 18px; color: var(--text-soft); font-weight: 500; }
+  .funnel-arrow { font-size: 14px; color: var(--text-soft); }
+  .funnel-new { font-size: 32px; font-weight: 800; line-height: 1; }
+  .funnel-card.prog .funnel-new { color: var(--prog-color); }
+  .funnel-card.act .funnel-new { color: var(--act-color); }
+  .funnel-card.canc .funnel-new { color: var(--canc-color); }
+  .funnel-card.pend .funnel-new { color: var(--pend-color); }
+  .funnel-delta {
+    margin-top: 10px;
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .delta-up-good { background: var(--green-bg); color: #15803D; }
+  .delta-up-bad { background: var(--red-bg); color: #B91C1C; }
+  .delta-equal { background: var(--bg); color: var(--text-soft); }
+
+  .section {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--att-navy);
+    margin-bottom: 6px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--bg);
+  }
+  .section-title::before {
+    content: '';
+    width: 4px; height: 20px;
+    background: var(--att-orange);
+    border-radius: 2px;
+  }
+  .section-subtitle {
+    font-size: 13px;
+    color: var(--text-soft);
+    margin-bottom: 18px;
+  }
+
+  .legend { display: flex; gap: 20px; justify-content: center; margin-bottom: 14px; font-size: 13px; color: var(--text-soft); flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+  .chart-wrap { position: relative; width: 100%; height: 340px; }
+  .chart-wrap.tall { height: 400px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  thead tr { background: var(--att-navy); color: white; }
+  thead tr.subhead { background: var(--att-blue-dark); font-size: 11px; }
+  th { padding: 10px; text-align: left; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; }
+  th.num, td.num { text-align: right; }
+  th.center, td.center { text-align: center; }
+  td { padding: 10px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: #F9FAFB; }
+  .delta-pos { color: var(--green); font-weight: 700; }
+  .delta-neg { color: var(--red); font-weight: 700; }
+  .col-divider { border-left: 2px solid var(--border); }
+
+  .heatmap-wrap { overflow-x: auto; margin-top: 10px; }
+  .heatmap {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 4px;
+    min-width: 600px;
+  }
+  .heatmap th {
+    background: var(--bg);
+    color: var(--text);
+    padding: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+    border-radius: 6px;
+  }
+  .heatmap th.row-head {
+    background: var(--att-navy);
+    color: white;
+    text-align: left;
+    min-width: 90px;
+  }
+  .heatmap td {
+    padding: 12px 8px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    border-radius: 6px;
+    border: none;
+    min-width: 70px;
+  }
+  .heatmap td.row-label {
+    background: var(--att-blue-dark);
+    color: white;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    min-width: 90px;
+    padding-left: 14px;
+  }
+  .heatmap td .comp {
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.75;
+    display: block;
+    margin-top: 2px;
+  }
+  .hm-great { background: #15803D; color: white; }
+  .hm-good { background: #86EFAC; color: #14532D; }
+  .hm-neutral { background: #E5E7EB; color: #374151; }
+  .hm-bad { background: #FCA5A5; color: #7F1D1D; }
+  .hm-worst { background: #B91C1C; color: white; }
+
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .cal-week {
+    background: var(--bg);
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 12px;
+    border: 2px solid transparent;
+  }
+  .cal-week:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .cal-week.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
+  .cal-week.current { background: #DCFCE7; border-color: var(--green); }
+  .cal-week .wnum { font-weight: 700; }
+  .cal-week .fechas { opacity: 0.75; font-size: 11px; }
+
+  .footer {
+    text-align: center;
+    color: var(--text-soft);
+    font-size: 12px;
+    padding: 20px 0 0;
+    margin-top: 24px;
+  }
+
+  .warning-banner {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber);
+    color: #92400E;
+    padding: 12px 18px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+  }
+
+  @media (max-width: 900px) {
+    .embudo-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div id="loader" class="loader">
+    <div class="loader-spinner"></div>
+    <div id="loader-msg">Cargando datos...</div>
+  </div>
+
+  <div id="reporte" style="display: none;">
+    <div class="header">
+      <div class="header-brand">
+        <div class="logo-circle">EC</div>
+        <div style="font-size: 14px; opacity: 0.9; font-weight: 600;">EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>
+      </div>
+      <h1>Reporte Semanal Ejecutivo</h1>
+      <div class="subtitle" id="subtitle">Cargando...</div>
+      <div class="tag-row" id="header-tags"></div>
+    </div>
+
+    <div id="warning-container"></div>
+
+    <!-- EMBUDO PRINCIPAL -->
+    <div id="embudo-section"></div>
+
+    <!-- COMPARATIVO POR SUPERVISOR -->
+    <div class="section">
+      <div class="section-title">Comparativo por supervisor</div>
+      <div class="section-subtitle" id="comp-sup-subtitle"></div>
+      <div class="legend" id="comp-sup-legend"></div>
+      <div class="chart-wrap tall"><canvas id="chart-sup"></canvas></div>
+      <table style="margin-top: 20px;">
+        <thead>
+          <tr>
+            <th rowspan="2">Supervisor</th>
+            <th colspan="3" class="center" style="background: #1E40AF;">Programadas</th>
+            <th colspan="3" class="center col-divider" style="background: #16A34A;">Activadas</th>
+            <th colspan="3" class="center col-divider" style="background: #DC2626;">Canceladas</th>
+            <th rowspan="2" class="center col-divider">Pendientes</th>
+          </tr>
+          <tr class="subhead" id="tabla-sup-subhead"></tr>
+        </thead>
+        <tbody id="tabla-sup-body"></tbody>
+        <tfoot id="tabla-sup-foot"></tfoot>
+      </table>
+    </div>
+
+    <!-- MAPAS DE CALOR -->
+    <div class="section">
+      <div class="section-title">Mapas de calor: día × supervisor</div>
+      <div class="section-subtitle">Diferencia vs la semana anterior. Verde = mejora, rojo = retroceso. Los números chicos muestran los valores de ambas semanas.</div>
+
+      <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; font-size: 11px; color: var(--text-soft);">
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#15803D;border-radius:3px;"></span>+4 o más</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#86EFAC;border-radius:3px;"></span>+1 a +3</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#E5E7EB;border-radius:3px;"></span>igual</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#FCA5A5;border-radius:3px;"></span>-1 a -3</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#B91C1C;border-radius:3px;"></span>-4 o menos</span>
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--prog-color);">Programadas</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-prog"></table></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--act-color);">Activadas</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-act"></table></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--canc-color);">Canceladas (nota: menos es mejor)</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-canc"></table></div>
+    </div>
+
+    <!-- ESTADO DEL BLOQUE SEMANAL -->
+    <div class="section">
+      <div class="section-title">Estado de cierre por semana</div>
+      <div class="section-subtitle">De lo que se programó cada semana, qué porcentaje ya se activó, canceló o sigue pendiente. Lo ideal es que las semanas pasadas estén al 100% entre activadas + canceladas.</div>
+      <div class="chart-wrap tall"><canvas id="chart-estado"></canvas></div>
+      <table style="margin-top: 20px;">
+        <thead>
+          <tr>
+            <th>Semana</th>
+            <th>Fechas</th>
+            <th class="num">Programadas</th>
+            <th class="num" style="color:#86EFAC">Activadas</th>
+            <th class="num" style="color:#FCA5A5">Canceladas</th>
+            <th class="num" style="color:#FBBF24">Pendientes</th>
+            <th class="num">% Cerrado</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-estado"></tbody>
+      </table>
+    </div>
+
+    <!-- HISTÓRICO POR SUPERVISOR -->
+    <div class="section">
+      <div class="section-title">Histórico por supervisor</div>
+      <div class="section-subtitle">Evolución semanal de cada supervisor. La línea naranja es el promedio móvil de 4 semanas (tendencia real).</div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-swatch" style="background: #B5D4F4;"></div>Programadas</div>
+        <div class="legend-item"><div class="legend-swatch" style="background: #16A34A;"></div>Activadas</div>
+        <div class="legend-item"><span style="width:18px;height:3px;background:#FF7200;display:inline-block;border-radius:2px;"></span>Prom móvil 4s activadas</div>
+      </div>
+      <div id="sup-individual-charts"></div>
+    </div>
+
+    <!-- CALENDARIO -->
+    <div class="section">
+      <div class="section-title">Explorar otras semanas</div>
+      <div class="section-subtitle">Haz clic en cualquier semana para regenerar el reporte con esa semana como base de comparación.</div>
+      <div class="calendar" id="calendar"></div>
+    </div>
+
+    <div class="footer">
+      ExpertCell · Distribuidor Autorizado AT&T · Datos en tiempo real desde Supabase
+    </div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+Chart.defaults.color = '#5a6a7a';
+
+const SUPERVISORES = ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'];
+const W1_INICIO = new Date('2025-12-29T00:00:00');
+const DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+let ventasData = [];
+let semanaSeleccionada = null;
+
+function semanaDeFecha(fechaStr) {
+  const f = new Date(fechaStr + 'T12:00:00');
+  const diffDias = Math.floor((f - W1_INICIO) / (1000 * 60 * 60 * 24));
+  return Math.floor(diffDias / 7) + 1;
+}
+
+function fechasDeSemana(w) {
+  const inicio = new Date(W1_INICIO);
+  inicio.setDate(inicio.getDate() + (w - 1) * 7);
+  const fin = new Date(inicio);
+  fin.setDate(fin.getDate() + 5);
+  return { inicio, fin };
+}
+
+function formatearFecha(d) {
+  const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return `${d.getDate()} ${meses[d.getMonth()]}`;
+}
+
+function diaSemana(fechaStr) {
+  const f = new Date(fechaStr + 'T12:00:00');
+  const dow = f.getDay();
+  return dow === 0 ? -1 : dow - 1;
+}
+
+async function cargarDatos() {
+  document.getElementById('loader-msg').textContent = 'Cargando datos desde Supabase...';
+
+  const { data, error } = await db
+    .from('ventas_detalle')
+    .select('folio, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
+    .order('fecha_bo');
+
+  if (error) {
+    document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error: ' + error.message + '</span>';
+    throw error;
+  }
+
+  ventasData = data;
+  document.getElementById('loader-msg').textContent = `${data.length} registros cargados. Procesando...`;
+
+  const semanasConDatos = new Set();
+  data.forEach(r => {
+    const w = semanaDeFecha(r.fecha_bo);
+    if (w >= 1) semanasConDatos.add(w);
+  });
+
+  const maxSemana = Math.max(...semanasConDatos);
+  const hoy = new Date();
+  const semanaActual = Math.floor((hoy - W1_INICIO) / (1000 * 60 * 60 * 24 * 7)) + 1;
+
+  let ultimaCompleta = maxSemana;
+  const finUltima = fechasDeSemana(ultimaCompleta).fin;
+  if (hoy < finUltima || ultimaCompleta === semanaActual) {
+    ultimaCompleta = maxSemana - 1;
+  }
+  const w_current = Math.min(maxSemana, semanaActual);
+  const finalSemana = ultimaCompleta >= 1 ? ultimaCompleta : maxSemana;
+
+  semanaSeleccionada = finalSemana;
+  renderReporte(finalSemana, w_current);
+
+  document.getElementById('loader').style.display = 'none';
+  document.getElementById('reporte').style.display = 'block';
+}
+
+function filtrarPorRango(inicio, fin) {
+  const iniStr = inicio.toISOString().split('T')[0];
+  const finStr = fin.toISOString().split('T')[0];
+  return ventasData.filter(r => r.fecha_bo >= iniStr && r.fecha_bo <= finStr);
+}
+
+function agregar(registros) {
+  const porSup = {};
+  SUPERVISORES.forEach(s => {
+    porSup[s] = { prog: 0, act: 0, canc: 0, pend: 0 };
+  });
+  let totProg = 0, totAct = 0, totCanc = 0, totPend = 0;
+
+  registros.forEach(r => {
+    if (!porSup[r.supervisor]) return;
+    porSup[r.supervisor].prog++;
+    totProg++;
+    if (r.estatus === 'activada') { porSup[r.supervisor].act++; totAct++; }
+    else if (r.estatus === 'cancelada') { porSup[r.supervisor].canc++; totCanc++; }
+    else { porSup[r.supervisor].pend++; totPend++; }
+  });
+
+  return { porSup, totales: { prog: totProg, act: totAct, canc: totCanc, pend: totPend } };
+}
+
+function renderReporte(wActual, wCurrent) {
+  const wAnterior = wActual - 1;
+  const rangoActual = fechasDeSemana(wActual);
+  const rangoAnterior = fechasDeSemana(wAnterior);
+
+  document.getElementById('subtitle').textContent =
+    `Comparativo W${wActual} (${formatearFecha(rangoActual.inicio)} - ${formatearFecha(rangoActual.fin)}) vs W${wAnterior} (${formatearFecha(rangoAnterior.inicio)} - ${formatearFecha(rangoAnterior.fin)})`;
+
+  const actual = agregar(filtrarPorRango(rangoActual.inicio, rangoActual.fin));
+  const anterior = agregar(filtrarPorRango(rangoAnterior.inicio, rangoAnterior.fin));
+
+  renderHeaderTags(actual, anterior, wActual, wCurrent);
+  renderEmbudo(actual, anterior);
+  renderComparativoSup(actual, anterior, wActual, wAnterior);
+  renderMapasCalor(rangoActual, rangoAnterior, wActual, wAnterior);
+  renderEstadoSemanas(wActual);
+  renderHistoricoSupervisores();
+  renderCalendario(wActual, wCurrent);
+}
+
+function renderHeaderTags(actual, anterior, wActual, wCurrent) {
+  const container = document.getElementById('header-tags');
+  const warnContainer = document.getElementById('warning-container');
+
+  const dProg = actual.totales.prog - anterior.totales.prog;
+  const dAct = actual.totales.act - anterior.totales.act;
+  const pctAct = anterior.totales.act > 0 ? ((dAct / anterior.totales.act) * 100).toFixed(1) : '—';
+
+  container.innerHTML = `
+    <span class="date-tag tag-green">Activadas: ${actual.totales.act} ${dAct >= 0 ? '↑' : '↓'} ${pctAct}%</span>
+    <span class="date-tag tag-blue">Programadas: ${actual.totales.prog} ${dProg >= 0 ? '↑' : '↓'}</span>
+  `;
+
+  if (wActual === wCurrent) {
+    warnContainer.innerHTML = `<div class="warning-banner"><span>⚠️</span><span><strong>W${wActual} está en curso.</strong> Los datos se están actualizando conforme avanza la semana.</span></div>`;
+  } else {
+    warnContainer.innerHTML = '';
+  }
+}
+
+function renderEmbudo(actual, anterior) {
+  const section = document.createElement('div');
+  section.className = 'embudo-grid';
+
+  const metricas = [
+    { key: 'prog', label: 'Programadas', icon: '🚀', clase: 'prog', inverso: false },
+    { key: 'act', label: 'Activadas', icon: '✅', clase: 'act', inverso: false },
+    { key: 'canc', label: 'Canceladas', icon: '⛔', clase: 'canc', inverso: true },
+    { key: 'pend', label: 'Pendientes', icon: '⏳', clase: 'pend', inverso: true },
+  ];
+
+  section.innerHTML = metricas.map(m => {
+    const valActual = actual.totales[m.key];
+    const valAnterior = anterior.totales[m.key];
+    const delta = valActual - valAnterior;
+    const pct = valAnterior > 0 ? ((delta / valAnterior) * 100).toFixed(1) : '—';
+    const esPositivo = m.inverso ? delta <= 0 : delta >= 0;
+    const deltaClass = delta === 0 ? 'delta-equal' : (esPositivo ? 'delta-up-good' : 'delta-up-bad');
+    const signo = delta >= 0 ? '+' : '';
+
+    return `
+      <div class="funnel-card ${m.clase}">
+        <div class="funnel-label">${m.label}</div>
+        <div class="funnel-compare">
+          <span class="funnel-old">${valAnterior}</span>
+          <span class="funnel-arrow">→</span>
+          <span class="funnel-new">${valActual}</span>
+        </div>
+        <div class="funnel-delta ${deltaClass}">${signo}${delta} · ${signo}${pct}%</div>
+      </div>
+    `;
+  }).join('');
+
+  const embudoSection = document.getElementById('embudo-section');
+  embudoSection.innerHTML = '';
+  embudoSection.appendChild(section);
+}
+
+function renderComparativoSup(actual, anterior, wActual, wAnterior) {
+  document.getElementById('comp-sup-subtitle').textContent = `W${wActual} vs W${wAnterior}, comparación por supervisor en las 3 métricas.`;
+
+  document.getElementById('comp-sup-legend').innerHTML = `
+    <div class="legend-item"><div class="legend-swatch" style="background:#B0BEC5;"></div>W${wAnterior}</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#00A8E0;"></div>W${wActual}</div>
+  `;
+
+  const ordenados = [...SUPERVISORES].sort((a, b) => actual.porSup[b].act - actual.porSup[a].act);
+
+  const ctx = document.getElementById('chart-sup');
+  if (window.__chartSup) window.__chartSup.destroy();
+  window.__chartSup = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ordenados,
+      datasets: [
+        { label: `W${wAnterior}`, data: ordenados.map(s => anterior.porSup[s].act), backgroundColor: '#B0BEC5', borderRadius: 4 },
+        { label: `W${wActual}`, data: ordenados.map(s => actual.porSup[s].act), backgroundColor: '#00A8E0', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 13, weight: '600' }, color: '#1a1a1a' } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+      }
+    }
+  });
+
+  document.getElementById('tabla-sup-subhead').innerHTML = `
+    <th class="num">W${wAnterior}</th><th class="num">W${wActual}</th><th class="num">Δ</th>
+    <th class="num col-divider">W${wAnterior}</th><th class="num">W${wActual}</th><th class="num">Δ</th>
+    <th class="num col-divider">W${wAnterior}</th><th class="num">W${wActual}</th><th class="num">Δ</th>
+  `;
+
+  const fmtDelta = (d, invert = false) => {
+    if (d === 0) return `<td class="num">0</td>`;
+    const cls = invert ? (d <= 0 ? 'delta-pos' : 'delta-neg') : (d >= 0 ? 'delta-pos' : 'delta-neg');
+    const sign = d >= 0 ? '+' : '';
+    return `<td class="num ${cls}">${sign}${d}</td>`;
+  };
+
+  document.getElementById('tabla-sup-body').innerHTML = ordenados.map(s => {
+    const a = actual.porSup[s], p = anterior.porSup[s];
+    return `<tr>
+      <td><strong>${s}</strong></td>
+      <td class="num">${p.prog}</td><td class="num"><strong>${a.prog}</strong></td>${fmtDelta(a.prog - p.prog)}
+      <td class="num col-divider">${p.act}</td><td class="num"><strong>${a.act}</strong></td>${fmtDelta(a.act - p.act)}
+      <td class="num col-divider">${p.canc}</td><td class="num"><strong>${a.canc}</strong></td>${fmtDelta(a.canc - p.canc, true)}
+      <td class="num col-divider" style="color:var(--amber);font-weight:700;">${a.pend}</td>
+    </tr>`;
+  }).join('');
+
+  const t_a = actual.totales, t_p = anterior.totales;
+  document.getElementById('tabla-sup-foot').innerHTML = `
+    <tr style="background:var(--bg);font-weight:700;">
+      <td>TOTAL</td>
+      <td class="num">${t_p.prog}</td><td class="num">${t_a.prog}</td>${fmtDelta(t_a.prog - t_p.prog)}
+      <td class="num col-divider">${t_p.act}</td><td class="num">${t_a.act}</td>${fmtDelta(t_a.act - t_p.act)}
+      <td class="num col-divider">${t_p.canc}</td><td class="num">${t_a.canc}</td>${fmtDelta(t_a.canc - t_p.canc, true)}
+      <td class="num col-divider" style="color:var(--amber);">${t_a.pend}</td>
+    </tr>
+  `;
+}
+
+function matrizDiaSup(registros, campo) {
+  const m = {};
+  DIAS_NOMBRE.forEach(d => {
+    m[d] = {};
+    SUPERVISORES.forEach(s => { m[d][s] = 0; });
+  });
+  registros.forEach(r => {
+    if (!r.supervisor || !m[DIAS_NOMBRE[diaSemana(r.fecha_bo)]]) return;
+    const dia = DIAS_NOMBRE[diaSemana(r.fecha_bo)];
+    if (!dia) return;
+    if (campo === 'prog') m[dia][r.supervisor]++;
+    else if (campo === 'act' && r.estatus === 'activada') m[dia][r.supervisor]++;
+    else if (campo === 'canc' && r.estatus === 'cancelada') m[dia][r.supervisor]++;
+  });
+  return m;
+}
+
+function cellClass(delta, invert = false) {
+  if (invert) delta = -delta;
+  if (delta >= 4) return 'hm-great';
+  if (delta >= 1) return 'hm-good';
+  if (delta === 0) return 'hm-neutral';
+  if (delta >= -3) return 'hm-bad';
+  return 'hm-worst';
+}
+
+function renderHeatmap(tableId, matrizActual, matrizAnterior, invert = false) {
+  const tabla = document.getElementById(tableId);
+  let html = '<thead><tr><th class="row-head">Día \\ Supervisor</th>';
+  SUPERVISORES.forEach(s => { html += `<th>${s}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  DIAS_NOMBRE.forEach(d => {
+    html += `<tr><td class="row-label">${d}</td>`;
+    SUPERVISORES.forEach(s => {
+      const a = matrizActual[d][s];
+      const p = matrizAnterior[d][s];
+      const delta = a - p;
+      const sign = delta > 0 ? '+' : '';
+      html += `<td class="${cellClass(delta, invert)}">${sign}${delta}<span class="comp">${p} → ${a}</span></td>`;
+    });
+    html += '</tr>';
+  });
+
+  let totalRow = `<tr><td class="row-label" style="background:var(--att-navy);">TOTAL</td>`;
+  SUPERVISORES.forEach(s => {
+    let totA = 0, totP = 0;
+    DIAS_NOMBRE.forEach(d => { totA += matrizActual[d][s]; totP += matrizAnterior[d][s]; });
+    const delta = totA - totP;
+    const sign = delta > 0 ? '+' : '';
+    totalRow += `<td class="${cellClass(delta, invert)}" style="font-size:15px;">${sign}${delta}<span class="comp">${totP} → ${totA}</span></td>`;
+  });
+  totalRow += '</tr>';
+  html += totalRow + '</tbody>';
+
+  tabla.innerHTML = html;
+}
+
+function renderMapasCalor(rangoActual, rangoAnterior, wActual, wAnterior) {
+  const regActual = filtrarPorRango(rangoActual.inicio, rangoActual.fin);
+  const regAnterior = filtrarPorRango(rangoAnterior.inicio, rangoAnterior.fin);
+
+  renderHeatmap('heatmap-prog', matrizDiaSup(regActual, 'prog'), matrizDiaSup(regAnterior, 'prog'), false);
+  renderHeatmap('heatmap-act', matrizDiaSup(regActual, 'act'), matrizDiaSup(regAnterior, 'act'), false);
+  renderHeatmap('heatmap-canc', matrizDiaSup(regActual, 'canc'), matrizDiaSup(regAnterior, 'canc'), true);
+}
+
+function renderEstadoSemanas(wActual) {
+  const semanas = [];
+  const startW = Math.max(1, wActual - 9);
+  for (let w = startW; w <= wActual + 1; w++) {
+    const rango = fechasDeSemana(w);
+    const regs = filtrarPorRango(rango.inicio, rango.fin);
+    if (regs.length === 0) continue;
+    const agg = agregar(regs);
+    semanas.push({
+      w, rango, totales: agg.totales,
+      pctCerrado: agg.totales.prog > 0 ? ((agg.totales.act + agg.totales.canc) / agg.totales.prog) * 100 : 0
+    });
+  }
+
+  const labels = semanas.map(s => `W${s.w}`);
+  const ctx = document.getElementById('chart-estado');
+  if (window.__chartEstado) window.__chartEstado.destroy();
+  window.__chartEstado = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Activadas', data: semanas.map(s => s.totales.act), backgroundColor: '#16A34A', borderRadius: 4 },
+        { label: 'Canceladas', data: semanas.map(s => s.totales.canc), backgroundColor: '#DC2626', borderRadius: 4 },
+        { label: 'Pendientes', data: semanas.map(s => s.totales.pend), backgroundColor: '#D97706', borderRadius: 4 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12, weight: '600' } } },
+        tooltip: {
+          callbacks: {
+            footer: (items) => {
+              const i = items[0].dataIndex;
+              return `Total programadas: ${semanas[i].totales.prog} · ${semanas[i].pctCerrado.toFixed(1)}% cerrado`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 12, weight: '600' } } },
+        y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+      }
+    }
+  });
+
+  document.getElementById('tabla-estado').innerHTML = semanas.map(s => {
+    const pctCerrado = s.pctCerrado;
+    const color = pctCerrado >= 98 ? 'var(--green)' : pctCerrado >= 90 ? 'var(--amber)' : 'var(--red)';
+    return `<tr>
+      <td><strong>W${s.w}</strong></td>
+      <td>${formatearFecha(s.rango.inicio)} - ${formatearFecha(s.rango.fin)}</td>
+      <td class="num">${s.totales.prog}</td>
+      <td class="num" style="color:var(--green);font-weight:600;">${s.totales.act}</td>
+      <td class="num" style="color:var(--red);font-weight:600;">${s.totales.canc}</td>
+      <td class="num" style="color:var(--amber);font-weight:600;">${s.totales.pend}</td>
+      <td class="num" style="color:${color};font-weight:700;">${pctCerrado.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderHistoricoSupervisores() {
+  const porSupSemana = {};
+  SUPERVISORES.forEach(s => { porSupSemana[s] = {}; });
+
+  ventasData.forEach(r => {
+    const w = semanaDeFecha(r.fecha_bo);
+    if (w < 1) return;
+    if (!porSupSemana[r.supervisor]) return;
+    if (!porSupSemana[r.supervisor][w]) {
+      porSupSemana[r.supervisor][w] = { prog: 0, act: 0 };
+    }
+    porSupSemana[r.supervisor][w].prog++;
+    if (r.estatus === 'activada') porSupSemana[r.supervisor][w].act++;
+  });
+
+  const maxW = Math.max(...ventasData.map(r => semanaDeFecha(r.fecha_bo)));
+  const semanasLabels = [];
+  for (let w = 1; w <= maxW; w++) semanasLabels.push(`W${w}`);
+
+  const movingAvg4 = (arr) => {
+    return arr.map((_, i) => {
+      if (i < 3) return null;
+      const slice = arr.slice(i - 3, i + 1);
+      return Math.round(slice.reduce((a, b) => a + b, 0) / 4);
+    });
+  };
+
+  const ranking = SUPERVISORES.map(s => {
+    const act_ult4 = [maxW - 3, maxW - 2, maxW - 1, maxW].map(w => porSupSemana[s][w]?.act || 0);
+    const act_prev4 = [maxW - 7, maxW - 6, maxW - 5, maxW - 4].map(w => porSupSemana[s][w]?.act || 0);
+    const prom_ult = act_ult4.reduce((a,b) => a+b, 0) / 4;
+    const prom_prev = act_prev4.reduce((a,b) => a+b, 0) / 4;
+    const delta_pct = prom_prev > 0 ? ((prom_ult - prom_prev) / prom_prev) * 100 : 0;
+    return { sup: s, prom_ult, prom_prev, delta_pct };
+  }).sort((a, b) => b.delta_pct - a.delta_pct);
+
+  const container = document.getElementById('sup-individual-charts');
+  container.innerHTML = ranking.map((r, i) => {
+    const emoji = r.delta_pct >= 10 ? '🚀' : r.delta_pct >= 0 ? '📈' : r.delta_pct >= -15 ? '⚠️' : '🔻';
+    return `
+      <div style="background:var(--bg);border-radius:10px;padding:16px 20px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <div style="font-size:15px;font-weight:700;color:var(--att-navy);">${i+1}° ${emoji} ${r.sup}</div>
+          <div style="font-size:12px;color:var(--text-soft);">
+            Últimas 4 sem: <strong>${r.prom_ult.toFixed(1)}</strong> act/sem ·
+            Cambio: <strong style="color:${r.delta_pct >= 0 ? 'var(--green)' : 'var(--red)'};">${r.delta_pct >= 0 ? '+' : ''}${r.delta_pct.toFixed(1)}%</strong>
+          </div>
+        </div>
+        <div style="position:relative;width:100%;height:180px;"><canvas id="hist-${r.sup}"></canvas></div>
+      </div>
+    `;
+  }).join('');
+
+  ranking.forEach(r => {
+    const prog = [];
+    const act = [];
+    for (let w = 1; w <= maxW; w++) {
+      const d = porSupSemana[r.sup][w] || { prog: 0, act: 0 };
+      prog.push(d.prog);
+      act.push(d.act);
+    }
+    const ma = movingAvg4(act);
+
+    const ctx = document.getElementById('hist-' + r.sup);
+    if (window['__hist_' + r.sup]) window['__hist_' + r.sup].destroy();
+    window['__hist_' + r.sup] = new Chart(ctx, {
+      data: {
+        labels: semanasLabels,
+        datasets: [
+          { type: 'bar', label: 'Programadas', data: prog, backgroundColor: '#B5D4F4', borderRadius: 3, order: 3 },
+          { type: 'bar', label: 'Activadas', data: act, backgroundColor: '#16A34A', borderRadius: 3, order: 2 },
+          { type: 'line', label: 'Prom móvil 4s', data: ma, borderColor: '#FF7200', backgroundColor: '#FF7200', borderWidth: 2.5, pointRadius: 2.5, tension: 0.3, order: 1, spanGaps: false }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { font: { size: 10 } } }
+        }
+      }
+    });
+  });
+}
+
+function renderCalendario(wActual, wCurrent) {
+  const semanasConDatos = new Set();
+  ventasData.forEach(r => {
+    const w = semanaDeFecha(r.fecha_bo);
+    if (w >= 1) semanasConDatos.add(w);
+  });
+  const semanas = [...semanasConDatos].sort((a, b) => a - b);
+  const maxW = Math.max(...semanas);
+
+  document.getElementById('calendar').innerHTML = semanas.map(w => {
+    const r = fechasDeSemana(w);
+    let cls = 'cal-week';
+    if (w === wActual) cls += ' active';
+    else if (w === wCurrent && w <= maxW) cls += ' current';
+    return `<div class="${cls}" onclick="seleccionarSemana(${w})">
+      <div class="wnum">W${w}</div>
+      <div class="fechas">${formatearFecha(r.inicio)} - ${formatearFecha(r.fin)}</div>
+    </div>`;
+  }).join('');
+}
+
+function seleccionarSemana(w) {
+  if (w < 2) return;
+  semanaSeleccionada = w;
+  const hoy = new Date();
+  const wCurrent = Math.floor((hoy - W1_INICIO) / (1000 * 60 * 60 * 24 * 7)) + 1;
+  renderReporte(w, wCurrent);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+cargarDatos().catch(e => console.error(e));
+</script>
+</body>
+</html>
