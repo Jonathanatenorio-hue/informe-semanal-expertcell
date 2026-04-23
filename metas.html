@@ -227,6 +227,39 @@
 
   .tab-content { display: none; }
   .tab-content.active { display: block; }
+
+  .cal-day-header {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-soft);
+    text-transform: uppercase;
+    padding: 6px 0;
+  }
+  .cal-day {
+    aspect-ratio: 1;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 4px;
+    transition: all 0.15s;
+    border: 1px solid var(--border);
+  }
+  .cal-day.empty { border: none; background: transparent; }
+  .cal-day.dom, .cal-day.festivo { background: #E5E7EB; color: #6B7280; cursor: not-allowed; }
+  .cal-day.sab { background: #FEF3C7; border-color: var(--amber); color: #92400E; cursor: pointer; }
+  .cal-day.laborable { background: #DCFCE7; border-color: var(--green); color: #15803D; cursor: pointer; }
+  .cal-day.descanso { background: #FEE2E2; border-color: var(--red); color: #B91C1C; cursor: pointer; }
+  .cal-day.modificado { box-shadow: 0 0 0 2px var(--att-orange); }
+  .cal-day:not(.empty):not(.dom):not(.festivo):hover {
+    transform: scale(1.05);
+  }
+  .cal-day .day-num { font-size: 15px; }
+  .cal-day .day-info { font-size: 9px; opacity: 0.75; margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -245,6 +278,7 @@
   <div class="tabs">
     <button class="tab-btn active" data-tab="metas">📊 Metas mensuales</button>
     <button class="tab-btn" data-tab="plantilla">👥 Plantilla</button>
+    <button class="tab-btn" data-tab="calendario">📅 Calendario</button>
   </div>
 
   <!-- TAB METAS -->
@@ -401,6 +435,72 @@
 
   </div>
   <!-- FIN TAB PLANTILLA -->
+
+  <!-- TAB CALENDARIO -->
+  <div class="tab-content" id="tab-calendario">
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">1</div>
+        Selecciona el mes
+      </div>
+      <div class="periodo-selector">
+        <label>Mes:</label>
+        <select id="cal-mes-select"></select>
+        <label>Año:</label>
+        <select id="cal-anio-select"></select>
+      </div>
+      <div style="margin-top: 14px; display: flex; gap: 20px; flex-wrap: wrap; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft);">
+          <span style="display:inline-block;width:16px;height:16px;background:#E5E7EB;border-radius:4px;"></span>
+          No laborable (Dom/Fest)
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft);">
+          <span style="display:inline-block;width:16px;height:16px;background:#FEF3C7;border:1px solid var(--amber);border-radius:4px;"></span>
+          Sábado (0.5)
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft);">
+          <span style="display:inline-block;width:16px;height:16px;background:#DCFCE7;border:1px solid var(--green);border-radius:4px;"></span>
+          Laborable (1.0)
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-soft);">
+          <span style="display:inline-block;width:16px;height:16px;background:#FEE2E2;border:1px solid var(--red);border-radius:4px;"></span>
+          Descanso extraordinario
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="cal-section-days">
+      <div class="section-title">
+        <div class="step-number">2</div>
+        <span id="cal-mes-titulo">Calendario del mes</span>
+      </div>
+      <div class="alert info">
+        <div>ℹ️</div>
+        <div>
+          Haz clic en un día <strong>laborable</strong> para marcarlo como <strong>descanso extraordinario</strong> (puente, día no oficial que se dio).
+          Haz clic otra vez para revertirlo.
+          Los domingos y festivos oficiales no se pueden cambiar.
+        </div>
+      </div>
+      <div id="cal-resumen" style="margin-bottom: 16px; padding: 12px 16px; background: var(--bg); border-radius: 8px; font-size: 13px;"></div>
+      <div id="cal-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; max-width: 560px;"></div>
+      <div class="actions" style="margin-top: 20px;">
+        <button id="btn-cal-guardar" disabled>Guardar cambios</button>
+        <button class="secondary" id="btn-cal-descartar" type="button" disabled>Descartar cambios</button>
+      </div>
+    </div>
+
+    <div class="section hidden" id="cal-section-log">
+      <div class="section-title">
+        <div class="step-number">L</div>
+        Registro de operación
+      </div>
+      <div class="log" id="cal-log"></div>
+    </div>
+
+  </div>
+  <!-- FIN TAB CALENDARIO -->
 
 </div>
 
@@ -1056,6 +1156,250 @@ setupDropZonePlant();
 document.getElementById('btn-procesar-plant').addEventListener('click', procesarPlant);
 document.getElementById('btn-limpiar-plant').addEventListener('click', limpiarPlant);
 document.getElementById('btn-cargar-plant').addEventListener('click', cargarPlantASupabase);
+
+const calState = {
+  anio: null,
+  mes: null,
+  diasOriginales: {},
+  cambios: {}
+};
+
+function logCal(msg, tipo = '') {
+  const el = document.getElementById('cal-log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('cal-section-log').classList.remove('hidden');
+}
+
+function initCalSelectores() {
+  const mesSel = document.getElementById('cal-mes-select');
+  const anioSel = document.getElementById('cal-anio-select');
+
+  MESES.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    mesSel.appendChild(opt);
+  });
+
+  [2025, 2026, 2027].forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a;
+    opt.textContent = a;
+    anioSel.appendChild(opt);
+  });
+
+  const hoy = new Date();
+  mesSel.value = hoy.getMonth() + 1;
+  anioSel.value = hoy.getFullYear();
+
+  const cargar = () => {
+    calState.anio = parseInt(anioSel.value);
+    calState.mes = parseInt(mesSel.value);
+    cargarCalendario();
+  };
+  mesSel.addEventListener('change', cargar);
+  anioSel.addEventListener('change', cargar);
+  cargar();
+}
+
+async function cargarCalendario() {
+  calState.cambios = {};
+  actualizarBotones();
+
+  const { data, error } = await db
+    .from('calendario_dias')
+    .select('*')
+    .like('fecha', `${calState.anio}-${String(calState.mes).padStart(2, '0')}-%`)
+    .order('fecha');
+
+  if (error) {
+    logCal('Error: ' + error.message, 'err');
+    return;
+  }
+
+  calState.diasOriginales = {};
+  data.forEach(d => { calState.diasOriginales[d.fecha] = d; });
+
+  document.getElementById('cal-mes-titulo').textContent =
+    `${MESES[calState.mes - 1]} ${calState.anio}`;
+
+  renderCalendario();
+}
+
+function renderCalendario() {
+  const grid = document.getElementById('cal-grid');
+  const nombresDias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+  let html = nombresDias.map(n => `<div class="cal-day-header">${n}</div>`).join('');
+
+  const primerDia = new Date(calState.anio, calState.mes - 1, 1);
+  const ultimoDia = new Date(calState.anio, calState.mes, 0).getDate();
+
+  let dowPrimer = primerDia.getDay();
+  dowPrimer = dowPrimer === 0 ? 6 : dowPrimer - 1;
+
+  for (let i = 0; i < dowPrimer; i++) {
+    html += `<div class="cal-day empty"></div>`;
+  }
+
+  let totalFactor = 0;
+  let totalHabiles = 0;
+  let totalNoLab = 0;
+  let totalSab = 0;
+  let totalDescansos = 0;
+
+  for (let d = 1; d <= ultimoDia; d++) {
+    const fecha = `${calState.anio}-${String(calState.mes).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dia = calState.cambios[fecha] || calState.diasOriginales[fecha];
+    if (!dia) continue;
+
+    const modificado = calState.cambios[fecha] !== undefined ? 'modificado' : '';
+    let clase, label;
+    const factor = parseFloat(dia.factor_dia);
+
+    if (dia.tipo === 'domingo') {
+      clase = 'dom';
+      label = 'Dom';
+      totalNoLab++;
+    } else if (dia.tipo === 'festivo_oficial') {
+      clase = 'festivo';
+      label = 'Festivo';
+      totalNoLab++;
+    } else if (dia.tipo === 'descanso_extraordinario') {
+      clase = 'descanso';
+      label = 'Descanso';
+      totalDescansos++;
+    } else if (dia.tipo === 'sabado') {
+      clase = 'sab';
+      label = 'Sáb · 0.5';
+      totalSab++;
+      totalFactor += 0.5;
+    } else {
+      clase = 'laborable';
+      label = `${factor.toFixed(1)}`;
+      totalHabiles++;
+      totalFactor += 1;
+    }
+
+    const nota = dia.nota ? ` title="${dia.nota}"` : '';
+
+    html += `<div class="cal-day ${clase} ${modificado}" data-fecha="${fecha}"${nota}>
+      <div class="day-num">${d}</div>
+      <div class="day-info">${label}</div>
+    </div>`;
+  }
+
+  grid.innerHTML = html;
+
+  document.getElementById('cal-resumen').innerHTML = `
+    <strong>Total días hábiles efectivos: ${totalFactor.toFixed(1)}</strong> ·
+    <span style="color:var(--green);">${totalHabiles} laborables</span> ·
+    <span style="color:var(--amber);">${totalSab} sábados (0.5)</span> ·
+    <span style="color:var(--red);">${totalDescansos} descansos extraordinarios</span> ·
+    <span style="color:var(--text-soft);">${totalNoLab} no laborables</span>
+  `;
+
+  grid.querySelectorAll('.cal-day').forEach(el => {
+    el.addEventListener('click', () => toggleDia(el.dataset.fecha));
+  });
+}
+
+function toggleDia(fecha) {
+  if (!fecha) return;
+
+  const original = calState.diasOriginales[fecha];
+  if (!original) return;
+
+  if (original.tipo === 'domingo' || original.tipo === 'festivo_oficial') {
+    return;
+  }
+
+  const actual = calState.cambios[fecha] || original;
+
+  if (actual.tipo === 'descanso_extraordinario') {
+    if (original.tipo === 'descanso_extraordinario') {
+      calState.cambios[fecha] = original;
+      return;
+    }
+    delete calState.cambios[fecha];
+  } else {
+    calState.cambios[fecha] = {
+      fecha,
+      factor_dia: 0,
+      tipo: 'descanso_extraordinario',
+      nota: 'Descanso extraordinario (capturado desde reporte)'
+    };
+  }
+
+  renderCalendario();
+  actualizarBotones();
+}
+
+function actualizarBotones() {
+  const hayCambios = Object.keys(calState.cambios).length > 0;
+  document.getElementById('btn-cal-guardar').disabled = !hayCambios;
+  document.getElementById('btn-cal-descartar').disabled = !hayCambios;
+}
+
+async function guardarCalendario() {
+  const fechasCambiadas = Object.keys(calState.cambios);
+  if (fechasCambiadas.length === 0) return;
+
+  const btn = document.getElementById('btn-cal-guardar');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    logCal(`Guardando ${fechasCambiadas.length} cambios en el calendario...`, 'info');
+
+    for (const fecha of fechasCambiadas) {
+      const cambio = calState.cambios[fecha];
+      const { error } = await db
+        .from('calendario_dias')
+        .update({
+          factor_dia: cambio.factor_dia,
+          tipo: cambio.tipo,
+          nota: cambio.nota,
+          updated_at: new Date().toISOString()
+        })
+        .eq('fecha', fecha);
+
+      if (error) throw error;
+      logCal(`✓ ${fecha}: ${cambio.tipo}`, 'ok');
+    }
+
+    logCal(`Guardado completo. ${fechasCambiadas.length} días actualizados.`, 'ok');
+    btn.textContent = '✓ Guardado';
+    btn.style.background = '#15803D';
+
+    setTimeout(() => {
+      alert(`Calendario actualizado: ${fechasCambiadas.length} días modificados.`);
+      btn.textContent = 'Guardar cambios';
+      btn.style.background = '';
+      cargarCalendario();
+    }, 500);
+
+  } catch (e) {
+    logCal('Error: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  }
+}
+
+function descartarCambios() {
+  calState.cambios = {};
+  renderCalendario();
+  actualizarBotones();
+}
+
+initCalSelectores();
+document.getElementById('btn-cal-guardar').addEventListener('click', guardarCalendario);
+document.getElementById('btn-cal-descartar').addEventListener('click', descartarCambios);
 </script>
 </body>
 </html>
