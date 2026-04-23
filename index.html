@@ -381,6 +381,16 @@ function normalizarFecha(val) {
   return null;
 }
 
+function normalizarTelefono(val) {
+  if (val === null || val === undefined || val === '') return null;
+  if (typeof val === 'number') {
+    if (val <= 0) return null;
+    return String(Math.round(val));
+  }
+  const s = String(val).trim().replace(/\D/g, '');
+  return s.length > 0 ? s : null;
+}
+
 async function resolverSupervisor(ejecutivo, asignaciones) {
   if (!ejecutivo) return null;
   if (asignaciones[ejecutivo]) return asignaciones[ejecutivo];
@@ -426,11 +436,13 @@ async function procesar() {
           plan: r.PLAN || null,
           precio: r.PRECIO || null,
           renta: r['RENTA SIN IMPUESTOS'] || null,
+          telefono: normalizarTelefono(r['Telefono cliente']),
         };
       }
     });
 
     const canPorFolio = {};
+    const canTelPorFolio = {};
     const canceladasPreBO = [];
     state.can_data.forEach(r => {
       const fechaBO = normalizarFecha(r['Fecha Back Office']);
@@ -442,6 +454,8 @@ async function procesar() {
       const folio = String(r.Folio || '').trim();
       if (folio && folio !== 'null') {
         canPorFolio[folio] = fechaCanc;
+        const tel = normalizarTelefono(r['Telefono cliente']);
+        if (tel) canTelPorFolio[folio] = tel;
       }
     });
     log(`${Object.keys(canPorFolio).length} canceladas con BO (post-BO)`, 'ok');
@@ -487,11 +501,18 @@ async function procesar() {
         plan: actInfo ? actInfo.plan : null,
         precio: actInfo ? actInfo.precio : null,
         renta_sin_impuestos: actInfo ? actInfo.renta : null,
+        telefono: (actInfo && actInfo.telefono) || canTelPorFolio[folio] || normalizarTelefono(row['Telefono cliente']),
       });
     }
 
     state.registros = registros;
     log(`${registros.length} registros válidos generados`, 'ok');
+    const conTelefono = registros.filter(r => r.telefono).length;
+    const sinTelefono = registros.length - conTelefono;
+    log(`${conTelefono} registros con teléfono (${(conTelefono/registros.length*100).toFixed(1)}%)`, 'ok');
+    if (sinTelefono > 0) {
+      log(`${sinTelefono} registros sin teléfono (no podrán rastrearse como recuperadas)`, 'warn');
+    }
     if (sinSupervisor > 0) {
       log(`${sinSupervisor} registros sin supervisor resuelto`, 'warn');
       log(`Ejecutivos sin resolver: ${[...ejecutivosSinResolver].slice(0, 5).join(', ')}${ejecutivosSinResolver.size > 5 ? '...' : ''}`, 'warn');
