@@ -1535,7 +1535,7 @@ function renderAvanceMensual(wActual) {
       avanceProgTotal++;
     }
 
-    if (r.estatus === 'en_transito' && r.fecha_bo) {
+    if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
       transitoPorSup[r.supervisor]++;
       transitoTotal++;
     }
