@@ -375,11 +375,17 @@ function normalizarFecha(val) {
     return `${y}-${m}-${d}`;
   }
   if (typeof val === 'string') {
+    const match = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const y = parseInt(match[1]);
+      if (y === 1900) return null;
+      return `${match[1]}-${match[2]}-${match[3]}`;
+    }
     const d = new Date(val);
-    if (!isNaN(d.getTime()) && d.getUTCFullYear() !== 1900) {
-      const y = d.getUTCFullYear();
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
+    if (!isNaN(d.getTime()) && d.getFullYear() !== 1900) {
+      const y = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
       return `${y}-${mm}-${dd}`;
     }
   }
