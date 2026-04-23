@@ -200,6 +200,33 @@
     background: var(--card);
   }
   .nav-links a:hover { background: #E8F4FC; }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    background: var(--card);
+    padding: 6px;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 12px 20px;
+    background: transparent;
+    color: var(--text-soft);
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { background: var(--bg); color: var(--text); }
+  .tab-btn.active { background: var(--att-navy); color: white; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
 </style>
 </head>
 <body>
@@ -211,9 +238,17 @@
   </div>
 
   <div class="header">
-    <h1>Cargador de Metas Mensuales</h1>
-    <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Captura las metas al inicio de cada mes</div>
+    <h1>Administrador de datos</h1>
+    <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Carga de metas mensuales y plantilla semanal</div>
   </div>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="metas">📊 Metas mensuales</button>
+    <button class="tab-btn" data-tab="plantilla">👥 Plantilla</button>
+  </div>
+
+  <!-- TAB METAS -->
+  <div class="tab-content active" id="tab-metas">
 
   <!-- PASO 1: Seleccionar periodo -->
   <div class="section">
@@ -297,6 +332,75 @@
     </div>
     <div class="log" id="log"></div>
   </div>
+
+  </div>
+  <!-- FIN TAB METAS -->
+
+  <!-- TAB PLANTILLA -->
+  <div class="tab-content" id="tab-plantilla">
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">1</div>
+        Arrastra el Excel de plantilla
+      </div>
+      <div class="alert info">
+        <div>ℹ️</div>
+        <div>
+          <strong>Formato esperado:</strong> Excel con la hoja <code>Base Plantilla</code> (la misma que usa ExpertCell para headcount).
+          Columnas requeridas: <code>Nombre</code>, <code>Jefe Directo</code>, <code>Fecha Ingreso</code>, <code>Fecha Baja</code>, <code>Estatus</code>, <code>Puesto Homologado</code>, <code>Campaña</code>, <code>Centro</code>.
+          Solo se cargan los de <code>Campaña = ATT</code> y <code>Puesto = AGENTE</code>.
+        </div>
+      </div>
+      <div class="drop-zone" id="drop-zone-plant">
+        <div class="drop-zone-label">Arrastra aquí el Excel de plantilla</div>
+        <div class="drop-zone-hint">o haz clic para seleccionar archivo</div>
+        <div class="drop-zone-filename" id="filename-plant"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-input-plant">
+      </div>
+      <div class="actions">
+        <button id="btn-procesar-plant" disabled>Procesar y validar</button>
+        <button class="secondary" id="btn-limpiar-plant" type="button">Limpiar</button>
+      </div>
+    </div>
+
+    <div class="section hidden" id="section-validacion-plant">
+      <div class="section-title">
+        <div class="step-number">2</div>
+        Revisión de plantilla procesada
+      </div>
+      <div class="stats-grid" id="stats-grid-plant"></div>
+      <div id="alertas-validacion-plant"></div>
+      <div style="margin-top: 14px;">
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Distribución por supervisor (agentes activos):</div>
+        <table id="tabla-supervisores-plant"></table>
+      </div>
+    </div>
+
+    <div class="section hidden" id="section-carga-plant">
+      <div class="section-title">
+        <div class="step-number">3</div>
+        Cargar a Supabase
+      </div>
+      <div class="alert warn">
+        <div>⚠️</div>
+        <div><strong>Importante:</strong> Esta acción <strong>reemplaza completamente</strong> la plantilla actual. Los agentes que ya no estén en el Excel nuevo se borrarán. Los nuevos se agregarán, los existentes se actualizarán.</div>
+      </div>
+      <div class="actions">
+        <button class="success" id="btn-cargar-plant">Cargar/Reemplazar plantilla</button>
+      </div>
+    </div>
+
+    <div class="section hidden" id="section-log-plant">
+      <div class="section-title">
+        <div class="step-number">L</div>
+        Registro de operación
+      </div>
+      <div class="log" id="log-plant"></div>
+    </div>
+
+  </div>
+  <!-- FIN TAB PLANTILLA -->
 
 </div>
 
@@ -690,6 +794,266 @@ setupDropZone();
 document.getElementById('btn-procesar').addEventListener('click', procesar);
 document.getElementById('btn-limpiar').addEventListener('click', limpiar);
 document.getElementById('btn-cargar').addEventListener('click', cargarASupabase);
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  };
+});
+
+const plantState = {
+  file: null,
+  agentes: null,
+  bajas: null
+};
+
+function logPlant(msg, tipo = '') {
+  const el = document.getElementById('log-plant');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('section-log-plant').classList.remove('hidden');
+}
+
+function setupDropZonePlant() {
+  const zone = document.getElementById('drop-zone-plant');
+  const input = document.getElementById('file-input-plant');
+  const nameEl = document.getElementById('filename-plant');
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      input.files = e.dataTransfer.files;
+      handleFilePlant(e.dataTransfer.files[0]);
+    }
+  });
+  input.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) handleFilePlant(e.target.files[0]);
+  });
+}
+
+function handleFilePlant(file) {
+  plantState.file = file;
+  document.getElementById('drop-zone-plant').classList.add('loaded');
+  document.getElementById('filename-plant').textContent = file.name;
+  document.getElementById('btn-procesar-plant').disabled = false;
+  logPlant(`Archivo cargado: ${file.name}`, 'info');
+}
+
+function limpiarPlant() {
+  plantState.file = null;
+  plantState.agentes = null;
+  plantState.bajas = null;
+  document.getElementById('drop-zone-plant').classList.remove('loaded');
+  document.getElementById('filename-plant').textContent = '';
+  document.getElementById('file-input-plant').value = '';
+  document.getElementById('btn-procesar-plant').disabled = true;
+  document.getElementById('section-validacion-plant').classList.add('hidden');
+  document.getElementById('section-carga-plant').classList.add('hidden');
+  document.getElementById('log-plant').innerHTML = '';
+  document.getElementById('section-log-plant').classList.add('hidden');
+}
+
+async function procesarPlant() {
+  document.getElementById('btn-procesar-plant').disabled = true;
+  logPlant('Iniciando procesamiento...', 'info');
+
+  try {
+    const buf = await plantState.file.arrayBuffer();
+    const wb = XLSX.read(buf, { cellDates: true });
+
+    if (!wb.SheetNames.includes('Base Plantilla')) {
+      logPlant(`Error: falta la hoja "Base Plantilla". Hojas encontradas: ${wb.SheetNames.join(', ')}`, 'err');
+      document.getElementById('btn-procesar-plant').disabled = false;
+      return;
+    }
+
+    const ws = wb.Sheets['Base Plantilla'];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+    logPlant(`${rows.length} filas leídas`, 'ok');
+
+    const mapaTodos = {};
+    rows.forEach(r => {
+      if (r['Nombre'] && r['Jefe Directo']) {
+        mapaTodos[r['Nombre']] = r['Jefe Directo'];
+      }
+    });
+
+    function resolverRecursivo(jefe, visitados) {
+      if (!jefe || visitados.has(jefe)) return null;
+      visitados.add(jefe);
+      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
+      const reasig = { 'MARIA FERNANDA MARTINEZ BISTRAIN': 'MARIA LUISA MEZA GOEL', 'TOMAS ROSAS ROJAS': 'MARIA LUISA MEZA GOEL' };
+      if (reasig[jefe]) jefe = reasig[jefe];
+      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
+      const jefeSig = mapaTodos[jefe];
+      if (jefeSig) return resolverRecursivo(jefeSig, visitados);
+      return null;
+    }
+
+    const agentes = [];
+    const sinSup = [];
+    let filtradosNoAtt = 0, filtradosNoAgente = 0, filtradosSupervisor = 0;
+
+    for (const r of rows) {
+      if (!r['Nombre']) continue;
+
+      if (r['Campaña'] !== 'ATT') { filtradosNoAtt++; continue; }
+      if (r['Puesto Homologado'] !== 'AGENTE') { filtradosNoAgente++; continue; }
+      if (Object.keys(SUPERVISORES_MAP).includes(r['Nombre'])) { filtradosSupervisor++; continue; }
+
+      const supervisor = resolverRecursivo(r['Jefe Directo'], new Set());
+      if (!supervisor) {
+        sinSup.push({ nombre: r['Nombre'], jefe: r['Jefe Directo'], estatus: r['Estatus'] });
+        continue;
+      }
+
+      const fechaIng = r['Fecha Ingreso'];
+      const fechaBaja = r['Fecha Baja'];
+
+      const fechaIngStr = fechaIng instanceof Date ? fechaIng.toISOString().split('T')[0] :
+                         (typeof fechaIng === 'string' ? fechaIng.split('T')[0] : null);
+      const fechaBajaStr = fechaBaja instanceof Date ? fechaBaja.toISOString().split('T')[0] :
+                          (typeof fechaBaja === 'string' && fechaBaja ? fechaBaja.split('T')[0] : null);
+
+      agentes.push({
+        nombre: r['Nombre'],
+        jefe_directo: r['Jefe Directo'] || null,
+        supervisor,
+        fecha_ingreso: fechaIngStr,
+        fecha_baja: fechaBajaStr,
+        estatus: r['Estatus'],
+        puesto: 'AGENTE',
+        centro: r['Centro'] || null
+      });
+    }
+
+    plantState.agentes = agentes;
+    plantState.sinSup = sinSup;
+
+    logPlant(`${agentes.length} agentes con supervisor asignado`, 'ok');
+    if (sinSup.length > 0) logPlant(`${sinSup.length} agentes sin supervisor resuelto (se omitirán)`, 'warn');
+    if (filtradosNoAtt > 0) logPlant(`${filtradosNoAtt} filtrados por no ser ATT`, 'info');
+    if (filtradosNoAgente > 0) logPlant(`${filtradosNoAgente} filtrados por no ser AGENTE`, 'info');
+    if (filtradosSupervisor > 0) logPlant(`${filtradosSupervisor} supervisores oficiales ignorados (no son agentes)`, 'info');
+
+    mostrarValidacionPlant(agentes, sinSup);
+    document.getElementById('section-validacion-plant').classList.remove('hidden');
+    document.getElementById('section-carga-plant').classList.remove('hidden');
+    document.getElementById('btn-procesar-plant').disabled = false;
+
+    logPlant('Procesamiento completado', 'ok');
+
+  } catch (e) {
+    logPlant('Error: ' + e.message, 'err');
+    document.getElementById('btn-procesar-plant').disabled = false;
+  }
+}
+
+function mostrarValidacionPlant(agentes, sinSup) {
+  const activos = agentes.filter(a => a.estatus === 'ACTIVO');
+  const bajas = agentes.filter(a => a.estatus === 'BAJA');
+
+  document.getElementById('stats-grid-plant').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total agentes</div>
+      <div class="stat-value">${agentes.length}</div>
+      <div class="stat-sub">ATT + AGENTE</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Activos</div>
+      <div class="stat-value" style="color: var(--green);">${activos.length}</div>
+      <div class="stat-sub">en plantilla</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--text-soft);">
+      <div class="stat-label">Bajas</div>
+      <div class="stat-value" style="color: var(--text-soft);">${bajas.length}</div>
+      <div class="stat-sub">histórico</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">Sin supervisor</div>
+      <div class="stat-value" style="color: var(--amber);">${sinSup.length}</div>
+      <div class="stat-sub">no se cargan</div>
+    </div>
+  `;
+
+  const alertas = [];
+  if (sinSup.length > 0) {
+    alertas.push(`<div class="alert warn"><div>⚠️</div><div><strong>${sinSup.length} agentes sin supervisor resuelto:</strong><br>
+      ${sinSup.slice(0, 5).map(s => `${s.nombre} (jefe: ${s.jefe || 'sin jefe'}, estatus: ${s.estatus})`).join('<br>')}
+      ${sinSup.length > 5 ? `<br>... y ${sinSup.length - 5} más. Revisa sus jefes en el Excel.` : ''}</div></div>`);
+  }
+  if (alertas.length === 0) {
+    alertas.push(`<div class="alert success"><div>✅</div><div>Todos los agentes tienen supervisor válido asignado.</div></div>`);
+  }
+  document.getElementById('alertas-validacion-plant').innerHTML = alertas.join('');
+
+  const porSup = {};
+  activos.forEach(a => {
+    if (!porSup[a.supervisor]) porSup[a.supervisor] = 0;
+    porSup[a.supervisor]++;
+  });
+  const supOrdenados = Object.entries(porSup).sort((a, b) => b[1] - a[1]);
+
+  document.getElementById('tabla-supervisores-plant').innerHTML = `
+    <thead><tr><th>Supervisor</th><th class="num">Agentes activos</th></tr></thead>
+    <tbody>
+      ${supOrdenados.map(([sup, n]) => `<tr><td><strong>${sup}</strong></td><td class="num" style="color:var(--green);font-weight:700;">${n}</td></tr>`).join('')}
+      <tr style="background:var(--bg);font-weight:700;"><td>TOTAL</td><td class="num">${activos.length}</td></tr>
+    </tbody>
+  `;
+}
+
+async function cargarPlantASupabase() {
+  if (!plantState.agentes) return;
+  if (!confirm(`¿Reemplazar toda la plantilla con estos ${plantState.agentes.length} agentes? Los agentes que no estén aquí se borrarán.`)) return;
+
+  const btn = document.getElementById('btn-cargar-plant');
+  btn.disabled = true;
+  btn.textContent = 'Cargando...';
+
+  try {
+    logPlant('Borrando plantilla anterior...', 'info');
+    const { error: e1 } = await db.from('plantilla').delete().neq('nombre', '___imposible___');
+    if (e1) throw e1;
+    logPlant('Plantilla anterior borrada', 'ok');
+
+    logPlant(`Insertando ${plantState.agentes.length} agentes...`, 'info');
+    const batchSize = 100;
+    let insertados = 0;
+    for (let i = 0; i < plantState.agentes.length; i += batchSize) {
+      const batch = plantState.agentes.slice(i, i + batchSize);
+      const { error: e2 } = await db.from('plantilla').insert(batch);
+      if (e2) throw e2;
+      insertados += batch.length;
+      logPlant(`Progreso: ${insertados}/${plantState.agentes.length}`, 'info');
+    }
+
+    logPlant(`Carga completa: ${insertados} agentes cargados`, 'ok');
+    btn.textContent = '✓ Carga completada';
+    btn.style.background = '#15803D';
+    setTimeout(() => alert(`Plantilla actualizada: ${insertados} agentes.`), 300);
+  } catch (e) {
+    logPlant('Error: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  }
+}
+
+setupDropZonePlant();
+document.getElementById('btn-procesar-plant').addEventListener('click', procesarPlant);
+document.getElementById('btn-limpiar-plant').addEventListener('click', limpiarPlant);
+document.getElementById('btn-cargar-plant').addEventListener('click', cargarPlantASupabase);
 </script>
 </body>
 </html>
