@@ -550,6 +550,13 @@
       <h1>Reporte Semanal Ejecutivo</h1>
       <div class="subtitle" id="subtitle">Cargando...</div>
       <div class="tag-row" id="header-tags"></div>
+      <div style="margin-top: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 12px; opacity: 0.85; font-weight: 600;">Vista:</span>
+        <select id="coordinador-select" style="padding: 8px 14px; border: 1.5px solid rgba(255,255,255,0.3); border-radius: 8px; font-size: 13px; font-weight: 600; background: rgba(255,255,255,0.15); color: white; cursor: pointer; backdrop-filter: blur(8px); min-width: 220px;">
+          <option value="todos" style="color: #1a1a1a;">Todos los equipos</option>
+        </select>
+        <span id="coord-info" style="font-size: 11px; opacity: 0.75;"></span>
+      </div>
     </div>
 
     <div id="warning-container"></div>
@@ -954,7 +961,32 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 Chart.defaults.color = '#5a6a7a';
 
-const SUPERVISORES = ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'];
+const SUPERVISORES_ALL = ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'];
+let SUPERVISORES = [...SUPERVISORES_ALL];
+
+function aplicarFiltroCoordinador() {
+  if (coordinadorFiltro === 'todos') {
+    SUPERVISORES = [...SUPERVISORES_ALL];
+    return;
+  }
+
+  const hoy = new Date().toISOString().split('T')[0];
+  const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+  if (!coord) {
+    SUPERVISORES = [...SUPERVISORES_ALL];
+    return;
+  }
+
+  const supsDelCoord = coordSupData
+    .filter(cs =>
+      cs.coordinador_id === coord.id &&
+      cs.fecha_inicio <= hoy &&
+      (!cs.fecha_fin || cs.fecha_fin >= hoy)
+    )
+    .map(cs => cs.supervisor);
+
+  SUPERVISORES = supsDelCoord.filter(s => SUPERVISORES_ALL.includes(s));
+}
 const MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const W1_INICIO = new Date('2025-12-29T00:00:00');
 const DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -964,8 +996,11 @@ let plantillaData = [];
 let calendarioData = [];
 let metasSupData = [];
 let metasAgeData = [];
+let coordinadoresData = [];
+let coordSupData = [];
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
+let coordinadorFiltro = 'todos';
 
 function semanaDeFecha(fechaStr) {
   const f = new Date(fechaStr + 'T12:00:00');
@@ -1041,6 +1076,12 @@ async function cargarDatos() {
   const { data: mAge } = await db.from('metas_agente').select('*');
   metasAgeData = mAge || [];
 
+  const { data: coordData } = await db.from('coordinadores').select('*').eq('activo', true);
+  coordinadoresData = coordData || [];
+
+  const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
+  coordSupData = coordSup || [];
+
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
   const semanasConDatos = new Set();
@@ -1067,6 +1108,31 @@ async function cargarDatos() {
   const finalSemana = ultimaCompleta >= 2 ? ultimaCompleta : maxSemana;
 
   semanaSeleccionada = finalSemana;
+
+  const selectCoord = document.getElementById('coordinador-select');
+  coordinadoresData.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.nombre} (${c.centro})`;
+    opt.style.color = '#1a1a1a';
+    selectCoord.appendChild(opt);
+  });
+  selectCoord.addEventListener('change', () => {
+    coordinadorFiltro = selectCoord.value;
+    aplicarFiltroCoordinador();
+    const infoEl = document.getElementById('coord-info');
+    if (coordinadorFiltro === 'todos') {
+      infoEl.textContent = `${SUPERVISORES.length} supervisores`;
+    } else {
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      infoEl.textContent = `${SUPERVISORES.length} supervisores: ${SUPERVISORES.join(', ')}`;
+    }
+    renderReporte(semanaSeleccionada, w_current);
+  });
+
+  aplicarFiltroCoordinador();
+  document.getElementById('coord-info').textContent = `${SUPERVISORES.length} supervisores`;
+
   renderReporte(finalSemana, w_current);
 
   document.getElementById('loader').style.display = 'none';
