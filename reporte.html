@@ -299,6 +299,20 @@
   .proy-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
   .proy-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
 
+  .top-ord-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .top-ord-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .top-ord-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
   .tarjeta-principal {
     background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
     color: white;
@@ -573,6 +587,7 @@
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
         <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
         <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
+        <button class="nav-btn" data-target="sec-top-agentes">⭐ Top agentes</button>
         <button class="nav-btn" data-target="sec-historico-mensual">📅 Histórico meses</button>
         <button class="nav-btn" data-target="sec-proyeccion-anual">🔮 Proyección anual</button>
         <button class="nav-btn" data-target="sec-atipicos">⚠️ Atípicos</button>
@@ -960,6 +975,35 @@
           </thead>
           <tbody id="rot-bajas-body"></tbody>
         </table>
+      </div>
+      </div>
+    </div>
+
+    <!-- TOP AGENTES -->
+    <div class="section collapsible" id="sec-top-agentes">
+      <div class="section-title">⭐ Top agentes de la operación</div>
+      <div class="section-body">
+      <div class="section-subtitle">Ranking global de los mejores agentes del mes, sin importar equipo. Útil para identificar talento, premiar desempeño y detectar candidatos a supervisor.</div>
+
+      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Ordenar por:</span>
+        <button class="top-ord-btn active" data-ord="activadas">Activadas</button>
+        <button class="top-ord-btn" data-ord="pct">% Meta</button>
+        <button class="top-ord-btn" data-ord="programadas">Programadas</button>
+        <button class="top-ord-btn" data-ord="ritmo">Ritmo/día</button>
+        <span style="margin-left: auto; font-size: 13px; color: var(--text-soft); font-weight: 600;">Cantidad:</span>
+        <select id="top-limite" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+          <option value="0">Todos</option>
+        </select>
+      </div>
+
+      <div id="top-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+
+      <div style="overflow-x: auto;">
+        <table id="top-tabla" style="font-size: 13px;"></table>
       </div>
       </div>
     </div>
@@ -1495,6 +1539,7 @@ function renderReporte(wActual, wCurrent) {
   renderFlujoEntrega();
   renderRecuperacion();
   renderRotacion();
+  renderTopAgentes();
   renderHistoricoMensual();
   renderProyeccionAnual();
   renderAtipicos();
@@ -3581,6 +3626,8 @@ function renderRotConFiltro(periodo) {
   const rotATotal = promTotal > 0 ? (totalBajas / promTotal * 100) : 0;
   const rotBTotal = totalIni > 0 ? (totalBajas / totalIni * 100) : 0;
 
+  const esHistorico = periodo === 'todo';
+
   document.getElementById('rot-resumen-cards').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Plantilla actual</div>
@@ -3605,11 +3652,22 @@ function renderRotConFiltro(periodo) {
     <div class="stat-card" style="border-left-color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">
       <div class="stat-label">Rotación equipo</div>
       <div class="stat-value" style="color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">${rotATotal.toFixed(1)}%</div>
-      <div class="stat-sub">fórmula estándar</div>
+      <div class="stat-sub">${esHistorico ? 'histórica total' : 'fórmula estándar'}</div>
     </div>
+    ${esHistorico ? (() => {
+      const diaIni = new Date(inicioStr);
+      const diaFin = new Date(finStr);
+      const mesesTransc = Math.max(1, (diaFin.getFullYear() - diaIni.getFullYear()) * 12 + (diaFin.getMonth() - diaIni.getMonth()) + (diaFin.getDate() - diaIni.getDate()) / 30);
+      const rotMens = rotATotal / mesesTransc;
+      const colorMens = rotMens >= 15 ? 'var(--red)' : rotMens >= 8 ? 'var(--amber)' : 'var(--green)';
+      const estatusMens = rotMens >= 15 ? 'Por encima del benchmark' : rotMens >= 8 ? 'Dentro del rango industria' : 'Por debajo del benchmark';
+      return `<div class="stat-card" style="border-left-color: ${colorMens};">
+        <div class="stat-label">Rotación mensualizada</div>
+        <div class="stat-value" style="color: ${colorMens};">${rotMens.toFixed(1)}%</div>
+        <div class="stat-sub">${estatusMens} (call center 8-15%)</div>
+      </div>`;
+    })() : ''}
   `;
-
-  const esHistorico = periodo === 'todo';
 
   const headerSimple = document.getElementById('rot-header-simple');
   const headerRotacion = document.getElementById('rot-header-rotacion');
@@ -3899,6 +3957,148 @@ function descargarBajasExcel(periodo) {
   const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
   const periodoStr = periodo === 'todo' ? 'historico' : periodo;
   XLSX.writeFile(wb, `bajas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
+}
+
+function renderTopAgentes() {
+  if (!window.__avanceData) return;
+  const { mes, anio, iniMesStr, fechaCorteStr, diasTranscurridos } = window.__avanceData;
+
+  const datosAgente = {};
+
+  ventasData.forEach(r => {
+    if (!r.ejecutivo || !SUPERVISORES.includes(r.supervisor)) return;
+    if (!datosAgente[r.ejecutivo]) {
+      datosAgente[r.ejecutivo] = { ejecutivo: r.ejecutivo, supervisor: r.supervisor, activadas: 0, programadas: 0, canceladas: 0 };
+    }
+    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+      datosAgente[r.ejecutivo].activadas++;
+    }
+    if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
+      datosAgente[r.ejecutivo].programadas++;
+    }
+    if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
+      datosAgente[r.ejecutivo].canceladas++;
+    }
+  });
+
+  const metasDelMes = {};
+  metasAgeData.filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor)).forEach(m => {
+    metasDelMes[m.ejecutivo] = { meta: m.meta_activadas, tipo: m.tipo_meta };
+  });
+
+  const agentes = Object.values(datosAgente).map(a => {
+    const metaInfo = metasDelMes[a.ejecutivo];
+    const meta = metaInfo ? metaInfo.meta : 0;
+    const tipo = metaInfo ? metaInfo.tipo : 'sin_meta';
+    const pct = meta > 0 ? (a.activadas / meta * 100) : 0;
+    const ritmo = diasTranscurridos > 0 ? a.activadas / diasTranscurridos : 0;
+    return { ...a, meta, tipo, pct, ritmo };
+  }).filter(a => a.activadas > 0 || a.programadas > 0);
+
+  window.__topAgentesData = agentes;
+
+  document.querySelectorAll('.top-ord-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.top-ord-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderTopTabla(btn.dataset.ord);
+    };
+  });
+  document.getElementById('top-limite').onchange = () => {
+    const btnActivo = document.querySelector('.top-ord-btn.active');
+    renderTopTabla(btnActivo ? btnActivo.dataset.ord : 'activadas');
+  };
+
+  renderTopTabla('activadas');
+}
+
+function renderTopTabla(criterio) {
+  if (!window.__topAgentesData) return;
+  const agentes = [...window.__topAgentesData];
+  const limite = parseInt(document.getElementById('top-limite').value);
+
+  let ordenados;
+  if (criterio === 'activadas') ordenados = agentes.sort((a, b) => b.activadas - a.activadas);
+  else if (criterio === 'pct') ordenados = agentes.filter(a => a.meta > 0).sort((a, b) => b.pct - a.pct);
+  else if (criterio === 'programadas') ordenados = agentes.sort((a, b) => b.programadas - a.programadas);
+  else if (criterio === 'ritmo') ordenados = agentes.sort((a, b) => b.ritmo - a.ritmo);
+
+  const top = limite > 0 ? ordenados.slice(0, limite) : ordenados;
+  const totalActTop = top.reduce((a, b) => a + b.activadas, 0);
+  const totalActEquipo = agentes.reduce((a, b) => a + b.activadas, 0);
+  const promTop = top.length > 0 ? totalActTop / top.length : 0;
+  const promEquipo = agentes.length > 0 ? totalActEquipo / agentes.length : 0;
+  const topSuperan20 = top.filter(a => a.activadas >= 20).length;
+  const topSuperan12 = top.filter(a => a.activadas >= 12).length;
+
+  document.getElementById('top-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Top mostrados</div>
+      <div class="stat-value">${top.length}</div>
+      <div class="stat-sub">de ${agentes.length} con actividad</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Promedio del top</div>
+      <div class="stat-value" style="color: var(--green);">${promTop.toFixed(1)}</div>
+      <div class="stat-sub">vs ${promEquipo.toFixed(1)} del equipo</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);">
+      <div class="stat-label">⭐ Con 20+ ventas</div>
+      <div class="stat-value" style="color: var(--att-orange);">${topSuperan20}</div>
+      <div class="stat-sub">nivel aspiracional</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">Con 12+ ventas</div>
+      <div class="stat-value" style="color: var(--att-blue);">${topSuperan12}</div>
+      <div class="stat-sub">mínimo experimentado</div>
+    </div>
+  `;
+
+  let html = `<thead><tr>
+    <th style="text-align:center;">#</th>
+    <th>Agente</th>
+    <th style="text-align:center;">Supervisor</th>
+    <th style="text-align:center;">Tipo</th>
+    <th class="num" style="text-align:center;">Programadas</th>
+    <th class="num" style="text-align:center;">Activadas</th>
+    <th class="num" style="text-align:center;">Canceladas</th>
+    <th class="num" style="text-align:center;">Meta</th>
+    <th class="num" style="text-align:center;">% Meta</th>
+    <th class="num" style="text-align:center;">Ritmo/día</th>
+    <th style="text-align:center;">Nivel</th>
+  </tr></thead><tbody>`;
+
+  top.forEach((a, idx) => {
+    const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Exp';
+    const tipoBadge = a.tipo === 'sin_meta' ? 'background:#E5E7EB;color:#374151;' : a.tipo === 'fija_6' ? 'background:#DBEAFE;color:#1E40AF;' : 'background:#DCFCE7;color:#15803D;';
+
+    let nivel, nivelColor;
+    if (a.activadas >= 20) { nivel = '🌟 Top Performer'; nivelColor = 'var(--att-orange);font-weight:700;'; }
+    else if (a.activadas >= 15) { nivel = '⭐ Destacado'; nivelColor = 'var(--green);font-weight:600;'; }
+    else if (a.activadas >= 12) { nivel = '✓ Cumple mínimo'; nivelColor = 'var(--green);'; }
+    else if (a.activadas >= 6) { nivel = 'En curva'; nivelColor = 'var(--amber);'; }
+    else { nivel = 'Bajo'; nivelColor = 'var(--red);'; }
+
+    const medalEmoji = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1);
+    const colorPct = a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)';
+
+    html += `<tr>
+      <td class="num" style="text-align:center; font-weight:700; font-size: ${idx < 3 ? '16px' : '13px'};">${medalEmoji}</td>
+      <td><strong>${a.ejecutivo}</strong></td>
+      <td style="text-align:center;">${a.supervisor}</td>
+      <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
+      <td class="num" style="text-align:center;">${a.programadas}</td>
+      <td class="num" style="text-align:center; font-weight:700; font-size: 14px;">${a.activadas}</td>
+      <td class="num" style="text-align:center; color: var(--red);">${a.canceladas}</td>
+      <td class="num" style="text-align:center;">${a.meta || '—'}</td>
+      <td class="num" style="text-align:center; color:${colorPct}; font-weight:700;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
+      <td class="num" style="text-align:center;">${a.ritmo.toFixed(2)}</td>
+      <td style="text-align:center; color: ${nivelColor}">${nivel}</td>
+    </tr>`;
+  });
+
+  html += '</tbody>';
+  document.getElementById('top-tabla').innerHTML = html;
 }
 
 function renderHistoricoMensual() {
