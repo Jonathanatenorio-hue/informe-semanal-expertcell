@@ -588,6 +588,11 @@
       <div class="section-title">Flujo de entrega (BO → Activada)</div>
       <div class="section-subtitle">Tiempo que tardan las ventas desde que entran a Back Office hasta que se activan. Solo incluye ventas activadas. Se excluyen domingos del conteo (no se entrega ese día).</div>
 
+      <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+        <select id="flujo-periodo-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;"></select>
+      </div>
+
       <div id="flujo-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
 
       <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Distribución de tiempos de entrega</div>
@@ -613,7 +618,7 @@
       </table>
 
       <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Evolución mensual del tiempo promedio</div>
-      <div class="section-subtitle" style="margin-bottom: 12px;">Agrupado por fecha de entrada a BO. Muestra si la eficiencia del equipo de BO mejora o empeora mes a mes.</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Agrupado por fecha de entrada a BO. Muestra si la eficiencia del equipo de BO mejora o empeora mes a mes. Esta gráfica siempre muestra todo el histórico sin importar el filtro de arriba.</div>
       <div class="chart-wrap" style="height: 280px;"><canvas id="chart-flujo-evolucion"></canvas></div>
     </div>
 
@@ -1955,37 +1960,89 @@ function renderFlujoEntrega() {
     dias: diasEntrega(r.fecha_bo, r.fecha_activacion)
   })).filter(r => r.dias !== null);
 
-  const hoy = new Date();
-  const hace28 = new Date(hoy);
-  hace28.setDate(hace28.getDate() - 28);
-  const hace28Str = hace28.toISOString().split('T')[0];
+  window.__flujoData = conDias;
 
-  const recientes = conDias.filter(r => r.fecha_bo >= hace28Str);
+  const mesesDisponibles = new Set();
+  conDias.forEach(r => mesesDisponibles.add(r.fecha_bo.substring(0, 7)));
+  const mesesOrdenados = [...mesesDisponibles].sort().reverse();
 
-  const promHist = conDias.reduce((a, r) => a + r.dias, 0) / conDias.length;
-  const promRec = recientes.length > 0 ? recientes.reduce((a, r) => a + r.dias, 0) / recientes.length : 0;
-  const medHist = mediana(conDias.map(r => r.dias));
-  const pctRapido = conDias.filter(r => r.dias <= 1).length / conDias.length * 100;
-  const pctLento = conDias.filter(r => r.dias >= 4).length / conDias.length * 100;
+  const selectEl = document.getElementById('flujo-periodo-select');
+  selectEl.innerHTML = `
+    <option value="todo">Todo el histórico</option>
+    <option value="4sem">Últimas 4 semanas</option>
+    <option disabled>──────────</option>
+    ${mesesOrdenados.map(m => {
+      const [anio, mm] = m.split('-');
+      return `<option value="${m}">${MESES_NOMBRE[parseInt(mm) - 1]} ${anio}</option>`;
+    }).join('')}
+  `;
 
-  const tendencia = promRec < promHist ? 'mejorando' : promRec > promHist ? 'empeorando' : 'estable';
-  const colorTendencia = tendencia === 'mejorando' ? 'var(--green)' : tendencia === 'empeorando' ? 'var(--red)' : 'var(--text-soft)';
-  const flechaTendencia = tendencia === 'mejorando' ? '↓' : tendencia === 'empeorando' ? '↑' : '→';
+  selectEl.onchange = () => renderFlujoConFiltro(selectEl.value);
+
+  renderFlujoConFiltro('todo');
+  renderFlujoEvolucion(conDias);
+}
+
+function renderFlujoConFiltro(periodo) {
+  if (!window.__flujoData) return;
+  let datos = window.__flujoData;
+  let nombrePeriodo = 'todo el histórico';
+
+  if (periodo === '4sem') {
+    const hoy = new Date();
+    const hace28 = new Date(hoy);
+    hace28.setDate(hace28.getDate() - 28);
+    const hace28Str = hace28.toISOString().split('T')[0];
+    datos = datos.filter(r => r.fecha_bo >= hace28Str);
+    nombrePeriodo = 'últimas 4 semanas';
+  } else if (periodo !== 'todo') {
+    datos = datos.filter(r => r.fecha_bo.startsWith(periodo));
+    const [anio, mm] = periodo.split('-');
+    nombrePeriodo = `${MESES_NOMBRE[parseInt(mm) - 1]} ${anio}`;
+  }
+
+  if (datos.length === 0) {
+    document.getElementById('flujo-resumen-cards').innerHTML =
+      `<div class="alert warn" style="grid-column: 1/-1;"><div>⚠️</div><div>No hay datos para ${nombrePeriodo}.</div></div>`;
+    document.getElementById('flujo-tabla-body').innerHTML = '';
+    if (window.__chartFlujoDist) { window.__chartFlujoDist.destroy(); window.__chartFlujoDist = null; }
+    return;
+  }
+
+  const prom = datos.reduce((a, r) => a + r.dias, 0) / datos.length;
+  const med = mediana(datos.map(r => r.dias));
+  const pctRapido = datos.filter(r => r.dias <= 1).length / datos.length * 100;
+  const pctLento = datos.filter(r => r.dias >= 4).length / datos.length * 100;
+
+  let compPromedio = null;
+  if (periodo !== 'todo') {
+    const hist = window.__flujoData;
+    compPromedio = hist.reduce((a, r) => a + r.dias, 0) / hist.length;
+  }
+
+  let tarjetaComp = '';
+  if (compPromedio !== null) {
+    const diff = prom - compPromedio;
+    const color = diff < 0 ? 'var(--green)' : diff > 0 ? 'var(--red)' : 'var(--text-soft)';
+    const flecha = diff < 0 ? '↓' : diff > 0 ? '↑' : '→';
+    tarjetaComp = `
+      <div class="stat-card" style="border-left-color: ${color};">
+        <div class="stat-label">vs histórico</div>
+        <div class="stat-value" style="color: ${color};">${compPromedio.toFixed(2)} ${flecha}</div>
+        <div class="stat-sub">promedio de referencia</div>
+      </div>
+    `;
+  }
 
   document.getElementById('flujo-resumen-cards').innerHTML = `
     <div class="stat-card">
-      <div class="stat-label">Promedio histórico</div>
-      <div class="stat-value">${promHist.toFixed(2)}</div>
-      <div class="stat-sub">días (n=${conDias.length.toLocaleString()})</div>
-    </div>
-    <div class="stat-card" style="border-left-color: ${colorTendencia};">
-      <div class="stat-label">Últimas 4 semanas</div>
-      <div class="stat-value" style="color: ${colorTendencia};">${promRec.toFixed(2)} ${flechaTendencia}</div>
-      <div class="stat-sub">${tendencia} vs histórico</div>
+      <div class="stat-label">Promedio</div>
+      <div class="stat-value">${prom.toFixed(2)}</div>
+      <div class="stat-sub">días (n=${datos.length.toLocaleString()})</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--att-blue);">
       <div class="stat-label">Mediana</div>
-      <div class="stat-value">${medHist.toFixed(1)}</div>
+      <div class="stat-value">${med.toFixed(1)}</div>
       <div class="stat-sub">días (caso típico)</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--green);">
@@ -1998,10 +2055,11 @@ function renderFlujoEntrega() {
       <div class="stat-value" style="color: var(--red);">${pctLento.toFixed(1)}%</div>
       <div class="stat-sub">4 o más días</div>
     </div>
+    ${tarjetaComp}
   `;
 
   const buckets = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6+': 0 };
-  conDias.forEach(r => {
+  datos.forEach(r => {
     if (r.dias >= 6) buckets['6+']++;
     else buckets[String(r.dias)]++;
   });
@@ -2021,8 +2079,7 @@ function renderFlujoEntrega() {
       datasets: [{
         data,
         backgroundColor: colores,
-        borderRadius: 6,
-        datalabels: false
+        borderRadius: 6
       }]
     },
     options: {
@@ -2033,7 +2090,7 @@ function renderFlujoEntrega() {
           callbacks: {
             label: (ctx) => {
               const v = ctx.parsed.y;
-              const pct = (v / total * 100).toFixed(1);
+              const pct = total > 0 ? (v / total * 100).toFixed(1) : 0;
               return `${v.toLocaleString()} ventas (${pct}%)`;
             }
           }
@@ -2050,7 +2107,7 @@ function renderFlujoEntrega() {
 
   const porSup = {};
   SUPERVISORES.forEach(s => { porSup[s] = []; });
-  conDias.forEach(r => { porSup[r.supervisor].push(r.dias); });
+  datos.forEach(r => { porSup[r.supervisor].push(r.dias); });
 
   const filasSup = SUPERVISORES.map(s => {
     const dias = porSup[s];
@@ -2061,9 +2118,7 @@ function renderFlujoEntrega() {
     const r23 = dias.filter(d => d >= 2 && d <= 3).length;
     const r4 = dias.filter(d => d >= 4).length;
     return {
-      sup: s,
-      n: dias.length,
-      prom, med,
+      sup: s, n: dias.length, prom, med,
       pctRapido: r01 / dias.length * 100,
       pctNormal: r23 / dias.length * 100,
       pctLento: r4 / dias.length * 100
@@ -2082,7 +2137,9 @@ function renderFlujoEntrega() {
       <td class="num" style="text-align:center; color:var(--red); font-weight:600;">${f.pctLento.toFixed(1)}%</td>
     </tr>`;
   }).join('');
+}
 
+function renderFlujoEvolucion(conDias) {
   const porMes = {};
   conDias.forEach(r => {
     const mes = r.fecha_bo.substring(0, 7);
