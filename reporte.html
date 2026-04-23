@@ -2105,6 +2105,8 @@ function renderDetalleAgentes() {
   const progPorAgente = {};
   const cancPorAgente = {};
   const diasActivosPorAgente = {};
+  const ultActPorAgente = {};
+  const ultProgPorAgente = {};
 
   ventasData.forEach(r => {
     if (!r.ejecutivo) return;
@@ -2119,13 +2121,57 @@ function renderDetalleAgentes() {
     if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
       cancPorAgente[r.ejecutivo] = (cancPorAgente[r.ejecutivo] || 0) + 1;
     }
+
+    if (r.fecha_activacion && r.fecha_activacion <= fechaCorteStr) {
+      if (!ultActPorAgente[r.ejecutivo] || r.fecha_activacion > ultActPorAgente[r.ejecutivo]) {
+        ultActPorAgente[r.ejecutivo] = r.fecha_activacion;
+      }
+    }
+    if (r.fecha_bo && r.fecha_bo <= fechaCorteStr) {
+      if (!ultProgPorAgente[r.ejecutivo] || r.fecha_bo > ultProgPorAgente[r.ejecutivo]) {
+        ultProgPorAgente[r.ejecutivo] = r.fecha_bo;
+      }
+    }
   });
+
+  function diasHabilesEntre(desdeStr, hastaStr) {
+    if (!desdeStr || !hastaStr) return null;
+    if (desdeStr >= hastaStr) return 0;
+
+    let total = 0;
+    const d = new Date(desdeStr + 'T12:00:00');
+    const hasta = new Date(hastaStr + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+
+    const calMap = {};
+    calendarioData.forEach(c => { calMap[c.fecha] = parseFloat(c.factor_dia); });
+
+    while (d <= hasta) {
+      const fStr = d.toISOString().split('T')[0];
+      if (calMap[fStr] !== undefined) {
+        total += calMap[fStr];
+      } else {
+        const dow = d.getDay();
+        if (dow === 0) {
+        } else if (dow === 6) {
+          total += 0.5;
+        } else {
+          total += 1;
+        }
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    return total;
+  }
 
   const metasDelMes = metasAgeData.filter(m =>
     m.anio === anio &&
     m.mes === mes &&
     SUPERVISORES.includes(m.supervisor)
   );
+
+  const plantMap = {};
+  plantillaData.forEach(p => { plantMap[p.nombre] = p; });
 
   const agentesPorSup = {};
   metasDelMes.forEach(m => {
@@ -2140,12 +2186,29 @@ function renderDetalleAgentes() {
     const faltan = Math.max(0, m.meta_activadas - avance);
     const ritmoNecesario = diasRestantes > 0 ? faltan / diasRestantes : 0;
 
+    const plant = plantMap[m.ejecutivo];
+    const fechaIng = plant ? plant.fecha_ingreso : null;
+
+    const ultAct = ultActPorAgente[m.ejecutivo] || null;
+    const ultProg = ultProgPorAgente[m.ejecutivo] || null;
+
+    const refActStr = ultAct || fechaIng;
+    const refProgStr = ultProg || fechaIng;
+
+    const diasSinAct = refActStr ? diasHabilesEntre(refActStr, fechaCorteStr) : null;
+    const diasSinProg = refProgStr ? diasHabilesEntre(refProgStr, fechaCorteStr) : null;
+
+    const nuncaActivo = !ultAct;
+    const nuncaProgramo = !ultProg;
+
     agentesPorSup[m.supervisor].push({
       ejecutivo: m.ejecutivo,
       meta: m.meta_activadas,
       avance, programadas, canceladas, diasActivos,
       pct, ritmoActual, proyeccion, ritmoNecesario,
-      tipo: m.tipo_meta
+      tipo: m.tipo_meta,
+      diasSinAct, diasSinProg, nuncaActivo, nuncaProgramo,
+      ultAct, ultProg
     });
   });
 
@@ -2158,6 +2221,7 @@ function renderDetalleAgentes() {
     const criticos = agentes.filter(a => a.meta > 0 && a.pct < 50).length;
     const cumplidos = agentes.filter(a => a.meta > 0 && a.pct >= 100).length;
     const enRiesgo = agentes.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
+    const alertaInactivos = agentes.filter(a => a.diasSinAct !== null && a.diasSinAct >= 5).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
 
@@ -2170,7 +2234,8 @@ function renderDetalleAgentes() {
               ${s.pctCumpl.toFixed(1)}% cumplimiento ·
               ${cumplidos > 0 ? `<span style="color:var(--green);font-weight:600;">✓ ${cumplidos} al 100%</span> · ` : ''}
               ${enRiesgo > 0 ? `<span style="color:var(--amber);font-weight:600;">⚠ ${enRiesgo} en riesgo</span> · ` : ''}
-              ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span>` : ''}
+              ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span> · ` : ''}
+              ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 5+ días</span>` : ''}
             </span>
           </span>
           <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
@@ -2187,12 +2252,14 @@ function renderDetalleAgentes() {
                   <th>Agente</th>
                   <th style="text-align:center;">Tipo</th>
                   <th class="num" style="text-align:center;">Días act.</th>
-                  <th class="num" style="text-align:center;">Programadas</th>
-                  <th class="num" style="text-align:center;">Activadas</th>
-                  <th class="num" style="text-align:center;">Canceladas</th>
+                  <th class="num" style="text-align:center;" title="Días hábiles desde la última venta programada (BO)">Sin prog.</th>
+                  <th class="num" style="text-align:center;" title="Días hábiles desde la última venta activada">Sin activar</th>
+                  <th class="num" style="text-align:center;">Prog</th>
+                  <th class="num" style="text-align:center;">Act</th>
+                  <th class="num" style="text-align:center;">Canc</th>
                   <th class="num" style="text-align:center;">Meta</th>
                   <th class="num" style="text-align:center;">% Mes</th>
-                  <th class="num" style="text-align:center;">Ritmo actual</th>
+                  <th class="num" style="text-align:center;">Ritmo</th>
                   <th class="num" style="text-align:center;">Ritmo nec.</th>
                   <th class="num" style="text-align:center;">Proy.</th>
                   <th style="text-align:center;">Estatus</th>
@@ -2217,11 +2284,24 @@ function renderDetalleAgentes() {
                   const tipoBadge = a.tipo === 'sin_meta' ? 'background:#E5E7EB;color:#374151;' : a.tipo === 'fija_6' ? 'background:#DBEAFE;color:#1E40AF;' : 'background:#DCFCE7;color:#15803D;';
                   const colorPct = a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)';
 
+                  function formatDias(dias, nunca) {
+                    if (dias === null) return '—';
+                    if (dias === 0) return '<span style="color:var(--green);font-weight:700;">hoy</span>';
+                    const prefijo = nunca ? 'desde ingreso ' : '';
+                    let color = 'var(--green)';
+                    if (dias >= 5) color = 'var(--red)';
+                    else if (dias >= 3) color = 'var(--amber)';
+                    const weight = dias >= 3 ? 'font-weight:700;' : '';
+                    return `<span style="color:${color};${weight}" title="${prefijo}${dias} días hábiles">${dias.toFixed(1)}</span>`;
+                  }
+
                   return `<tr style="${colorFila}">
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
                     <td>${a.ejecutivo}</td>
                     <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
+                    <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
+                    <td class="num" style="text-align:center;">${formatDias(a.diasSinAct, a.nuncaActivo)}</td>
                     <td class="num" style="text-align:center;">${a.programadas}</td>
                     <td class="num" style="text-align:center;"><strong>${a.avance}</strong></td>
                     <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
@@ -2263,6 +2343,10 @@ function descargarEquipoExcel(supervisor) {
     'Agente': a.ejecutivo,
     'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
     'Dias activos': a.diasActivos,
+    'Dias sin programar': a.diasSinProg !== null ? Number(a.diasSinProg.toFixed(1)) : null,
+    'Dias sin activar': a.diasSinAct !== null ? Number(a.diasSinAct.toFixed(1)) : null,
+    'Ultima programada': a.ultProg || '—',
+    'Ultima activada': a.ultAct || '—',
     'Programadas': a.programadas,
     'Activadas': a.avance,
     'Canceladas': a.canceladas,
@@ -2275,7 +2359,7 @@ function descargarEquipoExcel(supervisor) {
   }));
 
   const ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:12},{wch:10},{wch:11},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
+  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:14},{wch:13},{wch:12},{wch:12},{wch:12},{wch:10},{wch:11},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, supervisor);
 
