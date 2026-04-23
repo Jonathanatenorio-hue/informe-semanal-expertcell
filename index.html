@@ -391,6 +391,19 @@ function normalizarTelefono(val) {
   return s.length > 0 ? s : null;
 }
 
+function limpiarFolio(val) {
+  if (val === null || val === undefined || val === '') return '';
+  let s = String(val).trim().toUpperCase();
+  if (s.indexOf('NUEVO FOLIO') !== -1) {
+    const m = s.match(/(\d{5,})/);
+    return m ? m[1] : '';
+  }
+  while (s.length > 0 && !/\d/.test(s[s.length - 1])) {
+    s = s.slice(0, -1);
+  }
+  return s;
+}
+
 function resolverSupervisorPorFecha(ejecutivo, fecha, asignacionesMap) {
   if (!ejecutivo || !fecha) return null;
   const historial = asignacionesMap[ejecutivo];
@@ -439,11 +452,16 @@ async function procesar() {
     log('Cruzando datos por folio...', 'info');
 
     const actPorFolio = {};
+    let fechaMinActivadas = null;
     actTerminadas.forEach(r => {
-      const folio = String(r.FOLIO || '').trim();
+      const folio = limpiarFolio(r.FOLIO);
       if (folio && folio !== 'null') {
+        const fechaStr = normalizarFecha(r.Fecha);
+        if (fechaStr && (!fechaMinActivadas || fechaStr < fechaMinActivadas)) {
+          fechaMinActivadas = fechaStr;
+        }
         actPorFolio[folio] = {
-          fecha: normalizarFecha(r.Fecha),
+          fecha: fechaStr,
           plan: r.PLAN || null,
           precio: r.PRECIO || null,
           renta: r['RENTA SIN IMPUESTOS'] || null,
@@ -451,6 +469,9 @@ async function procesar() {
         };
       }
     });
+    if (fechaMinActivadas) {
+      log(`Rango de activadas: desde ${fechaMinActivadas}`, 'info');
+    }
 
     const canPorFolio = {};
     const canTelPorFolio = {};
@@ -462,7 +483,7 @@ async function procesar() {
         canceladasPreBO.push(r);
         return;
       }
-      const folio = String(r.Folio || '').trim();
+      const folio = limpiarFolio(r.Folio);
       if (folio && folio !== 'null') {
         canPorFolio[folio] = fechaCanc;
         const tel = normalizarTelefono(r['Telefono cliente']);
@@ -472,19 +493,36 @@ async function procesar() {
     log(`${Object.keys(canPorFolio).length} canceladas con BO (post-BO)`, 'ok');
     log(`${canceladasPreBO.length} canceladas pre-BO (se ignoran)`, 'warn');
 
+    const FOLIOS_IGNORAR = new Set(['3966386223']);
+    const FECHA_MIN_BO = '2026-01-01';
+
     const registros = [];
     const foliosVistos = new Set();
     let sinSupervisor = 0;
+    let ignoradosPorFecha = 0;
+    let ignoradosAtipicos = 0;
     const ejecutivosSinResolver = new Set();
 
     for (const row of state.bo_data) {
-      const folio = String(row.Folio || '').trim();
+      const folioOriginal = String(row.Folio || '').trim();
+      const folio = limpiarFolio(row.Folio);
       if (!folio || folio === 'null' || foliosVistos.has(folio)) continue;
       foliosVistos.add(folio);
 
-      const ejecutivo = row.Ejecutivo;
       const fechaBO = normalizarFecha(row['Back Office']);
       if (!fechaBO) continue;
+
+      if (fechaBO < FECHA_MIN_BO) {
+        ignoradosPorFecha++;
+        continue;
+      }
+
+      if (FOLIOS_IGNORAR.has(folio)) {
+        ignoradosAtipicos++;
+        continue;
+      }
+
+      const ejecutivo = row.Ejecutivo;
 
       const supervisor = resolverSupervisorPorFecha(ejecutivo, fechaBO, asignaciones);
       if (!supervisor) {
@@ -497,10 +535,15 @@ async function procesar() {
       const fechaCan = canPorFolio[folio];
       const ventaBO = row['Venta'];
       const tieneVentaBO = ventaBO !== null && ventaBO !== undefined && String(ventaBO).trim() !== '';
+      const estatusBO = row['Estatus'];
 
       let estatus;
       if (!tieneVentaBO) {
-        estatus = 'en_transito';
+        if (estatusBO === 'Entregado') {
+          estatus = 'por_activar';
+        } else {
+          estatus = 'en_transito';
+        }
       } else if (fechaCan) {
         estatus = 'cancelada';
       } else if (actInfo) {
@@ -526,12 +569,21 @@ async function procesar() {
     }
 
     state.registros = registros;
-    log(`${registros.length} registros válidos generados`, 'ok');
+    log(`${registros.length} registros válidos generados (del 2026)`, 'ok');
+    if (ignoradosPorFecha > 0) log(`${ignoradosPorFecha} registros ignorados (BO anterior a 2026-01-01)`, 'info');
+    if (ignoradosAtipicos > 0) log(`${ignoradosAtipicos} folios atípicos ignorados (casos especiales)`, 'info');
     const conTelefono = registros.filter(r => r.telefono).length;
     const sinTelefono = registros.length - conTelefono;
     log(`${conTelefono} registros con teléfono (${(conTelefono/registros.length*100).toFixed(1)}%)`, 'ok');
     if (sinTelefono > 0) {
       log(`${sinTelefono} registros sin teléfono (no podrán rastrearse como recuperadas)`, 'warn');
+    }
+    const pendientesReales = registros.filter(r => r.estatus === 'pendiente');
+    if (pendientesReales.length > 0) {
+      log(`⚠️ ${pendientesReales.length} pendientes reales detectados (con Venta llena pero no en activadas ni canceladas):`, 'warn');
+      pendientesReales.slice(0, 5).forEach(p => {
+        log(`  Folio ${p.folio} - ${p.supervisor} - ${p.ejecutivo} - ${p.fecha_bo}`, 'warn');
+      });
     }
     if (sinSupervisor > 0) {
       log(`${sinSupervisor} registros sin supervisor resuelto`, 'warn');
@@ -551,18 +603,19 @@ async function procesar() {
 }
 
 function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) {
-  const porEstatus = { activada: 0, cancelada: 0, pendiente: 0, en_transito: 0 };
+  const porEstatus = { activada: 0, cancelada: 0, pendiente: 0, en_transito: 0, por_activar: 0 };
   const porSupervisor = {};
   registros.forEach(r => {
     if (porEstatus[r.estatus] !== undefined) porEstatus[r.estatus]++;
     if (!porSupervisor[r.supervisor]) {
-      porSupervisor[r.supervisor] = { prog: 0, act: 0, can: 0, pen: 0, tra: 0 };
+      porSupervisor[r.supervisor] = { prog: 0, act: 0, can: 0, pen: 0, tra: 0, poract: 0 };
     }
     porSupervisor[r.supervisor].prog++;
     if (r.estatus === 'activada') porSupervisor[r.supervisor].act++;
     if (r.estatus === 'cancelada') porSupervisor[r.supervisor].can++;
     if (r.estatus === 'pendiente') porSupervisor[r.supervisor].pen++;
     if (r.estatus === 'en_transito') porSupervisor[r.supervisor].tra++;
+    if (r.estatus === 'por_activar') porSupervisor[r.supervisor].poract++;
   });
 
   const statsGrid = document.getElementById('stats-grid');
@@ -570,7 +623,7 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
     <div class="stat-card">
       <div class="stat-label">Total registros</div>
       <div class="stat-value">${registros.length.toLocaleString()}</div>
-      <div class="stat-sub">Folios únicos procesados</div>
+      <div class="stat-sub">Folios del 2026</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--green);">
       <div class="stat-label">Activadas</div>
@@ -585,13 +638,19 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
     <div class="stat-card" style="border-left-color: var(--amber);">
       <div class="stat-label">En tránsito</div>
       <div class="stat-value" style="color: var(--amber);">${porEstatus.en_transito.toLocaleString()}</div>
-      <div class="stat-sub">Venta en BO sin entregar</div>
+      <div class="stat-sub">En proceso de entrega</div>
     </div>
     <div class="stat-card" style="border-left-color: #9CA3AF;">
-      <div class="stat-label">Pendientes</div>
-      <div class="stat-value" style="color: #6B7280;">${porEstatus.pendiente.toLocaleString()}</div>
-      <div class="stat-sub">Entregadas, sin activar</div>
+      <div class="stat-label">Por activar</div>
+      <div class="stat-value" style="color: #6B7280;">${porEstatus.por_activar.toLocaleString()}</div>
+      <div class="stat-sub">Entregadas, falta evidencia</div>
     </div>
+    ${porEstatus.pendiente > 0 ? `
+    <div class="stat-card" style="border-left-color: #DC2626; background: #FEE2E2;">
+      <div class="stat-label" style="color: #B91C1C;">⚠️ Pendientes (alerta)</div>
+      <div class="stat-value" style="color: #B91C1C;">${porEstatus.pendiente.toLocaleString()}</div>
+      <div class="stat-sub" style="color: #B91C1C;">Con Venta pero no activadas</div>
+    </div>` : ''}
   `;
 
   const alertasEl = document.getElementById('alertas-validacion');
