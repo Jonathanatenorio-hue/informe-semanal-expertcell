@@ -493,7 +493,13 @@ async function procesar() {
     log(`${Object.keys(canPorFolio).length} canceladas con BO (post-BO)`, 'ok');
     log(`${canceladasPreBO.length} canceladas pre-BO (se ignoran)`, 'warn');
 
-    const FOLIOS_IGNORAR = new Set(['3966386223']);
+    log('Leyendo folios atípicos ignorados desde Supabase...', 'info');
+    const { data: ignData } = await db
+      .from('folios_ignorados')
+      .select('folio, motivo');
+    const FOLIOS_IGNORAR = new Set((ignData || []).map(f => f.folio));
+    log(`${FOLIOS_IGNORAR.size} folios atípicos ignorados cargados`, 'ok');
+
     const FECHA_MIN_BO = '2026-01-01';
 
     const registros = [];
