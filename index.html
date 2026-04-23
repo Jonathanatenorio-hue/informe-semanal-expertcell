@@ -391,9 +391,16 @@ function normalizarTelefono(val) {
   return s.length > 0 ? s : null;
 }
 
-async function resolverSupervisor(ejecutivo, asignaciones) {
-  if (!ejecutivo) return null;
-  if (asignaciones[ejecutivo]) return asignaciones[ejecutivo];
+function resolverSupervisorPorFecha(ejecutivo, fecha, asignacionesMap) {
+  if (!ejecutivo || !fecha) return null;
+  const historial = asignacionesMap[ejecutivo];
+  if (!historial || historial.length === 0) return null;
+
+  for (const asig of historial) {
+    if (asig.fecha_inicio <= fecha && (!asig.fecha_fin || asig.fecha_fin >= fecha)) {
+      return asig.supervisor;
+    }
+  }
   return null;
 }
 
@@ -402,15 +409,19 @@ async function procesar() {
   log('Iniciando procesamiento...', 'info');
 
   try {
-    log('Leyendo asignaciones de supervisor desde Supabase...', 'info');
+    log('Leyendo asignaciones históricas de supervisor desde Supabase...', 'info');
     const { data: asigData, error: asigErr } = await db
       .from('asignaciones_supervisor')
-      .select('ejecutivo, supervisor');
+      .select('ejecutivo, supervisor, fecha_inicio, fecha_fin')
+      .order('fecha_inicio', { ascending: true });
     if (asigErr) throw asigErr;
     const asignaciones = {};
-    asigData.forEach(a => { asignaciones[a.ejecutivo] = a.supervisor; });
+    asigData.forEach(a => {
+      if (!asignaciones[a.ejecutivo]) asignaciones[a.ejecutivo] = [];
+      asignaciones[a.ejecutivo].push(a);
+    });
     state.asignaciones = asignaciones;
-    log(`${Object.keys(asignaciones).length} asignaciones cargadas`, 'ok');
+    log(`${asigData.length} asignaciones cargadas (${Object.keys(asignaciones).length} ejecutivos únicos)`, 'ok');
 
     log('Leyendo Excel de Backoffice...', 'info');
     state.bo_data = await leerExcel(state.bo);
@@ -472,15 +483,15 @@ async function procesar() {
       foliosVistos.add(folio);
 
       const ejecutivo = row.Ejecutivo;
-      const supervisor = await resolverSupervisor(ejecutivo, asignaciones);
+      const fechaBO = normalizarFecha(row['Back Office']);
+      if (!fechaBO) continue;
+
+      const supervisor = resolverSupervisorPorFecha(ejecutivo, fechaBO, asignaciones);
       if (!supervisor) {
         sinSupervisor++;
         if (ejecutivo) ejecutivosSinResolver.add(ejecutivo);
         continue;
       }
-
-      const fechaBO = normalizarFecha(row['Back Office']);
-      if (!fechaBO) continue;
 
       const actInfo = actPorFolio[folio];
       const fechaCan = canPorFolio[folio];
