@@ -284,6 +284,125 @@
   .metric-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
   .metric-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
 
+  .proy-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .proy-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .proy-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
+
+  .tarjeta-principal {
+    background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 24px 28px;
+    position: relative;
+    overflow: hidden;
+  }
+  .tarjeta-principal .mes-titulo { font-size: 16px; opacity: 0.85; margin-bottom: 4px; font-weight: 600; }
+  .tarjeta-principal .dia-info { font-size: 13px; opacity: 0.8; margin-bottom: 16px; }
+  .tarjeta-principal .metricas-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-bottom: 18px; }
+  .tarjeta-principal .metrica { border-left: 3px solid rgba(255,255,255,0.3); padding-left: 14px; }
+  .tarjeta-principal .metrica-label { font-size: 11px; text-transform: uppercase; opacity: 0.75; letter-spacing: 0.5px; margin-bottom: 4px; font-weight: 600; }
+  .tarjeta-principal .metrica-valor { font-size: 28px; font-weight: 800; line-height: 1; }
+  .tarjeta-principal .metrica-sub { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+  .tarjeta-principal .barra-progreso {
+    background: rgba(255,255,255,0.15);
+    height: 14px;
+    border-radius: 7px;
+    overflow: hidden;
+    margin: 12px 0;
+    position: relative;
+  }
+  .tarjeta-principal .barra-llena {
+    background: linear-gradient(90deg, #16A34A 0%, #22C55E 100%);
+    height: 100%;
+    border-radius: 7px;
+    transition: width 0.4s ease;
+  }
+  .tarjeta-principal .barra-ideal {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    background: #FF7200;
+    box-shadow: 0 0 4px rgba(255, 114, 0, 0.6);
+  }
+  .tarjeta-principal .proyeccion-box {
+    background: rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .semaforo-card {
+    background: white;
+    border-radius: 10px;
+    padding: 16px 18px;
+    border: 1px solid var(--border);
+    border-left: 5px solid;
+    position: relative;
+  }
+  .semaforo-card.verde { border-left-color: var(--green); }
+  .semaforo-card.amarillo { border-left-color: var(--amber); }
+  .semaforo-card.rojo { border-left-color: var(--red); }
+  .semaforo-card .nombre { font-weight: 700; font-size: 15px; color: var(--att-navy); display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .semaforo-card .numeros { font-size: 12px; color: var(--text-soft); margin-bottom: 10px; }
+  .semaforo-card .barra { background: var(--bg); height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 10px; position: relative; }
+  .semaforo-card .barra-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
+  .semaforo-card.verde .barra-fill { background: var(--green); }
+  .semaforo-card.amarillo .barra-fill { background: var(--amber); }
+  .semaforo-card.rojo .barra-fill { background: var(--red); }
+  .semaforo-card .barra-ideal {
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    width: 2px;
+    background: var(--att-navy);
+  }
+  .semaforo-card .detalles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+  .semaforo-card .detalle { background: var(--bg); padding: 6px 8px; border-radius: 5px; }
+  .semaforo-card .detalle-label { font-size: 10px; color: var(--text-soft); text-transform: uppercase; font-weight: 600; letter-spacing: 0.3px; }
+  .semaforo-card .detalle-val { font-size: 13px; font-weight: 700; color: var(--text); }
+
+  .agente-acordeon {
+    background: var(--bg);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .agente-acordeon-header {
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .agente-acordeon-header:hover { background: #E8F4FC; }
+  .agente-acordeon-body {
+    padding: 0 16px 12px;
+    display: none;
+    background: white;
+  }
+  .agente-acordeon.abierto .agente-acordeon-body { display: block; padding-top: 8px; }
+  .agente-acordeon .flecha { transition: transform 0.2s; display: inline-block; }
+  .agente-acordeon.abierto .flecha { transform: rotate(90deg); }
+
   @media (max-width: 900px) {
     .embudo-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -309,6 +428,36 @@
     </div>
 
     <div id="warning-container"></div>
+
+    <!-- AVANCE MENSUAL VS METAS -->
+    <div class="section" id="avance-mensual-section">
+      <div class="section-title">Avance mensual vs metas</div>
+      <div class="section-subtitle" id="avance-subtitle"></div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Proyección basada en:</span>
+        <button class="proy-btn active" data-proy="mes">Ritmo del mes</button>
+        <button class="proy-btn" data-proy="semana">Ritmo última semana</button>
+      </div>
+
+      <div id="avance-tarjeta-principal"></div>
+
+      <div style="font-weight: 600; font-size: 15px; margin: 24px 0 12px; color: var(--att-navy);">Estatus por supervisor</div>
+      <div id="avance-semaforo-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;"></div>
+
+      <div style="font-weight: 600; font-size: 15px; margin: 28px 0 12px; color: var(--att-navy);">Tabla maestra</div>
+      <div style="overflow-x: auto;">
+        <table id="avance-tabla"></table>
+      </div>
+
+      <div style="font-weight: 600; font-size: 15px; margin: 28px 0 12px; color: var(--att-navy);">Tendencia del mes</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Avance acumulado real vs ruta ideal. Si la línea verde está arriba de la naranja, van adelantados.</div>
+      <div class="chart-wrap" style="height: 300px;"><canvas id="chart-tendencia-mes"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 15px; margin: 28px 0 12px; color: var(--att-navy);">Detalle por agente</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Haz clic en un supervisor para ver el cumplimiento individual de sus agentes.</div>
+      <div id="avance-detalle-agentes"></div>
+    </div>
 
     <!-- EMBUDO PRINCIPAL -->
     <div id="embudo-section"></div>
@@ -449,12 +598,17 @@ Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Rob
 Chart.defaults.color = '#5a6a7a';
 
 const SUPERVISORES = ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'];
+const MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const W1_INICIO = new Date('2025-12-29T00:00:00');
 const DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 let ventasData = [];
 let plantillaData = [];
+let calendarioData = [];
+let metasSupData = [];
+let metasAgeData = [];
 let semanaSeleccionada = null;
+let proyeccionModo = 'mes';
 
 function semanaDeFecha(fechaStr) {
   const f = new Date(fechaStr + 'T12:00:00');
@@ -519,7 +673,18 @@ async function cargarDatos() {
   }
 
   plantillaData = plantData;
-  document.getElementById('loader-msg').textContent = `${allData.length} ventas y ${plantData.length} agentes cargados. Procesando...`;
+  document.getElementById('loader-msg').textContent = `Cargando calendario y metas...`;
+
+  const { data: calData } = await db.from('calendario_dias').select('*');
+  calendarioData = calData || [];
+
+  const { data: mSup } = await db.from('metas_supervisor').select('*');
+  metasSupData = mSup || [];
+
+  const { data: mAge } = await db.from('metas_agente').select('*');
+  metasAgeData = mAge || [];
+
+  document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
   const semanasConDatos = new Set();
   allData.forEach(r => {
@@ -715,6 +880,7 @@ function renderReporte(wActual, wCurrent) {
   const anterior = agregarPorFechaDeActividad(iniAntStr, finAntStr);
 
   renderHeaderTags(actual, anterior, wActual, wCurrent);
+  renderAvanceMensual(wActual);
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
@@ -844,6 +1010,437 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
       <td class="num col-divider">${t_p.canc}</td><td class="num">${t_a.canc}</td>${fmtDelta(t_a.canc - t_p.canc, true)}
     </tr>
   `;
+}
+
+function renderAvanceMensual(wActual) {
+  const rangoSem = fechasDeSemana(wActual);
+  const fechaRef = rangoSem.fin;
+  const anio = fechaRef.getFullYear();
+  const mes = fechaRef.getMonth() + 1;
+
+  const diasDelMes = calendarioData.filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`));
+  if (diasDelMes.length === 0) {
+    document.getElementById('avance-mensual-section').style.display = 'none';
+    return;
+  }
+  document.getElementById('avance-mensual-section').style.display = 'block';
+
+  const diasHabilesTotales = diasDelMes.reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+  const hoy = new Date();
+  const ultimoDiaConDatos = new Date(Math.max(...ventasData.map(r => new Date(r.fecha_bo + 'T12:00:00').getTime())));
+  const fechaCorte = ultimoDiaConDatos < fechaRef ? ultimoDiaConDatos : fechaRef;
+
+  const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
+  const finMesStr = diasDelMes[diasDelMes.length-1].fecha;
+  const fechaCorteStr = fechaCorte.toISOString().split('T')[0];
+
+  const diasTranscurridos = diasDelMes
+    .filter(d => d.fecha >= iniMesStr && d.fecha <= fechaCorteStr)
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+  const diasRestantes = diasHabilesTotales - diasTranscurridos;
+
+  const metasSupMes = metasSupData.filter(m => m.anio === anio && m.mes === mes);
+  const metaTotal = metasSupMes.reduce((a, m) => a + m.meta_activadas, 0);
+
+  if (metaTotal === 0) {
+    document.getElementById('avance-subtitle').textContent = `No hay metas cargadas para ${MESES_NOMBRE[mes-1]} ${anio}. Ve a metas.html para cargarlas.`;
+    document.getElementById('avance-tarjeta-principal').innerHTML = '';
+    document.getElementById('avance-semaforo-grid').innerHTML = '';
+    document.getElementById('avance-tabla').innerHTML = '';
+    document.getElementById('avance-detalle-agentes').innerHTML = '';
+    return;
+  }
+
+  const avancesPorSup = {};
+  SUPERVISORES.forEach(s => { avancesPorSup[s] = 0; });
+  const avancesPorAgente = {};
+
+  ventasData.forEach(r => {
+    if (!r.fecha_activacion) return;
+    if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
+    if (!SUPERVISORES.includes(r.supervisor)) return;
+    avancesPorSup[r.supervisor]++;
+    avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+  });
+
+  const avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
+
+  const finUltimaSem = new Date(fechaCorte);
+  const diaSem = finUltimaSem.getDay();
+  const finSem = new Date(finUltimaSem);
+  if (diaSem !== 6) {
+    finSem.setDate(finSem.getDate() - ((diaSem + 1) % 7));
+  }
+  const iniSem = new Date(finSem);
+  iniSem.setDate(iniSem.getDate() - 5);
+  const iniSemStr = iniSem.toISOString().split('T')[0];
+  const finSemStr = finSem > fechaCorte ? fechaCorteStr : finSem.toISOString().split('T')[0];
+
+  const diasUltSemana = calendarioData
+    .filter(d => d.fecha >= iniSemStr && d.fecha <= finSemStr)
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+  const avancesSemanaPorSup = {};
+  SUPERVISORES.forEach(s => { avancesSemanaPorSup[s] = 0; });
+  let avanceUltSem = 0;
+  ventasData.forEach(r => {
+    if (!r.fecha_activacion) return;
+    if (r.fecha_activacion < iniSemStr || r.fecha_activacion > finSemStr) return;
+    if (!SUPERVISORES.includes(r.supervisor)) return;
+    avancesSemanaPorSup[r.supervisor]++;
+    avanceUltSem++;
+  });
+
+  function proyectar(avanceSup, avanceSem, modo, diasTrans, diasRest, diasSem) {
+    if (modo === 'semana' && diasSem > 0) {
+      const ritmoSem = avanceSem / diasSem;
+      return Math.round(avanceSup + (ritmoSem * diasRest));
+    } else {
+      if (diasTrans === 0) return 0;
+      const ritmoMes = avanceSup / diasTrans;
+      return Math.round(ritmoMes * (diasTrans + diasRest));
+    }
+  }
+
+  const estadoTotal = {
+    meta: metaTotal,
+    avance: avanceTotal,
+    esperado: Math.round(metaTotal * diasTranscurridos / diasHabilesTotales),
+    pctCumplimiento: (avanceTotal / metaTotal * 100),
+    proyMes: proyectar(avanceTotal, avanceUltSem, 'mes', diasTranscurridos, diasRestantes, diasUltSemana),
+    proySem: proyectar(avanceTotal, avanceUltSem, 'semana', diasTranscurridos, diasRestantes, diasUltSemana),
+    diasHabilesTotales, diasTranscurridos, diasRestantes,
+    fechaCorte: fechaCorteStr
+  };
+
+  const supervisoresData = metasSupMes.map(m => {
+    const avance = avancesPorSup[m.supervisor] || 0;
+    const avanceSem = avancesSemanaPorSup[m.supervisor] || 0;
+    const esperado = Math.round(m.meta_activadas * diasTranscurridos / diasHabilesTotales);
+    const pctCumpl = (avance / m.meta_activadas * 100);
+    const pctEsperado = esperado > 0 ? (avance / esperado * 100) : 100;
+    const proyMes = proyectar(avance, avanceSem, 'mes', diasTranscurridos, diasRestantes, diasUltSemana);
+    const proySem = proyectar(avance, avanceSem, 'semana', diasTranscurridos, diasRestantes, diasUltSemana);
+    const ritmoNecesario = diasRestantes > 0 ? Math.max(0, m.meta_activadas - avance) / diasRestantes : 0;
+    let estado = 'verde';
+    if (pctEsperado < 85) estado = 'rojo';
+    else if (pctEsperado < 100) estado = 'amarillo';
+    return {
+      sup: m.supervisor,
+      meta: m.meta_activadas,
+      avance, avanceSem, esperado,
+      pctCumpl, pctEsperado,
+      proyMes, proySem,
+      ritmoNecesario,
+      estado,
+      diff: avance - esperado
+    };
+  }).sort((a, b) => b.pctEsperado - a.pctEsperado);
+
+  const mesNombre = MESES_NOMBRE[mes-1];
+  document.getElementById('avance-subtitle').textContent =
+    `${mesNombre} ${anio} · ${diasTranscurridos.toFixed(1)} de ${diasHabilesTotales.toFixed(1)} días hábiles transcurridos · Corte al ${fechaCorteStr}`;
+
+  window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr };
+
+  document.querySelectorAll('.proy-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.proy-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      proyeccionModo = btn.dataset.proy;
+      renderAvanceUI();
+    };
+  });
+
+  renderAvanceUI();
+}
+
+function renderAvanceUI() {
+  if (!window.__avanceData) return;
+  const { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, mesNombre, anio } = window.__avanceData;
+
+  const proy = proyeccionModo === 'mes' ? estadoTotal.proyMes : estadoTotal.proySem;
+  const pctProy = (proy / estadoTotal.meta * 100);
+  const estadoProy = pctProy >= 100 ? '🟢' : pctProy >= 95 ? '🟡' : '🔴';
+  const ritmoNecesarioTotal = diasRestantes > 0 ? Math.max(0, estadoTotal.meta - estadoTotal.avance) / diasRestantes : 0;
+  const pctAvanceTotal = estadoTotal.pctCumplimiento;
+  const pctBarraIdeal = diasTranscurridos / estadoTotal.diasHabilesTotales * 100;
+
+  document.getElementById('avance-tarjeta-principal').innerHTML = `
+    <div class="tarjeta-principal">
+      <div class="mes-titulo">${mesNombre} ${anio}</div>
+      <div class="dia-info">Día hábil ${diasTranscurridos.toFixed(1)} de ${estadoTotal.diasHabilesTotales.toFixed(1)} · Restan ${diasRestantes.toFixed(1)} días</div>
+
+      <div class="metricas-grid">
+        <div class="metrica">
+          <div class="metrica-label">Meta mensual</div>
+          <div class="metrica-valor">${estadoTotal.meta.toLocaleString()}</div>
+          <div class="metrica-sub">activadas</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-label">Avance</div>
+          <div class="metrica-valor">${estadoTotal.avance.toLocaleString()}</div>
+          <div class="metrica-sub">${pctAvanceTotal.toFixed(1)}% de meta</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-label">Esperado hoy</div>
+          <div class="metrica-valor">${estadoTotal.esperado.toLocaleString()}</div>
+          <div class="metrica-sub">proporcional al día</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-label">Ritmo necesario</div>
+          <div class="metrica-valor">${ritmoNecesarioTotal.toFixed(1)}</div>
+          <div class="metrica-sub">act/día hasta cierre</div>
+        </div>
+      </div>
+
+      <div class="barra-progreso">
+        <div class="barra-llena" style="width: ${Math.min(100, pctAvanceTotal)}%"></div>
+        <div class="barra-ideal" style="left: ${Math.min(100, pctBarraIdeal)}%" title="Punto ideal al día de hoy"></div>
+      </div>
+
+      <div class="proyeccion-box">
+        <div>
+          <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 2px;">Proyección al cierre</div>
+          <div style="font-size: 22px; font-weight: 800;">${proy.toLocaleString()} ${estadoProy}</div>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 2px;">vs meta</div>
+          <div style="font-size: 18px; font-weight: 700;">${pctProy.toFixed(1)}%</div>
+          <div style="font-size: 11px; opacity: 0.75;">${proy >= estadoTotal.meta ? `+${proy - estadoTotal.meta} sobre meta` : `${proy - estadoTotal.meta} bajo meta`}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('avance-semaforo-grid').innerHTML = supervisoresData.map(d => {
+    const proy = proyeccionModo === 'mes' ? d.proyMes : d.proySem;
+    const pctProy = d.meta > 0 ? (proy / d.meta * 100) : 0;
+    const pctAvance = Math.min(100, d.pctCumpl);
+    const pctBarra = Math.min(100, diasTranscurridos / estadoTotal.diasHabilesTotales * 100);
+    const emoji = d.estado === 'verde' ? '🟢' : d.estado === 'amarillo' ? '🟡' : '🔴';
+    const iconProy = pctProy >= 100 ? '✓' : pctProy >= 95 ? '⚠️' : '✗';
+    const colorProy = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
+
+    return `
+      <div class="semaforo-card ${d.estado}">
+        <div class="nombre">${emoji} ${d.sup}</div>
+        <div class="numeros">Meta ${d.meta} · Avance <strong>${d.avance}</strong> (${d.pctCumpl.toFixed(1)}%)</div>
+        <div class="barra">
+          <div class="barra-fill" style="width: ${pctAvance}%"></div>
+          <div class="barra-ideal" style="left: ${pctBarra}%"></div>
+        </div>
+        <div class="detalles">
+          <div class="detalle">
+            <div class="detalle-label">Proyección</div>
+            <div class="detalle-val" style="color: ${colorProy};">${proy} ${iconProy}</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">Ritmo necesario</div>
+            <div class="detalle-val">${d.ritmoNecesario.toFixed(1)}/día</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('avance-tabla').innerHTML = `
+    <thead>
+      <tr>
+        <th>Supervisor</th>
+        <th class="num">Meta</th>
+        <th class="num">Avance</th>
+        <th class="num">%</th>
+        <th class="num">Esperado</th>
+        <th class="num">Dif</th>
+        <th class="num">Ritmo necesario</th>
+        <th class="num">Proyección</th>
+        <th>Estatus</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${supervisoresData.map(d => {
+        const proy = proyeccionModo === 'mes' ? d.proyMes : d.proySem;
+        const pctProy = d.meta > 0 ? (proy / d.meta * 100) : 0;
+        const emoji = d.estado === 'verde' ? '🟢' : d.estado === 'amarillo' ? '🟡' : '🔴';
+        const diffClase = d.diff >= 0 ? 'delta-pos' : 'delta-neg';
+        const diffSign = d.diff >= 0 ? '+' : '';
+        const proyColor = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
+        return `<tr>
+          <td><strong>${d.sup}</strong></td>
+          <td class="num">${d.meta}</td>
+          <td class="num"><strong>${d.avance}</strong></td>
+          <td class="num">${d.pctCumpl.toFixed(1)}%</td>
+          <td class="num">${d.esperado}</td>
+          <td class="num ${diffClase}">${diffSign}${d.diff}</td>
+          <td class="num" style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
+          <td class="num" style="color: ${proyColor}; font-weight: 700;">${proy} (${pctProy.toFixed(0)}%)</td>
+          <td>${emoji} ${d.estado.toUpperCase()}</td>
+        </tr>`;
+      }).join('')}
+      <tr style="background: var(--bg); font-weight: 700;">
+        <td>TOTAL</td>
+        <td class="num">${estadoTotal.meta}</td>
+        <td class="num">${estadoTotal.avance}</td>
+        <td class="num">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
+        <td class="num">${estadoTotal.esperado}</td>
+        <td class="num ${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? 'delta-pos' : 'delta-neg'}">${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? '+' : ''}${estadoTotal.avance - estadoTotal.esperado}</td>
+        <td class="num">${ritmoNecesarioTotal.toFixed(1)}</td>
+        <td class="num">${proy} (${pctProy.toFixed(0)}%)</td>
+        <td>${estadoProy}</td>
+      </tr>
+    </tbody>
+  `;
+
+  renderTendenciaMes();
+  renderDetalleAgentes();
+}
+
+function renderTendenciaMes() {
+  if (!window.__avanceData) return;
+  const { estadoTotal, mes, anio, iniMesStr, fechaCorteStr } = window.__avanceData;
+
+  const diasDelMes = calendarioData
+    .filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const labels = [];
+  const ideal = [];
+  const real = [];
+  let acumIdeal = 0, acumReal = 0;
+
+  const activadasPorFecha = {};
+  ventasData.forEach(r => {
+    if (!r.fecha_activacion) return;
+    if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
+    if (!SUPERVISORES.includes(r.supervisor)) return;
+    activadasPorFecha[r.fecha_activacion] = (activadasPorFecha[r.fecha_activacion] || 0) + 1;
+  });
+
+  const metaDiaria = estadoTotal.meta / estadoTotal.diasHabilesTotales;
+
+  for (const d of diasDelMes) {
+    const diaNum = parseInt(d.fecha.split('-')[2]);
+    labels.push(diaNum);
+    acumIdeal += metaDiaria * parseFloat(d.factor_dia);
+    ideal.push(Math.round(acumIdeal));
+    if (d.fecha <= fechaCorteStr) {
+      acumReal += activadasPorFecha[d.fecha] || 0;
+      real.push(acumReal);
+    } else {
+      real.push(null);
+    }
+  }
+
+  const ctx = document.getElementById('chart-tendencia-mes');
+  if (window.__chartTendencia) window.__chartTendencia.destroy();
+  window.__chartTendencia = new Chart(ctx, {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'line', label: 'Ruta ideal', data: ideal,
+          borderColor: '#FF7200', backgroundColor: 'transparent',
+          borderWidth: 2, borderDash: [6, 4], pointRadius: 0, tension: 0.1
+        },
+        {
+          type: 'line', label: 'Avance real', data: real,
+          borderColor: '#16A34A', backgroundColor: 'rgba(22,163,74,0.1)',
+          borderWidth: 3, pointRadius: 3, tension: 0.2, fill: true, spanGaps: false
+        },
+        {
+          type: 'line', label: 'Meta', data: labels.map(() => estadoTotal.meta),
+          borderColor: '#002B5C', backgroundColor: 'transparent',
+          borderWidth: 1.5, borderDash: [2, 2], pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11, weight: '600' }, boxWidth: 20 } }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Día del mes', font: { size: 11 } }, grid: { display: false } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+      }
+    }
+  });
+}
+
+function renderDetalleAgentes() {
+  if (!window.__avanceData) return;
+  const { mes, anio, iniMesStr, fechaCorteStr, supervisoresData, diasTranscurridos, diasRestantes } = window.__avanceData;
+
+  const avancesAgente = {};
+  ventasData.forEach(r => {
+    if (!r.fecha_activacion) return;
+    if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
+    avancesAgente[r.ejecutivo] = (avancesAgente[r.ejecutivo] || 0) + 1;
+  });
+
+  const metasDelMes = metasAgeData.filter(m => m.anio === anio && m.mes === mes);
+  const agentesPorSup = {};
+  metasDelMes.forEach(m => {
+    if (!agentesPorSup[m.supervisor]) agentesPorSup[m.supervisor] = [];
+    const avance = avancesAgente[m.ejecutivo] || 0;
+    const pct = m.meta_activadas > 0 ? (avance / m.meta_activadas * 100) : 0;
+    agentesPorSup[m.supervisor].push({
+      ejecutivo: m.ejecutivo,
+      meta: m.meta_activadas,
+      avance, pct,
+      tipo: m.tipo_meta
+    });
+  });
+
+  const html = supervisoresData.map(s => {
+    const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => b.pct - a.pct);
+    if (agentes.length === 0) return '';
+    return `
+      <div class="agente-acordeon" data-sup="${s.sup}">
+        <div class="agente-acordeon-header" onclick="toggleAgenteAcordeon('${s.sup}')">
+          <span><span class="flecha">▸</span> <strong>${s.sup}</strong> · ${agentes.length} agentes · ${s.pctCumpl.toFixed(1)}% cumplimiento</span>
+          <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
+        </div>
+        <div class="agente-acordeon-body">
+          <table style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th>Agente</th>
+                <th class="num">Meta</th>
+                <th class="num">Avance</th>
+                <th class="num">%</th>
+                <th>Tipo</th>
+                <th>Estatus</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${agentes.map(a => {
+                const emoji = a.meta === 0 ? '➖' : a.pct >= 100 ? '🟢' : a.pct >= 85 ? '🟡' : '🔴';
+                const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo (6)' : 'Calculada';
+                return `<tr>
+                  <td>${a.ejecutivo}</td>
+                  <td class="num">${a.meta}</td>
+                  <td class="num"><strong>${a.avance}</strong></td>
+                  <td class="num">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
+                  <td>${tipoLbl}</td>
+                  <td>${emoji}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('avance-detalle-agentes').innerHTML = html;
+}
+
+function toggleAgenteAcordeon(sup) {
+  const el = document.querySelector(`.agente-acordeon[data-sup="${sup}"]`);
+  if (el) el.classList.toggle('abierto');
 }
 
 function renderProductividadAgente(wActual, iniStr, finStr) {
