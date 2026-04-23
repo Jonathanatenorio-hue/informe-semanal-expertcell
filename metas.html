@@ -280,6 +280,7 @@
     <button class="tab-btn" data-tab="plantilla">👥 Plantilla</button>
     <button class="tab-btn" data-tab="calendario">📅 Calendario</button>
     <button class="tab-btn" data-tab="asignaciones">🔀 Asignaciones</button>
+    <button class="tab-btn" data-tab="config">⚙️ Config</button>
   </div>
 
   <!-- TAB METAS -->
@@ -594,6 +595,58 @@
 
   </div>
   <!-- FIN TAB ASIGNACIONES -->
+
+  <!-- TAB CONFIG -->
+  <div class="tab-content" id="tab-config">
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">1</div>
+        Configuración de supervisores
+      </div>
+      <div class="alert info">
+        <div>ℹ️</div>
+        <div>
+          Aquí gestionas los supervisores de la operación. Puedes <strong>activar</strong> a los pendientes cuando los contrates,
+          <strong>cambiar sus nombres</strong> (reemplazar "Nuevo CC2 1" por el nombre real), o <strong>ajustar el tope</strong> de agentes.
+          Los cambios se reflejan automáticamente en el reporte.
+        </div>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <button id="btn-config-agregar" style="background: var(--green); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">+ Agregar supervisor nuevo</button>
+      </div>
+
+      <div id="config-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+
+      <div style="overflow-x: auto;">
+        <table id="config-tabla" style="font-size: 13px;">
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th style="text-align:center;">Centro</th>
+              <th class="num" style="text-align:center;">Tope</th>
+              <th class="num" style="text-align:center;">Actuales</th>
+              <th class="num" style="text-align:center;">Vacantes</th>
+              <th style="text-align:center;">Activo</th>
+              <th style="text-align:center;">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="config-tabla-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="section hidden" id="config-section-log">
+      <div class="section-title">
+        <div class="step-number">L</div>
+        Registro de operación
+      </div>
+      <div class="log" id="config-log"></div>
+    </div>
+
+  </div>
+  <!-- FIN TAB CONFIG -->
 
 </div>
 
@@ -1114,10 +1167,20 @@ async function procesarPlant() {
       const fechaIng = r['Fecha Ingreso'];
       const fechaBaja = r['Fecha Baja'];
 
-      const fechaIngStr = fechaIng instanceof Date ? fechaIng.toISOString().split('T')[0] :
-                         (typeof fechaIng === 'string' ? fechaIng.split('T')[0] : null);
-      const fechaBajaStr = fechaBaja instanceof Date ? fechaBaja.toISOString().split('T')[0] :
-                          (typeof fechaBaja === 'string' && fechaBaja ? fechaBaja.split('T')[0] : null);
+      function fechaLocal(d) {
+        if (d instanceof Date) {
+          const y = d.getFullYear();
+          if (y === 1900) return null;
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${dd}`;
+        }
+        if (typeof d === 'string' && d) return d.split('T')[0];
+        return null;
+      }
+
+      const fechaIngStr = fechaLocal(fechaIng);
+      const fechaBajaStr = fechaLocal(fechaBaja);
 
       agentes.push({
         nombre: r['Nombre'],
@@ -1880,6 +1943,213 @@ document.getElementById('asig-check-all').addEventListener('change', (e) => {
 document.getElementById('btn-asig-aplicar-bulk').addEventListener('click', aplicarCambioBulk);
 document.getElementById('btn-asig-guardar').addEventListener('click', guardarAsignaciones);
 document.getElementById('btn-asig-descartar').addEventListener('click', descartarCambiosAsig);
+
+const configState = { supervisores: [], plantillaActual: {} };
+
+function logConfig(msg, tipo = '') {
+  const el = document.getElementById('config-log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('config-section-log').classList.remove('hidden');
+}
+
+async function cargarConfig() {
+  const { data: sups, error } = await db
+    .from('supervisores_config')
+    .select('*')
+    .order('centro')
+    .order('orden');
+
+  if (error) {
+    logConfig('Error: ' + error.message, 'err');
+    return;
+  }
+
+  configState.supervisores = sups || [];
+
+  const hoy = new Date().toISOString().split('T')[0];
+  const { data: plant } = await db
+    .from('plantilla')
+    .select('nombre, supervisor, fecha_ingreso, fecha_baja');
+
+  const porSup = {};
+  (plant || []).forEach(p => {
+    if (p.fecha_ingreso && p.fecha_ingreso <= hoy && (!p.fecha_baja || p.fecha_baja > hoy)) {
+      porSup[p.supervisor] = (porSup[p.supervisor] || 0) + 1;
+    }
+  });
+  configState.plantillaActual = porSup;
+
+  renderConfigTabla();
+}
+
+function renderConfigTabla() {
+  const { supervisores, plantillaActual } = configState;
+
+  let totalTope = 0, totalActuales = 0, totalActivos = 0, totalPendientes = 0;
+  supervisores.forEach(s => {
+    totalTope += s.tope_agentes;
+    totalActuales += plantillaActual[s.supervisor] || 0;
+    if (s.activo) totalActivos++;
+    else totalPendientes++;
+  });
+
+  document.getElementById('config-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total supervisores</div>
+      <div class="stat-value">${supervisores.length}</div>
+      <div class="stat-sub">configurados</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Activos</div>
+      <div class="stat-value" style="color: var(--green);">${totalActivos}</div>
+      <div class="stat-sub">con equipo</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">Pendientes</div>
+      <div class="stat-value" style="color: var(--amber);">${totalPendientes}</div>
+      <div class="stat-sub">por contratar</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">Capacidad total</div>
+      <div class="stat-value" style="color: var(--att-blue);">${totalTope}</div>
+      <div class="stat-sub">${totalActuales} ocupadas (${(totalActuales/totalTope*100).toFixed(0)}%)</div>
+    </div>
+  `;
+
+  document.getElementById('config-tabla-body').innerHTML = supervisores.map(s => {
+    const actuales = plantillaActual[s.supervisor] || 0;
+    const vacantes = s.tope_agentes - actuales;
+    const colorVac = vacantes > 0 ? 'var(--amber)' : vacantes === 0 ? 'var(--green)' : 'var(--red)';
+    const bg = !s.activo ? 'background: #FEF3C7;' : '';
+    const vacText = vacantes > 0 ? `+${vacantes}` : vacantes === 0 ? '—' : vacantes;
+
+    return `<tr style="${bg}">
+      <td>
+        <input type="text" class="config-input-nombre" data-id="${s.id}" value="${s.supervisor}" style="width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-weight: 600;">
+      </td>
+      <td style="text-align:center;">
+        <select class="config-input-centro" data-id="${s.id}" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
+          <option value="CC2" ${s.centro === 'CC2' ? 'selected' : ''}>CC2</option>
+          <option value="JV" ${s.centro === 'JV' ? 'selected' : ''}>JV</option>
+        </select>
+      </td>
+      <td class="num" style="text-align:center;">
+        <input type="number" class="config-input-tope" data-id="${s.id}" value="${s.tope_agentes}" min="1" max="50" style="width: 60px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; text-align: center;">
+      </td>
+      <td class="num" style="text-align:center; font-weight:700;">${actuales}</td>
+      <td class="num" style="text-align:center; color:${colorVac}; font-weight:700;">${vacText}</td>
+      <td style="text-align:center;">
+        <label style="display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+          <input type="checkbox" class="config-input-activo" data-id="${s.id}" ${s.activo ? 'checked' : ''}>
+          <span style="font-size: 11px; color: ${s.activo ? 'var(--green)' : 'var(--text-soft)'}; font-weight: 600;">${s.activo ? 'Activo' : 'Pendiente'}</span>
+        </label>
+      </td>
+      <td style="text-align:center;">
+        <button class="btn-config-guardar" data-id="${s.id}" style="background: var(--green); color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 4px;">Guardar</button>
+        <button class="btn-config-eliminar" data-id="${s.id}" style="background: var(--red); color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; cursor: pointer;">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.querySelectorAll('.btn-config-guardar').forEach(btn => {
+    btn.onclick = () => guardarSupervisor(parseInt(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-config-eliminar').forEach(btn => {
+    btn.onclick = () => eliminarSupervisor(parseInt(btn.dataset.id));
+  });
+}
+
+async function guardarSupervisor(id) {
+  const nombreEl = document.querySelector(`.config-input-nombre[data-id="${id}"]`);
+  const centroEl = document.querySelector(`.config-input-centro[data-id="${id}"]`);
+  const topeEl = document.querySelector(`.config-input-tope[data-id="${id}"]`);
+  const activoEl = document.querySelector(`.config-input-activo[data-id="${id}"]`);
+
+  const original = configState.supervisores.find(s => s.id === id);
+  const nombreNuevo = nombreEl.value.trim();
+
+  if (!nombreNuevo) { alert('El nombre no puede estar vacío'); return; }
+
+  try {
+    const updates = {
+      supervisor: nombreNuevo,
+      centro: centroEl.value,
+      tope_agentes: parseInt(topeEl.value),
+      activo: activoEl.checked
+    };
+
+    if (original.supervisor !== nombreNuevo) {
+      const conf = confirm(`Estás cambiando el nombre de "${original.supervisor}" a "${nombreNuevo}".\n\n¿También quieres actualizar todas las asignaciones y metas con este nombre nuevo?`);
+      if (conf) {
+        await db.from('asignaciones_supervisor').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
+        await db.from('metas_supervisor').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
+        await db.from('metas_agente').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
+        await db.from('plantilla').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
+        logConfig(`Asignaciones, metas y plantilla actualizadas de "${original.supervisor}" a "${nombreNuevo}"`, 'ok');
+      }
+    }
+
+    const { error } = await db.from('supervisores_config').update(updates).eq('id', id);
+    if (error) throw error;
+
+    logConfig(`✓ ${nombreNuevo} guardado correctamente`, 'ok');
+    cargarConfig();
+  } catch (e) {
+    logConfig('Error: ' + e.message, 'err');
+    alert('Error al guardar: ' + e.message);
+  }
+}
+
+async function eliminarSupervisor(id) {
+  const s = configState.supervisores.find(x => x.id === id);
+  if (!s) return;
+  if (!confirm(`¿Eliminar a "${s.supervisor}" de la configuración?\n\nEsto NO borra sus asignaciones ni su equipo actual, solo lo quita de la lista de estructura objetivo.`)) return;
+
+  try {
+    const { error } = await db.from('supervisores_config').delete().eq('id', id);
+    if (error) throw error;
+    logConfig(`Eliminado: ${s.supervisor}`, 'warn');
+    cargarConfig();
+  } catch (e) {
+    logConfig('Error: ' + e.message, 'err');
+  }
+}
+
+async function agregarSupervisorNuevo() {
+  const nombre = prompt('Nombre del nuevo supervisor:');
+  if (!nombre || !nombre.trim()) return;
+  const centro = prompt('Centro (CC2 o JV):', 'CC2');
+  if (!centro || !['CC2', 'JV'].includes(centro.toUpperCase())) { alert('Centro debe ser CC2 o JV'); return; }
+  const topeStr = prompt('Tope de agentes:', '12');
+  const tope = parseInt(topeStr);
+  if (!tope || tope < 1) { alert('Tope inválido'); return; }
+
+  try {
+    const maxOrden = Math.max(...configState.supervisores.filter(s => s.centro === centro.toUpperCase()).map(s => s.orden || 0), 0);
+    const { error } = await db.from('supervisores_config').insert({
+      supervisor: nombre.trim(),
+      centro: centro.toUpperCase(),
+      tope_agentes: tope,
+      activo: false,
+      fecha_alta: new Date().toISOString().split('T')[0],
+      orden: maxOrden + 1
+    });
+    if (error) throw error;
+    logConfig(`Supervisor agregado: ${nombre}`, 'ok');
+    cargarConfig();
+  } catch (e) {
+    logConfig('Error: ' + e.message, 'err');
+    alert('Error: ' + e.message);
+  }
+}
+
+cargarConfig();
+document.getElementById('btn-config-agregar').addEventListener('click', agregarSupervisorNuevo);
 </script>
 </body>
 </html>
