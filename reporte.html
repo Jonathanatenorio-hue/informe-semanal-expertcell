@@ -573,6 +573,7 @@
         <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
         <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
         <button class="nav-btn" data-target="sec-historico-mensual">📅 Histórico meses</button>
+        <button class="nav-btn" data-target="sec-proyeccion-anual">🔮 Proyección anual</button>
         <button class="nav-btn" data-target="sec-atipicos">⚠️ Atípicos</button>
         <button class="nav-btn" data-target="sec-calendario">📅 Calendario</button>
         <button class="nav-btn" id="btn-exportar-pdf" style="margin-left: auto; background: var(--att-orange); color: white; border-color: #CC5A00;">📄 Exportar PDF</button>
@@ -962,6 +963,58 @@
       <div style="overflow-x: auto;">
         <table id="histmes-heatmap" class="heatmap"></table>
       </div>
+      </div>
+    </div>
+
+    <!-- PROYECCIÓN ANUAL -->
+    <div class="section collapsible" id="sec-proyeccion-anual">
+      <div class="section-title">Proyección de fin de año</div>
+      <div class="section-body">
+      <div class="section-subtitle">Modelo que proyecta las ventas esperadas de cada mes del año con base en plantilla estimada y productividad promedio. Incluye simulador para ajustar escenarios.</div>
+
+      <div id="proyanio-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0;"></div>
+
+      <div style="background: var(--bg); padding: 16px 20px; border-radius: 10px; margin: 20px 0;">
+        <div style="font-weight: 700; font-size: 13px; margin-bottom: 12px; color: var(--att-navy);">🎛️ Simulador de escenarios</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
+          <div>
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Plantilla objetivo (fin de año)</label>
+            <input type="number" id="proy-plantilla-obj" min="50" max="300" step="1" value="140" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px;">
+            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Agentes al cierre de diciembre</div>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Productividad promedio</label>
+            <input type="number" id="proy-productividad" min="5" max="25" step="0.5" value="10" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px;">
+            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Ventas/agente/mes (hoy ~9.8)</div>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Crecimiento neto mensual</label>
+            <input type="number" id="proy-crecimiento" min="0" max="30" step="1" value="8" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px;">
+            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Agentes nuevos - bajas (mes)</div>
+          </div>
+          <div>
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Escenario</label>
+            <select id="proy-escenario" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px; background: white;">
+              <option value="realista">Realista</option>
+              <option value="pesimista">Pesimista</option>
+              <option value="optimista">Optimista</option>
+              <option value="meta">Llegar a meta (1,500/mes)</option>
+            </select>
+            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Preset automático</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 20px 0 8px; color: var(--att-navy);">Proyección mensual</div>
+      <div class="chart-wrap" style="height: 360px;"><canvas id="chart-proyanio"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Detalle mes a mes</div>
+      <div style="overflow-x: auto;">
+        <table id="proyanio-tabla"></table>
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">🎯 Diagnóstico y recomendaciones</div>
+      <div id="proyanio-diagnostico"></div>
       </div>
     </div>
 
@@ -1416,6 +1469,7 @@ function renderReporte(wActual, wCurrent) {
   renderRecuperacion();
   renderRotacion();
   renderHistoricoMensual();
+  renderProyeccionAnual();
   renderAtipicos();
   renderCalendario(wActual, wCurrent);
 }
@@ -2045,13 +2099,26 @@ function renderTendenciaMes() {
 
 function renderDetalleAgentes() {
   if (!window.__avanceData) return;
-  const { mes, anio, iniMesStr, fechaCorteStr, supervisoresData, diasTranscurridos, diasRestantes } = window.__avanceData;
+  const { mes, anio, iniMesStr, fechaCorteStr, supervisoresData, diasTranscurridos, diasRestantes, estadoTotal } = window.__avanceData;
 
-  const avancesAgente = {};
+  const actPorAgente = {};
+  const progPorAgente = {};
+  const cancPorAgente = {};
+  const diasActivosPorAgente = {};
+
   ventasData.forEach(r => {
-    if (!r.fecha_activacion) return;
-    if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
-    avancesAgente[r.ejecutivo] = (avancesAgente[r.ejecutivo] || 0) + 1;
+    if (!r.ejecutivo) return;
+    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+      actPorAgente[r.ejecutivo] = (actPorAgente[r.ejecutivo] || 0) + 1;
+    }
+    if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
+      progPorAgente[r.ejecutivo] = (progPorAgente[r.ejecutivo] || 0) + 1;
+      if (!diasActivosPorAgente[r.ejecutivo]) diasActivosPorAgente[r.ejecutivo] = new Set();
+      diasActivosPorAgente[r.ejecutivo].add(r.fecha_bo);
+    }
+    if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
+      cancPorAgente[r.ejecutivo] = (cancPorAgente[r.ejecutivo] || 0) + 1;
+    }
   });
 
   const metasDelMes = metasAgeData.filter(m =>
@@ -2059,61 +2126,161 @@ function renderDetalleAgentes() {
     m.mes === mes &&
     SUPERVISORES.includes(m.supervisor)
   );
+
   const agentesPorSup = {};
   metasDelMes.forEach(m => {
     if (!agentesPorSup[m.supervisor]) agentesPorSup[m.supervisor] = [];
-    const avance = avancesAgente[m.ejecutivo] || 0;
+    const avance = actPorAgente[m.ejecutivo] || 0;
+    const programadas = progPorAgente[m.ejecutivo] || 0;
+    const canceladas = cancPorAgente[m.ejecutivo] || 0;
+    const diasActivos = diasActivosPorAgente[m.ejecutivo] ? diasActivosPorAgente[m.ejecutivo].size : 0;
     const pct = m.meta_activadas > 0 ? (avance / m.meta_activadas * 100) : 0;
+    const ritmoActual = diasTranscurridos > 0 ? avance / diasTranscurridos : 0;
+    const proyeccion = Math.round(ritmoActual * (diasTranscurridos + diasRestantes));
+    const faltan = Math.max(0, m.meta_activadas - avance);
+    const ritmoNecesario = diasRestantes > 0 ? faltan / diasRestantes : 0;
+
     agentesPorSup[m.supervisor].push({
       ejecutivo: m.ejecutivo,
       meta: m.meta_activadas,
-      avance, pct,
+      avance, programadas, canceladas, diasActivos,
+      pct, ritmoActual, proyeccion, ritmoNecesario,
       tipo: m.tipo_meta
     });
   });
 
+  window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes, anio };
+
   const html = supervisoresData.map(s => {
     const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => b.pct - a.pct);
     if (agentes.length === 0) return '';
+
+    const criticos = agentes.filter(a => a.meta > 0 && a.pct < 50).length;
+    const cumplidos = agentes.filter(a => a.meta > 0 && a.pct >= 100).length;
+    const enRiesgo = agentes.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
+
+    const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
+
     return `
       <div class="agente-acordeon" data-sup="${s.sup}">
         <div class="agente-acordeon-header" onclick="toggleAgenteAcordeon('${s.sup}')">
-          <span><span class="flecha">▸</span> <strong>${s.sup}</strong> · ${agentes.length} agentes · ${s.pctCumpl.toFixed(1)}% cumplimiento</span>
+          <span><span class="flecha">▸</span> <strong style="color: ${colorEstado};">${s.sup}</strong>
+            <span style="margin-left: 10px; font-size: 12px; color: var(--text-soft);">
+              ${agentes.length} agentes ·
+              ${s.pctCumpl.toFixed(1)}% cumplimiento ·
+              ${cumplidos > 0 ? `<span style="color:var(--green);font-weight:600;">✓ ${cumplidos} al 100%</span> · ` : ''}
+              ${enRiesgo > 0 ? `<span style="color:var(--amber);font-weight:600;">⚠ ${enRiesgo} en riesgo</span> · ` : ''}
+              ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span>` : ''}
+            </span>
+          </span>
           <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
         </div>
         <div class="agente-acordeon-body">
-          <table style="font-size: 12px;">
-            <thead>
-              <tr>
-                <th>Agente</th>
-                <th class="num">Meta</th>
-                <th class="num">Avance</th>
-                <th class="num">%</th>
-                <th>Tipo</th>
-                <th>Estatus</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${agentes.map(a => {
-                const emoji = a.meta === 0 ? '➖' : a.pct >= 100 ? '🟢' : a.pct >= 85 ? '🟡' : '🔴';
-                const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo (6)' : 'Calculada';
-                return `<tr>
-                  <td>${a.ejecutivo}</td>
-                  <td class="num">${a.meta}</td>
-                  <td class="num"><strong>${a.avance}</strong></td>
-                  <td class="num">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
-                  <td>${tipoLbl}</td>
-                  <td>${emoji}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
+          <div style="margin-bottom: 10px; display: flex; justify-content: flex-end;">
+            <button class="btn-descarga-equipo" data-sup="${s.sup}" style="background: var(--green); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">📥 Descargar Excel</button>
+          </div>
+          <div style="overflow-x: auto;">
+            <table style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th style="text-align:center;">#</th>
+                  <th>Agente</th>
+                  <th style="text-align:center;">Tipo</th>
+                  <th class="num" style="text-align:center;">Días act.</th>
+                  <th class="num" style="text-align:center;">Programadas</th>
+                  <th class="num" style="text-align:center;">Activadas</th>
+                  <th class="num" style="text-align:center;">Canceladas</th>
+                  <th class="num" style="text-align:center;">Meta</th>
+                  <th class="num" style="text-align:center;">% Mes</th>
+                  <th class="num" style="text-align:center;">Ritmo actual</th>
+                  <th class="num" style="text-align:center;">Ritmo nec.</th>
+                  <th class="num" style="text-align:center;">Proy.</th>
+                  <th style="text-align:center;">Estatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${agentes.map((a, idx) => {
+                  let emoji, colorFila = '';
+                  if (a.meta === 0) {
+                    emoji = '➖';
+                  } else if (a.pct >= 100) {
+                    emoji = '🟢';
+                  } else if (a.pct >= 85) {
+                    emoji = '🟡';
+                  } else if (a.pct >= 50) {
+                    emoji = '🟠';
+                  } else {
+                    emoji = '🚨';
+                    colorFila = 'background: #FEE2E2;';
+                  }
+                  const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Exp';
+                  const tipoBadge = a.tipo === 'sin_meta' ? 'background:#E5E7EB;color:#374151;' : a.tipo === 'fija_6' ? 'background:#DBEAFE;color:#1E40AF;' : 'background:#DCFCE7;color:#15803D;';
+                  const colorPct = a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)';
+
+                  return `<tr style="${colorFila}">
+                    <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
+                    <td>${a.ejecutivo}</td>
+                    <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
+                    <td class="num" style="text-align:center;">${a.diasActivos}</td>
+                    <td class="num" style="text-align:center;">${a.programadas}</td>
+                    <td class="num" style="text-align:center;"><strong>${a.avance}</strong></td>
+                    <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
+                    <td class="num" style="text-align:center;">${a.meta}</td>
+                    <td class="num" style="text-align:center; color:${colorPct}; font-weight:700;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
+                    <td class="num" style="text-align:center;">${a.ritmoActual.toFixed(1)}</td>
+                    <td class="num" style="text-align:center; ${a.meta > 0 && a.ritmoNecesario > a.ritmoActual * 1.5 ? 'color:var(--red);font-weight:700;' : ''}">${a.meta > 0 ? a.ritmoNecesario.toFixed(1) : '—'}</td>
+                    <td class="num" style="text-align:center; font-weight:700;">${a.proyeccion}</td>
+                    <td style="text-align:center;">${emoji}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     `;
   }).join('');
 
   document.getElementById('avance-detalle-agentes').innerHTML = html;
+
+  document.querySelectorAll('.btn-descarga-equipo').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      descargarEquipoExcel(btn.dataset.sup);
+    };
+  });
+}
+
+function descargarEquipoExcel(supervisor) {
+  if (!window.__detalleAgentesData) return;
+  const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
+  const agentes = agentesPorSup[supervisor] || [];
+  if (agentes.length === 0) { alert('Sin datos para este supervisor'); return; }
+
+  const ordenados = [...agentes].sort((a, b) => b.pct - a.pct);
+  const filas = ordenados.map((a, idx) => ({
+    'Ranking': idx + 1,
+    'Agente': a.ejecutivo,
+    'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+    'Dias activos': a.diasActivos,
+    'Programadas': a.programadas,
+    'Activadas': a.avance,
+    'Canceladas': a.canceladas,
+    'Meta': a.meta,
+    '% Mes': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
+    'Ritmo actual (/dia)': Number(a.ritmoActual.toFixed(2)),
+    'Ritmo necesario (/dia)': a.meta > 0 ? Number(a.ritmoNecesario.toFixed(2)) : null,
+    'Proyeccion cierre': a.proyeccion,
+    'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(filas);
+  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:12},{wch:10},{wch:11},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, supervisor);
+
+  const mesLabel = MESES_NOMBRE[mes - 1];
+  XLSX.writeFile(wb, `equipo_${supervisor}_${mesLabel}_${anio}.xlsx`);
 }
 
 function toggleAgenteAcordeon(sup) {
@@ -3691,6 +3858,299 @@ function renderHistoricoMensual() {
   });
   hHtml += '</tbody>';
   heatmap.innerHTML = hHtml;
+}
+
+function renderProyeccionAnual() {
+  const hoy = new Date();
+  const anioActual = hoy.getFullYear();
+
+  // Datos históricos: plantilla y ventas reales por mes
+  const datosHist = {};
+  for (let m = 1; m <= 12; m++) {
+    datosHist[m] = { ventas: 0, agentesFinMes: 0, meta: 0, cumplido: 0 };
+  }
+
+  ventasData.forEach(r => {
+    if (!r.fecha_activacion) return;
+    const fecha = r.fecha_activacion.split('-');
+    if (parseInt(fecha[0]) !== anioActual) return;
+    const mes = parseInt(fecha[1]);
+    if (SUPERVISORES.includes(r.supervisor)) {
+      datosHist[mes].ventas++;
+    }
+  });
+
+  metasSupData.filter(m => m.anio === anioActual && SUPERVISORES.includes(m.supervisor)).forEach(m => {
+    datosHist[m.mes].meta += m.meta_activadas;
+  });
+
+  // Plantilla activa al último día de cada mes
+  for (let m = 1; m <= 12; m++) {
+    const ultimoDiaMes = new Date(anioActual, m, 0).toISOString().split('T')[0];
+    if (ultimoDiaMes > hoy.toISOString().split('T')[0]) continue;
+    datosHist[m].agentesFinMes = plantillaData.filter(p =>
+      p.fecha_ingreso && p.fecha_ingreso <= ultimoDiaMes &&
+      (!p.fecha_baja || p.fecha_baja >= ultimoDiaMes) &&
+      SUPERVISORES.includes(p.supervisor)
+    ).length;
+  }
+
+  const mesActualNum = hoy.getMonth() + 1;
+
+  // Setup del simulador
+  const setEscenario = (esc) => {
+    if (esc === 'realista') {
+      document.getElementById('proy-plantilla-obj').value = 130;
+      document.getElementById('proy-productividad').value = 10;
+      document.getElementById('proy-crecimiento').value = 7;
+    } else if (esc === 'pesimista') {
+      document.getElementById('proy-plantilla-obj').value = 110;
+      document.getElementById('proy-productividad').value = 9;
+      document.getElementById('proy-crecimiento').value = 4;
+    } else if (esc === 'optimista') {
+      document.getElementById('proy-plantilla-obj').value = 155;
+      document.getElementById('proy-productividad').value = 12;
+      document.getElementById('proy-crecimiento').value = 10;
+    } else if (esc === 'meta') {
+      document.getElementById('proy-plantilla-obj').value = 140;
+      document.getElementById('proy-productividad').value = 11;
+      document.getElementById('proy-crecimiento').value = 9;
+    }
+    calcularProyeccion();
+  };
+
+  document.getElementById('proy-escenario').onchange = (e) => setEscenario(e.target.value);
+  document.getElementById('proy-plantilla-obj').oninput = calcularProyeccion;
+  document.getElementById('proy-productividad').oninput = calcularProyeccion;
+  document.getElementById('proy-crecimiento').oninput = calcularProyeccion;
+
+  function calcularProyeccion() {
+    const plantillaObj = parseInt(document.getElementById('proy-plantilla-obj').value) || 140;
+    const productividad = parseFloat(document.getElementById('proy-productividad').value) || 10;
+    const crecimiento = parseInt(document.getElementById('proy-crecimiento').value) || 8;
+
+    // Plantilla actual (hoy)
+    const hoyStr = hoy.toISOString().split('T')[0];
+    const plantillaHoy = plantillaData.filter(p =>
+      p.fecha_ingreso && p.fecha_ingreso <= hoyStr &&
+      (!p.fecha_baja || p.fecha_baja >= hoyStr) &&
+      SUPERVISORES.includes(p.supervisor)
+    ).length;
+
+    // Proyección mes a mes
+    const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const proyeccion = [];
+    let plantillaProy = plantillaHoy;
+
+    for (let m = 1; m <= 12; m++) {
+      const esPasado = m < mesActualNum;
+      const esEnCurso = m === mesActualNum;
+      const esFuturo = m > mesActualNum;
+
+      let agentes, ventas, meta;
+
+      if (esPasado) {
+        agentes = datosHist[m].agentesFinMes;
+        ventas = datosHist[m].ventas;
+        meta = datosHist[m].meta;
+      } else if (esEnCurso) {
+        agentes = plantillaHoy;
+        ventas = datosHist[m].ventas;
+        meta = datosHist[m].meta;
+      } else {
+        plantillaProy = Math.min(plantillaObj, plantillaProy + crecimiento);
+        agentes = plantillaProy;
+        const nuevosDelMes = Math.min(crecimiento, plantillaObj - (plantillaProy - crecimiento));
+        const agentesProductivos = Math.max(0, agentes - nuevosDelMes) + (nuevosDelMes * 0.3);
+        ventas = Math.round(agentesProductivos * productividad);
+        meta = 0;
+      }
+
+      proyeccion.push({
+        mes: m, nombre: meses[m-1], agentes,
+        ventas, meta, esPasado, esEnCurso, esFuturo
+      });
+    }
+
+    const totalVentas = proyeccion.reduce((a, p) => a + p.ventas, 0);
+    const totalReales = proyeccion.filter(p => p.esPasado || p.esEnCurso).reduce((a, p) => a + p.ventas, 0);
+    const totalProyectadas = proyeccion.filter(p => p.esFuturo).reduce((a, p) => a + p.ventas, 0);
+    const ventasJulio = proyeccion[6].ventas;
+    const llegaAObjetivo = ventasJulio >= 1500;
+    const mesAlcanzaMeta = proyeccion.findIndex(p => p.esFuturo && p.ventas >= 1500);
+
+    // Tarjetas
+    document.getElementById('proyanio-resumen-cards').innerHTML = `
+      <div class="stat-card">
+        <div class="stat-label">Total año proyectado</div>
+        <div class="stat-value">${totalVentas.toLocaleString()}</div>
+        <div class="stat-sub">${totalReales.toLocaleString()} reales + ${totalProyectadas.toLocaleString()} proy.</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Plantilla hoy</div>
+        <div class="stat-value">${plantillaHoy}</div>
+        <div class="stat-sub">a objetivo de ${plantillaObj}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: ${ventasJulio >= 1500 ? 'var(--green)' : 'var(--red)'};">
+        <div class="stat-label">🎯 Julio proyectado</div>
+        <div class="stat-value" style="color: ${ventasJulio >= 1500 ? 'var(--green)' : 'var(--red)'};">${ventasJulio.toLocaleString()}</div>
+        <div class="stat-sub">${ventasJulio >= 1500 ? '✓ llega a 1,500' : `${1500 - ventasJulio} por debajo de 1,500`}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: ${mesAlcanzaMeta >= 0 ? 'var(--green)' : 'var(--amber)'};">
+        <div class="stat-label">¿Cuándo 1,500?</div>
+        <div class="stat-value" style="color: ${mesAlcanzaMeta >= 0 ? 'var(--green)' : 'var(--amber)'}; font-size: 22px;">${mesAlcanzaMeta >= 0 ? meses[mesAlcanzaMeta] : 'No este año'}</div>
+        <div class="stat-sub">${mesAlcanzaMeta >= 0 ? 'primer mes que alcanza' : 'con este escenario'}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Dic proyectado</div>
+        <div class="stat-value" style="color: var(--att-orange);">${proyeccion[11].ventas.toLocaleString()}</div>
+        <div class="stat-sub">${proyeccion[11].agentes} agentes × ${productividad}/mes</div>
+      </div>
+    `;
+
+    // Gráfica
+    const ctx = document.getElementById('chart-proyanio');
+    if (window.__chartProyAnio) window.__chartProyAnio.destroy();
+    window.__chartProyAnio = new Chart(ctx, {
+      data: {
+        labels: proyeccion.map(p => p.nombre.slice(0, 3)),
+        datasets: [
+          {
+            type: 'bar', label: 'Ventas reales', data: proyeccion.map(p => p.esPasado || p.esEnCurso ? p.ventas : null),
+            backgroundColor: 'rgba(22, 163, 74, 0.8)', borderColor: '#15803D', borderWidth: 1, borderRadius: 4, yAxisID: 'y'
+          },
+          {
+            type: 'bar', label: 'Ventas proyectadas', data: proyeccion.map(p => p.esFuturo ? p.ventas : null),
+            backgroundColor: 'rgba(255, 114, 0, 0.6)', borderColor: '#CC5A00', borderWidth: 1, borderRadius: 4, yAxisID: 'y'
+          },
+          {
+            type: 'line', label: 'Objetivo 1,500', data: Array(12).fill(1500),
+            borderColor: '#DC2626', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false, yAxisID: 'y'
+          },
+          {
+            type: 'line', label: 'Plantilla', data: proyeccion.map(p => p.agentes),
+            borderColor: '#002B5C', backgroundColor: 'rgba(0,43,92,0.1)', borderWidth: 2, pointRadius: 4, tension: 0.3, fill: false, yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 11, weight: '600' }, boxWidth: 18 } }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { position: 'left', beginAtZero: true, title: { display: true, text: 'Ventas' } },
+          y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Agentes' }, grid: { display: false } }
+        }
+      }
+    });
+
+    // Tabla
+    let html = `<thead><tr>
+      <th>Mes</th>
+      <th class="num">Agentes</th>
+      <th class="num">Meta</th>
+      <th class="num">Ventas</th>
+      <th class="num">Vs objetivo 1,500</th>
+      <th class="num">Prom/agente</th>
+      <th>Estatus</th>
+    </tr></thead><tbody>`;
+
+    proyeccion.forEach(p => {
+      const vs1500 = p.ventas - 1500;
+      const prom = p.agentes > 0 ? (p.ventas / p.agentes).toFixed(1) : '—';
+      let estatus, color;
+      if (p.esPasado) { estatus = 'Cerrado'; color = 'var(--text-soft)'; }
+      else if (p.esEnCurso) { estatus = 'En curso'; color = 'var(--amber)'; }
+      else if (p.ventas >= 1500) { estatus = '🎯 Meta lograda'; color = 'var(--green)'; }
+      else { estatus = 'Proyectado'; color = 'var(--att-blue)'; }
+
+      const bg = p.esFuturo ? 'background: #FEF3C7;' : '';
+      const vsColor = vs1500 >= 0 ? 'var(--green)' : 'var(--red)';
+      html += `<tr style="${bg}">
+        <td><strong>${p.nombre}</strong></td>
+        <td class="num">${p.agentes}</td>
+        <td class="num">${p.meta > 0 ? p.meta : '—'}</td>
+        <td class="num" style="font-weight:700;">${p.ventas.toLocaleString()}</td>
+        <td class="num" style="color:${vsColor}; font-weight:700;">${vs1500 >= 0 ? '+' : ''}${vs1500}</td>
+        <td class="num">${prom}</td>
+        <td style="color:${color}; font-weight:700;">${estatus}</td>
+      </tr>`;
+    });
+    html += '</tbody>';
+    document.getElementById('proyanio-tabla').innerHTML = html;
+
+    // Diagnóstico
+    const diagnostico = generarDiagnostico(proyeccion, plantillaHoy, plantillaObj, productividad, crecimiento);
+    document.getElementById('proyanio-diagnostico').innerHTML = diagnostico;
+  }
+
+  function generarDiagnostico(proyeccion, plantillaHoy, plantillaObj, productividad, crecimiento) {
+    const ventasJulio = proyeccion[6].ventas;
+    const ventasDic = proyeccion[11].ventas;
+    const gap = 1500 - ventasJulio;
+
+    const mesesCerrados = proyeccion.filter(p => p.esPasado);
+    const totalVentas = mesesCerrados.reduce((a, p) => a + p.ventas, 0);
+    const totalMeta = mesesCerrados.reduce((a, p) => a + p.meta, 0);
+    const pctHist = totalMeta > 0 ? (totalVentas / totalMeta * 100) : 0;
+
+    let alertas = [];
+    if (ventasJulio < 1500) {
+      alertas.push(`<li><strong>🚨 Julio no llega a 1,500:</strong> Con el escenario actual, julio cierra en ${ventasJulio}. Te faltan ${gap} ventas.</li>`);
+      const agentesNecesarios = Math.ceil(1500 / productividad);
+      alertas.push(`<li><strong>Opción A:</strong> Aumentar plantilla a ${agentesNecesarios} agentes manteniendo productividad de ${productividad}.</li>`);
+      const prodNec = (1500 / plantillaObj).toFixed(1);
+      alertas.push(`<li><strong>Opción B:</strong> Con ${plantillaObj} agentes, subir productividad a ${prodNec}/mes.</li>`);
+    }
+
+    const rotacionProm = crecimiento < 5 ? 'baja' : crecimiento < 10 ? 'moderada' : 'alta';
+    if (crecimiento < 7) {
+      alertas.push(`<li><strong>⚠️ Crecimiento neto lento:</strong> Con ${crecimiento} agentes/mes neto, tardarás ${Math.ceil((plantillaObj - plantillaHoy) / crecimiento)} meses en llegar a ${plantillaObj}.</li>`);
+    }
+
+    if (productividad < 10) {
+      alertas.push(`<li><strong>📉 Productividad baja:</strong> ${productividad}/agente/mes está muy por debajo del objetivo de 20. Urge mejorar el onboarding y reducir rotación temprana.</li>`);
+    }
+
+    if (ventasDic < 1700) {
+      alertas.push(`<li><strong>⚠️ Cierre de año modesto:</strong> Con este escenario, diciembre cierra en ${ventasDic}. Necesitas un plan más agresivo.</li>`);
+    }
+
+    const recomendaciones = [
+      `<strong>Contrataciones:</strong> Mantén un flujo de ingresos brutos de ${crecimiento + 7}/mes (considerando rotación).`,
+      `<strong>Supervisores estrella:</strong> Identifica a los supervisores con mejor supervivencia de curva (>85%) y aumenta su equipo primero.`,
+      `<strong>Productividad:</strong> Cada +1 en productividad promedio = +${plantillaObj} ventas/mes al cierre del año.`,
+      `<strong>Seguimiento:</strong> Revisa esta proyección cada semana ajustando los valores según resultados reales.`
+    ];
+
+    return `
+      <div class="alert ${ventasJulio >= 1500 ? 'success' : 'warn'}">
+        <div>${ventasJulio >= 1500 ? '✅' : '⚠️'}</div>
+        <div>
+          <strong>Resumen del escenario:</strong><br>
+          ${ventasJulio >= 1500 ?
+            `Con estos parámetros SÍ llegas a 1,500 en julio. Julio proyectado: <strong>${ventasJulio}</strong>. Cierre de año: <strong>${ventasDic}</strong>.` :
+            `Con estos parámetros NO llegas a 1,500 en julio. Julio: <strong>${ventasJulio}</strong> (faltan ${gap}). Cierre de año: <strong>${ventasDic}</strong>.`}
+          <br>Histórico ${anioActual}: ${pctHist.toFixed(1)}% de cumplimiento en meses cerrados.
+        </div>
+      </div>
+      ${alertas.length > 0 ? `
+      <div style="margin-top: 14px; padding: 14px 18px; background: #FEF3C7; border-left: 4px solid var(--amber); border-radius: 8px;">
+        <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #92400E;">🚨 Alertas:</div>
+        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #92400E;">${alertas.join('')}</ul>
+      </div>` : ''}
+      <div style="margin-top: 14px; padding: 14px 18px; background: #DBEAFE; border-left: 4px solid var(--att-blue); border-radius: 8px;">
+        <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px; color: #1E40AF;">💡 Recomendaciones de acción:</div>
+        <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #1E40AF;">
+          ${recomendaciones.map(r => `<li>${r}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  }
+
+  calcularProyeccion();
 }
 
 function renderAtipicos() {
