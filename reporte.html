@@ -622,6 +622,69 @@
       <div class="chart-wrap" style="height: 280px;"><canvas id="chart-flujo-evolucion"></canvas></div>
     </div>
 
+    <!-- SEGUIMIENTO DE CANCELADAS -->
+    <div class="section">
+      <div class="section-title">Seguimiento de canceladas</div>
+      <div class="section-subtitle">Rastrea qué canceladas ya se recuperaron (el cliente volvió a comprar y se activó) vs las que siguen perdidas. El cruce se hace por número de teléfono del cliente.</div>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+        <select id="recup-periodo-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;"></select>
+      </div>
+
+      <div id="recup-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Recuperación por supervisor</div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="text-align:center;">Supervisor</th>
+            <th rowspan="2" class="num" style="text-align:center;">Canceladas</th>
+            <th colspan="3" class="center col-divider" style="background: var(--att-blue-dark);">Estatus</th>
+            <th rowspan="2" class="num col-divider" style="text-align:center;">% Recuperación</th>
+          </tr>
+          <tr class="subhead">
+            <th class="num col-divider" style="text-align:center; background:#16A34A;">Recuperadas</th>
+            <th class="num" style="text-align:center; background:#D97706;">En recuperación</th>
+            <th class="num" style="text-align:center; background:#DC2626;">Perdidas</th>
+          </tr>
+        </thead>
+        <tbody id="recup-tabla-body"></tbody>
+        <tfoot id="recup-tabla-foot"></tfoot>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Lista accionable: canceladas perdidas</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Estas canceladas no tienen ninguna venta posterior del mismo cliente. Son oportunidades de recuperación directa.</div>
+      <div style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Filtrar por supervisor:</span>
+        <select id="recup-sup-filter" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
+          <option value="all">Todos</option>
+          <option value="Alan">Alan</option>
+          <option value="Alfred">Alfred</option>
+          <option value="Carlos">Carlos</option>
+          <option value="Jorge">Jorge</option>
+          <option value="Luisa">Luisa</option>
+          <option value="Reyna">Reyna</option>
+        </select>
+        <span id="recup-perdidas-count" style="font-size: 13px; color: var(--text-soft); font-weight: 600;"></span>
+      </div>
+      <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table id="recup-perdidas-tabla" style="font-size: 12.5px;">
+          <thead style="position: sticky; top: 0; z-index: 1;">
+            <tr>
+              <th style="text-align:center;">Teléfono</th>
+              <th style="text-align:center;">Ejecutivo</th>
+              <th style="text-align:center;">Supervisor</th>
+              <th style="text-align:center;">Fecha BO</th>
+              <th style="text-align:center;">Fecha cancelación</th>
+              <th class="num" style="text-align:center;">Días sin recuperar</th>
+            </tr>
+          </thead>
+          <tbody id="recup-perdidas-body"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- CALENDARIO -->
     <div class="section">
       <div class="section-title">Explorar otras semanas</div>
@@ -692,7 +755,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
+      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus, telefono')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
@@ -935,6 +998,7 @@ function renderReporte(wActual, wCurrent) {
   renderEstadoSemanas(wActual);
   renderHistoricoSupervisores();
   renderFlujoEntrega();
+  renderRecuperacion();
   renderCalendario(wActual, wCurrent);
 }
 
@@ -2218,6 +2282,187 @@ function renderFlujoEvolucion(conDias) {
       }
     }
   });
+}
+
+function renderRecuperacion() {
+  const canceladas = ventasData.filter(r =>
+    r.estatus === 'cancelada' &&
+    r.fecha_bo && r.fecha_cancelacion &&
+    r.telefono &&
+    SUPERVISORES.includes(r.supervisor)
+  );
+
+  const ventasPorTelefono = {};
+  ventasData.forEach(r => {
+    if (!r.telefono) return;
+    if (!ventasPorTelefono[r.telefono]) ventasPorTelefono[r.telefono] = [];
+    ventasPorTelefono[r.telefono].push(r);
+  });
+
+  const conEstatus = canceladas.map(c => {
+    const otras = (ventasPorTelefono[c.telefono] || []).filter(v => v.folio !== c.folio);
+    const posteriores = otras.filter(v => v.fecha_bo > c.fecha_cancelacion);
+
+    let estatusRecup = 'perdida';
+    if (posteriores.some(v => v.estatus === 'activada')) estatusRecup = 'recuperada';
+    else if (posteriores.length > 0) estatusRecup = 'en_recuperacion';
+
+    const diasSinRecuperar = Math.floor((new Date() - new Date(c.fecha_cancelacion + 'T12:00:00')) / (1000 * 60 * 60 * 24));
+
+    return {
+      ...c,
+      estatusRecup,
+      diasSinRecuperar
+    };
+  });
+
+  window.__recupData = conEstatus;
+
+  const mesesDisponibles = new Set();
+  conEstatus.forEach(r => mesesDisponibles.add(r.fecha_cancelacion.substring(0, 7)));
+  const mesesOrdenados = [...mesesDisponibles].sort().reverse();
+
+  const selectEl = document.getElementById('recup-periodo-select');
+  selectEl.innerHTML = `
+    <option value="todo">Todo el histórico</option>
+    <option value="4sem">Últimas 4 semanas</option>
+    <option disabled>──────────</option>
+    ${mesesOrdenados.map(m => {
+      const [anio, mm] = m.split('-');
+      return `<option value="${m}">${MESES_NOMBRE[parseInt(mm) - 1]} ${anio}</option>`;
+    }).join('')}
+  `;
+
+  selectEl.onchange = () => renderRecupConFiltro(selectEl.value);
+
+  const supFilter = document.getElementById('recup-sup-filter');
+  supFilter.onchange = () => renderRecupConFiltro(selectEl.value);
+
+  renderRecupConFiltro('todo');
+}
+
+function renderRecupConFiltro(periodo) {
+  if (!window.__recupData) return;
+  let datos = window.__recupData;
+
+  if (periodo === '4sem') {
+    const hoy = new Date();
+    const hace28 = new Date(hoy);
+    hace28.setDate(hace28.getDate() - 28);
+    const hace28Str = hace28.toISOString().split('T')[0];
+    datos = datos.filter(r => r.fecha_cancelacion >= hace28Str);
+  } else if (periodo !== 'todo') {
+    datos = datos.filter(r => r.fecha_cancelacion.startsWith(periodo));
+  }
+
+  const total = datos.length;
+  const recuperadas = datos.filter(r => r.estatusRecup === 'recuperada').length;
+  const enRecup = datos.filter(r => r.estatusRecup === 'en_recuperacion').length;
+  const perdidas = datos.filter(r => r.estatusRecup === 'perdida').length;
+  const pctRecup = total > 0 ? (recuperadas / total * 100) : 0;
+
+  document.getElementById('recup-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Canceladas totales</div>
+      <div class="stat-value">${total.toLocaleString()}</div>
+      <div class="stat-sub">con teléfono rastreable</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">✅ Recuperadas</div>
+      <div class="stat-value" style="color: var(--green);">${recuperadas.toLocaleString()}</div>
+      <div class="stat-sub">${total > 0 ? (recuperadas/total*100).toFixed(1) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">⏳ En recuperación</div>
+      <div class="stat-value" style="color: var(--amber);">${enRecup.toLocaleString()}</div>
+      <div class="stat-sub">nueva venta en curso</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--red);">
+      <div class="stat-label">❌ Perdidas</div>
+      <div class="stat-value" style="color: var(--red);">${perdidas.toLocaleString()}</div>
+      <div class="stat-sub">sin rastro del cliente</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);">
+      <div class="stat-label">Tasa de recuperación</div>
+      <div class="stat-value" style="color: var(--att-orange);">${pctRecup.toFixed(1)}%</div>
+      <div class="stat-sub">éxito de reconquista</div>
+    </div>
+  `;
+
+  const porSup = {};
+  SUPERVISORES.forEach(s => { porSup[s] = { total: 0, recuperadas: 0, enRecup: 0, perdidas: 0 }; });
+  datos.forEach(r => {
+    if (!porSup[r.supervisor]) return;
+    porSup[r.supervisor].total++;
+    if (r.estatusRecup === 'recuperada') porSup[r.supervisor].recuperadas++;
+    else if (r.estatusRecup === 'en_recuperacion') porSup[r.supervisor].enRecup++;
+    else porSup[r.supervisor].perdidas++;
+  });
+
+  const filasSup = SUPERVISORES.map(s => {
+    const d = porSup[s];
+    if (d.total === 0) return null;
+    const pctRec = d.total > 0 ? (d.recuperadas / d.total * 100) : 0;
+    return { sup: s, ...d, pctRec };
+  }).filter(x => x !== null).sort((a, b) => b.pctRec - a.pctRec);
+
+  document.getElementById('recup-tabla-body').innerHTML = filasSup.map(f => {
+    const colorPct = f.pctRec >= 70 ? 'var(--green)' : f.pctRec >= 50 ? 'var(--amber)' : 'var(--red)';
+    return `<tr>
+      <td><strong>${f.sup}</strong></td>
+      <td class="num" style="text-align:center;">${f.total}</td>
+      <td class="num col-divider" style="text-align:center;color:var(--green);font-weight:700;">${f.recuperadas}</td>
+      <td class="num" style="text-align:center;color:var(--amber);font-weight:600;">${f.enRecup}</td>
+      <td class="num" style="text-align:center;color:var(--red);font-weight:700;">${f.perdidas}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorPct};font-weight:700;">${f.pctRec.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  const totalPctRec = total > 0 ? (recuperadas / total * 100) : 0;
+  const colorTotalPct = totalPctRec >= 70 ? 'var(--green)' : totalPctRec >= 50 ? 'var(--amber)' : 'var(--red)';
+  document.getElementById('recup-tabla-foot').innerHTML = `
+    <tr style="background:var(--bg);font-weight:700;">
+      <td>TOTAL</td>
+      <td class="num" style="text-align:center;">${total}</td>
+      <td class="num col-divider" style="text-align:center;color:var(--green);">${recuperadas}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${enRecup}</td>
+      <td class="num" style="text-align:center;color:var(--red);">${perdidas}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorTotalPct};">${totalPctRec.toFixed(1)}%</td>
+    </tr>
+  `;
+
+  renderRecupPerdidas(datos);
+}
+
+function renderRecupPerdidas(datos) {
+  const supFiltro = document.getElementById('recup-sup-filter').value;
+  let perdidas = datos.filter(r => r.estatusRecup === 'perdida');
+
+  if (supFiltro !== 'all') {
+    perdidas = perdidas.filter(r => r.supervisor === supFiltro);
+  }
+
+  perdidas.sort((a, b) => b.diasSinRecuperar - a.diasSinRecuperar);
+
+  document.getElementById('recup-perdidas-count').textContent =
+    `${perdidas.length} canceladas sin recuperar` + (supFiltro !== 'all' ? ` (${supFiltro})` : '');
+
+  document.getElementById('recup-perdidas-body').innerHTML = perdidas.map(p => {
+    const colorDias = p.diasSinRecuperar >= 30 ? 'var(--red)' : p.diasSinRecuperar >= 14 ? 'var(--amber)' : 'var(--text-soft)';
+    return `<tr>
+      <td style="text-align:center;font-family:monospace;"><strong>${p.telefono}</strong></td>
+      <td style="text-align:center;">${p.ejecutivo}</td>
+      <td style="text-align:center;"><strong>${p.supervisor}</strong></td>
+      <td class="num" style="text-align:center;">${p.fecha_bo}</td>
+      <td class="num" style="text-align:center;">${p.fecha_cancelacion}</td>
+      <td class="num" style="text-align:center;color:${colorDias};font-weight:700;">${p.diasSinRecuperar}</td>
+    </tr>`;
+  }).join('');
+
+  if (perdidas.length === 0) {
+    document.getElementById('recup-perdidas-body').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-soft);">No hay canceladas perdidas con estos filtros 🎉</td></tr>`;
+  }
 }
 
 function renderCalendario(wActual, wCurrent) {
