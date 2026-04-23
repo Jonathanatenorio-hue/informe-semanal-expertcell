@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cargador de Metas · ExpertCell</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --att-blue: #00A8E0;
+    --att-blue-dark: #0077A8;
+    --att-orange: #FF7200;
+    --att-navy: #002B5C;
+    --bg: #F5F8FB;
+    --card: #FFFFFF;
+    --text: #1a1a1a;
+    --text-soft: #5a6a7a;
+    --border: #E2E8F0;
+    --green: #16A34A;
+    --green-bg: #DCFCE7;
+    --red: #DC2626;
+    --red-bg: #FEE2E2;
+    --amber: #D97706;
+    --amber-bg: #FEF3C7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .header {
+    background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
+    color: white;
+    border-radius: 16px;
+    padding: 28px 36px;
+    margin-bottom: 24px;
+  }
+  .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .section {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--att-navy);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--bg);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .step-number {
+    width: 28px; height: 28px;
+    background: var(--att-orange);
+    color: white;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+  }
+
+  .periodo-selector {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  .periodo-selector label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+  }
+  .periodo-selector select {
+    padding: 8px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    background: white;
+    cursor: pointer;
+    min-width: 140px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 30px 20px;
+    text-align: center;
+    transition: all 0.2s;
+    cursor: pointer;
+    background: var(--bg);
+  }
+  .drop-zone:hover { border-color: var(--att-blue); background: #E8F4FC; }
+  .drop-zone.dragover { border-color: var(--att-orange); background: #FFF3E0; }
+  .drop-zone.loaded { border-color: var(--green); border-style: solid; background: var(--green-bg); }
+  .drop-zone-label { font-weight: 600; font-size: 15px; margin-bottom: 6px; color: var(--att-navy); }
+  .drop-zone-hint { font-size: 13px; color: var(--text-soft); }
+  .drop-zone-filename { font-size: 13px; color: var(--green); font-weight: 700; margin-top: 10px; word-break: break-all; }
+  .drop-zone input[type="file"] { display: none; }
+
+  button {
+    background: var(--att-orange);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  button:hover:not(:disabled) { background: #E56500; }
+  button:disabled { background: #D1D5DB; cursor: not-allowed; }
+  button.secondary { background: var(--att-blue-dark); }
+  button.secondary:hover:not(:disabled) { background: #005F85; }
+  button.success { background: var(--green); }
+  button.success:hover:not(:disabled) { background: #15803D; }
+  button.danger { background: var(--red); }
+
+  .actions { display: flex; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card {
+    background: var(--bg);
+    padding: 12px 14px;
+    border-radius: 8px;
+    border-left: 4px solid var(--att-blue);
+  }
+  .stat-label { font-size: 11px; color: var(--text-soft); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .stat-value { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+  .stat-sub { font-size: 11px; color: var(--text-soft); margin-top: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--att-navy); color: white; padding: 10px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+  th.num, td.num { text-align: right; }
+  td { padding: 10px; border-bottom: 1px solid var(--border); }
+  tbody tr:hover { background: #F9FAFB; }
+
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 12px 0;
+    font-size: 13px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .alert.warn { background: var(--amber-bg); color: #92400E; border-left: 4px solid var(--amber); }
+  .alert.success { background: var(--green-bg); color: #15803D; border-left: 4px solid var(--green); }
+  .alert.error { background: var(--red-bg); color: #B91C1C; border-left: 4px solid var(--red); }
+  .alert.info { background: #E6F1FB; color: #0C447C; border-left: 4px solid var(--att-blue); }
+
+  .log {
+    background: #0f172a;
+    color: #E2E8F0;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .log-line { margin-bottom: 2px; }
+  .log-line.ok { color: #4ADE80; }
+  .log-line.err { color: #F87171; }
+  .log-line.warn { color: #FBBF24; }
+  .log-line.info { color: #60A5FA; }
+
+  .hidden { display: none !important; }
+
+  .nav-links {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .nav-links a {
+    color: var(--att-blue-dark);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--card);
+  }
+  .nav-links a:hover { background: #E8F4FC; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="nav-links">
+    <a href="index.html">← Cargar ventas</a>
+    <a href="reporte.html">→ Ver reporte</a>
+  </div>
+
+  <div class="header">
+    <h1>Cargador de Metas Mensuales</h1>
+    <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Captura las metas al inicio de cada mes</div>
+  </div>
+
+  <!-- PASO 1: Seleccionar periodo -->
+  <div class="section">
+    <div class="section-title">
+      <div class="step-number">1</div>
+      Selecciona el periodo
+    </div>
+    <div class="periodo-selector">
+      <label>Mes:</label>
+      <select id="mes-select"></select>
+      <label>Año:</label>
+      <select id="anio-select"></select>
+    </div>
+    <div id="periodo-info"></div>
+  </div>
+
+  <!-- PASO 2: Cargar Excel -->
+  <div class="section">
+    <div class="section-title">
+      <div class="step-number">2</div>
+      Arrastra el Excel de metas
+    </div>
+    <div class="alert info">
+      <div>ℹ️</div>
+      <div>
+        <strong>Formato esperado:</strong> Excel con la hoja <code>Metas_Mes</code> con estas columnas:
+        <code>EJECUTIVO</code>, <code>Supervisor</code>, <code>dias_activo_al_1ro</code>, <code>meta_mes_actual</code>.
+        Los agentes con supervisor = "BAJA" se ignoran automáticamente.
+      </div>
+    </div>
+    <div class="drop-zone" id="drop-zone">
+      <div class="drop-zone-label">Arrastra aquí el Excel de metas</div>
+      <div class="drop-zone-hint">o haz clic para seleccionar archivo</div>
+      <div class="drop-zone-filename" id="filename"></div>
+      <input type="file" accept=".xlsx,.xls" id="file-input">
+    </div>
+    <div class="actions">
+      <button id="btn-procesar" disabled>Procesar y validar</button>
+      <button class="secondary" id="btn-limpiar" type="button">Limpiar</button>
+    </div>
+  </div>
+
+  <!-- PASO 3: Validación -->
+  <div class="section hidden" id="section-validacion">
+    <div class="section-title">
+      <div class="step-number">3</div>
+      Revisión de metas procesadas
+    </div>
+    <div class="stats-grid" id="stats-grid"></div>
+    <div id="alertas-validacion"></div>
+    <div style="margin-top: 14px;">
+      <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Distribución por supervisor:</div>
+      <table id="tabla-supervisores"></table>
+    </div>
+    <div style="margin-top: 20px;">
+      <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Distribución por tipo de meta:</div>
+      <table id="tabla-tipos"></table>
+    </div>
+  </div>
+
+  <!-- PASO 4: Carga a Supabase -->
+  <div class="section hidden" id="section-carga">
+    <div class="section-title">
+      <div class="step-number">4</div>
+      Cargar a Supabase
+    </div>
+    <div class="alert warn" id="alert-carga">
+      <div>⚠️</div>
+      <div id="alert-carga-text"></div>
+    </div>
+    <div class="actions">
+      <button class="success" id="btn-cargar">Cargar/Actualizar metas</button>
+    </div>
+  </div>
+
+  <!-- LOG -->
+  <div class="section hidden" id="section-log">
+    <div class="section-title">
+      <div class="step-number">L</div>
+      Registro de operación
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const SUPERVISORES_MAP = {
+  'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
+  'ALFREDO CABRERA PADRON': 'Alfred',
+  'CARLOS ALBERTO AGUILAR CANO': 'Carlos',
+  'JORGE MIGUEL UREÑA ZARATE': 'Jorge',
+  'MARIA LUISA MEZA GOEL': 'Luisa',
+  'REYNA LIZZETTE MARTINEZ GARCIA': 'Reyna',
+};
+
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
+const state = {
+  file: null,
+  raw: null,
+  metasAgentes: null,
+  metasSupervisor: null,
+  anio: null,
+  mes: null,
+  existeDatoPrevio: false
+};
+
+function log(msg, tipo = '') {
+  const el = document.getElementById('log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('section-log').classList.remove('hidden');
+}
+
+function initSelectores() {
+  const mesSelect = document.getElementById('mes-select');
+  const anioSelect = document.getElementById('anio-select');
+
+  MESES.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    mesSelect.appendChild(opt);
+  });
+
+  [2025, 2026, 2027].forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a;
+    opt.textContent = a;
+    anioSelect.appendChild(opt);
+  });
+
+  const hoy = new Date();
+  mesSelect.value = hoy.getMonth() + 1;
+  anioSelect.value = hoy.getFullYear();
+
+  const actualizar = () => {
+    state.anio = parseInt(anioSelect.value);
+    state.mes = parseInt(mesSelect.value);
+    verificarPeriodo();
+  };
+  mesSelect.addEventListener('change', actualizar);
+  anioSelect.addEventListener('change', actualizar);
+  actualizar();
+}
+
+async function verificarPeriodo() {
+  const infoEl = document.getElementById('periodo-info');
+  try {
+    const { data: existSup } = await db
+      .from('metas_supervisor')
+      .select('supervisor, meta_activadas')
+      .eq('anio', state.anio)
+      .eq('mes', state.mes);
+
+    const { data: existAge, count } = await db
+      .from('metas_agente')
+      .select('*', { count: 'exact', head: true })
+      .eq('anio', state.anio)
+      .eq('mes', state.mes);
+
+    if (existSup && existSup.length > 0) {
+      state.existeDatoPrevio = true;
+      const total = existSup.reduce((a, b) => a + b.meta_activadas, 0);
+      infoEl.innerHTML = `<div class="alert warn">
+        <div>⚠️</div>
+        <div><strong>Ya existen metas cargadas para ${MESES[state.mes-1]} ${state.anio}:</strong>
+          ${existSup.length} supervisores (total ${total} act) y ${count} agentes.
+          <br>Si cargas un nuevo Excel, estas metas se <strong>reemplazarán</strong>.
+        </div>
+      </div>`;
+    } else {
+      state.existeDatoPrevio = false;
+      infoEl.innerHTML = `<div class="alert info">
+        <div>ℹ️</div>
+        <div>No hay metas cargadas todavía para ${MESES[state.mes-1]} ${state.anio}. La primera carga creará los registros.</div>
+      </div>`;
+    }
+  } catch (e) {
+    infoEl.innerHTML = `<div class="alert error"><div>❌</div><div>Error al verificar: ${e.message}</div></div>`;
+  }
+}
+
+function setupDropZone() {
+  const zone = document.getElementById('drop-zone');
+  const input = document.getElementById('file-input');
+  const nameEl = document.getElementById('filename');
+
+  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    zone.classList.add('dragover');
+  });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+      input.files = e.dataTransfer.files;
+      handleFile(e.dataTransfer.files[0]);
+    }
+  });
+  input.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) handleFile(e.target.files[0]);
+  });
+}
+
+function handleFile(file) {
+  state.file = file;
+  document.getElementById('drop-zone').classList.add('loaded');
+  document.getElementById('filename').textContent = file.name;
+  document.getElementById('btn-procesar').disabled = false;
+  log(`Archivo cargado: ${file.name}`, 'info');
+}
+
+function limpiar() {
+  state.file = null;
+  state.raw = null;
+  state.metasAgentes = null;
+  state.metasSupervisor = null;
+  document.getElementById('drop-zone').classList.remove('loaded');
+  document.getElementById('filename').textContent = '';
+  document.getElementById('file-input').value = '';
+  document.getElementById('btn-procesar').disabled = true;
+  document.getElementById('section-validacion').classList.add('hidden');
+  document.getElementById('section-carga').classList.add('hidden');
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('section-log').classList.add('hidden');
+}
+
+function clasificarTipoMeta(dias) {
+  if (dias < 13) return 'sin_meta';
+  if (dias <= 42) return 'fija_6';
+  return 'calculada';
+}
+
+async function procesar() {
+  document.getElementById('btn-procesar').disabled = true;
+  log('Iniciando procesamiento...', 'info');
+
+  try {
+    const buf = await state.file.arrayBuffer();
+    const wb = XLSX.read(buf, { cellDates: true });
+
+    if (!wb.SheetNames.includes('Metas_Mes')) {
+      log(`Error: el Excel no tiene una hoja llamada "Metas_Mes". Hojas disponibles: ${wb.SheetNames.join(', ')}`, 'err');
+      document.getElementById('btn-procesar').disabled = false;
+      return;
+    }
+
+    const ws = wb.Sheets['Metas_Mes'];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: null });
+    log(`${rows.length} filas leídas de la hoja Metas_Mes`, 'ok');
+
+    const requeridas = ['EJECUTIVO', 'Supervisor', 'dias_activo_al_1ro', 'meta_mes_actual'];
+    const columnas = Object.keys(rows[0] || {});
+    const faltantes = requeridas.filter(c => !columnas.includes(c));
+    if (faltantes.length > 0) {
+      log(`Error: faltan columnas: ${faltantes.join(', ')}`, 'err');
+      log(`Columnas encontradas: ${columnas.join(', ')}`, 'info');
+      document.getElementById('btn-procesar').disabled = false;
+      return;
+    }
+
+    const metasAgentes = [];
+    const metasSupAgregado = {};
+    const ignorados = [];
+    const sinSupervisor = [];
+
+    for (const r of rows) {
+      const ejecutivo = r['EJECUTIVO'];
+      const supLargo = r['Supervisor'];
+      const dias = parseInt(r['dias_activo_al_1ro']) || 0;
+      const meta = parseInt(r['meta_mes_actual']) || 0;
+
+      if (!ejecutivo) continue;
+
+      if (supLargo === 'BAJA' || !supLargo) {
+        ignorados.push({ ejecutivo, razon: 'supervisor=BAJA' });
+        continue;
+      }
+
+      const supCorto = SUPERVISORES_MAP[supLargo];
+      if (!supCorto) {
+        sinSupervisor.push({ ejecutivo, supervisor: supLargo });
+        continue;
+      }
+
+      const tipo = clasificarTipoMeta(dias);
+
+      metasAgentes.push({
+        ejecutivo,
+        supervisor: supCorto,
+        anio: state.anio,
+        mes: state.mes,
+        meta_activadas: meta,
+        dias_antiguedad: dias,
+        tipo_meta: tipo
+      });
+
+      if (!metasSupAgregado[supCorto]) metasSupAgregado[supCorto] = 0;
+      metasSupAgregado[supCorto] += meta;
+    }
+
+    const metasSupervisor = Object.entries(metasSupAgregado).map(([sup, meta]) => ({
+      supervisor: sup,
+      anio: state.anio,
+      mes: state.mes,
+      meta_activadas: meta
+    }));
+
+    state.metasAgentes = metasAgentes;
+    state.metasSupervisor = metasSupervisor;
+
+    log(`${metasAgentes.length} agentes procesados`, 'ok');
+    if (ignorados.length > 0) log(`${ignorados.length} ignorados (BAJA)`, 'warn');
+    if (sinSupervisor.length > 0) log(`${sinSupervisor.length} sin supervisor válido`, 'warn');
+
+    mostrarValidacion(metasAgentes, metasSupervisor, ignorados, sinSupervisor);
+    document.getElementById('section-validacion').classList.remove('hidden');
+    document.getElementById('section-carga').classList.remove('hidden');
+    document.getElementById('btn-procesar').disabled = false;
+
+    const accionTxt = state.existeDatoPrevio
+      ? `Ya existen metas de ${MESES[state.mes-1]} ${state.anio} en Supabase. Si continúas, se <strong>reemplazarán</strong> por estas nuevas.`
+      : `Se crearán ${metasSupervisor.length} metas de supervisor y ${metasAgentes.length} metas individuales para ${MESES[state.mes-1]} ${state.anio}.`;
+    document.getElementById('alert-carga-text').innerHTML = `<strong>Importante:</strong> ${accionTxt}`;
+
+    log('Procesamiento completado. Revisa el resumen antes de cargar.', 'ok');
+
+  } catch (e) {
+    log('Error: ' + e.message, 'err');
+    document.getElementById('btn-procesar').disabled = false;
+  }
+}
+
+function mostrarValidacion(agentes, supervisores, ignorados, sinSup) {
+  const totalAgentes = agentes.length;
+  const totalMeta = agentes.reduce((a, b) => a + b.meta_activadas, 0);
+  const porTipo = agentes.reduce((acc, a) => { acc[a.tipo_meta] = (acc[a.tipo_meta] || 0) + 1; return acc; }, {});
+
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Agentes</div>
+      <div class="stat-value">${totalAgentes}</div>
+      <div class="stat-sub">con meta asignada</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);">
+      <div class="stat-label">Meta total</div>
+      <div class="stat-value" style="color: var(--att-orange);">${totalMeta.toLocaleString()}</div>
+      <div class="stat-sub">activadas del mes</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Supervisores</div>
+      <div class="stat-value" style="color: var(--green);">${supervisores.length}</div>
+      <div class="stat-sub">con meta agregada</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">Ignorados</div>
+      <div class="stat-value" style="color: var(--amber);">${ignorados.length + sinSup.length}</div>
+      <div class="stat-sub">bajas o sin sup.</div>
+    </div>
+  `;
+
+  const alertas = [];
+  if (sinSup.length > 0) {
+    alertas.push(`<div class="alert warn"><div>⚠️</div><div><strong>${sinSup.length} agentes con supervisor desconocido:</strong><br>
+      ${sinSup.slice(0, 5).map(s => `${s.ejecutivo} (sup: ${s.supervisor})`).join('<br>')}
+      ${sinSup.length > 5 ? `<br>... y ${sinSup.length - 5} más` : ''}</div></div>`);
+  }
+  if (alertas.length === 0) {
+    alertas.push(`<div class="alert success"><div>✅</div><div>Todos los agentes tienen supervisor válido asignado.</div></div>`);
+  }
+  document.getElementById('alertas-validacion').innerHTML = alertas.join('');
+
+  const supOrdenados = [...supervisores].sort((a, b) => b.meta_activadas - a.meta_activadas);
+  const agentesPorSup = {};
+  agentes.forEach(a => { agentesPorSup[a.supervisor] = (agentesPorSup[a.supervisor] || 0) + 1; });
+
+  document.getElementById('tabla-supervisores').innerHTML = `
+    <thead><tr><th>Supervisor</th><th class="num">Agentes</th><th class="num">Meta total</th><th class="num">Promedio</th></tr></thead>
+    <tbody>
+      ${supOrdenados.map(s => `<tr>
+        <td><strong>${s.supervisor}</strong></td>
+        <td class="num">${agentesPorSup[s.supervisor]}</td>
+        <td class="num" style="color:var(--att-orange);font-weight:700;">${s.meta_activadas}</td>
+        <td class="num">${(s.meta_activadas / agentesPorSup[s.supervisor]).toFixed(1)}</td>
+      </tr>`).join('')}
+      <tr style="background:var(--bg);font-weight:700;">
+        <td>TOTAL</td>
+        <td class="num">${totalAgentes}</td>
+        <td class="num" style="color:var(--att-orange);">${totalMeta}</td>
+        <td class="num">${(totalMeta/totalAgentes).toFixed(1)}</td>
+      </tr>
+    </tbody>
+  `;
+
+  const tiposLabels = { sin_meta: 'Sin meta (0-12 días)', fija_6: 'Meta fija 6 (13-42 días)', calculada: 'Meta calculada (43+ días)' };
+  document.getElementById('tabla-tipos').innerHTML = `
+    <thead><tr><th>Tipo</th><th class="num">Agentes</th><th class="num">% del total</th></tr></thead>
+    <tbody>
+      ${['sin_meta', 'fija_6', 'calculada'].map(t => {
+        const n = porTipo[t] || 0;
+        const pct = totalAgentes > 0 ? (n / totalAgentes * 100).toFixed(1) : 0;
+        return `<tr><td>${tiposLabels[t]}</td><td class="num">${n}</td><td class="num">${pct}%</td></tr>`;
+      }).join('')}
+    </tbody>
+  `;
+}
+
+async function cargarASupabase() {
+  if (!state.metasAgentes) return;
+  const confirmMsg = state.existeDatoPrevio
+    ? `Ya existen metas para ${MESES[state.mes-1]} ${state.anio}. ¿Seguro que quieres REEMPLAZARLAS?`
+    : `¿Cargar ${state.metasAgentes.length} metas de agente y ${state.metasSupervisor.length} metas de supervisor para ${MESES[state.mes-1]} ${state.anio}?`;
+
+  if (!confirm(confirmMsg)) return;
+
+  const btn = document.getElementById('btn-cargar');
+  btn.disabled = true;
+  btn.textContent = 'Cargando...';
+
+  try {
+    log(`Borrando metas previas de ${MESES[state.mes-1]} ${state.anio}...`, 'info');
+    const { error: e1 } = await db.from('metas_agente').delete().eq('anio', state.anio).eq('mes', state.mes);
+    if (e1) throw e1;
+    const { error: e2 } = await db.from('metas_supervisor').delete().eq('anio', state.anio).eq('mes', state.mes);
+    if (e2) throw e2;
+    log('Metas previas borradas', 'ok');
+
+    log(`Insertando ${state.metasSupervisor.length} metas de supervisor...`, 'info');
+    const { error: e3 } = await db.from('metas_supervisor').insert(state.metasSupervisor);
+    if (e3) throw e3;
+    log('Metas de supervisor insertadas', 'ok');
+
+    log(`Insertando ${state.metasAgentes.length} metas individuales...`, 'info');
+    const batchSize = 100;
+    let insertados = 0;
+    for (let i = 0; i < state.metasAgentes.length; i += batchSize) {
+      const batch = state.metasAgentes.slice(i, i + batchSize);
+      const { error: e4 } = await db.from('metas_agente').insert(batch);
+      if (e4) throw e4;
+      insertados += batch.length;
+      log(`Progreso: ${insertados}/${state.metasAgentes.length}`, 'info');
+    }
+
+    log(`Carga completa. ${insertados} metas de agente insertadas.`, 'ok');
+
+    btn.textContent = '✓ Carga completada';
+    btn.style.background = '#15803D';
+
+    setTimeout(() => {
+      alert(`Metas de ${MESES[state.mes-1]} ${state.anio} cargadas exitosamente.`);
+    }, 300);
+
+  } catch (e) {
+    log('Error: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  }
+}
+
+initSelectores();
+setupDropZone();
+document.getElementById('btn-procesar').addEventListener('click', procesar);
+document.getElementById('btn-limpiar').addEventListener('click', limpiar);
+document.getElementById('btn-cargar').addEventListener('click', cargarASupabase);
+</script>
+</body>
+</html>
