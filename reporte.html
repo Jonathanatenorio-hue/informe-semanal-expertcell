@@ -3629,7 +3629,7 @@ function renderHistoricoMensual() {
 
   // Tabla detallada
   const tabla = document.getElementById('histmes-tabla');
-  let html = '<thead><tr><th>Supervisor</th>';
+  let html = '<thead><tr><th rowspan="2" style="vertical-align:middle;">Supervisor</th>';
   Object.values(datosPorMes).forEach(d => {
     html += `<th colspan="3" class="center" style="background: ${d.esMesEnCurso ? '#FF7200' : 'var(--att-navy)'};">${nombreMes(d)}${d.esMesEnCurso ? ' (curso)' : ''}</th>`;
   });
