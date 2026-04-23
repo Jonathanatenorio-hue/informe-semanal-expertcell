@@ -890,7 +890,7 @@
           <tr>
             <th rowspan="2" style="text-align:center;">Supervisor</th>
             <th colspan="4" class="center" style="background: var(--att-blue-dark);">Movimiento</th>
-            <th colspan="2" class="center col-divider" style="background: #DC2626;">Rotación</th>
+            <th id="rot-header-rotacion" colspan="2" class="center col-divider" style="background: #DC2626;">Rotación</th>
           </tr>
           <tr class="subhead">
             <th class="num" style="text-align:center;">Inicio</th>
@@ -898,7 +898,7 @@
             <th class="num" style="text-align:center;">Bajas</th>
             <th class="num" style="text-align:center;">Fin</th>
             <th class="num col-divider" style="text-align:center;" title="Bajas / promedio plantilla">Estándar %</th>
-            <th class="num" style="text-align:center;" title="Bajas / plantilla inicial">Simple %</th>
+            <th id="rot-header-simple" class="num" style="text-align:center;" title="Bajas / plantilla inicial. Solo aplica para periodos de 1 mes.">Simple %</th>
           </tr>
         </thead>
         <tbody id="rot-tabla-body"></tbody>
@@ -3609,6 +3609,18 @@ function renderRotConFiltro(periodo) {
     </div>
   `;
 
+  const esHistorico = periodo === 'todo';
+
+  const headerSimple = document.getElementById('rot-header-simple');
+  const headerRotacion = document.getElementById('rot-header-rotacion');
+  if (esHistorico) {
+    headerSimple.style.display = 'none';
+    headerRotacion.setAttribute('colspan', '1');
+  } else {
+    headerSimple.style.display = '';
+    headerRotacion.setAttribute('colspan', '2');
+  }
+
   document.getElementById('rot-tabla-body').innerHTML = filas.map(f => {
     const colorRot = f.rotA >= 15 ? 'var(--red)' : f.rotA >= 10 ? 'var(--amber)' : 'var(--green)';
     return `<tr>
@@ -3618,7 +3630,7 @@ function renderRotConFiltro(periodo) {
       <td class="num" style="text-align:center; color:var(--red); font-weight:600;">-${f.bajas}</td>
       <td class="num" style="text-align:center;"><strong>${f.fin}</strong></td>
       <td class="num col-divider" style="text-align:center; color:${colorRot}; font-weight:700;">${f.rotA.toFixed(1)}%</td>
-      <td class="num" style="text-align:center; color:${colorRot};">${f.rotB.toFixed(1)}%</td>
+      ${esHistorico ? '' : `<td class="num" style="text-align:center; color:${colorRot};">${f.rotB.toFixed(1)}%</td>`}
     </tr>`;
   }).join('');
 
@@ -3631,7 +3643,7 @@ function renderRotConFiltro(periodo) {
       <td class="num" style="text-align:center; color:var(--red);">-${totalBajas}</td>
       <td class="num" style="text-align:center;">${totalFin}</td>
       <td class="num col-divider" style="text-align:center; color:${colorTotalRot};">${rotATotal.toFixed(1)}%</td>
-      <td class="num" style="text-align:center; color:${colorTotalRot};">${rotBTotal.toFixed(1)}%</td>
+      ${esHistorico ? '' : `<td class="num" style="text-align:center; color:${colorTotalRot};">${rotBTotal.toFixed(1)}%</td>`}
     </tr>
   `;
 
