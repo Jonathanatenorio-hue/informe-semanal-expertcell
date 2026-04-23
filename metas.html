@@ -934,7 +934,9 @@ async function procesarPlant() {
         fecha_baja: fechaBajaStr,
         estatus: r['Estatus'],
         puesto: 'AGENTE',
-        centro: r['Centro'] || null
+        centro: r['Centro'] || null,
+        tipo_baja: r['Tipo Baja'] || null,
+        motivo_baja: r['Motivo Baja'] || null
       });
     }
 
