@@ -583,6 +583,40 @@
       <div id="sup-individual-charts"></div>
     </div>
 
+    <!-- FLUJO DE ENTREGA -->
+    <div class="section">
+      <div class="section-title">Flujo de entrega (BO → Activada)</div>
+      <div class="section-subtitle">Tiempo que tardan las ventas desde que entran a Back Office hasta que se activan. Solo incluye ventas activadas. Se excluyen domingos del conteo (no se entrega ese día).</div>
+
+      <div id="flujo-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Distribución de tiempos de entrega</div>
+      <div class="chart-wrap" style="height: 280px; margin-bottom: 24px;"><canvas id="chart-flujo-dist"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Desempeño por supervisor</div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="text-align:center;">Supervisor</th>
+            <th rowspan="2" class="num" style="text-align:center;">Activadas</th>
+            <th rowspan="2" class="num" style="text-align:center;">Promedio</th>
+            <th rowspan="2" class="num" style="text-align:center;">Mediana</th>
+            <th colspan="3" class="center col-divider" style="background: var(--att-blue-dark);">Distribución por tiempo</th>
+          </tr>
+          <tr class="subhead">
+            <th class="num col-divider" style="text-align:center; background:#16A34A;">Rápido (0-1 día)</th>
+            <th class="num" style="text-align:center; background:#D97706;">Normal (2-3 días)</th>
+            <th class="num" style="text-align:center; background:#DC2626;">Lento (4+ días)</th>
+          </tr>
+        </thead>
+        <tbody id="flujo-tabla-body"></tbody>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Evolución mensual del tiempo promedio</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Agrupado por fecha de entrada a BO. Muestra si la eficiencia del equipo de BO mejora o empeora mes a mes.</div>
+      <div class="chart-wrap" style="height: 280px;"><canvas id="chart-flujo-evolucion"></canvas></div>
+    </div>
+
     <!-- CALENDARIO -->
     <div class="section">
       <div class="section-title">Explorar otras semanas</div>
@@ -895,6 +929,7 @@ function renderReporte(wActual, wCurrent) {
   renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, wAnterior);
   renderEstadoSemanas(wActual);
   renderHistoricoSupervisores();
+  renderFlujoEntrega();
   renderCalendario(wActual, wCurrent);
 }
 
@@ -1885,6 +1920,246 @@ function renderHistoricoSupervisores() {
         }
       }
     });
+  });
+}
+
+function diasEntrega(fechaBoStr, fechaActStr) {
+  const bo = new Date(fechaBoStr + 'T12:00:00');
+  const act = new Date(fechaActStr + 'T12:00:00');
+  if (act < bo) return null;
+  let dias = 0;
+  const d = new Date(bo);
+  while (d < act) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0) dias++;
+  }
+  return dias;
+}
+
+function mediana(arr) {
+  if (arr.length === 0) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
+
+function renderFlujoEntrega() {
+  const activadas = ventasData.filter(r =>
+    r.estatus === 'activada' &&
+    r.fecha_bo && r.fecha_activacion &&
+    SUPERVISORES.includes(r.supervisor)
+  );
+
+  const conDias = activadas.map(r => ({
+    ...r,
+    dias: diasEntrega(r.fecha_bo, r.fecha_activacion)
+  })).filter(r => r.dias !== null);
+
+  const hoy = new Date();
+  const hace28 = new Date(hoy);
+  hace28.setDate(hace28.getDate() - 28);
+  const hace28Str = hace28.toISOString().split('T')[0];
+
+  const recientes = conDias.filter(r => r.fecha_bo >= hace28Str);
+
+  const promHist = conDias.reduce((a, r) => a + r.dias, 0) / conDias.length;
+  const promRec = recientes.length > 0 ? recientes.reduce((a, r) => a + r.dias, 0) / recientes.length : 0;
+  const medHist = mediana(conDias.map(r => r.dias));
+  const pctRapido = conDias.filter(r => r.dias <= 1).length / conDias.length * 100;
+  const pctLento = conDias.filter(r => r.dias >= 4).length / conDias.length * 100;
+
+  const tendencia = promRec < promHist ? 'mejorando' : promRec > promHist ? 'empeorando' : 'estable';
+  const colorTendencia = tendencia === 'mejorando' ? 'var(--green)' : tendencia === 'empeorando' ? 'var(--red)' : 'var(--text-soft)';
+  const flechaTendencia = tendencia === 'mejorando' ? '↓' : tendencia === 'empeorando' ? '↑' : '→';
+
+  document.getElementById('flujo-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Promedio histórico</div>
+      <div class="stat-value">${promHist.toFixed(2)}</div>
+      <div class="stat-sub">días (n=${conDias.length.toLocaleString()})</div>
+    </div>
+    <div class="stat-card" style="border-left-color: ${colorTendencia};">
+      <div class="stat-label">Últimas 4 semanas</div>
+      <div class="stat-value" style="color: ${colorTendencia};">${promRec.toFixed(2)} ${flechaTendencia}</div>
+      <div class="stat-sub">${tendencia} vs histórico</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">Mediana</div>
+      <div class="stat-value">${medHist.toFixed(1)}</div>
+      <div class="stat-sub">días (caso típico)</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Entregas rápidas</div>
+      <div class="stat-value" style="color: var(--green);">${pctRapido.toFixed(1)}%</div>
+      <div class="stat-sub">en 0 o 1 día</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--red);">
+      <div class="stat-label">Entregas lentas</div>
+      <div class="stat-value" style="color: var(--red);">${pctLento.toFixed(1)}%</div>
+      <div class="stat-sub">4 o más días</div>
+    </div>
+  `;
+
+  const buckets = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6+': 0 };
+  conDias.forEach(r => {
+    if (r.dias >= 6) buckets['6+']++;
+    else buckets[String(r.dias)]++;
+  });
+
+  const labels = ['0 días', '1 día', '2 días', '3 días', '4 días', '5 días', '6+ días'];
+  const keys = ['0', '1', '2', '3', '4', '5', '6+'];
+  const colores = ['#15803D', '#16A34A', '#22C55E', '#D97706', '#DC2626', '#B91C1C', '#7F1D1D'];
+  const data = keys.map(k => buckets[k]);
+  const total = data.reduce((a, b) => a + b, 0);
+
+  const ctx = document.getElementById('chart-flujo-dist');
+  if (window.__chartFlujoDist) window.__chartFlujoDist.destroy();
+  window.__chartFlujoDist = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        backgroundColor: colores,
+        borderRadius: 6,
+        datalabels: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              const pct = (v / total * 100).toFixed(1);
+              return `${v.toLocaleString()} ventas (${pct}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 13, weight: '600' } } },
+        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: {
+          callback: (v) => v.toLocaleString()
+        } }
+      }
+    }
+  });
+
+  const porSup = {};
+  SUPERVISORES.forEach(s => { porSup[s] = []; });
+  conDias.forEach(r => { porSup[r.supervisor].push(r.dias); });
+
+  const filasSup = SUPERVISORES.map(s => {
+    const dias = porSup[s];
+    if (dias.length === 0) return null;
+    const prom = dias.reduce((a, b) => a + b, 0) / dias.length;
+    const med = mediana(dias);
+    const r01 = dias.filter(d => d <= 1).length;
+    const r23 = dias.filter(d => d >= 2 && d <= 3).length;
+    const r4 = dias.filter(d => d >= 4).length;
+    return {
+      sup: s,
+      n: dias.length,
+      prom, med,
+      pctRapido: r01 / dias.length * 100,
+      pctNormal: r23 / dias.length * 100,
+      pctLento: r4 / dias.length * 100
+    };
+  }).filter(x => x !== null).sort((a, b) => a.prom - b.prom);
+
+  document.getElementById('flujo-tabla-body').innerHTML = filasSup.map(f => {
+    const colorProm = f.prom <= 2 ? 'var(--green)' : f.prom <= 2.5 ? 'var(--amber)' : 'var(--red)';
+    return `<tr>
+      <td><strong>${f.sup}</strong></td>
+      <td class="num" style="text-align:center;">${f.n.toLocaleString()}</td>
+      <td class="num" style="text-align:center; color:${colorProm}; font-weight:700;">${f.prom.toFixed(2)}</td>
+      <td class="num" style="text-align:center;">${f.med.toFixed(1)}</td>
+      <td class="num col-divider" style="text-align:center; color:var(--green); font-weight:600;">${f.pctRapido.toFixed(1)}%</td>
+      <td class="num" style="text-align:center; color:var(--amber); font-weight:600;">${f.pctNormal.toFixed(1)}%</td>
+      <td class="num" style="text-align:center; color:var(--red); font-weight:600;">${f.pctLento.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  const porMes = {};
+  conDias.forEach(r => {
+    const mes = r.fecha_bo.substring(0, 7);
+    if (!porMes[mes]) porMes[mes] = [];
+    porMes[mes].push(r.dias);
+  });
+
+  const mesesOrdenados = Object.keys(porMes).sort();
+  const mesesLabels = mesesOrdenados.map(m => {
+    const [a, mm] = m.split('-');
+    return `${MESES_NOMBRE[parseInt(mm) - 1].substring(0, 3)} ${a.substring(2)}`;
+  });
+  const mesesProm = mesesOrdenados.map(m => porMes[m].reduce((a, b) => a + b, 0) / porMes[m].length);
+  const mesesVol = mesesOrdenados.map(m => porMes[m].length);
+
+  const ctx2 = document.getElementById('chart-flujo-evolucion');
+  if (window.__chartFlujoEvo) window.__chartFlujoEvo.destroy();
+  window.__chartFlujoEvo = new Chart(ctx2, {
+    data: {
+      labels: mesesLabels,
+      datasets: [
+        {
+          type: 'line',
+          label: 'Tiempo promedio (días)',
+          data: mesesProm.map(v => Number(v.toFixed(2))),
+          borderColor: '#FF7200',
+          backgroundColor: 'rgba(255, 114, 0, 0.1)',
+          borderWidth: 3,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          tension: 0.3,
+          fill: true,
+          yAxisID: 'y'
+        },
+        {
+          type: 'bar',
+          label: 'Volumen (ventas activadas)',
+          data: mesesVol,
+          backgroundColor: 'rgba(0, 168, 224, 0.2)',
+          borderColor: '#00A8E0',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11, weight: '600' }, boxWidth: 20 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.dataset.label.includes('promedio')) {
+                return `Promedio: ${ctx.parsed.y.toFixed(2)} días`;
+              }
+              return `Volumen: ${ctx.parsed.y.toLocaleString()} ventas`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11, weight: '600' } } },
+        y: {
+          position: 'left',
+          beginAtZero: true,
+          title: { display: true, text: 'Días promedio', font: { size: 11 } },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        },
+        y1: {
+          position: 'right',
+          beginAtZero: true,
+          title: { display: true, text: 'Volumen', font: { size: 11 } },
+          grid: { display: false }
+        }
+      }
+    }
   });
 }
 
