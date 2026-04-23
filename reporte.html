@@ -1518,18 +1518,24 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
 
 function renderAvanceMensual(wActual) {
   const rangoSem = fechasDeSemana(wActual);
-  const hoy = new Date();
-  hoy.setHours(23, 59, 59, 999);
+  const ahora = new Date();
+  const hoyStr = ahora.toISOString().split('T')[0];
 
-  const fechasMax = [];
+  let ultimoDiaConDatosStr = null;
   ventasData.forEach(r => {
-    if (r.fecha_bo) fechasMax.push(new Date(r.fecha_bo + 'T12:00:00').getTime());
-    if (r.fecha_activacion) fechasMax.push(new Date(r.fecha_activacion + 'T12:00:00').getTime());
-    if (r.fecha_cancelacion) fechasMax.push(new Date(r.fecha_cancelacion + 'T12:00:00').getTime());
+    if (r.fecha_bo && r.fecha_bo <= hoyStr) {
+      if (!ultimoDiaConDatosStr || r.fecha_bo > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_bo;
+    }
+    if (r.fecha_activacion && r.fecha_activacion <= hoyStr) {
+      if (!ultimoDiaConDatosStr || r.fecha_activacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_activacion;
+    }
+    if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStr) {
+      if (!ultimoDiaConDatosStr || r.fecha_cancelacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_cancelacion;
+    }
   });
-  const ultimoDiaConDatos = fechasMax.length > 0 ? new Date(Math.max(...fechasMax)) : hoy;
-  const fechaRef = ultimoDiaConDatos < hoy ? ultimoDiaConDatos : hoy;
+  if (!ultimoDiaConDatosStr) ultimoDiaConDatosStr = hoyStr;
 
+  const fechaRef = new Date(ultimoDiaConDatosStr + 'T12:00:00');
   const anio = fechaRef.getFullYear();
   const mes = fechaRef.getMonth() + 1;
 
@@ -1545,7 +1551,7 @@ function renderAvanceMensual(wActual) {
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
   const finMesStr = diasDelMes[diasDelMes.length-1].fecha;
-  const fechaCorteStr = fechaCorte.toISOString().split('T')[0];
+  const fechaCorteStr = ultimoDiaConDatosStr;
 
   const diasTranscurridos = diasDelMes
     .filter(d => d.fecha >= iniMesStr && d.fecha <= fechaCorteStr)
@@ -1553,7 +1559,11 @@ function renderAvanceMensual(wActual) {
 
   const diasRestantes = diasHabilesTotales - diasTranscurridos;
 
-  const metasSupMes = metasSupData.filter(m => m.anio === anio && m.mes === mes);
+  const metasSupMes = metasSupData.filter(m =>
+    m.anio === anio &&
+    m.mes === mes &&
+    SUPERVISORES.includes(m.supervisor)
+  );
   const metaTotal = metasSupMes.reduce((a, m) => a + m.meta_activadas, 0);
 
   if (metaTotal === 0) {
@@ -1883,13 +1893,14 @@ function renderAvanceUI() {
     <thead>
       <tr>
         <th>Supervisor</th>
-        <th class="num">Meta</th>
-        <th class="num">Avance</th>
-        <th class="num">%</th>
-        <th class="num">Esperado</th>
-        <th class="num">Dif</th>
-        <th class="num">Ritmo necesario</th>
-        <th class="num">Proyección</th>
+        <th class="num" title="Meta del mes completo">Meta</th>
+        <th class="num" title="Activadas en el mes hasta el día actual">Avance</th>
+        <th class="num" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mensual</th>
+        <th class="num" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado hoy</th>
+        <th class="num" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
+        <th class="num" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
+        <th class="num" title="Activadas por día que necesita lograr de aquí al cierre">Ritmo necesario</th>
+        <th class="num" title="Estimación del cierre del mes basada en el ritmo actual">Proyección</th>
         <th>Estatus</th>
       </tr>
     </thead>
@@ -1901,12 +1912,14 @@ function renderAvanceUI() {
         const diffClase = d.diff >= 0 ? 'delta-pos' : 'delta-neg';
         const diffSign = d.diff >= 0 ? '+' : '';
         const proyColor = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
+        const colorPctDiario = d.pctEsperado >= 100 ? 'var(--green)' : d.pctEsperado >= 85 ? 'var(--amber)' : 'var(--red)';
         return `<tr>
           <td><strong>${d.sup}</strong></td>
           <td class="num">${d.meta}</td>
           <td class="num"><strong>${d.avance}</strong></td>
           <td class="num">${d.pctCumpl.toFixed(1)}%</td>
           <td class="num">${d.esperado}</td>
+          <td class="num" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
           <td class="num ${diffClase}">${diffSign}${d.diff}</td>
           <td class="num" style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
           <td class="num" style="color: ${proyColor}; font-weight: 700;">${proy} (${pctProy.toFixed(0)}%)</td>
@@ -1919,6 +1932,7 @@ function renderAvanceUI() {
         <td class="num">${estadoTotal.avance}</td>
         <td class="num">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
         <td class="num">${estadoTotal.esperado}</td>
+        <td class="num" style="font-weight:700;">${estadoTotal.esperado > 0 ? (estadoTotal.avance / estadoTotal.esperado * 100).toFixed(1) : 0}%</td>
         <td class="num ${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? 'delta-pos' : 'delta-neg'}">${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? '+' : ''}${estadoTotal.avance - estadoTotal.esperado}</td>
         <td class="num">${ritmoNecesarioTotal.toFixed(1)}</td>
         <td class="num">${proy} (${pctProy.toFixed(0)}%)</td>
@@ -2014,7 +2028,11 @@ function renderDetalleAgentes() {
     avancesAgente[r.ejecutivo] = (avancesAgente[r.ejecutivo] || 0) + 1;
   });
 
-  const metasDelMes = metasAgeData.filter(m => m.anio === anio && m.mes === mes);
+  const metasDelMes = metasAgeData.filter(m =>
+    m.anio === anio &&
+    m.mes === mes &&
+    SUPERVISORES.includes(m.supervisor)
+  );
   const agentesPorSup = {};
   metasDelMes.forEach(m => {
     if (!agentesPorSup[m.supervisor]) agentesPorSup[m.supervisor] = [];
