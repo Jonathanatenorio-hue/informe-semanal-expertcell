@@ -564,6 +564,7 @@
     <div class="nav-sticky">
       <div class="nav-sticky-inner">
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
+        <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
@@ -612,6 +613,27 @@
 
     <!-- EMBUDO PRINCIPAL -->
     <div id="embudo-section"></div>
+
+    <!-- ESTRUCTURA VS OBJETIVO -->
+    <div class="section collapsible abierto" id="sec-estructura">
+      <div class="section-title">🎯 Estructura vs objetivo</div>
+      <div class="section-body">
+      <div class="section-subtitle">Comparación de tu plantilla actual contra el objetivo de 173 posiciones (13 supervisores + 160 agentes). Detecta vacantes, sobrepoblación y supervisores pendientes de contratar.</div>
+
+      <div id="estructura-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0;"></div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+        <div>
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">CC2 (Eduardo Aguila)</div>
+          <div id="estructura-cc2"></div>
+        </div>
+        <div>
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">JV (Luisa Meza)</div>
+          <div id="estructura-jv"></div>
+        </div>
+      </div>
+      </div>
+    </div>
 
     <!-- COMPARATIVO POR SUPERVISOR -->
     <div class="section" id="sec-comparativo">
@@ -979,8 +1001,8 @@
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px;">
           <div>
             <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Plantilla objetivo (fin de año)</label>
-            <input type="number" id="proy-plantilla-obj" min="50" max="300" step="1" value="140" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px;">
-            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Agentes al cierre de diciembre</div>
+            <input type="number" id="proy-plantilla-obj" min="50" max="300" step="1" value="160" style="width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 14px; font-weight: 700; margin-top: 4px;">
+            <div style="font-size: 10px; color: var(--text-soft); margin-top: 2px;">Agentes al cierre de diciembre (tope 160)</div>
           </div>
           <div>
             <label style="font-size: 11px; font-weight: 600; color: var(--text-soft); text-transform: uppercase;">Productividad promedio</label>
@@ -1126,6 +1148,7 @@ let metasSupData = [];
 let metasAgeData = [];
 let coordinadoresData = [];
 let coordSupData = [];
+let supConfigData = [];
 let foliosIgnoradosData = [];
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
@@ -1210,6 +1233,9 @@ async function cargarDatos() {
 
   const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
   coordSupData = coordSup || [];
+
+  const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
+  supConfigData = supConfig || [];
 
   const { data: foliosIgn } = await db.from('folios_ignorados').select('*').order('created_at', { ascending: false });
   foliosIgnoradosData = foliosIgn || [];
@@ -1459,6 +1485,7 @@ function renderReporte(wActual, wCurrent) {
 
   renderHeaderTags(actual, anterior, wActual, wCurrent);
   renderAvanceMensual(wActual);
+  renderEstructura();
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
@@ -2370,6 +2397,133 @@ function descargarEquipoExcel(supervisor) {
 function toggleAgenteAcordeon(sup) {
   const el = document.querySelector(`.agente-acordeon[data-sup="${sup}"]`);
   if (el) el.classList.toggle('abierto');
+}
+
+function renderEstructura() {
+  if (supConfigData.length === 0) return;
+
+  const hoy = new Date().toISOString().split('T')[0];
+
+  const plantPorSup = {};
+  plantillaData.forEach(p => {
+    if (!p.fecha_ingreso || p.fecha_ingreso > hoy) return;
+    if (p.fecha_baja && p.fecha_baja <= hoy) return;
+    plantPorSup[p.supervisor] = (plantPorSup[p.supervisor] || 0) + 1;
+  });
+
+  const datos = supConfigData.map(c => {
+    const actuales = plantPorSup[c.supervisor] || 0;
+    const vacantes = c.tope_agentes - actuales;
+    let estatus, color;
+    if (!c.activo) {
+      estatus = 'Pendiente de contratar';
+      color = 'var(--text-soft)';
+    } else if (actuales === 0) {
+      estatus = 'Sin agentes';
+      color = 'var(--red)';
+    } else if (vacantes > 0) {
+      estatus = `${vacantes} vacantes`;
+      color = 'var(--amber)';
+    } else if (vacantes === 0) {
+      estatus = 'Completo';
+      color = 'var(--green)';
+    } else {
+      estatus = `+${Math.abs(vacantes)} sobrepoblado`;
+      color = 'var(--red)';
+    }
+    return { ...c, actuales, vacantes, estatus, color };
+  });
+
+  const datosCC2 = datos.filter(d => d.centro === 'CC2');
+  const datosJV = datos.filter(d => d.centro === 'JV');
+
+  const sumar = (arr, campo) => arr.reduce((a, d) => a + (d[campo] || 0), 0);
+
+  const topeCC2 = sumar(datosCC2, 'tope_agentes');
+  const actCC2 = sumar(datosCC2, 'actuales');
+  const topeJV = sumar(datosJV, 'tope_agentes');
+  const actJV = sumar(datosJV, 'actuales');
+  const topeTotal = topeCC2 + topeJV;
+  const actTotal = actCC2 + actJV;
+
+  const supActivosCC2 = datosCC2.filter(d => d.activo).length;
+  const supPendientesCC2 = datosCC2.filter(d => !d.activo).length;
+  const supActivosJV = datosJV.filter(d => d.activo).length;
+  const supPendientesJV = datosJV.filter(d => !d.activo).length;
+
+  const vacantesTotales = topeTotal - actTotal;
+  const supPendTotales = supPendientesCC2 + supPendientesJV;
+
+  document.getElementById('estructura-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Agentes actuales</div>
+      <div class="stat-value">${actTotal}</div>
+      <div class="stat-sub">de ${topeTotal} objetivo</div>
+    </div>
+    <div class="stat-card" style="border-left-color: ${vacantesTotales > 0 ? 'var(--amber)' : 'var(--green)'};">
+      <div class="stat-label">Vacantes agentes</div>
+      <div class="stat-value" style="color: ${vacantesTotales > 0 ? 'var(--amber)' : 'var(--green)'};">${vacantesTotales}</div>
+      <div class="stat-sub">${vacantesTotales > 0 ? 'por cubrir' : 'todo ocupado'}</div>
+    </div>
+    <div class="stat-card" style="border-left-color: ${supPendTotales > 0 ? 'var(--red)' : 'var(--green)'};">
+      <div class="stat-label">Supervisores por contratar</div>
+      <div class="stat-value" style="color: ${supPendTotales > 0 ? 'var(--red)' : 'var(--green)'};">${supPendTotales}</div>
+      <div class="stat-sub">${supPendientesCC2} CC2 · ${supPendientesJV} JV</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">% llenado</div>
+      <div class="stat-value" style="color: var(--att-blue);">${(actTotal/topeTotal*100).toFixed(1)}%</div>
+      <div class="stat-sub">de capacidad instalada</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);">
+      <div class="stat-label">Potencial de ventas/mes</div>
+      <div class="stat-value" style="color: var(--att-orange);">${(topeTotal * 12).toLocaleString()}</div>
+      <div class="stat-sub">${topeTotal} × 12 min / agente</div>
+    </div>
+  `;
+
+  function renderTabla(datos, totalTope, totalAct) {
+    const totalVacantes = totalTope - totalAct;
+    let html = `<table style="font-size: 13px;">
+      <thead>
+        <tr>
+          <th>Supervisor</th>
+          <th class="num" style="text-align:center;">Tope</th>
+          <th class="num" style="text-align:center;">Actuales</th>
+          <th class="num" style="text-align:center;">Vacantes</th>
+          <th style="text-align:center;">Estatus</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+    datos.forEach(d => {
+      const bg = !d.activo ? 'background: #FEF3C7;' : '';
+      const nombre = !d.activo ? `<em>${d.supervisor}</em>` : `<strong>${d.supervisor}</strong>`;
+      const vacColor = d.vacantes > 0 ? 'var(--amber)' : d.vacantes === 0 ? 'var(--green)' : 'var(--red)';
+      const vacText = d.vacantes > 0 ? `+${d.vacantes}` : d.vacantes === 0 ? '—' : d.vacantes;
+      html += `<tr style="${bg}">
+        <td>${nombre}</td>
+        <td class="num" style="text-align:center;">${d.tope_agentes}</td>
+        <td class="num" style="text-align:center; font-weight:700;">${d.actuales}</td>
+        <td class="num" style="text-align:center; color:${vacColor}; font-weight:700;">${vacText}</td>
+        <td style="text-align:center; color:${d.color}; font-weight:700; font-size: 12px;">${d.estatus}</td>
+      </tr>`;
+    });
+
+    html += `<tr style="background: var(--bg); font-weight: 700;">
+      <td>TOTAL</td>
+      <td class="num" style="text-align:center;">${totalTope}</td>
+      <td class="num" style="text-align:center;">${totalAct}</td>
+      <td class="num" style="text-align:center; color: ${totalVacantes > 0 ? 'var(--amber)' : 'var(--green)'};">${totalVacantes > 0 ? '+' + totalVacantes : totalVacantes === 0 ? '—' : totalVacantes}</td>
+      <td style="text-align:center;">${(totalAct/totalTope*100).toFixed(0)}% llenado</td>
+    </tr>`;
+
+    html += '</tbody></table>';
+    return html;
+  }
+
+  document.getElementById('estructura-cc2').innerHTML = renderTabla(datosCC2, topeCC2, actCC2);
+  document.getElementById('estructura-jv').innerHTML = renderTabla(datosJV, topeJV, actJV);
 }
 
 function renderProductividadAgente(wActual, iniStr, finStr) {
@@ -3984,21 +4138,21 @@ function renderProyeccionAnual() {
   // Setup del simulador
   const setEscenario = (esc) => {
     if (esc === 'realista') {
-      document.getElementById('proy-plantilla-obj').value = 130;
+      document.getElementById('proy-plantilla-obj').value = 160;
       document.getElementById('proy-productividad').value = 10;
-      document.getElementById('proy-crecimiento').value = 7;
+      document.getElementById('proy-crecimiento').value = 8;
     } else if (esc === 'pesimista') {
-      document.getElementById('proy-plantilla-obj').value = 110;
+      document.getElementById('proy-plantilla-obj').value = 130;
       document.getElementById('proy-productividad').value = 9;
-      document.getElementById('proy-crecimiento').value = 4;
+      document.getElementById('proy-crecimiento').value = 5;
     } else if (esc === 'optimista') {
-      document.getElementById('proy-plantilla-obj').value = 155;
-      document.getElementById('proy-productividad').value = 12;
-      document.getElementById('proy-crecimiento').value = 10;
+      document.getElementById('proy-plantilla-obj').value = 160;
+      document.getElementById('proy-productividad').value = 15;
+      document.getElementById('proy-crecimiento').value = 12;
     } else if (esc === 'meta') {
-      document.getElementById('proy-plantilla-obj').value = 140;
+      document.getElementById('proy-plantilla-obj').value = 160;
       document.getElementById('proy-productividad').value = 11;
-      document.getElementById('proy-crecimiento').value = 9;
+      document.getElementById('proy-crecimiento').value = 10;
     }
     calcularProyeccion();
   };
