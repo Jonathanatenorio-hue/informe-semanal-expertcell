@@ -687,6 +687,97 @@
       </div>
     </div>
 
+    <!-- ROTACIÓN Y PERMANENCIA -->
+    <div class="section">
+      <div class="section-title">Rotación y permanencia</div>
+      <div class="section-subtitle">Diagnóstico de estabilidad de plantilla por supervisor. Mide qué tan bien retiene cada uno a su equipo y qué tan eficiente es el proceso de onboarding.</div>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+        <select id="rot-periodo-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;"></select>
+      </div>
+
+      <div id="rot-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Movimiento de plantilla por supervisor</div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="text-align:center;">Supervisor</th>
+            <th colspan="4" class="center" style="background: var(--att-blue-dark);">Movimiento</th>
+            <th colspan="2" class="center col-divider" style="background: #DC2626;">Rotación</th>
+          </tr>
+          <tr class="subhead">
+            <th class="num" style="text-align:center;">Inicio</th>
+            <th class="num" style="text-align:center;">Ingresos</th>
+            <th class="num" style="text-align:center;">Bajas</th>
+            <th class="num" style="text-align:center;">Fin</th>
+            <th class="num col-divider" style="text-align:center;" title="Bajas / promedio plantilla">Estándar %</th>
+            <th class="num" style="text-align:center;" title="Bajas / plantilla inicial">Simple %</th>
+          </tr>
+        </thead>
+        <tbody id="rot-tabla-body"></tbody>
+        <tfoot id="rot-tabla-foot"></tfoot>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Supervivencia de curva (6 semanas)</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">De los agentes que ingresaron hace 6 semanas o más, qué porcentaje sobrevivió la curva. Mide la calidad del onboarding.</div>
+      <div class="chart-wrap" style="height: 280px;"><canvas id="chart-rot-supervivencia"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Permanencia promedio</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Cuántos días duran en promedio los agentes que ya causaron baja. Calculado sobre todo el histórico.</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:center;">Supervisor</th>
+            <th class="num" style="text-align:center;">Bajas históricas</th>
+            <th class="num" style="text-align:center;">Promedio (días)</th>
+            <th class="num" style="text-align:center;">Mediana (días)</th>
+            <th class="num" style="text-align:center;">Más corta</th>
+            <th class="num" style="text-align:center;">Más larga</th>
+          </tr>
+        </thead>
+        <tbody id="rot-perm-tabla"></tbody>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Pirámide de antigüedad (agentes activos hoy)</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Distribución de la plantilla activa por antigüedad. Un equipo sano tiene mezcla de novatos y veteranos.</div>
+      <div class="chart-wrap" style="height: 320px;"><canvas id="chart-rot-piramide"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Bajas del periodo</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Lista detallada de bajas con motivo y duración. Útil para detectar patrones.</div>
+      <div style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Filtrar por supervisor:</span>
+        <select id="rot-bajas-sup-filter" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
+          <option value="all">Todos</option>
+          <option value="Alan">Alan</option>
+          <option value="Alfred">Alfred</option>
+          <option value="Carlos">Carlos</option>
+          <option value="Jorge">Jorge</option>
+          <option value="Luisa">Luisa</option>
+          <option value="Reyna">Reyna</option>
+        </select>
+        <span id="rot-bajas-count" style="font-size: 13px; color: var(--text-soft); font-weight: 600;"></span>
+        <button id="btn-descargar-bajas" style="margin-left: auto; background: var(--green); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">📥 Descargar Excel</button>
+      </div>
+      <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table id="rot-bajas-tabla" style="font-size: 12.5px;">
+          <thead style="position: sticky; top: 0; z-index: 1;">
+            <tr>
+              <th style="text-align:center;">Nombre</th>
+              <th style="text-align:center;">Supervisor</th>
+              <th style="text-align:center;">Fecha ingreso</th>
+              <th style="text-align:center;">Fecha baja</th>
+              <th class="num" style="text-align:center;">Días duró</th>
+              <th style="text-align:center;">Tipo baja</th>
+              <th style="text-align:center;">Motivo</th>
+            </tr>
+          </thead>
+          <tbody id="rot-bajas-body"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- CALENDARIO -->
     <div class="section">
       <div class="section-title">Explorar otras semanas</div>
@@ -777,7 +868,7 @@ async function cargarDatos() {
 
   const { data: plantData, error: plantErr } = await db
     .from('plantilla')
-    .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus');
+    .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus, tipo_baja, motivo_baja');
 
   if (plantErr) {
     document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error en plantilla: ' + plantErr.message + '</span>';
@@ -1024,6 +1115,7 @@ function renderReporte(wActual, wCurrent) {
   renderHistoricoSupervisores();
   renderFlujoEntrega();
   renderRecuperacion();
+  renderRotacion();
   renderCalendario(wActual, wCurrent);
 }
 
@@ -2546,6 +2638,407 @@ function renderRecupPerdidas(datos) {
     document.getElementById('recup-perdidas-body').innerHTML =
       `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-soft);">No hay canceladas perdidas con estos filtros 🎉</td></tr>`;
   }
+}
+
+function plantillaActivaEn(fechaStr, supervisor) {
+  return plantillaData.filter(p =>
+    p.supervisor === supervisor &&
+    p.fecha_ingreso && p.fecha_ingreso <= fechaStr &&
+    (!p.fecha_baja || p.fecha_baja >= fechaStr)
+  ).length;
+}
+
+function renderRotacion() {
+  if (plantillaData.length === 0) return;
+
+  const fechasIngreso = plantillaData.filter(p => p.fecha_ingreso).map(p => p.fecha_ingreso);
+  const fechasBaja = plantillaData.filter(p => p.fecha_baja).map(p => p.fecha_baja);
+  const todasFechas = [...fechasIngreso, ...fechasBaja].sort();
+
+  const mesesDisp = new Set();
+  todasFechas.forEach(f => mesesDisp.add(f.substring(0, 7)));
+  const meses = [...mesesDisp].sort().reverse();
+
+  const selectEl = document.getElementById('rot-periodo-select');
+  selectEl.innerHTML = `
+    <option value="todo">Todo el histórico</option>
+    <option disabled>──────────</option>
+    ${meses.map(m => {
+      const [a, mm] = m.split('-');
+      return `<option value="${m}">${MESES_NOMBRE[parseInt(mm) - 1]} ${a}</option>`;
+    }).join('')}
+  `;
+
+  const fechaActualPicker = window.__avanceData
+    ? `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`
+    : meses[0];
+  selectEl.value = fechaActualPicker;
+
+  selectEl.onchange = () => renderRotConFiltro(selectEl.value);
+
+  const supFilter = document.getElementById('rot-bajas-sup-filter');
+  supFilter.onchange = () => renderRotBajas(selectEl.value);
+
+  const btnDescargar = document.getElementById('btn-descargar-bajas');
+  btnDescargar.onclick = () => descargarBajasExcel(selectEl.value);
+
+  renderRotConFiltro(selectEl.value);
+  renderRotPermanencia();
+  renderRotPiramide();
+}
+
+function renderRotConFiltro(periodo) {
+  let inicioStr, finStr;
+
+  if (periodo === 'todo') {
+    const fechasIng = plantillaData.filter(p => p.fecha_ingreso).map(p => p.fecha_ingreso).sort();
+    inicioStr = fechasIng[0] || '2025-01-01';
+    finStr = new Date().toISOString().split('T')[0];
+  } else {
+    const [anio, mes] = periodo.split('-');
+    inicioStr = `${anio}-${mes}-01`;
+    const ultimoDia = new Date(parseInt(anio), parseInt(mes), 0).getDate();
+    finStr = `${anio}-${mes}-${String(ultimoDia).padStart(2, '0')}`;
+  }
+
+  const filas = SUPERVISORES.map(sup => {
+    const inicio = plantillaActivaEn(inicioStr, sup);
+    const fin = plantillaActivaEn(finStr, sup);
+
+    const ingresos = plantillaData.filter(p =>
+      p.supervisor === sup &&
+      p.fecha_ingreso && p.fecha_ingreso >= inicioStr && p.fecha_ingreso <= finStr
+    ).length;
+
+    const bajas = plantillaData.filter(p =>
+      p.supervisor === sup &&
+      p.fecha_baja && p.fecha_baja >= inicioStr && p.fecha_baja <= finStr
+    ).length;
+
+    const promedio = (inicio + fin) / 2;
+    const rotA = promedio > 0 ? (bajas / promedio * 100) : 0;
+    const rotB = inicio > 0 ? (bajas / inicio * 100) : 0;
+
+    return { sup, inicio, ingresos, bajas, fin, rotA, rotB };
+  }).sort((a, b) => b.rotA - a.rotA);
+
+  let totalIni = 0, totalIng = 0, totalBajas = 0, totalFin = 0;
+  filas.forEach(f => {
+    totalIni += f.inicio;
+    totalIng += f.ingresos;
+    totalBajas += f.bajas;
+    totalFin += f.fin;
+  });
+  const promTotal = (totalIni + totalFin) / 2;
+  const rotATotal = promTotal > 0 ? (totalBajas / promTotal * 100) : 0;
+  const rotBTotal = totalIni > 0 ? (totalBajas / totalIni * 100) : 0;
+
+  document.getElementById('rot-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Plantilla actual</div>
+      <div class="stat-value">${totalFin}</div>
+      <div class="stat-sub">agentes activos</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Ingresos</div>
+      <div class="stat-value" style="color: var(--green);">+${totalIng}</div>
+      <div class="stat-sub">en el periodo</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--red);">
+      <div class="stat-label">Bajas</div>
+      <div class="stat-value" style="color: var(--red);">-${totalBajas}</div>
+      <div class="stat-sub">en el periodo</div>
+    </div>
+    <div class="stat-card" style="border-left-color: ${(totalIng - totalBajas) >= 0 ? 'var(--green)' : 'var(--red)'};">
+      <div class="stat-label">Saldo neto</div>
+      <div class="stat-value" style="color: ${(totalIng - totalBajas) >= 0 ? 'var(--green)' : 'var(--red)'};">${(totalIng - totalBajas) >= 0 ? '+' : ''}${totalIng - totalBajas}</div>
+      <div class="stat-sub">crecimiento</div>
+    </div>
+    <div class="stat-card" style="border-left-color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">
+      <div class="stat-label">Rotación equipo</div>
+      <div class="stat-value" style="color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">${rotATotal.toFixed(1)}%</div>
+      <div class="stat-sub">fórmula estándar</div>
+    </div>
+  `;
+
+  document.getElementById('rot-tabla-body').innerHTML = filas.map(f => {
+    const colorRot = f.rotA >= 15 ? 'var(--red)' : f.rotA >= 10 ? 'var(--amber)' : 'var(--green)';
+    return `<tr>
+      <td><strong>${f.sup}</strong></td>
+      <td class="num" style="text-align:center;">${f.inicio}</td>
+      <td class="num" style="text-align:center; color:var(--green); font-weight:600;">+${f.ingresos}</td>
+      <td class="num" style="text-align:center; color:var(--red); font-weight:600;">-${f.bajas}</td>
+      <td class="num" style="text-align:center;"><strong>${f.fin}</strong></td>
+      <td class="num col-divider" style="text-align:center; color:${colorRot}; font-weight:700;">${f.rotA.toFixed(1)}%</td>
+      <td class="num" style="text-align:center; color:${colorRot};">${f.rotB.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  const colorTotalRot = rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)';
+  document.getElementById('rot-tabla-foot').innerHTML = `
+    <tr style="background:var(--bg);font-weight:700;">
+      <td>TOTAL</td>
+      <td class="num" style="text-align:center;">${totalIni}</td>
+      <td class="num" style="text-align:center; color:var(--green);">+${totalIng}</td>
+      <td class="num" style="text-align:center; color:var(--red);">-${totalBajas}</td>
+      <td class="num" style="text-align:center;">${totalFin}</td>
+      <td class="num col-divider" style="text-align:center; color:${colorTotalRot};">${rotATotal.toFixed(1)}%</td>
+      <td class="num" style="text-align:center; color:${colorTotalRot};">${rotBTotal.toFixed(1)}%</td>
+    </tr>
+  `;
+
+  renderRotSupervivencia();
+  renderRotBajas(periodo);
+}
+
+function renderRotSupervivencia() {
+  const hace6sem = new Date();
+  hace6sem.setDate(hace6sem.getDate() - 42);
+  const hace6semStr = hace6sem.toISOString().split('T')[0];
+
+  const datos = SUPERVISORES.map(sup => {
+    const candidatos = plantillaData.filter(p =>
+      p.supervisor === sup &&
+      p.fecha_ingreso && p.fecha_ingreso <= hace6semStr
+    );
+
+    const sobrevivientes = candidatos.filter(p => {
+      if (!p.fecha_baja) return true;
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const baja = new Date(p.fecha_baja + 'T12:00:00');
+      const diffDias = (baja - ing) / (1000 * 60 * 60 * 24);
+      return diffDias > 42;
+    });
+
+    const total = candidatos.length;
+    const sup_count = sobrevivientes.length;
+    const pct = total > 0 ? (sup_count / total * 100) : 0;
+    return { sup, total, sobrevivientes: sup_count, pct };
+  }).sort((a, b) => b.pct - a.pct);
+
+  const ctx = document.getElementById('chart-rot-supervivencia');
+  if (window.__chartRotSup) window.__chartRotSup.destroy();
+  window.__chartRotSup = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: datos.map(d => d.sup),
+      datasets: [{
+        label: '% sobrevivientes',
+        data: datos.map(d => Number(d.pct.toFixed(1))),
+        backgroundColor: datos.map(d => d.pct >= 85 ? '#15803D' : d.pct >= 70 ? '#16A34A' : d.pct >= 50 ? '#D97706' : '#DC2626'),
+        borderRadius: 6
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const d = datos[ctx.dataIndex];
+              return `${d.sobrevivientes} de ${d.total} sobrevivieron (${d.pct.toFixed(1)}%)`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, max: 100, grid: { color: 'rgba(0,0,0,0.06)' }, ticks: { callback: v => v + '%' } },
+        y: { grid: { display: false }, ticks: { font: { size: 13, weight: '600' } } }
+      }
+    }
+  });
+}
+
+function renderRotPermanencia() {
+  const filas = SUPERVISORES.map(sup => {
+    const bajas = plantillaData.filter(p =>
+      p.supervisor === sup && p.fecha_baja && p.fecha_ingreso
+    );
+    if (bajas.length === 0) return null;
+    const dias = bajas.map(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const baja = new Date(p.fecha_baja + 'T12:00:00');
+      return Math.floor((baja - ing) / (1000 * 60 * 60 * 24));
+    });
+    const prom = dias.reduce((a, b) => a + b, 0) / dias.length;
+    const med = mediana(dias);
+    const min = Math.min(...dias);
+    const max = Math.max(...dias);
+    return { sup, n: bajas.length, prom, med, min, max };
+  }).filter(x => x !== null).sort((a, b) => b.prom - a.prom);
+
+  document.getElementById('rot-perm-tabla').innerHTML = filas.map(f => {
+    const colorProm = f.prom >= 180 ? 'var(--green)' : f.prom >= 90 ? 'var(--amber)' : 'var(--red)';
+    return `<tr>
+      <td><strong>${f.sup}</strong></td>
+      <td class="num" style="text-align:center;">${f.n}</td>
+      <td class="num" style="text-align:center; color:${colorProm}; font-weight:700;">${f.prom.toFixed(0)}</td>
+      <td class="num" style="text-align:center;">${f.med.toFixed(0)}</td>
+      <td class="num" style="text-align:center; color:var(--text-soft);">${f.min}</td>
+      <td class="num" style="text-align:center;">${f.max}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderRotPiramide() {
+  const hoy = new Date();
+  const activos = plantillaData.filter(p =>
+    p.fecha_ingreso && !p.fecha_baja &&
+    SUPERVISORES.includes(p.supervisor)
+  );
+
+  const categorias = ['0-2 meses', '2-6 meses', '6-12 meses', '12+ meses'];
+  const colores = ['#FCA5A5', '#FBBF24', '#86EFAC', '#15803D'];
+
+  const conteos = {};
+  SUPERVISORES.forEach(s => {
+    conteos[s] = { '0-2 meses': 0, '2-6 meses': 0, '6-12 meses': 0, '12+ meses': 0 };
+  });
+
+  activos.forEach(p => {
+    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+    const dias = (hoy - ing) / (1000 * 60 * 60 * 24);
+    let cat;
+    if (dias < 60) cat = '0-2 meses';
+    else if (dias < 180) cat = '2-6 meses';
+    else if (dias < 365) cat = '6-12 meses';
+    else cat = '12+ meses';
+    conteos[p.supervisor][cat]++;
+  });
+
+  const datasets = categorias.map((cat, i) => ({
+    label: cat,
+    data: SUPERVISORES.map(s => conteos[s][cat]),
+    backgroundColor: colores[i],
+    borderRadius: 4
+  }));
+
+  const ctx = document.getElementById('chart-rot-piramide');
+  if (window.__chartRotPir) window.__chartRotPir.destroy();
+  window.__chartRotPir = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: SUPERVISORES,
+      datasets
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 12, weight: '600' }, boxWidth: 18 } }
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 13, weight: '600' } } },
+        y: { stacked: true, beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+      }
+    }
+  });
+}
+
+function renderRotBajas(periodo) {
+  let inicioStr, finStr;
+  if (periodo === 'todo') {
+    inicioStr = '2020-01-01';
+    finStr = new Date().toISOString().split('T')[0];
+  } else {
+    const [anio, mes] = periodo.split('-');
+    inicioStr = `${anio}-${mes}-01`;
+    const ultimoDia = new Date(parseInt(anio), parseInt(mes), 0).getDate();
+    finStr = `${anio}-${mes}-${String(ultimoDia).padStart(2, '0')}`;
+  }
+
+  const supFiltro = document.getElementById('rot-bajas-sup-filter').value;
+  let bajas = plantillaData.filter(p =>
+    p.fecha_baja && p.fecha_baja >= inicioStr && p.fecha_baja <= finStr &&
+    SUPERVISORES.includes(p.supervisor)
+  );
+
+  if (supFiltro !== 'all') {
+    bajas = bajas.filter(p => p.supervisor === supFiltro);
+  }
+
+  bajas = bajas.map(p => {
+    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+    const baja = new Date(p.fecha_baja + 'T12:00:00');
+    const dias = Math.floor((baja - ing) / (1000 * 60 * 60 * 24));
+    return { ...p, dias };
+  }).sort((a, b) => b.fecha_baja.localeCompare(a.fecha_baja));
+
+  document.getElementById('rot-bajas-count').textContent =
+    `${bajas.length} bajas` + (supFiltro !== 'all' ? ` (${supFiltro})` : '');
+
+  document.getElementById('rot-bajas-body').innerHTML = bajas.map(b => {
+    const colorDias = b.dias < 30 ? 'var(--red)' : b.dias < 90 ? 'var(--amber)' : 'var(--text-soft)';
+    return `<tr>
+      <td>${b.nombre}</td>
+      <td style="text-align:center;"><strong>${b.supervisor}</strong></td>
+      <td class="num" style="text-align:center;">${b.fecha_ingreso}</td>
+      <td class="num" style="text-align:center;">${b.fecha_baja}</td>
+      <td class="num" style="text-align:center; color:${colorDias}; font-weight:700;">${b.dias}</td>
+      <td style="text-align:center;">${b.tipo_baja || '—'}</td>
+      <td>${b.motivo_baja || '—'}</td>
+    </tr>`;
+  }).join('');
+
+  if (bajas.length === 0) {
+    document.getElementById('rot-bajas-body').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-soft);">No hay bajas en este periodo 🎉</td></tr>`;
+  }
+}
+
+function descargarBajasExcel(periodo) {
+  let inicioStr, finStr;
+  if (periodo === 'todo') {
+    inicioStr = '2020-01-01';
+    finStr = new Date().toISOString().split('T')[0];
+  } else {
+    const [anio, mes] = periodo.split('-');
+    inicioStr = `${anio}-${mes}-01`;
+    const ultimoDia = new Date(parseInt(anio), parseInt(mes), 0).getDate();
+    finStr = `${anio}-${mes}-${String(ultimoDia).padStart(2, '0')}`;
+  }
+
+  const supFiltro = document.getElementById('rot-bajas-sup-filter').value;
+  let bajas = plantillaData.filter(p =>
+    p.fecha_baja && p.fecha_baja >= inicioStr && p.fecha_baja <= finStr &&
+    SUPERVISORES.includes(p.supervisor)
+  );
+  if (supFiltro !== 'all') {
+    bajas = bajas.filter(p => p.supervisor === supFiltro);
+  }
+
+  if (bajas.length === 0) {
+    alert('No hay bajas con los filtros actuales.');
+    return;
+  }
+
+  const filas = bajas.map(p => {
+    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+    const baja = new Date(p.fecha_baja + 'T12:00:00');
+    const dias = Math.floor((baja - ing) / (1000 * 60 * 60 * 24));
+    return {
+      'Nombre': p.nombre,
+      'Supervisor': p.supervisor,
+      'Fecha ingreso': p.fecha_ingreso,
+      'Fecha baja': p.fecha_baja,
+      'Días duró': dias,
+      'Tipo baja': p.tipo_baja || '',
+      'Motivo': p.motivo_baja || ''
+    };
+  }).sort((a, b) => b['Fecha baja'].localeCompare(a['Fecha baja']));
+
+  const ws = XLSX.utils.json_to_sheet(filas);
+  ws['!cols'] = [
+    { wch: 35 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 30 }
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Bajas');
+
+  const fecha = new Date().toISOString().split('T')[0];
+  const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
+  const periodoStr = periodo === 'todo' ? 'historico' : periodo;
+  XLSX.writeFile(wb, `bajas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
 }
 
 function renderCalendario(wActual, wCurrent) {
