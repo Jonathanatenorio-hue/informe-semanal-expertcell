@@ -572,6 +572,7 @@
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
         <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
         <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
+        <button class="nav-btn" data-target="sec-atipicos">⚠️ Atípicos</button>
         <button class="nav-btn" data-target="sec-calendario">📅 Calendario</button>
         <button class="nav-btn" id="btn-exportar-pdf" style="margin-left: auto; background: var(--att-orange); color: white; border-color: #CC5A00;">📄 Exportar PDF</button>
       </div>
@@ -939,6 +940,55 @@
       </div>
     </div>
 
+    <!-- CASOS ATÍPICOS -->
+    <div class="section collapsible" id="sec-atipicos">
+      <div class="section-title">Casos atípicos y pendientes reales</div>
+      <div class="section-body">
+      <div class="section-subtitle">Folios con comportamiento fuera de la regla: pendientes reales (con Venta llena pero sin activación) y folios que fueron marcados manualmente como "ignorados" por ser casos especiales.</div>
+
+      <div id="atipicos-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0;"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 20px 0 8px; color: var(--red);">⚠️ Pendientes reales (requieren investigación)</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Ventas con Venta llena en Backoffice pero que no aparecen ni en activadas ni en canceladas. Son casos raros que hay que revisar.</div>
+      <div style="max-height: 350px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table id="atipicos-pendientes-tabla" style="font-size: 12.5px;">
+          <thead style="position: sticky; top: 0; z-index: 1;">
+            <tr>
+              <th style="text-align:center;">Folio</th>
+              <th style="text-align:center;">Fecha BO</th>
+              <th>Cliente / Teléfono</th>
+              <th>Ejecutivo</th>
+              <th style="text-align:center;">Supervisor</th>
+              <th class="num" style="text-align:center;">Días</th>
+            </tr>
+          </thead>
+          <tbody id="atipicos-pendientes-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top: 10px; font-size: 12px; color: var(--text-soft);">
+        💡 Para ignorar un caso atípico: ve a Supabase → tabla <code>folios_ignorados</code> → agrega el folio con su motivo. En la próxima carga se ignorará automáticamente.
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--text-soft);">Histórico de folios ignorados</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Casos que tú marcaste como atípicos en Supabase. El sistema los omite del cruce automáticamente.</div>
+      <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table id="atipicos-ignorados-tabla" style="font-size: 12.5px;">
+          <thead style="position: sticky; top: 0; z-index: 1;">
+            <tr>
+              <th style="text-align:center;">Folio</th>
+              <th>Motivo</th>
+              <th>Cliente</th>
+              <th style="text-align:center;">Supervisor</th>
+              <th style="text-align:center;">Fecha BO</th>
+              <th style="text-align:center;">Registrado</th>
+            </tr>
+          </thead>
+          <tbody id="atipicos-ignorados-body"></tbody>
+        </table>
+      </div>
+      </div>
+    </div>
+
     <!-- CALENDARIO -->
     <div class="section" id="sec-calendario">
       <div class="section-title">Explorar otras semanas</div>
@@ -998,6 +1048,7 @@ let metasSupData = [];
 let metasAgeData = [];
 let coordinadoresData = [];
 let coordSupData = [];
+let foliosIgnoradosData = [];
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
 let coordinadorFiltro = 'todos';
@@ -1081,6 +1132,9 @@ async function cargarDatos() {
 
   const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
   coordSupData = coordSup || [];
+
+  const { data: foliosIgn } = await db.from('folios_ignorados').select('*').order('created_at', { ascending: false });
+  foliosIgnoradosData = foliosIgn || [];
 
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
@@ -1336,6 +1390,7 @@ function renderReporte(wActual, wCurrent) {
   renderFlujoEntrega();
   renderRecuperacion();
   renderRotacion();
+  renderAtipicos();
   renderCalendario(wActual, wCurrent);
 }
 
@@ -3383,6 +3438,68 @@ function descargarBajasExcel(periodo) {
   const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
   const periodoStr = periodo === 'todo' ? 'historico' : periodo;
   XLSX.writeFile(wb, `bajas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
+}
+
+function renderAtipicos() {
+  const pendientesReales = ventasData.filter(r =>
+    r.estatus === 'pendiente' &&
+    SUPERVISORES.includes(r.supervisor)
+  );
+
+  const hoy = new Date();
+
+  const pendientesConDias = pendientesReales.map(r => {
+    const diasDesde = Math.floor((hoy - new Date(r.fecha_bo + 'T12:00:00')) / (1000 * 60 * 60 * 24));
+    return { ...r, diasDesde };
+  }).sort((a, b) => b.diasDesde - a.diasDesde);
+
+  document.getElementById('atipicos-resumen-cards').innerHTML = `
+    <div class="stat-card" style="border-left-color: ${pendientesReales.length > 0 ? 'var(--red)' : 'var(--green)'};">
+      <div class="stat-label">Pendientes reales</div>
+      <div class="stat-value" style="color: ${pendientesReales.length > 0 ? 'var(--red)' : 'var(--green)'};">${pendientesReales.length}</div>
+      <div class="stat-sub">${pendientesReales.length > 0 ? 'requieren investigación' : 'todo en orden ✓'}</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--text-soft);">
+      <div class="stat-label">Folios ignorados</div>
+      <div class="stat-value">${foliosIgnoradosData.length}</div>
+      <div class="stat-sub">casos atípicos registrados</div>
+    </div>
+  `;
+
+  if (pendientesConDias.length === 0) {
+    document.getElementById('atipicos-pendientes-body').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--green);">No hay pendientes reales 🎉 El sistema está limpio.</td></tr>`;
+  } else {
+    document.getElementById('atipicos-pendientes-body').innerHTML = pendientesConDias.map(p => {
+      const colorDias = p.diasDesde >= 14 ? 'var(--red)' : p.diasDesde >= 7 ? 'var(--amber)' : 'var(--text-soft)';
+      const tel = p.telefono ? `<br><span style="font-family:monospace;font-size:11px;color:var(--text-soft);">${p.telefono}</span>` : '';
+      return `<tr>
+        <td style="text-align:center;font-family:monospace;"><strong>${p.folio}</strong></td>
+        <td class="num" style="text-align:center;">${p.fecha_bo}</td>
+        <td>${p.ejecutivo || '—'}${tel}</td>
+        <td style="font-size:11px;">${p.ejecutivo || '—'}</td>
+        <td style="text-align:center;"><strong>${p.supervisor}</strong></td>
+        <td class="num" style="text-align:center; color:${colorDias}; font-weight:700;">${p.diasDesde}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  if (foliosIgnoradosData.length === 0) {
+    document.getElementById('atipicos-ignorados-body').innerHTML =
+      `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-soft);">No hay folios ignorados.</td></tr>`;
+  } else {
+    document.getElementById('atipicos-ignorados-body').innerHTML = foliosIgnoradosData.map(f => {
+      const creado = f.created_at ? new Date(f.created_at).toLocaleDateString('es-MX') : '—';
+      return `<tr>
+        <td style="text-align:center;font-family:monospace;"><strong>${f.folio}</strong></td>
+        <td style="font-size:11px;">${f.motivo || '—'}</td>
+        <td>${f.cliente || '—'}</td>
+        <td style="text-align:center;">${f.supervisor || '—'}</td>
+        <td class="num" style="text-align:center; font-size:11px;">${f.fecha_bo || '—'}</td>
+        <td style="text-align:center; font-size:11px; color:var(--text-soft);">${creado}</td>
+      </tr>`;
+    }).join('');
+  }
 }
 
 function renderCalendario(wActual, wCurrent) {
