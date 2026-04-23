@@ -1294,12 +1294,31 @@ function renderAvanceMensual(wActual) {
   SUPERVISORES.forEach(s => { avancesPorSup[s] = 0; });
   const avancesPorAgente = {};
 
+  const avancesProgPorSup = {};
+  SUPERVISORES.forEach(s => { avancesProgPorSup[s] = 0; });
+  let avanceProgTotal = 0;
+
+  const transitoPorSup = {};
+  SUPERVISORES.forEach(s => { transitoPorSup[s] = 0; });
+  let transitoTotal = 0;
+
   ventasData.forEach(r => {
-    if (!r.fecha_activacion) return;
-    if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
     if (!SUPERVISORES.includes(r.supervisor)) return;
-    avancesPorSup[r.supervisor]++;
-    avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+
+    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+      avancesPorSup[r.supervisor]++;
+      avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+    }
+
+    if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
+      avancesProgPorSup[r.supervisor]++;
+      avanceProgTotal++;
+    }
+
+    if (r.estatus === 'pendiente' && r.fecha_bo) {
+      transitoPorSup[r.supervisor]++;
+      transitoTotal++;
+    }
   });
 
   const avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
@@ -1349,7 +1368,9 @@ function renderAvanceMensual(wActual) {
     proyMes: proyectar(avanceTotal, avanceUltSem, 'mes', diasTranscurridos, diasRestantes, diasUltSemana),
     proySem: proyectar(avanceTotal, avanceUltSem, 'semana', diasTranscurridos, diasRestantes, diasUltSemana),
     diasHabilesTotales, diasTranscurridos, diasRestantes,
-    fechaCorte: fechaCorteStr
+    fechaCorte: fechaCorteStr,
+    transito: transitoTotal,
+    avanceProg: avanceProgTotal
   };
 
   const supervisoresData = metasSupMes.map(m => {
@@ -1361,9 +1382,48 @@ function renderAvanceMensual(wActual) {
     const proyMes = proyectar(avance, avanceSem, 'mes', diasTranscurridos, diasRestantes, diasUltSemana);
     const proySem = proyectar(avance, avanceSem, 'semana', diasTranscurridos, diasRestantes, diasUltSemana);
     const ritmoNecesario = diasRestantes > 0 ? Math.max(0, m.meta_activadas - avance) / diasRestantes : 0;
+
+    const tresMesesAtras = [];
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(anio, mes - 1 - i, 1);
+      tresMesesAtras.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    let progHist = 0, actHist = 0;
+    let progMes = 0, actMes = 0;
+
+    ventasData.forEach(r => {
+      if (r.supervisor !== m.supervisor) return;
+
+      if (r.fecha_bo) {
+        const mesFecha = r.fecha_bo.substring(0, 7);
+        if (tresMesesAtras.includes(mesFecha)) {
+          progHist++;
+          if (r.estatus === 'activada') actHist++;
+        }
+      }
+
+      if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+        actMes++;
+      }
+      if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
+        progMes++;
+      }
+    });
+
+    const tasaHist = progHist > 0 ? (actHist / progHist) : 0.90;
+    const tasaMes = progMes > 0 ? (actMes / progMes) : tasaHist;
+
+    const metaProgFija = tasaHist > 0 ? Math.round(m.meta_activadas / tasaHist) : 0;
+    const avanceProg = avancesProgPorSup[m.supervisor] || 0;
+    const faltanAct = Math.max(0, m.meta_activadas - avance);
+    const progAdicionalNecesarias = tasaMes > 0 ? Math.round(faltanAct / tasaMes) : 0;
+    const metaProgDinamica = avanceProg + progAdicionalNecesarias;
+
     let estado = 'verde';
     if (pctEsperado < 85) estado = 'rojo';
     else if (pctEsperado < 100) estado = 'amarillo';
+
     return {
       sup: m.supervisor,
       meta: m.meta_activadas,
@@ -1372,7 +1432,13 @@ function renderAvanceMensual(wActual) {
       proyMes, proySem,
       ritmoNecesario,
       estado,
-      diff: avance - esperado
+      diff: avance - esperado,
+      transito: transitoPorSup[m.supervisor] || 0,
+      avanceProg,
+      metaProgFija,
+      metaProgDinamica,
+      tasaHist: tasaHist * 100,
+      tasaMes: tasaMes * 100
     };
   }).sort((a, b) => b.pctEsperado - a.pctEsperado);
 
@@ -1405,6 +1471,22 @@ function renderAvanceUI() {
   const pctAvanceTotal = estadoTotal.pctCumplimiento;
   const pctBarraIdeal = diasTranscurridos / estadoTotal.diasHabilesTotales * 100;
 
+  let metaProgFijaTotal = 0, metaProgDinamicaTotal = 0;
+  let actHistTot = 0, progHistTot = 0;
+  let actMesTot = 0, progMesTot = 0;
+  supervisoresData.forEach(d => {
+    metaProgFijaTotal += d.metaProgFija;
+    metaProgDinamicaTotal += d.metaProgDinamica;
+    const tasaH = d.tasaHist / 100;
+    const tasaM = d.tasaMes / 100;
+    if (tasaH > 0) progHistTot += d.meta / tasaH;
+    actHistTot += d.meta;
+    actMesTot += d.avance;
+    progMesTot += d.avanceProg;
+  });
+  const tasaConvHistTotal = progHistTot > 0 ? (actHistTot / progHistTot * 100) : 0;
+  const tasaConvMesTotal = progMesTot > 0 ? (actMesTot / progMesTot * 100) : 0;
+
   document.getElementById('avance-tarjeta-principal').innerHTML = `
     <div class="tarjeta-principal">
       <div class="mes-titulo">${mesNombre} ${anio}</div>
@@ -1420,6 +1502,11 @@ function renderAvanceUI() {
           <div class="metrica-label">Avance</div>
           <div class="metrica-valor">${estadoTotal.avance.toLocaleString()}</div>
           <div class="metrica-sub">${pctAvanceTotal.toFixed(1)}% de meta</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-label">En tránsito</div>
+          <div class="metrica-valor" style="color: #FBBF24;">${estadoTotal.transito.toLocaleString()}</div>
+          <div class="metrica-sub">pipeline por activar</div>
         </div>
         <div class="metrica">
           <div class="metrica-label">Esperado hoy</div>
@@ -1447,6 +1534,32 @@ function renderAvanceUI() {
           <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 2px;">vs meta</div>
           <div style="font-size: 18px; font-weight: 700;">${pctProy.toFixed(1)}%</div>
           <div style="font-size: 11px; opacity: 0.75;">${proy >= estadoTotal.meta ? `+${proy - estadoTotal.meta} sobre meta` : `${proy - estadoTotal.meta} bajo meta`}</div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding: 14px 18px; background: rgba(255,255,255,0.08); border-radius: 8px;">
+        <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 8px;">Meta de programadas</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px;">
+          <div>
+            <div style="font-size: 10px; opacity: 0.7;">META INICIAL (FIJA)</div>
+            <div style="font-size: 20px; font-weight: 700;">${metaProgFijaTotal.toLocaleString()}</div>
+            <div style="font-size: 11px; opacity: 0.75;">basada en histórico</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; opacity: 0.7;">AVANCE ACTUAL</div>
+            <div style="font-size: 20px; font-weight: 700;">${estadoTotal.avanceProg.toLocaleString()}</div>
+            <div style="font-size: 11px; opacity: 0.75;">${estadoTotal.avanceProg > 0 ? ((estadoTotal.avanceProg / metaProgFijaTotal) * 100).toFixed(1) : 0}% de inicial</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; opacity: 0.7;">META DINÁMICA</div>
+            <div style="font-size: 20px; font-weight: 700; color: #FBBF24;">${metaProgDinamicaTotal.toLocaleString()}</div>
+            <div style="font-size: 11px; opacity: 0.75;">ajustada al ritmo actual</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; opacity: 0.7;">CONVERSIÓN MES</div>
+            <div style="font-size: 20px; font-weight: 700;">${tasaConvMesTotal.toFixed(1)}%</div>
+            <div style="font-size: 11px; opacity: 0.75;">vs histórico ${tasaConvHistTotal.toFixed(1)}%</div>
+          </div>
         </div>
       </div>
     </div>
@@ -1477,6 +1590,14 @@ function renderAvanceUI() {
           <div class="detalle">
             <div class="detalle-label">Ritmo necesario</div>
             <div class="detalle-val">${d.ritmoNecesario.toFixed(1)}/día</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">En tránsito</div>
+            <div class="detalle-val" style="color: var(--amber);">${d.transito}</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">Prog: fija / dinám</div>
+            <div class="detalle-val" style="font-size: 11px;">${d.metaProgFija} / <strong style="color: var(--amber);">${d.metaProgDinamica}</strong></div>
           </div>
         </div>
       </div>
