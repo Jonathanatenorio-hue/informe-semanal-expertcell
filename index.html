@@ -487,10 +487,16 @@ async function procesar() {
       const ventaBO = row['Venta'];
       const tieneVentaBO = ventaBO !== null && ventaBO !== undefined && String(ventaBO).trim() !== '';
 
-      let estatus = 'en_transito';
-      if (fechaCan) estatus = 'cancelada';
-      else if (actInfo) estatus = 'activada';
-      else if (tieneVentaBO) estatus = 'pendiente';
+      let estatus;
+      if (!tieneVentaBO) {
+        estatus = 'en_transito';
+      } else if (fechaCan) {
+        estatus = 'cancelada';
+      } else if (actInfo) {
+        estatus = 'activada';
+      } else {
+        estatus = 'pendiente';
+      }
 
       registros.push({
         folio,
