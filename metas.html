@@ -279,6 +279,7 @@
     <button class="tab-btn active" data-tab="metas">📊 Metas mensuales</button>
     <button class="tab-btn" data-tab="plantilla">👥 Plantilla</button>
     <button class="tab-btn" data-tab="calendario">📅 Calendario</button>
+    <button class="tab-btn" data-tab="asignaciones">🔀 Asignaciones</button>
   </div>
 
   <!-- TAB METAS -->
@@ -501,6 +502,98 @@
 
   </div>
   <!-- FIN TAB CALENDARIO -->
+
+  <!-- TAB ASIGNACIONES -->
+  <div class="tab-content" id="tab-asignaciones">
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">1</div>
+        Reasignar agentes de supervisor
+      </div>
+      <div class="alert info">
+        <div>ℹ️</div>
+        <div>
+          Aquí mueves agentes entre supervisores <strong>respetando el histórico</strong>.
+          Cuando reasignas un agente, el sistema cierra su asignación actual y abre una nueva con fecha.
+          Las ventas anteriores al cambio siguen con el supervisor viejo, las nuevas con el nuevo.
+          <br><br>
+          <strong>Importante:</strong> Los cambios siempre tienen efecto a partir del <strong>día 1 del mes seleccionado</strong>.
+        </div>
+      </div>
+      <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;">
+        <label style="font-size: 13px; font-weight: 600; color: var(--text-soft);">Cambios efectivos desde:</label>
+        <select id="asig-mes-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-weight: 600; background: white; cursor: pointer; min-width: 140px;"></select>
+        <select id="asig-anio-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-weight: 600; background: white; cursor: pointer; min-width: 100px;"></select>
+      </div>
+      <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+        <label style="font-size: 13px; font-weight: 600; color: var(--text-soft);">Filtrar por supervisor actual:</label>
+        <select id="asig-sup-filter" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
+          <option value="all">Todos los supervisores</option>
+        </select>
+        <input type="text" id="asig-buscar" placeholder="Buscar agente..." style="flex: 1; min-width: 180px; padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px;">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">2</div>
+        Selecciona los agentes a mover
+      </div>
+      <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
+        <table id="asig-tabla" style="font-size: 13px;">
+          <thead style="position: sticky; top: 0; z-index: 1; background: var(--att-navy);">
+            <tr>
+              <th style="text-align:center; width: 40px;">
+                <input type="checkbox" id="asig-check-all">
+              </th>
+              <th>Agente</th>
+              <th style="text-align:center;">Supervisor actual</th>
+              <th style="text-align:center;">Desde</th>
+              <th style="text-align:center;">Nuevo supervisor</th>
+            </tr>
+          </thead>
+          <tbody id="asig-tabla-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top: 12px; font-size: 12px; color: var(--text-soft);">
+        <span id="asig-contador">0 agentes visibles</span> ·
+        <span id="asig-seleccionados" style="font-weight: 600; color: var(--att-orange);">0 seleccionados</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">3</div>
+        Aplicar cambios masivos
+      </div>
+      <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;">
+        <label style="font-size: 13px; font-weight: 600;">Mover seleccionados a:</label>
+        <select id="asig-bulk-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 14px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
+          <option value="">-- Elegir supervisor --</option>
+        </select>
+        <button class="secondary" id="btn-asig-aplicar-bulk">Aplicar a seleccionados</button>
+      </div>
+      <div class="alert warn" id="asig-resumen-cambios" style="display: none;">
+        <div>⚠️</div>
+        <div id="asig-resumen-texto"></div>
+      </div>
+      <div class="actions">
+        <button class="success" id="btn-asig-guardar" disabled>Guardar todos los cambios</button>
+        <button class="danger" id="btn-asig-descartar" type="button" disabled>Descartar cambios</button>
+      </div>
+    </div>
+
+    <div class="section hidden" id="asig-section-log">
+      <div class="section-title">
+        <div class="step-number">L</div>
+        Registro de operación
+      </div>
+      <div class="log" id="asig-log"></div>
+    </div>
+
+  </div>
+  <!-- FIN TAB ASIGNACIONES -->
 
 </div>
 
@@ -1118,33 +1211,88 @@ function mostrarValidacionPlant(agentes, sinSup) {
 
 async function cargarPlantASupabase() {
   if (!plantState.agentes) return;
-  if (!confirm(`¿Reemplazar toda la plantilla con estos ${plantState.agentes.length} agentes? Los agentes que no estén aquí se borrarán.`)) return;
+  if (!confirm(`¿Reemplazar toda la plantilla con estos ${plantState.agentes.length} agentes? Los agentes que no estén aquí se borrarán. Las asignaciones de supervisor quedan intactas (se manejan en el tab Asignaciones).`)) return;
 
   const btn = document.getElementById('btn-cargar-plant');
   btn.disabled = true;
   btn.textContent = 'Cargando...';
 
   try {
+    logPlant('Cargando asignaciones vigentes para preservar historial...', 'info');
+    const hoy = new Date().toISOString().split('T')[0];
+    const { data: asigVigentes } = await db
+      .from('asignaciones_supervisor')
+      .select('ejecutivo, supervisor')
+      .lte('fecha_inicio', hoy)
+      .or(`fecha_fin.gte.${hoy},fecha_fin.is.null`);
+
+    const mapSupVigente = {};
+    (asigVigentes || []).forEach(a => { mapSupVigente[a.ejecutivo] = a.supervisor; });
+
     logPlant('Borrando plantilla anterior...', 'info');
     const { error: e1 } = await db.from('plantilla').delete().neq('nombre', '___imposible___');
     if (e1) throw e1;
     logPlant('Plantilla anterior borrada', 'ok');
 
-    logPlant(`Insertando ${plantState.agentes.length} agentes...`, 'info');
+    const agentesParaGuardar = plantState.agentes.map(a => ({
+      ...a,
+      supervisor: mapSupVigente[a.nombre] || a.supervisor
+    }));
+
+    const sinAsignacion = [];
+    const supervisorCambiado = [];
+    plantState.agentes.forEach(a => {
+      if (!mapSupVigente[a.nombre]) {
+        sinAsignacion.push(a);
+      } else if (mapSupVigente[a.nombre] !== a.supervisor) {
+        supervisorCambiado.push({
+          nombre: a.nombre,
+          actual: mapSupVigente[a.nombre],
+          enExcel: a.supervisor
+        });
+      }
+    });
+
+    logPlant(`Insertando ${agentesParaGuardar.length} agentes...`, 'info');
     const batchSize = 100;
     let insertados = 0;
-    for (let i = 0; i < plantState.agentes.length; i += batchSize) {
-      const batch = plantState.agentes.slice(i, i + batchSize);
+    for (let i = 0; i < agentesParaGuardar.length; i += batchSize) {
+      const batch = agentesParaGuardar.slice(i, i + batchSize);
       const { error: e2 } = await db.from('plantilla').insert(batch);
       if (e2) throw e2;
       insertados += batch.length;
-      logPlant(`Progreso: ${insertados}/${plantState.agentes.length}`, 'info');
+      logPlant(`Progreso: ${insertados}/${agentesParaGuardar.length}`, 'info');
+    }
+    logPlant(`Plantilla cargada: ${insertados} agentes`, 'ok');
+
+    if (sinAsignacion.length > 0) {
+      logPlant(`Creando asignaciones iniciales para ${sinAsignacion.length} agentes nuevos...`, 'info');
+      const nuevasAsig = sinAsignacion.map(a => ({
+        ejecutivo: a.nombre,
+        supervisor: a.supervisor,
+        fecha_inicio: a.fecha_ingreso || hoy,
+        fecha_fin: null
+      }));
+      const { error: e3 } = await db.from('asignaciones_supervisor').insert(nuevasAsig);
+      if (e3) throw e3;
+      logPlant(`${sinAsignacion.length} asignaciones iniciales creadas`, 'ok');
     }
 
-    logPlant(`Carga completa: ${insertados} agentes cargados`, 'ok');
+    if (supervisorCambiado.length > 0) {
+      logPlant(`⚠️ ${supervisorCambiado.length} agentes tienen distinto supervisor en Excel vs asignaciones:`, 'warn');
+      supervisorCambiado.slice(0, 5).forEach(c => {
+        logPlant(`  ${c.nombre}: Excel=${c.enExcel}, asignación actual=${c.actual}`, 'warn');
+      });
+      logPlant(`Se respetó la asignación actual. Si quieres cambiarlos, ve al tab "Asignaciones".`, 'warn');
+    }
+
     btn.textContent = '✓ Carga completada';
     btn.style.background = '#15803D';
-    setTimeout(() => alert(`Plantilla actualizada: ${insertados} agentes.`), 300);
+
+    let msg = `Plantilla actualizada: ${insertados} agentes.`;
+    if (sinAsignacion.length > 0) msg += `\n\n${sinAsignacion.length} agentes nuevos recibieron asignación inicial.`;
+    if (supervisorCambiado.length > 0) msg += `\n\n⚠️ ${supervisorCambiado.length} agentes tienen distinto supervisor entre el Excel y las asignaciones históricas. Revisa el tab "Asignaciones" si quieres moverlos formalmente.`;
+    setTimeout(() => alert(msg), 300);
   } catch (e) {
     logPlant('Error: ' + e.message, 'err');
     btn.disabled = false;
@@ -1406,6 +1554,332 @@ function descartarCambios() {
 initCalSelectores();
 document.getElementById('btn-cal-guardar').addEventListener('click', guardarCalendario);
 document.getElementById('btn-cal-descartar').addEventListener('click', descartarCambios);
+
+const asigState = {
+  anio: null,
+  mes: null,
+  asignacionesActuales: [],
+  agentes: [],
+  cambios: {},
+  supervisoresDisponibles: []
+};
+
+function logAsig(msg, tipo = '') {
+  const el = document.getElementById('asig-log');
+  const line = document.createElement('div');
+  line.className = 'log-line ' + tipo;
+  const ts = new Date().toLocaleTimeString('es-MX');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+  document.getElementById('asig-section-log').classList.remove('hidden');
+}
+
+function initAsigSelectores() {
+  const mesSel = document.getElementById('asig-mes-select');
+  const anioSel = document.getElementById('asig-anio-select');
+
+  MESES.forEach((m, i) => {
+    const opt = document.createElement('option');
+    opt.value = i + 1;
+    opt.textContent = m;
+    mesSel.appendChild(opt);
+  });
+
+  [2025, 2026, 2027].forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a;
+    opt.textContent = a;
+    anioSel.appendChild(opt);
+  });
+
+  const hoy = new Date();
+  const siguienteMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
+  mesSel.value = siguienteMes.getMonth() + 1;
+  anioSel.value = siguienteMes.getFullYear();
+
+  mesSel.addEventListener('change', () => {
+    asigState.mes = parseInt(mesSel.value);
+    asigState.anio = parseInt(anioSel.value);
+  });
+  anioSel.addEventListener('change', () => {
+    asigState.mes = parseInt(mesSel.value);
+    asigState.anio = parseInt(anioSel.value);
+  });
+
+  asigState.mes = parseInt(mesSel.value);
+  asigState.anio = parseInt(anioSel.value);
+}
+
+async function cargarAsignaciones() {
+  logAsig('Cargando asignaciones históricas...', 'info');
+
+  const { data: asigData, error: asigErr } = await db
+    .from('asignaciones_supervisor')
+    .select('*')
+    .order('fecha_inicio', { ascending: true });
+
+  if (asigErr) {
+    logAsig('Error: ' + asigErr.message, 'err');
+    return;
+  }
+
+  asigState.asignacionesActuales = asigData || [];
+
+  const hoy = new Date().toISOString().split('T')[0];
+  const agentesMap = {};
+  asigData.forEach(a => {
+    if (a.fecha_inicio <= hoy && (!a.fecha_fin || a.fecha_fin >= hoy)) {
+      agentesMap[a.ejecutivo] = a;
+    }
+  });
+
+  asigState.agentes = Object.values(agentesMap).sort((a, b) => a.ejecutivo.localeCompare(b.ejecutivo));
+
+  const sups = [...new Set(asigData.map(a => a.supervisor))].filter(Boolean).sort();
+  asigState.supervisoresDisponibles = sups;
+
+  const filterSel = document.getElementById('asig-sup-filter');
+  filterSel.innerHTML = '<option value="all">Todos los supervisores</option>';
+  sups.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    filterSel.appendChild(opt);
+  });
+
+  const bulkSel = document.getElementById('asig-bulk-select');
+  bulkSel.innerHTML = '<option value="">-- Elegir supervisor --</option>';
+  sups.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    bulkSel.appendChild(opt);
+  });
+
+  logAsig(`${asigState.agentes.length} agentes activos con asignación`, 'ok');
+  renderAsigTabla();
+}
+
+function renderAsigTabla() {
+  const filtroSup = document.getElementById('asig-sup-filter').value;
+  const busqueda = document.getElementById('asig-buscar').value.trim().toLowerCase();
+
+  let visible = asigState.agentes;
+  if (filtroSup !== 'all') {
+    visible = visible.filter(a => a.supervisor === filtroSup);
+  }
+  if (busqueda) {
+    visible = visible.filter(a => a.ejecutivo.toLowerCase().includes(busqueda));
+  }
+
+  const tbody = document.getElementById('asig-tabla-body');
+  tbody.innerHTML = visible.map(a => {
+    const cambio = asigState.cambios[a.ejecutivo];
+    const nuevoSup = cambio ? cambio.nuevoSupervisor : '';
+    const esCambio = cambio ? true : false;
+
+    return `<tr${esCambio ? ' style="background: #FEF3C7;"' : ''}>
+      <td style="text-align:center;">
+        <input type="checkbox" class="asig-row-check" data-ejecutivo="${a.ejecutivo}" ${esCambio ? 'checked' : ''}>
+      </td>
+      <td>${a.ejecutivo}</td>
+      <td style="text-align:center;"><strong>${a.supervisor}</strong></td>
+      <td style="text-align:center; font-size: 11px; color: var(--text-soft);">${a.fecha_inicio}</td>
+      <td style="text-align:center;">
+        <select class="asig-row-select" data-ejecutivo="${a.ejecutivo}" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; min-width: 120px;">
+          <option value="">-- Sin cambio --</option>
+          ${asigState.supervisoresDisponibles.map(s =>
+            `<option value="${s}" ${nuevoSup === s ? 'selected' : ''}>${s}</option>`
+          ).join('')}
+        </select>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('asig-contador').textContent = `${visible.length} agentes visibles`;
+  actualizarContadorSeleccionados();
+  actualizarResumenCambios();
+
+  tbody.querySelectorAll('.asig-row-select').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const ejec = e.target.dataset.ejecutivo;
+      const nuevo = e.target.value;
+      if (!nuevo) {
+        delete asigState.cambios[ejec];
+      } else {
+        const actual = asigState.agentes.find(a => a.ejecutivo === ejec);
+        if (actual.supervisor === nuevo) {
+          delete asigState.cambios[ejec];
+        } else {
+          asigState.cambios[ejec] = {
+            ejecutivo: ejec,
+            supervisorAnterior: actual.supervisor,
+            nuevoSupervisor: nuevo,
+            asignacionAnteriorId: actual.id,
+            fechaInicio: actual.fecha_inicio
+          };
+        }
+      }
+      renderAsigTabla();
+    });
+  });
+
+  tbody.querySelectorAll('.asig-row-check').forEach(chk => {
+    chk.addEventListener('change', (e) => {
+      const ejec = e.target.dataset.ejecutivo;
+      if (!e.target.checked) {
+        delete asigState.cambios[ejec];
+        renderAsigTabla();
+      }
+    });
+  });
+}
+
+function actualizarContadorSeleccionados() {
+  const n = Object.keys(asigState.cambios).length;
+  document.getElementById('asig-seleccionados').textContent = `${n} con cambios pendientes`;
+  document.getElementById('btn-asig-guardar').disabled = n === 0;
+  document.getElementById('btn-asig-descartar').disabled = n === 0;
+}
+
+function actualizarResumenCambios() {
+  const cambios = Object.values(asigState.cambios);
+  const resumenEl = document.getElementById('asig-resumen-cambios');
+  const textoEl = document.getElementById('asig-resumen-texto');
+
+  if (cambios.length === 0) {
+    resumenEl.style.display = 'none';
+    return;
+  }
+
+  const movimientos = {};
+  cambios.forEach(c => {
+    const key = `${c.supervisorAnterior} → ${c.nuevoSupervisor}`;
+    movimientos[key] = (movimientos[key] || 0) + 1;
+  });
+
+  const mesNombre = MESES[asigState.mes - 1];
+  let texto = `<strong>Resumen:</strong> ${cambios.length} agente${cambios.length > 1 ? 's' : ''} se moverá${cambios.length > 1 ? 'n' : ''} a partir del <strong>1 de ${mesNombre} ${asigState.anio}</strong>.<br>`;
+  texto += '<ul style="margin: 8px 0 0 20px; padding: 0;">';
+  Object.entries(movimientos).forEach(([mov, n]) => {
+    texto += `<li>${mov}: ${n} agente${n > 1 ? 's' : ''}</li>`;
+  });
+  texto += '</ul>';
+
+  textoEl.innerHTML = texto;
+  resumenEl.style.display = 'flex';
+}
+
+async function guardarAsignaciones() {
+  const cambios = Object.values(asigState.cambios);
+  if (cambios.length === 0) return;
+
+  const mesNombre = MESES[asigState.mes - 1];
+  if (!confirm(`¿Aplicar ${cambios.length} cambios efectivos desde el 1 de ${mesNombre} ${asigState.anio}?`)) return;
+
+  const btn = document.getElementById('btn-asig-guardar');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const fechaCambio = `${asigState.anio}-${String(asigState.mes).padStart(2, '0')}-01`;
+    const fechaFinAnterior = new Date(asigState.anio, asigState.mes - 1, 0).toISOString().split('T')[0];
+
+    logAsig(`Aplicando ${cambios.length} cambios con fecha ${fechaCambio}...`, 'info');
+
+    for (const c of cambios) {
+      const { error: e1 } = await db
+        .from('asignaciones_supervisor')
+        .update({ fecha_fin: fechaFinAnterior })
+        .eq('id', c.asignacionAnteriorId);
+      if (e1) throw e1;
+
+      const { error: e2 } = await db
+        .from('asignaciones_supervisor')
+        .insert({
+          ejecutivo: c.ejecutivo,
+          supervisor: c.nuevoSupervisor,
+          fecha_inicio: fechaCambio,
+          fecha_fin: null
+        });
+      if (e2) throw e2;
+
+      logAsig(`✓ ${c.ejecutivo}: ${c.supervisorAnterior} → ${c.nuevoSupervisor}`, 'ok');
+    }
+
+    logAsig(`Cambios guardados. ${cambios.length} asignaciones actualizadas.`, 'ok');
+
+    asigState.cambios = {};
+    btn.textContent = '✓ Guardado';
+    btn.style.background = '#15803D';
+
+    setTimeout(() => {
+      alert(`${cambios.length} asignaciones guardadas correctamente.`);
+      btn.textContent = 'Guardar todos los cambios';
+      btn.style.background = '';
+      cargarAsignaciones();
+    }, 500);
+
+  } catch (e) {
+    logAsig('Error: ' + e.message, 'err');
+    btn.disabled = false;
+    btn.textContent = 'Reintentar';
+  }
+}
+
+function aplicarCambioBulk() {
+  const bulkSup = document.getElementById('asig-bulk-select').value;
+  if (!bulkSup) {
+    alert('Elige el supervisor destino primero');
+    return;
+  }
+
+  const checks = document.querySelectorAll('.asig-row-check:checked');
+  if (checks.length === 0) {
+    alert('Selecciona al menos un agente con el checkbox');
+    return;
+  }
+
+  let aplicados = 0;
+  checks.forEach(chk => {
+    const ejec = chk.dataset.ejecutivo;
+    const actual = asigState.agentes.find(a => a.ejecutivo === ejec);
+    if (actual && actual.supervisor !== bulkSup) {
+      asigState.cambios[ejec] = {
+        ejecutivo: ejec,
+        supervisorAnterior: actual.supervisor,
+        nuevoSupervisor: bulkSup,
+        asignacionAnteriorId: actual.id,
+        fechaInicio: actual.fecha_inicio
+      };
+      aplicados++;
+    }
+  });
+
+  renderAsigTabla();
+  logAsig(`${aplicados} agentes movidos a ${bulkSup} en los cambios pendientes`, 'ok');
+}
+
+function descartarCambiosAsig() {
+  if (!confirm('¿Descartar todos los cambios pendientes?')) return;
+  asigState.cambios = {};
+  renderAsigTabla();
+}
+
+initAsigSelectores();
+cargarAsignaciones();
+
+document.getElementById('asig-sup-filter').addEventListener('change', renderAsigTabla);
+document.getElementById('asig-buscar').addEventListener('input', renderAsigTabla);
+document.getElementById('asig-check-all').addEventListener('change', (e) => {
+  document.querySelectorAll('.asig-row-check').forEach(chk => {
+    chk.checked = e.target.checked;
+  });
+});
+document.getElementById('btn-asig-aplicar-bulk').addEventListener('click', aplicarCambioBulk);
+document.getElementById('btn-asig-guardar').addEventListener('click', guardarAsignaciones);
+document.getElementById('btn-asig-descartar').addEventListener('click', descartarCambiosAsig);
 </script>
 </body>
 </html>
