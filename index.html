@@ -360,22 +360,27 @@ function limpiarTodo() {
 
 async function leerExcel(file) {
   const buf = await file.arrayBuffer();
-  const wb = XLSX.read(buf, { cellDates: true });
+  const wb = XLSX.read(buf, { cellDates: true, cellNF: false, cellText: false });
   const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { defval: null });
+  return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
 }
 
 function normalizarFecha(val) {
   if (!val) return null;
   if (val instanceof Date) {
-    const y = val.getFullYear();
+    const y = val.getUTCFullYear();
     if (y === 1900) return null;
-    return val.toISOString().split('T')[0];
+    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(val.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
   if (typeof val === 'string') {
     const d = new Date(val);
-    if (!isNaN(d.getTime()) && d.getFullYear() !== 1900) {
-      return d.toISOString().split('T')[0];
+    if (!isNaN(d.getTime()) && d.getUTCFullYear() !== 1900) {
+      const y = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
     }
   }
   return null;
