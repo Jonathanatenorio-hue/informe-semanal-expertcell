@@ -404,6 +404,78 @@
   .agente-acordeon .flecha { transition: transform 0.2s; display: inline-block; }
   .agente-acordeon.abierto .flecha { transform: rotate(90deg); }
 
+  .nav-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(245, 248, 251, 0.98);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    border: 1px solid var(--border);
+  }
+  .nav-sticky-inner {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+  .nav-sticky-inner::-webkit-scrollbar { height: 4px; }
+  .nav-sticky-inner::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .nav-btn {
+    flex: 0 0 auto;
+    padding: 8px 14px;
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .nav-btn:hover { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+  .nav-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
+
+  .section.collapsible .section-title {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    padding-right: 30px;
+  }
+  .section.collapsible .section-title:hover { color: var(--att-orange); }
+  .section.collapsible .section-title::after {
+    content: '▸';
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: transform 0.2s;
+    font-size: 14px;
+    color: var(--text-soft);
+  }
+  .section.collapsible.abierto .section-title::after {
+    transform: translateY(-50%) rotate(90deg);
+    color: var(--att-orange);
+  }
+  .section.collapsible .section-body {
+    display: none;
+    margin-top: 10px;
+  }
+  .section.collapsible.abierto .section-body {
+    display: block;
+  }
+  .section.collapsible:not(.abierto) .section-title {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+
   @media (max-width: 900px) {
     .embudo-grid { grid-template-columns: repeat(2, 1fr); }
   }
@@ -429,6 +501,21 @@
     </div>
 
     <div id="warning-container"></div>
+
+    <div class="nav-sticky">
+      <div class="nav-sticky-inner">
+        <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
+        <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
+        <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
+        <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
+        <button class="nav-btn" data-target="sec-estado">⏳ Estado cierre</button>
+        <button class="nav-btn" data-target="sec-historico">📉 Histórico</button>
+        <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
+        <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
+        <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
+        <button class="nav-btn" data-target="sec-calendario">📅 Calendario</button>
+      </div>
+    </div>
 
     <!-- AVANCE MENSUAL VS METAS -->
     <div class="section" id="avance-mensual-section">
@@ -464,7 +551,7 @@
     <div id="embudo-section"></div>
 
     <!-- COMPARATIVO POR SUPERVISOR -->
-    <div class="section">
+    <div class="section" id="sec-comparativo">
       <div class="section-title">Comparativo por supervisor</div>
       <div class="section-subtitle" id="comp-sup-subtitle"></div>
       <div class="legend" id="comp-sup-legend"></div>
@@ -485,8 +572,9 @@
     </div>
 
     <!-- PRODUCTIVIDAD POR AGENTE -->
-    <div class="section">
+    <div class="section collapsible" id="sec-productividad">
       <div class="section-title">Productividad por agente</div>
+      <div class="section-body">
       <div class="section-subtitle" id="prod-agente-subtitle"></div>
 
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;" id="prod-resumen-cards"></div>
@@ -524,11 +612,13 @@
       <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Ranking ajustado (activadas por agente)</div>
       <div class="section-subtitle" style="margin-bottom: 12px;">Este ranking normaliza por tamaño de equipo. Muestra quién es el supervisor más productivo por persona, no por volumen total.</div>
       <div class="chart-wrap" style="height: 280px;"><canvas id="chart-ranking-agente"></canvas></div>
+      </div>
     </div>
 
     <!-- MAPAS DE CALOR -->
-    <div class="section">
+    <div class="section collapsible" id="sec-mapas">
       <div class="section-title">Mapas de calor: día × supervisor</div>
+      <div class="section-body">
       <div class="section-subtitle">Diferencia vs la semana anterior. Verde = mejora, rojo = retroceso. Los números chicos muestran los valores de ambas semanas.</div>
 
       <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; font-size: 11px; color: var(--text-soft);">
@@ -547,11 +637,13 @@
 
       <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--canc-color);">Canceladas (nota: menos es mejor)</div>
       <div class="heatmap-wrap"><table class="heatmap" id="heatmap-canc"></table></div>
+      </div>
     </div>
 
     <!-- ESTADO DEL BLOQUE SEMANAL -->
-    <div class="section">
+    <div class="section collapsible" id="sec-estado">
       <div class="section-title">Estado de cierre por semana</div>
+      <div class="section-body">
       <div class="section-subtitle">De lo que se programó cada semana, qué porcentaje ya se activó, canceló o sigue pendiente. Lo ideal es que las semanas pasadas estén al 100% entre activadas + canceladas.</div>
       <div class="chart-scroll-wrap">
         <div class="chart-wrap tall" id="chart-estado-wrap"><canvas id="chart-estado"></canvas></div>
@@ -570,11 +662,13 @@
         </thead>
         <tbody id="tabla-estado"></tbody>
       </table>
+      </div>
     </div>
 
     <!-- HISTÓRICO POR SUPERVISOR -->
-    <div class="section">
+    <div class="section collapsible" id="sec-historico">
       <div class="section-title">Histórico por supervisor</div>
+      <div class="section-body">
       <div class="section-subtitle">Evolución semanal de cada supervisor. La línea naranja es el promedio móvil de 4 semanas (tendencia real). El ranking compara las últimas 4 semanas completas contra las 4 previas, excluyendo la semana en curso.</div>
       <div class="legend">
         <div class="legend-item"><div class="legend-swatch" style="background: #B5D4F4;"></div>Programadas</div>
@@ -582,11 +676,13 @@
         <div class="legend-item"><span style="width:18px;height:3px;background:#FF7200;display:inline-block;border-radius:2px;"></span>Prom móvil 4s activadas</div>
       </div>
       <div id="sup-individual-charts"></div>
+      </div>
     </div>
 
     <!-- FLUJO DE ENTREGA -->
-    <div class="section">
+    <div class="section collapsible" id="sec-flujo">
       <div class="section-title">Flujo de entrega (BO → Activada)</div>
+      <div class="section-body">
       <div class="section-subtitle">Tiempo que tardan las ventas desde que entran a Back Office hasta que se activan. Solo incluye ventas activadas. Se excluyen domingos del conteo (no se entrega ese día).</div>
 
       <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
@@ -621,11 +717,13 @@
       <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Evolución mensual del tiempo promedio</div>
       <div class="section-subtitle" style="margin-bottom: 12px;">Agrupado por fecha de entrada a BO. Muestra si la eficiencia del equipo de BO mejora o empeora mes a mes. Esta gráfica siempre muestra todo el histórico sin importar el filtro de arriba.</div>
       <div class="chart-wrap" style="height: 280px;"><canvas id="chart-flujo-evolucion"></canvas></div>
+      </div>
     </div>
 
     <!-- SEGUIMIENTO DE CANCELADAS -->
-    <div class="section">
+    <div class="section collapsible" id="sec-canceladas">
       <div class="section-title">Seguimiento de canceladas</div>
+      <div class="section-body">
       <div class="section-subtitle">Rastrea qué canceladas ya se recuperaron (el cliente volvió a comprar y se activó) vs las que siguen perdidas. El cruce se hace por número de teléfono del cliente.</div>
 
       <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
@@ -685,11 +783,13 @@
           <tbody id="recup-perdidas-body"></tbody>
         </table>
       </div>
+      </div>
     </div>
 
     <!-- ROTACIÓN Y PERMANENCIA -->
-    <div class="section">
+    <div class="section collapsible" id="sec-rotacion">
       <div class="section-title">Rotación y permanencia</div>
+      <div class="section-body">
       <div class="section-subtitle">Diagnóstico de estabilidad de plantilla por supervisor. Mide qué tan bien retiene cada uno a su equipo y qué tan eficiente es el proceso de onboarding.</div>
 
       <div style="display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
@@ -776,10 +876,11 @@
           <tbody id="rot-bajas-body"></tbody>
         </table>
       </div>
+      </div>
     </div>
 
     <!-- CALENDARIO -->
-    <div class="section">
+    <div class="section" id="sec-calendario">
       <div class="section-title">Explorar otras semanas</div>
       <div class="section-subtitle">Haz clic en cualquier semana para regenerar el reporte con esa semana como base de comparación.</div>
       <div class="calendar" id="calendar"></div>
@@ -1315,7 +1416,7 @@ function renderAvanceMensual(wActual) {
       avanceProgTotal++;
     }
 
-    if (r.estatus === 'pendiente' && r.fecha_bo) {
+    if (r.estatus === 'en_transito' && r.fecha_bo) {
       transitoPorSup[r.supervisor]++;
       transitoTotal++;
     }
@@ -3196,6 +3297,32 @@ function seleccionarSemana(w) {
 }
 
 cargarDatos().catch(e => console.error(e));
+
+document.addEventListener('click', (e) => {
+  const title = e.target.closest('.section.collapsible > .section-title');
+  if (title) {
+    title.parentElement.classList.toggle('abierto');
+    return;
+  }
+
+  const navBtn = e.target.closest('.nav-btn[data-target]');
+  if (navBtn) {
+    const target = document.getElementById(navBtn.dataset.target);
+    if (!target) return;
+
+    if (target.classList.contains('collapsible')) {
+      target.classList.add('abierto');
+    }
+
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    navBtn.classList.add('active');
+
+    setTimeout(() => {
+      const y = target.getBoundingClientRect().top + window.pageYOffset - 70;
+      window.scrollTo({ top: y, behavior: 'smooth' });
+    }, 50);
+  }
+});
 </script>
 </body>
 </html>
