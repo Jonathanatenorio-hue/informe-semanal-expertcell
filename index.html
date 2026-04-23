@@ -484,10 +484,13 @@ async function procesar() {
 
       const actInfo = actPorFolio[folio];
       const fechaCan = canPorFolio[folio];
+      const ventaBO = row['Venta'];
+      const tieneVentaBO = ventaBO !== null && ventaBO !== undefined && String(ventaBO).trim() !== '';
 
-      let estatus = 'pendiente';
+      let estatus = 'en_transito';
       if (fechaCan) estatus = 'cancelada';
       else if (actInfo) estatus = 'activada';
+      else if (tieneVentaBO) estatus = 'pendiente';
 
       registros.push({
         folio,
@@ -531,17 +534,18 @@ async function procesar() {
 }
 
 function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) {
-  const porEstatus = { activada: 0, cancelada: 0, pendiente: 0 };
+  const porEstatus = { activada: 0, cancelada: 0, pendiente: 0, en_transito: 0 };
   const porSupervisor = {};
   registros.forEach(r => {
-    porEstatus[r.estatus]++;
+    if (porEstatus[r.estatus] !== undefined) porEstatus[r.estatus]++;
     if (!porSupervisor[r.supervisor]) {
-      porSupervisor[r.supervisor] = { prog: 0, act: 0, can: 0, pen: 0 };
+      porSupervisor[r.supervisor] = { prog: 0, act: 0, can: 0, pen: 0, tra: 0 };
     }
     porSupervisor[r.supervisor].prog++;
     if (r.estatus === 'activada') porSupervisor[r.supervisor].act++;
     if (r.estatus === 'cancelada') porSupervisor[r.supervisor].can++;
     if (r.estatus === 'pendiente') porSupervisor[r.supervisor].pen++;
+    if (r.estatus === 'en_transito') porSupervisor[r.supervisor].tra++;
   });
 
   const statsGrid = document.getElementById('stats-grid');
@@ -562,9 +566,14 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
       <div class="stat-sub">${((porEstatus.cancelada / registros.length) * 100).toFixed(1)}%</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">En tránsito</div>
+      <div class="stat-value" style="color: var(--amber);">${porEstatus.en_transito.toLocaleString()}</div>
+      <div class="stat-sub">Venta en BO sin entregar</div>
+    </div>
+    <div class="stat-card" style="border-left-color: #9CA3AF;">
       <div class="stat-label">Pendientes</div>
-      <div class="stat-value" style="color: var(--amber);">${porEstatus.pendiente.toLocaleString()}</div>
-      <div class="stat-sub">${((porEstatus.pendiente / registros.length) * 100).toFixed(1)}%</div>
+      <div class="stat-value" style="color: #6B7280;">${porEstatus.pendiente.toLocaleString()}</div>
+      <div class="stat-sub">Entregadas, sin activar</div>
     </div>
   `;
 
