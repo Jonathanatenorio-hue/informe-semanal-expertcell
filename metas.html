@@ -1211,10 +1211,16 @@ async function cargarCalendario() {
   calState.cambios = {};
   actualizarBotones();
 
+  const mesStr = String(calState.mes).padStart(2, '0');
+  const inicioMes = `${calState.anio}-${mesStr}-01`;
+  const ultimoDia = new Date(calState.anio, calState.mes, 0).getDate();
+  const finMes = `${calState.anio}-${mesStr}-${String(ultimoDia).padStart(2, '0')}`;
+
   const { data, error } = await db
     .from('calendario_dias')
     .select('*')
-    .like('fecha', `${calState.anio}-${String(calState.mes).padStart(2, '0')}-%`)
+    .gte('fecha', inicioMes)
+    .lte('fecha', finMes)
     .order('fecha');
 
   if (error) {
