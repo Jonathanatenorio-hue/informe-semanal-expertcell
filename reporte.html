@@ -6,6 +6,7 @@
 <title>Reporte Semanal · ExpertCell</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --att-blue: #00A8E0;
@@ -667,6 +668,7 @@
           <option value="Reyna">Reyna</option>
         </select>
         <span id="recup-perdidas-count" style="font-size: 13px; color: var(--text-soft); font-weight: 600;"></span>
+        <button id="btn-descargar-perdidas" style="margin-left: auto; background: var(--green); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">📥 Descargar Excel</button>
       </div>
       <div style="max-height: 500px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px;">
         <table id="recup-perdidas-tabla" style="font-size: 12.5px;">
@@ -833,14 +835,14 @@ function clasificarAgente(fechaIngreso, fechaBaja, inicioSemanaStr, finSemanaStr
   const iniDate = new Date(inicioSemanaStr + 'T12:00:00');
   const finDate = new Date(finSemanaStr + 'T12:00:00');
 
-  const ingPlus7 = new Date(ingDate);
-  ingPlus7.setDate(ingPlus7.getDate() + 7);
-  if (ingPlus7 > finDate) return 'capa';
-
   if (fechaBaja) {
     const bajaDate = new Date(fechaBaja + 'T12:00:00');
     if (bajaDate < iniDate) return 'inactivo';
   }
+
+  const ingPlus7 = new Date(ingDate);
+  ingPlus7.setDate(ingPlus7.getDate() + 7);
+  if (ingPlus7 > finDate) return 'capa';
 
   const diasDesdeIngreso = Math.floor((iniDate - ingDate) / (1000 * 60 * 60 * 24));
   const semanaDesdeIngreso = Math.floor(diasDesdeIngreso / 7) + 1;
@@ -888,26 +890,49 @@ function agregarPorTipoAgente(inicioStr, finStr, agentesPorSup) {
     agentesPorSup[s].expNombres.forEach(n => nombresExp.add(n));
   });
 
+  const ejecutivosClasificados = new Set([...nombresNuevos, ...nombresExp]);
+
   ventasData.forEach(r => {
     if (!r.supervisor || !SUPERVISORES.includes(r.supervisor)) return;
 
     const ejecNuevo = nombresNuevos.has(r.ejecutivo);
     const ejecExp = nombresExp.has(r.ejecutivo);
 
+    let clasifFallback = null;
+    if (!ejecNuevo && !ejecExp && r.ejecutivo) {
+      const enPlantilla = plantillaData.find(p => p.nombre === r.ejecutivo);
+      if (enPlantilla && enPlantilla.fecha_ingreso) {
+        const cls = clasificarAgente(enPlantilla.fecha_ingreso, enPlantilla.fecha_baja, inicioStr, finStr);
+        if (cls === 'nuevo' || cls === 'experimentado') {
+          clasifFallback = cls;
+        } else {
+          clasifFallback = 'experimentado';
+        }
+      } else {
+        clasifFallback = 'experimentado';
+      }
+    }
+
     if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
       resultado[r.supervisor].total.prog++;
       if (ejecNuevo) resultado[r.supervisor].nuevos.prog++;
       else if (ejecExp) resultado[r.supervisor].experimentados.prog++;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.prog++;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.prog++;
     }
     if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
       resultado[r.supervisor].total.act++;
       if (ejecNuevo) resultado[r.supervisor].nuevos.act++;
       else if (ejecExp) resultado[r.supervisor].experimentados.act++;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.act++;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.act++;
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
       resultado[r.supervisor].total.canc++;
       if (ejecNuevo) resultado[r.supervisor].nuevos.canc++;
       else if (ejecExp) resultado[r.supervisor].experimentados.canc++;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.canc++;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.canc++;
     }
   });
 
@@ -1139,7 +1164,13 @@ function renderAvanceMensual(wActual) {
 
   const diasHabilesTotales = diasDelMes.reduce((a, d) => a + parseFloat(d.factor_dia), 0);
   const hoy = new Date();
-  const ultimoDiaConDatos = new Date(Math.max(...ventasData.map(r => new Date(r.fecha_bo + 'T12:00:00').getTime())));
+  const fechasMax = [];
+  ventasData.forEach(r => {
+    if (r.fecha_bo) fechasMax.push(new Date(r.fecha_bo + 'T12:00:00').getTime());
+    if (r.fecha_activacion) fechasMax.push(new Date(r.fecha_activacion + 'T12:00:00').getTime());
+    if (r.fecha_cancelacion) fechasMax.push(new Date(r.fecha_cancelacion + 'T12:00:00').getTime());
+  });
+  const ultimoDiaConDatos = new Date(Math.max(...fechasMax));
   const fechaCorte = ultimoDiaConDatos < fechaRef ? ultimoDiaConDatos : fechaRef;
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
@@ -2338,7 +2369,59 @@ function renderRecuperacion() {
   const supFilter = document.getElementById('recup-sup-filter');
   supFilter.onchange = () => renderRecupConFiltro(selectEl.value);
 
+  const btnDescargar = document.getElementById('btn-descargar-perdidas');
+  btnDescargar.onclick = () => descargarPerdidasExcel(selectEl.value);
+
   renderRecupConFiltro('todo');
+}
+
+function descargarPerdidasExcel(periodo) {
+  if (!window.__recupData) return;
+  let datos = window.__recupData;
+
+  if (periodo === '4sem') {
+    const hoy = new Date();
+    const hace28 = new Date(hoy);
+    hace28.setDate(hace28.getDate() - 28);
+    const hace28Str = hace28.toISOString().split('T')[0];
+    datos = datos.filter(r => r.fecha_cancelacion >= hace28Str);
+  } else if (periodo !== 'todo') {
+    datos = datos.filter(r => r.fecha_cancelacion.startsWith(periodo));
+  }
+
+  const supFiltro = document.getElementById('recup-sup-filter').value;
+  let perdidas = datos.filter(r => r.estatusRecup === 'perdida');
+  if (supFiltro !== 'all') {
+    perdidas = perdidas.filter(r => r.supervisor === supFiltro);
+  }
+  perdidas.sort((a, b) => b.diasSinRecuperar - a.diasSinRecuperar);
+
+  if (perdidas.length === 0) {
+    alert('No hay canceladas perdidas con los filtros actuales.');
+    return;
+  }
+
+  const filas = perdidas.map(p => ({
+    'Telefono': p.telefono,
+    'Ejecutivo': p.ejecutivo,
+    'Supervisor': p.supervisor,
+    'Folio original': p.folio,
+    'Fecha BO': p.fecha_bo,
+    'Fecha cancelacion': p.fecha_cancelacion,
+    'Dias sin recuperar': p.diasSinRecuperar
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(filas);
+  ws['!cols'] = [
+    { wch: 14 }, { wch: 35 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 18 }
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Canceladas perdidas');
+
+  const fecha = new Date().toISOString().split('T')[0];
+  const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
+  const periodoStr = periodo === 'todo' ? 'historico' : periodo === '4sem' ? '4sem' : periodo;
+  XLSX.writeFile(wb, `canceladas_perdidas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
 }
 
 function renderRecupConFiltro(periodo) {
