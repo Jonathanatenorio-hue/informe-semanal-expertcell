@@ -499,13 +499,21 @@
       <table>
         <thead>
           <tr>
-            <th rowspan="2">Supervisor</th>
+            <th rowspan="2" style="text-align:center;">Supervisor</th>
             <th colspan="3" class="center" style="background: var(--att-blue-dark);">Plantilla</th>
-            <th colspan="3" class="center col-divider" id="prod-metric-header" style="background: #16A34A;">Activadas por agente</th>
+            <th colspan="3" class="center col-divider" id="prod-totales-header" style="background: #16A34A;">Totales</th>
+            <th colspan="3" class="center col-divider" id="prod-metric-header" style="background: #16A34A;">Promedios por agente</th>
           </tr>
           <tr class="subhead">
-            <th class="num">Total</th><th class="num">Nuevos</th><th class="num">Exp</th>
-            <th class="num col-divider">General</th><th class="num">Nuevos</th><th class="num">Exp</th>
+            <th class="num" style="text-align:center;">Total</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
+            <th class="num col-divider" style="text-align:center;">General</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
+            <th class="num col-divider" style="text-align:center;">General</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
           </tr>
         </thead>
         <tbody id="prod-tabla-body"></tbody>
@@ -1501,14 +1509,16 @@ function renderProdTabla(metrica) {
   const { agentesPorSup, datos } = window.__prodData;
 
   const config = {
-    prog: { label: 'Programadas por agente', color: '#1E40AF', bg: '#1E40AF' },
-    act:  { label: 'Activadas por agente',   color: '#16A34A', bg: '#16A34A' },
-    canc: { label: 'Canceladas por agente',  color: '#DC2626', bg: '#DC2626' }
+    prog: { label: 'Programadas por agente', totLabel: 'Programadas', color: '#1E40AF', bg: '#1E40AF' },
+    act:  { label: 'Activadas por agente',   totLabel: 'Activadas',   color: '#16A34A', bg: '#16A34A' },
+    canc: { label: 'Canceladas por agente',  totLabel: 'Canceladas',  color: '#DC2626', bg: '#DC2626' }
   };
   const cfg = config[metrica];
 
   document.getElementById('prod-metric-header').textContent = cfg.label;
   document.getElementById('prod-metric-header').style.background = cfg.bg;
+  document.getElementById('prod-totales-header').textContent = cfg.totLabel;
+  document.getElementById('prod-totales-header').style.background = cfg.bg;
 
   const filas = SUPERVISORES.map(s => {
     const ag = agentesPorSup[s];
@@ -1520,7 +1530,7 @@ function renderProdTabla(metrica) {
     const promGeneral = totalAg > 0 ? valTotal / totalAg : 0;
     const promNuevo = ag.nuevos > 0 ? valNuevos / ag.nuevos : 0;
     const promExp = ag.experimentados > 0 ? valExp / ag.experimentados : 0;
-    return { sup: s, totalAg, nuevos: ag.nuevos, exp: ag.experimentados, promGeneral, promNuevo, promExp };
+    return { sup: s, totalAg, nuevos: ag.nuevos, exp: ag.experimentados, valTotal, valNuevos, valExp, promGeneral, promNuevo, promExp };
   });
 
   const ordenadas = metrica === 'canc'
@@ -1532,12 +1542,15 @@ function renderProdTabla(metrica) {
   document.getElementById('prod-tabla-body').innerHTML = ordenadas.map(f => `
     <tr>
       <td><strong>${f.sup}</strong></td>
-      <td class="num"><strong>${f.totalAg}</strong></td>
-      <td class="num" style="color:var(--amber);font-weight:600;">${f.nuevos}</td>
-      <td class="num" style="color:var(--green);font-weight:600;">${f.exp}</td>
-      <td class="num col-divider" style="color:${colorPrincipal};font-weight:700;">${f.promGeneral.toFixed(1)}</td>
-      <td class="num" style="color:var(--amber);">${f.promNuevo.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);">${f.promExp.toFixed(1)}</td>
+      <td class="num" style="text-align:center;"><strong>${f.totalAg}</strong></td>
+      <td class="num" style="text-align:center;color:var(--amber);font-weight:600;">${f.nuevos}</td>
+      <td class="num" style="text-align:center;color:var(--green);font-weight:600;">${f.exp}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorPrincipal};font-weight:700;">${f.valTotal}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${f.valNuevos}</td>
+      <td class="num" style="text-align:center;color:var(--green);">${f.valExp}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorPrincipal};font-weight:700;">${f.promGeneral.toFixed(1)}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${f.promNuevo.toFixed(1)}</td>
+      <td class="num" style="text-align:center;color:var(--green);">${f.promExp.toFixed(1)}</td>
     </tr>
   `).join('');
 
@@ -1557,12 +1570,15 @@ function renderProdTabla(metrica) {
   document.getElementById('prod-tabla-foot').innerHTML = `
     <tr style="background:var(--bg);font-weight:700;">
       <td>TOTAL</td>
-      <td class="num">${totalAgentes}</td>
-      <td class="num" style="color:var(--amber);">${totalNuevos}</td>
-      <td class="num" style="color:var(--green);">${totalExp}</td>
-      <td class="num col-divider" style="color:${colorPrincipal};">${promGen.toFixed(1)}</td>
-      <td class="num" style="color:var(--amber);">${promN.toFixed(1)}</td>
-      <td class="num" style="color:var(--green);">${promE.toFixed(1)}</td>
+      <td class="num" style="text-align:center;">${totalAgentes}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${totalNuevos}</td>
+      <td class="num" style="text-align:center;color:var(--green);">${totalExp}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorPrincipal};">${totalVal}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${totalValNuevos}</td>
+      <td class="num" style="text-align:center;color:var(--green);">${totalValExp}</td>
+      <td class="num col-divider" style="text-align:center;color:${colorPrincipal};">${promGen.toFixed(1)}</td>
+      <td class="num" style="text-align:center;color:var(--amber);">${promN.toFixed(1)}</td>
+      <td class="num" style="text-align:center;color:var(--green);">${promE.toFixed(1)}</td>
     </tr>
   `;
 }
