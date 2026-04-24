@@ -596,6 +596,103 @@
   @media (max-width: 900px) {
     .embudo-grid { grid-template-columns: repeat(2, 1fr); }
   }
+
+  @media (max-width: 768px) {
+    body { padding: 8px; font-size: 13px; }
+    .container { max-width: 100%; }
+
+    .header { padding: 16px 18px; border-radius: 10px; }
+    .header h1 { font-size: 18px; }
+    .header .subtitle { font-size: 12px; }
+    .header-brand { flex-direction: column; align-items: flex-start; gap: 6px; }
+    .logo-circle { width: 36px; height: 36px; font-size: 13px; }
+    .tag-row { flex-wrap: wrap; gap: 4px; }
+    .tag-row .tag { font-size: 11px; padding: 4px 8px; }
+
+    #coordinador-select { min-width: 100% !important; }
+
+    .nav-sticky { padding: 8px 10px; }
+    .nav-btn { padding: 6px 10px; font-size: 11px; }
+
+    .section { padding: 14px 16px; border-radius: 10px; margin-bottom: 12px; }
+    .section-title { font-size: 14px; }
+    .section-subtitle { font-size: 11px; }
+
+    .embudo-grid { grid-template-columns: 1fr; gap: 10px; }
+    #avance-semaforo-grid { grid-template-columns: 1fr !important; }
+    #estructura-resumen-cards,
+    #histmes-resumen-cards,
+    #proyanio-resumen-cards,
+    #atipicos-resumen-cards,
+    #recup-resumen-cards,
+    #flujo-resumen-cards,
+    #rot-resumen-cards,
+    #top-resumen-cards,
+    #config-resumen-cards { grid-template-columns: 1fr 1fr !important; }
+
+    .stat-card { padding: 10px 12px; }
+    .stat-value { font-size: 18px; }
+    .stat-label { font-size: 10px; }
+    .stat-sub { font-size: 10px; }
+
+    .tarjeta-principal { padding: 16px 18px; }
+    .tarjeta-principal .metricas-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .tarjeta-principal .metrica-valor { font-size: 22px; }
+    .tarjeta-principal .metrica-label { font-size: 10px; }
+    .tarjeta-principal .proyeccion-box { padding: 10px 14px; flex-direction: column; align-items: flex-start; gap: 6px; }
+
+    table { font-size: 11px !important; }
+    th, td { padding: 6px 4px !important; }
+
+    .chart-wrap { height: 220px !important; }
+    .chart-wrap.tall { height: 260px !important; }
+
+    .heatmap th, .heatmap td { padding: 4px !important; font-size: 10px !important; min-width: 32px !important; }
+
+    .calendar { grid-template-columns: repeat(4, 1fr) !important; gap: 4px; }
+    .cal-week { font-size: 10px; padding: 6px 4px; }
+
+    .modal-overlay { padding: 8px; }
+    .modal-content { max-height: calc(100vh - 16px); border-radius: 10px; }
+    .modal-header { padding: 14px 16px; border-radius: 10px 10px 0 0; }
+    .modal-header h2 { font-size: 14px; }
+    .modal-body { padding: 14px 16px; }
+
+    /* Estructura: una columna en móvil */
+    #sec-estructura .section-body > div[style*="grid-template-columns: 1fr 1fr"] {
+      grid-template-columns: 1fr !important;
+    }
+
+    /* Botones que se desbordan */
+    .actions { flex-direction: column; align-items: stretch; }
+    .actions button { width: 100%; }
+
+    /* Indicar que hay scroll horizontal */
+    div[style*="overflow-x: auto"] {
+      position: relative;
+    }
+    div[style*="overflow-x: auto"]::after {
+      content: "→ desliza";
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      font-size: 9px;
+      color: var(--text-soft);
+      background: rgba(255,255,255,0.9);
+      padding: 2px 6px;
+      border-radius: 4px;
+      pointer-events: none;
+      opacity: 0.7;
+    }
+  }
+
+  @media (max-width: 480px) {
+    .nav-sticky-inner { gap: 4px; }
+    .nav-btn { padding: 5px 8px; font-size: 10px; }
+    .stat-value { font-size: 16px; }
+    .tarjeta-principal .metrica-valor { font-size: 18px; }
+    table { font-size: 10px !important; }
+  }
 </style>
 </head>
 <body>
