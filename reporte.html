@@ -1158,16 +1158,36 @@ Chart.defaults.color = '#5a6a7a';
 const SUPERVISORES_ALL = ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'];
 let SUPERVISORES = [...SUPERVISORES_ALL];
 
-function aplicarFiltroCoordinador() {
+function calcularSupervisoresVigentes(fechaConsultaStr) {
+  if (!fechaConsultaStr) fechaConsultaStr = new Date().toISOString().split('T')[0];
+
+  if (!supConfigData || supConfigData.length === 0) {
+    return [...SUPERVISORES_ALL];
+  }
+
+  const vigentes = supConfigData.filter(s => {
+    const ini = s.fecha_inicio || '2020-01-01';
+    const fin = s.fecha_fin;
+    if (ini > fechaConsultaStr) return false;
+    if (fin && fin < fechaConsultaStr) return false;
+    return true;
+  }).map(s => s.supervisor);
+
+  return vigentes.length > 0 ? vigentes : [...SUPERVISORES_ALL];
+}
+
+function aplicarFiltroCoordinador(fechaConsultaStr) {
+  const vigentes = calcularSupervisoresVigentes(fechaConsultaStr);
+
   if (coordinadorFiltro === 'todos') {
-    SUPERVISORES = [...SUPERVISORES_ALL];
+    SUPERVISORES = vigentes;
     return;
   }
 
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoy = fechaConsultaStr || new Date().toISOString().split('T')[0];
   const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
   if (!coord) {
-    SUPERVISORES = [...SUPERVISORES_ALL];
+    SUPERVISORES = vigentes;
     return;
   }
 
@@ -1179,7 +1199,7 @@ function aplicarFiltroCoordinador() {
     )
     .map(cs => cs.supervisor);
 
-  SUPERVISORES = supsDelCoord.filter(s => SUPERVISORES_ALL.includes(s));
+  SUPERVISORES = supsDelCoord.filter(s => vigentes.includes(s));
 }
 const MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const W1_INICIO = new Date('2025-12-29T00:00:00');
@@ -1515,6 +1535,17 @@ function renderReporte(wActual, wCurrent) {
   const wAnterior = wActual - 1;
   const rangoActual = fechasDeSemana(wActual);
   const rangoAnterior = fechasDeSemana(wAnterior);
+
+  const fechaRefConsulta = rangoActual.fin.toISOString().split('T')[0];
+  aplicarFiltroCoordinador(fechaRefConsulta);
+  const infoEl = document.getElementById('coord-info');
+  if (infoEl) {
+    if (coordinadorFiltro === 'todos') {
+      infoEl.textContent = `${SUPERVISORES.length} supervisores`;
+    } else {
+      infoEl.textContent = `${SUPERVISORES.length} supervisores: ${SUPERVISORES.join(', ')}`;
+    }
+  }
 
   document.getElementById('subtitle').textContent =
     `Comparativo W${wActual} (${formatearFecha(rangoActual.inicio)} - ${formatearFecha(rangoActual.fin)}) vs W${wAnterior} (${formatearFecha(rangoAnterior.inicio)} - ${formatearFecha(rangoAnterior.fin)})`;
