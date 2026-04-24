@@ -620,12 +620,14 @@
       <div id="config-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px;"></div>
 
       <div style="overflow-x: auto;">
-        <table id="config-tabla" style="font-size: 13px;">
+        <table id="config-tabla" style="font-size: 12.5px;">
           <thead>
             <tr>
               <th>Nombre</th>
               <th style="text-align:center;">Centro</th>
               <th class="num" style="text-align:center;">Tope</th>
+              <th style="text-align:center;">Vigencia desde</th>
+              <th style="text-align:center;">Vigencia hasta</th>
               <th class="num" style="text-align:center;">Actuales</th>
               <th class="num" style="text-align:center;">Vacantes</th>
               <th style="text-align:center;">Activo</th>
@@ -2041,6 +2043,12 @@ function renderConfigTabla() {
       <td class="num" style="text-align:center;">
         <input type="number" class="config-input-tope" data-id="${s.id}" value="${s.tope_agentes}" min="1" max="50" style="width: 60px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; text-align: center;">
       </td>
+      <td style="text-align:center;">
+        <input type="date" class="config-input-ini" data-id="${s.id}" value="${s.fecha_inicio || ''}" style="padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px;">
+      </td>
+      <td style="text-align:center;">
+        <input type="date" class="config-input-fin" data-id="${s.id}" value="${s.fecha_fin || ''}" style="padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px;" placeholder="sin fin">
+      </td>
       <td class="num" style="text-align:center; font-weight:700;">${actuales}</td>
       <td class="num" style="text-align:center; color:${colorVac}; font-weight:700;">${vacText}</td>
       <td style="text-align:center;">
@@ -2069,6 +2077,8 @@ async function guardarSupervisor(id) {
   const centroEl = document.querySelector(`.config-input-centro[data-id="${id}"]`);
   const topeEl = document.querySelector(`.config-input-tope[data-id="${id}"]`);
   const activoEl = document.querySelector(`.config-input-activo[data-id="${id}"]`);
+  const iniEl = document.querySelector(`.config-input-ini[data-id="${id}"]`);
+  const finEl = document.querySelector(`.config-input-fin[data-id="${id}"]`);
 
   const original = configState.supervisores.find(s => s.id === id);
   const nombreNuevo = nombreEl.value.trim();
@@ -2080,7 +2090,9 @@ async function guardarSupervisor(id) {
       supervisor: nombreNuevo,
       centro: centroEl.value,
       tope_agentes: parseInt(topeEl.value),
-      activo: activoEl.checked
+      activo: activoEl.checked,
+      fecha_inicio: iniEl.value || null,
+      fecha_fin: finEl.value || null
     };
 
     if (original.supervisor !== nombreNuevo) {
@@ -2128,6 +2140,8 @@ async function agregarSupervisorNuevo() {
   const topeStr = prompt('Tope de agentes:', '12');
   const tope = parseInt(topeStr);
   if (!tope || tope < 1) { alert('Tope inválido'); return; }
+  const fechaIni = prompt('Fecha de inicio (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+  if (!fechaIni || !/^\d{4}-\d{2}-\d{2}$/.test(fechaIni)) { alert('Fecha de inicio inválida'); return; }
 
   try {
     const maxOrden = Math.max(...configState.supervisores.filter(s => s.centro === centro.toUpperCase()).map(s => s.orden || 0), 0);
@@ -2137,6 +2151,7 @@ async function agregarSupervisorNuevo() {
       tope_agentes: tope,
       activo: false,
       fecha_alta: new Date().toISOString().split('T')[0],
+      fecha_inicio: fechaIni,
       orden: maxOrden + 1
     });
     if (error) throw error;
