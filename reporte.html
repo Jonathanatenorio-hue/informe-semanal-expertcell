@@ -313,6 +313,50 @@
   .top-ord-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
   .top-ord-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
 
+  .vd-vista-btn, .vd-metrica-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vd-vista-btn:hover, .vd-metrica-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .vd-vista-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+  .vd-metrica-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
+
+  .vt-tab-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 8px 18px;
+    border-radius: 8px 8px 0 0;
+    border-bottom: none;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vt-tab-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
+  .vt-metric-btn, .vt-view-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .vt-metric-btn:hover, .vt-view-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .vt-metric-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
+  .vt-view-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
   .modal-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -726,7 +770,9 @@
     <div class="nav-sticky">
       <div class="nav-sticky-inner">
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
+        <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
         <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
+        <button class="nav-btn" data-target="sec-vista-diaria">📆 Vista diaria</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
@@ -777,6 +823,49 @@
     <!-- EMBUDO PRINCIPAL -->
     <div id="embudo-section"></div>
 
+    <!-- VISTA DIARIA / SEMANAL -->
+    <div class="section collapsible" id="sec-vista-tiempo">
+      <div class="section-title">📊 Vista diaria y semanal</div>
+      <div class="section-body">
+      <div class="section-subtitle">Comportamiento día a día y semana a semana de las ventas. Puedes analizar activadas, programadas, canceladas y ARPU (precio promedio). Todo respeta el filtro de coordinador de arriba.</div>
+
+      <div style="display: flex; gap: 6px; margin: 16px 0 12px;">
+        <button class="vt-tab-btn active" data-vt-tab="diaria">📅 Diaria</button>
+        <button class="vt-tab-btn" data-vt-tab="semanal">📊 Semanal</button>
+      </div>
+
+      <div style="background: var(--bg); padding: 14px 16px; border-radius: 10px; margin-bottom: 16px;">
+        <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center;">
+          <div>
+            <label style="font-size: 11px; color: var(--text-soft); font-weight: 700; text-transform: uppercase;">Mes</label>
+            <select id="vt-mes-select" style="display: block; margin-top: 4px; padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 160px;"></select>
+          </div>
+          <div>
+            <label style="font-size: 11px; color: var(--text-soft); font-weight: 700; text-transform: uppercase;">Métrica</label>
+            <div style="margin-top: 4px; display: flex; gap: 4px;">
+              <button class="vt-metric-btn active" data-vt-metric="act">Activadas</button>
+              <button class="vt-metric-btn" data-vt-metric="prog">Programadas</button>
+              <button class="vt-metric-btn" data-vt-metric="canc">Canceladas</button>
+              <button class="vt-metric-btn" data-vt-metric="arpu">ARPU</button>
+            </div>
+          </div>
+          <div>
+            <label style="font-size: 11px; color: var(--text-soft); font-weight: 700; text-transform: uppercase;">Vista</label>
+            <div style="margin-top: 4px; display: flex; gap: 4px;">
+              <button class="vt-view-btn active" data-vt-view="total">Global</button>
+              <button class="vt-view-btn" data-vt-view="centro">Por centro</button>
+              <button class="vt-view-btn" data-vt-view="supervisor">Por supervisor</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="vt-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px;"></div>
+
+      <div class="chart-wrap" style="height: 380px;"><canvas id="chart-vt"></canvas></div>
+      </div>
+    </div>
+
     <!-- ESTRUCTURA VS OBJETIVO -->
     <div class="section collapsible abierto" id="sec-estructura">
       <div class="section-title">🎯 Estructura vs objetivo</div>
@@ -794,6 +883,38 @@
           <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">JV (Luisa Meza)</div>
           <div id="estructura-jv"></div>
         </div>
+      </div>
+      </div>
+    </div>
+
+    <!-- VISTA DIARIA DEL MES -->
+    <div class="section collapsible" id="sec-vista-diaria">
+      <div class="section-title">📆 Vista diaria del mes</div>
+      <div class="section-body">
+      <div class="section-subtitle">Actividad día por día del mes en curso. Cambia entre cantidad y monto, y filtra por centro o supervisor.</div>
+
+      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Ver:</span>
+        <button class="vd-vista-btn active" data-vista="total">Total equipo</button>
+        <button class="vd-vista-btn" data-vista="centro">Por centro</button>
+        <button class="vd-vista-btn" data-vista="supervisor">Por supervisor</button>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Métrica:</span>
+        <button class="vd-metrica-btn active" data-metrica="activadas">Activadas (cantidad)</button>
+        <button class="vd-metrica-btn" data-metrica="programadas">Programadas (cantidad)</button>
+        <button class="vd-metrica-btn" data-metrica="canceladas">Canceladas (cantidad)</button>
+        <button class="vd-metrica-btn" data-metrica="monto_bruto">Monto bruto (activadas)</button>
+        <button class="vd-metrica-btn" data-metrica="monto_sin_imp">Sin impuestos (activadas)</button>
+      </div>
+
+      <div id="vd-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 20px 0;"></div>
+
+      <div class="chart-wrap" style="height: 380px;"><canvas id="chart-vista-diaria"></canvas></div>
+
+      <div style="font-size: 11px; color: var(--text-soft); margin-top: 10px;">
+        💡 La línea naranja es el promedio diario. Las etiquetas arriba de cada barra muestran el valor exacto.
       </div>
       </div>
     </div>
@@ -1412,7 +1533,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus, telefono')
+      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus, telefono, precio')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
@@ -1719,7 +1840,9 @@ function renderReporte(wActual, wCurrent) {
 
   renderHeaderTags(actual, anterior, wActual, wCurrent);
   renderAvanceMensual(wActual);
+  renderVistaTiempo();
   renderEstructura();
+  renderVistaDiaria();
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
@@ -2370,11 +2493,17 @@ function renderDetalleAgentes() {
   const diasActivosPorAgente = {};
   const ultActPorAgente = {};
   const ultProgPorAgente = {};
+  const arpuPorAgente = {};
 
   ventasData.forEach(r => {
     if (!r.ejecutivo) return;
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
       actPorAgente[r.ejecutivo] = (actPorAgente[r.ejecutivo] || 0) + 1;
+      if (r.precio && r.precio > 0) {
+        if (!arpuPorAgente[r.ejecutivo]) arpuPorAgente[r.ejecutivo] = { sum: 0, count: 0 };
+        arpuPorAgente[r.ejecutivo].sum += r.precio;
+        arpuPorAgente[r.ejecutivo].count++;
+      }
     }
     if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
       progPorAgente[r.ejecutivo] = (progPorAgente[r.ejecutivo] || 0) + 1;
@@ -2468,11 +2597,15 @@ function renderDetalleAgentes() {
     const nuncaActivo = !ultAct;
     const nuncaProgramo = !ultProg;
 
+    const arpuInfo = arpuPorAgente[m.ejecutivo];
+    const arpu = arpuInfo && arpuInfo.count > 0 ? arpuInfo.sum / arpuInfo.count : 0;
+
     agentesPorSup[m.supervisor].push({
       ejecutivo: m.ejecutivo,
       meta: m.meta_activadas,
       avance, programadas, canceladas, diasActivos,
       transito: transitoPorAgente[m.ejecutivo] || 0,
+      arpu,
       pct, ritmoActual, proyeccion, ritmoNecesario,
       tipo: m.tipo_meta,
       diasSinAct, diasSinProg, nuncaActivo, nuncaProgramo,
@@ -2526,6 +2659,7 @@ function renderDetalleAgentes() {
                   <th class="num" style="text-align:center;" title="Ventas en proceso de entrega o pendientes de evidencia">Tránsito</th>
                   <th class="num" style="text-align:center;">Act</th>
                   <th class="num" style="text-align:center;">Canc</th>
+                  <th class="num" style="text-align:center;" title="Precio promedio de sus planes vendidos (ARPU)">ARPU</th>
                   <th class="num" style="text-align:center;">Meta</th>
                   <th class="num" style="text-align:center;">% Mes</th>
                   <th class="num" style="text-align:center;">Ritmo</th>
@@ -2575,6 +2709,7 @@ function renderDetalleAgentes() {
                     <td class="num" style="text-align:center; color: var(--amber); font-weight: 700;">${a.transito || '—'}</td>
                     <td class="num" style="text-align:center;"><strong>${a.avance}</strong></td>
                     <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
+                    <td class="num" style="text-align:center; font-weight: 600;">${a.arpu > 0 ? '$' + Math.round(a.arpu) : '—'}</td>
                     <td class="num" style="text-align:center;">${a.meta}</td>
                     <td class="num" style="text-align:center; color:${colorPct}; font-weight:700;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
                     <td class="num" style="text-align:center;">${a.ritmoActual.toFixed(1)}</td>
@@ -2811,6 +2946,7 @@ function descargarEquipoExcel(supervisor) {
     'Programadas': a.programadas,
     'Activadas': a.avance,
     'Canceladas': a.canceladas,
+    'ARPU': a.arpu > 0 ? Math.round(a.arpu) : null,
     'Meta': a.meta,
     '% Mes': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
     'Ritmo actual (/dia)': Number(a.ritmoActual.toFixed(2)),
@@ -2820,7 +2956,7 @@ function descargarEquipoExcel(supervisor) {
   }));
 
   const ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:14},{wch:13},{wch:12},{wch:12},{wch:12},{wch:10},{wch:11},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
+  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:14},{wch:13},{wch:12},{wch:12},{wch:12},{wch:10},{wch:11},{wch:8},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, supervisor);
 
@@ -2831,6 +2967,310 @@ function descargarEquipoExcel(supervisor) {
 function toggleAgenteAcordeon(sup) {
   const el = document.querySelector(`.agente-acordeon[data-sup="${sup}"]`);
   if (el) el.classList.toggle('abierto');
+}
+
+function renderVistaTiempo() {
+  if (!window.__avanceData) return;
+
+  const mesesConDatos = new Set();
+  ventasData.forEach(r => {
+    if (r.fecha_bo) mesesConDatos.add(r.fecha_bo.substring(0, 7));
+    if (r.fecha_activacion) mesesConDatos.add(r.fecha_activacion.substring(0, 7));
+  });
+  const mesesOrdenados = [...mesesConDatos].sort().reverse();
+
+  const selectMes = document.getElementById('vt-mes-select');
+  selectMes.innerHTML = `
+    <option value="todos">Todos los meses</option>
+    <option disabled>──────────</option>
+    ${mesesOrdenados.map(m => {
+      const [a, mm] = m.split('-');
+      return `<option value="${m}">${MESES_NOMBRE[parseInt(mm) - 1]} ${a}</option>`;
+    }).join('')}
+  `;
+
+  const actualPeriodo = `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`;
+  selectMes.value = actualPeriodo;
+
+  vtState.tab = 'diaria';
+  vtState.metrica = 'act';
+  vtState.vista = 'total';
+
+  document.querySelectorAll('.vt-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.vt-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vtState.tab = btn.dataset.vtTab;
+      actualizarVista();
+    };
+  });
+  document.querySelectorAll('.vt-metric-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.vt-metric-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vtState.metrica = btn.dataset.vtMetric;
+      actualizarVista();
+    };
+  });
+  document.querySelectorAll('.vt-view-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.vt-view-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      vtState.vista = btn.dataset.vtView;
+      actualizarVista();
+    };
+  });
+  selectMes.onchange = actualizarVista;
+
+  actualizarVista();
+}
+
+const vtState = { tab: 'diaria', metrica: 'act', vista: 'total' };
+
+function actualizarVista() {
+  const periodo = document.getElementById('vt-mes-select').value;
+  const { tab, metrica, vista } = vtState;
+
+  const ventasFiltradas = ventasData.filter(r => SUPERVISORES.includes(r.supervisor));
+
+  let fechaCampo;
+  let filtroRegistros;
+  if (metrica === 'prog') {
+    fechaCampo = 'fecha_bo';
+    filtroRegistros = ventasFiltradas.filter(r => r.fecha_bo);
+  } else if (metrica === 'canc') {
+    fechaCampo = 'fecha_cancelacion';
+    filtroRegistros = ventasFiltradas.filter(r => r.fecha_cancelacion);
+  } else {
+    fechaCampo = 'fecha_activacion';
+    filtroRegistros = ventasFiltradas.filter(r => r.fecha_activacion);
+  }
+
+  if (periodo !== 'todos') {
+    filtroRegistros = filtroRegistros.filter(r => r[fechaCampo].startsWith(periodo));
+  }
+
+  const agrupacion = {};
+  const agrupacionPrecios = {};
+  const categorias = new Set();
+
+  filtroRegistros.forEach(r => {
+    const fecha = r[fechaCampo];
+    if (!fecha) return;
+
+    let bucket;
+    if (tab === 'diaria') {
+      bucket = fecha;
+    } else {
+      const d = new Date(fecha + 'T12:00:00');
+      const anio = d.getFullYear();
+      const ini = new Date(anio, 0, 1);
+      const dias = Math.floor((d - ini) / (1000 * 60 * 60 * 24));
+      const semana = Math.ceil((dias + ini.getDay() + 1) / 7);
+      bucket = `${anio}-W${String(semana).padStart(2, '0')}`;
+    }
+
+    let categoria;
+    if (vista === 'supervisor') {
+      categoria = r.supervisor || 'Sin sup';
+    } else if (vista === 'centro') {
+      const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
+      categoria = supConf ? supConf.centro : 'Sin centro';
+    } else {
+      categoria = 'Total';
+    }
+    categorias.add(categoria);
+
+    if (!agrupacion[bucket]) agrupacion[bucket] = {};
+    if (!agrupacion[bucket][categoria]) agrupacion[bucket][categoria] = 0;
+    agrupacion[bucket][categoria]++;
+
+    if (metrica === 'arpu' && r.precio && r.precio > 0) {
+      if (!agrupacionPrecios[bucket]) agrupacionPrecios[bucket] = {};
+      if (!agrupacionPrecios[bucket][categoria]) agrupacionPrecios[bucket][categoria] = { sum: 0, count: 0 };
+      agrupacionPrecios[bucket][categoria].sum += r.precio;
+      agrupacionPrecios[bucket][categoria].count++;
+    }
+  });
+
+  const buckets = Object.keys(agrupacion).sort();
+
+  let totalValor, totalCount, maxValor, maxBucket;
+  if (metrica === 'arpu') {
+    let sumaPrecios = 0, countPrecios = 0;
+    filtroRegistros.forEach(r => {
+      if (r.precio && r.precio > 0) { sumaPrecios += r.precio; countPrecios++; }
+    });
+    totalValor = countPrecios > 0 ? sumaPrecios / countPrecios : 0;
+    totalCount = countPrecios;
+    maxValor = 0; maxBucket = '';
+    buckets.forEach(b => {
+      let sumaB = 0, countB = 0;
+      Object.keys(agrupacionPrecios[b] || {}).forEach(cat => {
+        sumaB += agrupacionPrecios[b][cat].sum;
+        countB += agrupacionPrecios[b][cat].count;
+      });
+      const arpuBucket = countB > 0 ? sumaB / countB : 0;
+      if (arpuBucket > maxValor) { maxValor = arpuBucket; maxBucket = b; }
+    });
+  } else {
+    totalCount = filtroRegistros.length;
+    totalValor = totalCount;
+    maxValor = 0; maxBucket = '';
+    buckets.forEach(b => {
+      let s = 0;
+      Object.values(agrupacion[b]).forEach(v => s += v);
+      if (s > maxValor) { maxValor = s; maxBucket = b; }
+    });
+  }
+
+  const prom = buckets.length > 0 ? (totalCount / buckets.length) : 0;
+  const promValor = buckets.length > 0 ? (metrica === 'arpu' ? totalValor : totalCount / buckets.length) : 0;
+
+  const labelMetrica = metrica === 'act' ? 'Activadas' : metrica === 'prog' ? 'Programadas' : metrica === 'canc' ? 'Canceladas' : 'ARPU';
+  const labelBucket = tab === 'diaria' ? 'día' : 'semana';
+
+  function formatBucket(b) {
+    if (tab === 'diaria') {
+      const [a, m, d] = b.split('-');
+      return `${d}/${m}`;
+    }
+    return b;
+  }
+
+  let resumenHtml = '';
+  if (metrica === 'arpu') {
+    resumenHtml = `
+      <div class="stat-card">
+        <div class="stat-label">ARPU promedio</div>
+        <div class="stat-value">$${totalValor.toFixed(0)}</div>
+        <div class="stat-sub">precio promedio plan</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Ventas consideradas</div>
+        <div class="stat-value" style="color: var(--att-orange);">${totalCount.toLocaleString()}</div>
+        <div class="stat-sub">con precio > 0</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">ARPU más alto</div>
+        <div class="stat-value" style="color: var(--green);">$${maxValor.toFixed(0)}</div>
+        <div class="stat-sub">${formatBucket(maxBucket)}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Monto total vendido</div>
+        <div class="stat-value" style="color: var(--att-blue);">$${(totalValor * totalCount / 1000).toFixed(1)}K</div>
+        <div class="stat-sub">renta total del periodo</div>
+      </div>
+    `;
+  } else {
+    const montoAprox = filtroRegistros.reduce((a, r) => a + (r.precio || 0), 0);
+    resumenHtml = `
+      <div class="stat-card">
+        <div class="stat-label">Promedio ${labelBucket}</div>
+        <div class="stat-value">${prom.toFixed(1)}</div>
+        <div class="stat-sub">${labelMetrica.toLowerCase()} / ${labelBucket}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">Total ${labelMetrica}</div>
+        <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
+        <div class="stat-sub">${buckets.length} ${labelBucket}s con datos</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Máximo en ${labelBucket === 'día' ? 'un día' : 'una semana'}</div>
+        <div class="stat-value" style="color: var(--att-orange);">${maxValor}</div>
+        <div class="stat-sub">${formatBucket(maxBucket)}</div>
+      </div>
+      ${metrica === 'act' ? `
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Monto total</div>
+        <div class="stat-value" style="color: var(--att-blue);">$${(montoAprox / 1000).toFixed(1)}K</div>
+        <div class="stat-sub">renta total activada</div>
+      </div>` : ''}
+    `;
+  }
+  document.getElementById('vt-resumen-cards').innerHTML = resumenHtml;
+
+  const cats = [...categorias].sort();
+  const colores = {
+    'Total': '#6366F1',
+    'CC2': '#FF7200',
+    'JV': '#00A8E0',
+    'Alan': '#EF4444', 'Alfred': '#F59E0B', 'Carlos': '#10B981',
+    'Jorge': '#3B82F6', 'Luisa': '#8B5CF6', 'Reyna': '#EC4899',
+    'Carmen': '#F472B6', 'Emilio': '#A78BFA', 'Ana Paola': '#FBBF24'
+  };
+
+  const datasets = cats.map((cat, i) => {
+    const data = buckets.map(b => {
+      if (metrica === 'arpu') {
+        const p = (agrupacionPrecios[b] && agrupacionPrecios[b][cat]) || { sum: 0, count: 0 };
+        return p.count > 0 ? Math.round(p.sum / p.count) : 0;
+      }
+      return (agrupacion[b] && agrupacion[b][cat]) || 0;
+    });
+    return {
+      label: cat,
+      data,
+      backgroundColor: colores[cat] || '#94A3B8',
+      borderRadius: 4,
+      stack: metrica === 'arpu' ? undefined : 'stack1'
+    };
+  });
+
+  const promData = buckets.map(() => Number(promValor.toFixed(1)));
+  datasets.push({
+    type: 'line',
+    label: metrica === 'arpu' ? 'ARPU promedio' : `Promedio por ${labelBucket}`,
+    data: promData,
+    borderColor: '#DC2626',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    pointRadius: 0,
+    tension: 0,
+    stack: undefined
+  });
+
+  const ctx = document.getElementById('chart-vt');
+  if (window.__chartVT) window.__chartVT.destroy();
+  window.__chartVT = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: buckets.map(formatBucket), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: cats.length > 1 || vista !== 'total',
+          position: 'top',
+          labels: { font: { size: 11, weight: '600' }, boxWidth: 16 }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (metrica === 'arpu') return `${ctx.dataset.label}: $${v.toLocaleString()}`;
+              return `${ctx.dataset.label}: ${v}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          stacked: metrica !== 'arpu' && vista !== 'total',
+          grid: { display: false },
+          ticks: { font: { size: 10, weight: '600' }, maxRotation: 45, minRotation: 0 }
+        },
+        y: {
+          stacked: metrica !== 'arpu' && vista !== 'total',
+          beginAtZero: true,
+          grid: { color: 'rgba(0,0,0,0.06)' },
+          ticks: {
+            callback: (v) => metrica === 'arpu' ? '$' + v.toLocaleString() : v.toLocaleString()
+          }
+        }
+      }
+    }
+  });
 }
 
 function renderEstructura() {
@@ -2958,6 +3398,313 @@ function renderEstructura() {
 
   document.getElementById('estructura-cc2').innerHTML = renderTabla(datosCC2, topeCC2, actCC2);
   document.getElementById('estructura-jv').innerHTML = renderTabla(datosJV, topeJV, actJV);
+}
+
+const VD_STATE = { vista: 'total', metrica: 'activadas' };
+
+function renderVistaDiaria() {
+  if (!window.__avanceData) return;
+
+  document.querySelectorAll('.vd-vista-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.vd-vista-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      VD_STATE.vista = btn.dataset.vista;
+      dibujarVistaDiaria();
+    };
+  });
+
+  document.querySelectorAll('.vd-metrica-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.vd-metrica-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      VD_STATE.metrica = btn.dataset.metrica;
+      dibujarVistaDiaria();
+    };
+  });
+
+  dibujarVistaDiaria();
+}
+
+function dibujarVistaDiaria() {
+  if (!window.__avanceData) return;
+  const { mes, anio, iniMesStr, fechaCorteStr } = window.__avanceData;
+
+  const metaMes = window.__avanceData.estadoTotal.meta;
+  const metrica = VD_STATE.metrica;
+  const vista = VD_STATE.vista;
+
+  function getFechaCampo(r, metrica) {
+    if (metrica === 'programadas') return r.fecha_bo;
+    if (metrica === 'canceladas') return r.fecha_cancelacion;
+    return r.fecha_activacion;
+  }
+
+  function getValor(r, metrica) {
+    if (metrica === 'monto_bruto') return parseFloat(r.precio) || 0;
+    if (metrica === 'monto_sin_imp') return parseFloat(r.renta_sin_impuestos) || 0;
+    return 1;
+  }
+
+  function pasaFiltro(r, metrica) {
+    if (metrica === 'activadas' || metrica === 'monto_bruto' || metrica === 'monto_sin_imp') {
+      return r.estatus === 'activada' && r.fecha_activacion;
+    }
+    if (metrica === 'programadas') return r.fecha_bo;
+    if (metrica === 'canceladas') return r.fecha_cancelacion;
+    return false;
+  }
+
+  const supervisoresUsar = vista === 'total' ? null : SUPERVISORES;
+  const diasDelMes = calendarioData
+    .filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+  const fechas = diasDelMes.map(d => d.fecha);
+  const fechasConDatos = fechas.filter(f => f <= fechaCorteStr);
+
+  const datasets = [];
+  const esMonto = metrica === 'monto_bruto' || metrica === 'monto_sin_imp';
+
+  if (vista === 'total') {
+    const datos = fechas.map(f => {
+      if (f > fechaCorteStr) return null;
+      let total = 0;
+      ventasData.forEach(r => {
+        if (!SUPERVISORES.includes(r.supervisor)) return;
+        if (!pasaFiltro(r, metrica)) return;
+        const fechaCampo = getFechaCampo(r, metrica);
+        if (fechaCampo !== f) return;
+        total += getValor(r, metrica);
+      });
+      return total;
+    });
+
+    datasets.push({
+      type: 'bar',
+      label: etiquetaMetrica(metrica),
+      data: datos,
+      backgroundColor: colorPorMetrica(metrica, 0.75),
+      borderColor: colorPorMetrica(metrica, 1),
+      borderWidth: 1,
+      borderRadius: 4
+    });
+  } else if (vista === 'centro') {
+    const centros = { CC2: 'CC2', JV: 'JV' };
+    const supPorCentro = { CC2: [], JV: [] };
+    supConfigData.forEach(s => {
+      if (SUPERVISORES.includes(s.supervisor) && supPorCentro[s.centro]) {
+        supPorCentro[s.centro].push(s.supervisor);
+      }
+    });
+    if (supPorCentro.CC2.length === 0 && supPorCentro.JV.length === 0) {
+      supPorCentro.CC2 = ['Alan', 'Alfred', 'Carlos', 'Reyna'].filter(s => SUPERVISORES.includes(s));
+      supPorCentro.JV = ['Jorge', 'Luisa'].filter(s => SUPERVISORES.includes(s));
+    }
+
+    const coloresCentro = { CC2: '#002B5C', JV: '#FF7200' };
+
+    Object.entries(centros).forEach(([key, label]) => {
+      const sups = supPorCentro[key];
+      if (sups.length === 0) return;
+      const datos = fechas.map(f => {
+        if (f > fechaCorteStr) return null;
+        let total = 0;
+        ventasData.forEach(r => {
+          if (!sups.includes(r.supervisor)) return;
+          if (!pasaFiltro(r, metrica)) return;
+          if (getFechaCampo(r, metrica) !== f) return;
+          total += getValor(r, metrica);
+        });
+        return total;
+      });
+      datasets.push({
+        type: 'bar',
+        label: label,
+        data: datos,
+        backgroundColor: coloresCentro[key],
+        borderWidth: 0,
+        borderRadius: 2,
+        stack: 'stack1'
+      });
+    });
+  } else if (vista === 'supervisor') {
+    const coloresSup = {
+      'Alan': '#1E40AF', 'Alfred': '#0891B2', 'Carlos': '#7C3AED', 'Jorge': '#DB2777',
+      'Luisa': '#DC2626', 'Reyna': '#EA580C', 'Ana Paola': '#16A34A', 'Carmen': '#0D9488',
+      'Emilio': '#F59E0B'
+    };
+
+    SUPERVISORES.forEach((sup, idx) => {
+      const datos = fechas.map(f => {
+        if (f > fechaCorteStr) return null;
+        let total = 0;
+        ventasData.forEach(r => {
+          if (r.supervisor !== sup) return;
+          if (!pasaFiltro(r, metrica)) return;
+          if (getFechaCampo(r, metrica) !== f) return;
+          total += getValor(r, metrica);
+        });
+        return total;
+      });
+      const color = coloresSup[sup] || `hsl(${idx * 45}, 60%, 50%)`;
+      datasets.push({
+        type: 'bar',
+        label: sup,
+        data: datos,
+        backgroundColor: color,
+        borderWidth: 0,
+        borderRadius: 2,
+        stack: 'stack1'
+      });
+    });
+  }
+
+  const labels = fechas.map(f => {
+    const [, mm, dd] = f.split('-');
+    const d = new Date(f + 'T12:00:00');
+    const dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()];
+    return `${dow} ${parseInt(dd)}`;
+  });
+
+  const totalesDiarios = fechas.map(f => {
+    if (f > fechaCorteStr) return null;
+    let total = 0;
+    datasets.forEach(d => {
+      const idx = fechas.indexOf(f);
+      if (d.data[idx]) total += d.data[idx];
+    });
+    return total;
+  }).filter(v => v !== null);
+
+  const suma = totalesDiarios.reduce((a, b) => a + b, 0);
+  const diasConDatos = totalesDiarios.filter(v => v > 0).length;
+  const promedio = diasConDatos > 0 ? suma / diasConDatos : 0;
+  const maxValor = Math.max(...totalesDiarios, 0);
+  const maxDiaIdx = totalesDiarios.indexOf(maxValor);
+  const maxFecha = fechasConDatos[maxDiaIdx];
+
+  const totalPromedioLine = {
+    type: 'line',
+    label: 'Promedio diario',
+    data: fechas.map(f => f <= fechaCorteStr ? promedio : null),
+    borderColor: '#FF7200',
+    borderWidth: 2,
+    pointRadius: 0,
+    fill: false,
+    order: 0
+  };
+  datasets.push(totalPromedioLine);
+
+  const fmtMonto = (v) => '$' + (v / 1000).toFixed(1) + 'K';
+  const fmtCount = (v) => Math.round(v).toLocaleString();
+  const fmt = esMonto ? fmtMonto : fmtCount;
+
+  const maxFechaLabel = maxFecha ? (() => {
+    const [, , dd] = maxFecha.split('-');
+    const d = new Date(maxFecha + 'T12:00:00');
+    return `día ${parseInt(dd)}`;
+  })() : '—';
+
+  let totalActMes = 0, totalProgMes = 0, totalCancMes = 0, montoBrutoMes = 0, montoSinImpMes = 0;
+  ventasData.forEach(r => {
+    if (!SUPERVISORES.includes(r.supervisor)) return;
+    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr && r.estatus === 'activada') {
+      totalActMes++;
+      montoBrutoMes += parseFloat(r.precio) || 0;
+      montoSinImpMes += parseFloat(r.renta_sin_impuestos) || 0;
+    }
+    if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) totalProgMes++;
+    if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) totalCancMes++;
+  });
+
+  document.getElementById('vd-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Promedio diario</div>
+      <div class="stat-value">${fmt(promedio)}</div>
+      <div class="stat-sub">de ${etiquetaMetrica(metrica).toLowerCase()}</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">Total del periodo</div>
+      <div class="stat-value" style="color: var(--green);">${fmt(suma)}</div>
+      <div class="stat-sub">acumulado mes</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);">
+      <div class="stat-label">Máximo en un día</div>
+      <div class="stat-value" style="color: var(--att-orange);">${fmt(maxValor)}</div>
+      <div class="stat-sub">${maxFechaLabel}</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">Monto bruto mes</div>
+      <div class="stat-value" style="color: var(--att-blue);">$${(montoBrutoMes / 1000).toFixed(2)}K</div>
+      <div class="stat-sub">solo activadas</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-navy);">
+      <div class="stat-label">Sin impuestos mes</div>
+      <div class="stat-value" style="color: var(--att-navy);">$${(montoSinImpMes / 1000).toFixed(2)}K</div>
+      <div class="stat-sub">ARPU real</div>
+    </div>
+  `;
+
+  const ctx = document.getElementById('chart-vista-diaria');
+  if (window.__chartVistaDiaria) window.__chartVistaDiaria.destroy();
+  window.__chartVistaDiaria = new Chart(ctx, {
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11, weight: '600' }, boxWidth: 18 } },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const v = ctx.parsed.y;
+              if (v === null || v === undefined) return null;
+              if (ctx.dataset.label === 'Promedio diario') return `Promedio: ${fmt(v)}`;
+              return `${ctx.dataset.label}: ${fmt(v)}`;
+            },
+            footer: vista !== 'total' ? (items) => {
+              let tot = 0;
+              items.forEach(i => {
+                if (i.dataset.label !== 'Promedio diario' && i.parsed.y) tot += i.parsed.y;
+              });
+              return `Total: ${fmt(tot)}`;
+            } : undefined
+          }
+        }
+      },
+      scales: {
+        x: { stacked: vista !== 'total', grid: { display: false }, ticks: { font: { size: 10 } } },
+        y: {
+          stacked: vista !== 'total',
+          beginAtZero: true,
+          grid: { color: 'rgba(0,0,0,0.06)' },
+          ticks: {
+            callback: (v) => esMonto ? '$' + (v / 1000).toFixed(0) + 'K' : v
+          }
+        }
+      }
+    }
+  });
+}
+
+function etiquetaMetrica(m) {
+  if (m === 'activadas') return 'Activadas';
+  if (m === 'programadas') return 'Programadas';
+  if (m === 'canceladas') return 'Canceladas';
+  if (m === 'monto_bruto') return 'Monto bruto';
+  if (m === 'monto_sin_imp') return 'Sin impuestos';
+  return m;
+}
+
+function colorPorMetrica(m, alpha = 1) {
+  const colors = {
+    'activadas': `rgba(22, 163, 74, ${alpha})`,
+    'programadas': `rgba(0, 168, 224, ${alpha})`,
+    'canceladas': `rgba(220, 38, 38, ${alpha})`,
+    'monto_bruto': `rgba(255, 114, 0, ${alpha})`,
+    'monto_sin_imp': `rgba(0, 43, 92, ${alpha})`
+  };
+  return colors[m] || `rgba(100, 100, 100, ${alpha})`;
 }
 
 function renderProductividadAgente(wActual, iniStr, finStr) {
