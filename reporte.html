@@ -833,7 +833,15 @@
       <div class="chart-wrap" style="height: 300px;"><canvas id="chart-tendencia-mes"></canvas></div>
 
       <div style="font-weight: 600; font-size: 15px; margin: 28px 0 12px; color: var(--att-navy);">Detalle por agente</div>
-      <div class="section-subtitle" style="margin-bottom: 12px;">Haz clic en un supervisor para ver el cumplimiento individual de sus agentes.</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Haz clic en un supervisor para ver el cumplimiento individual de sus agentes. Clic en el nombre del agente para ver su histórico completo.</div>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Mes:</span>
+        <select id="detalle-mes-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 160px;"></select>
+      </div>
+
+      <div id="agentes-inactivos-banner"></div>
+
       <div id="avance-detalle-agentes"></div>
     </div>
 
@@ -2506,7 +2514,81 @@ function renderTendenciaMes() {
 
 function renderDetalleAgentes() {
   if (!window.__avanceData) return;
-  const { mes, anio, iniMesStr, fechaCorteStr, supervisoresData, diasTranscurridos, diasRestantes, estadoTotal } = window.__avanceData;
+
+  const selectMes = document.getElementById('detalle-mes-select');
+  if (selectMes && !selectMes.dataset.inicializado) {
+    const mesesDisp = new Set();
+    ventasData.forEach(r => {
+      if (r.fecha_bo) mesesDisp.add(r.fecha_bo.substring(0, 7));
+    });
+    metasAgeData.forEach(m => {
+      mesesDisp.add(`${m.anio}-${String(m.mes).padStart(2, '0')}`);
+    });
+
+    const mesesOrdenados = [...mesesDisp].sort().reverse();
+    selectMes.innerHTML = mesesOrdenados.map(m => {
+      const [a, mm] = m.split('-');
+      const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+      return `<option value="${m}">${noms[parseInt(mm) - 1]} ${a}</option>`;
+    }).join('');
+
+    const mesActualKey = `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`;
+    selectMes.value = mesActualKey;
+
+    selectMes.addEventListener('change', () => renderDetalleAgentesConMes(selectMes.value));
+    selectMes.dataset.inicializado = 'true';
+  }
+
+  const mesSelKey = selectMes ? selectMes.value : `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`;
+  renderDetalleAgentesConMes(mesSelKey);
+}
+
+function renderDetalleAgentesConMes(mesKey) {
+  if (!window.__avanceData) return;
+
+  const [anioSel, mesSel] = mesKey.split('-').map(Number);
+  const iniMesStr = `${anioSel}-${String(mesSel).padStart(2, '0')}-01`;
+  const ultDia = new Date(anioSel, mesSel, 0).getDate();
+  const finMesStr = `${anioSel}-${String(mesSel).padStart(2, '0')}-${String(ultDia).padStart(2, '0')}`;
+
+  const hoyStr = new Date().toISOString().split('T')[0];
+
+  const esMesActual = (anioSel === window.__avanceData.anio && mesSel === window.__avanceData.mes);
+  const fechaCorteStr = esMesActual
+    ? window.__avanceData.fechaCorteStr
+    : (finMesStr < hoyStr ? finMesStr : hoyStr);
+
+  const diasMesCal = calendarioData.filter(d => d.fecha >= iniMesStr && d.fecha <= finMesStr);
+  const diasHabilesTotales = diasMesCal.reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+  const diasTranscurridos = calendarioData
+    .filter(d => d.fecha >= iniMesStr && d.fecha <= fechaCorteStr)
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+  const diasRestantes = Math.max(0, diasHabilesTotales - diasTranscurridos);
+
+  const supervisoresData = esMesActual ? window.__avanceData.supervisoresData : (function() {
+    const metasMes = metasSupData.filter(m => m.anio === anioSel && m.mes === mesSel && SUPERVISORES.includes(m.supervisor));
+    return metasMes.map(m => {
+      let avance = 0;
+      ventasData.forEach(r => {
+        if (r.estatus === 'activada' && r.supervisor === m.supervisor && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+          avance++;
+        }
+      });
+      const pctCumpl = m.meta_activadas > 0 ? (avance / m.meta_activadas * 100) : 0;
+      const esperado = Math.round(m.meta_activadas * diasTranscurridos / diasHabilesTotales);
+      const pctEsperado = esperado > 0 ? (avance / esperado * 100) : 100;
+      let estado = 'verde';
+      if (pctEsperado < 85) estado = 'rojo';
+      else if (pctEsperado < 100) estado = 'amarillo';
+      return {
+        sup: m.supervisor,
+        meta: m.meta_activadas,
+        avance,
+        pctCumpl,
+        estado
+      };
+    }).sort((a, b) => b.pctEsperado - a.pctEsperado);
+  })();
 
   const actPorAgente = {};
   const progPorAgente = {};
@@ -2583,8 +2665,8 @@ function renderDetalleAgentes() {
   }
 
   const metasDelMes = metasAgeData.filter(m =>
-    m.anio === anio &&
-    m.mes === mes &&
+    m.anio === anioSel &&
+    m.mes === mesSel &&
     SUPERVISORES.includes(m.supervisor)
   );
 
@@ -2635,7 +2717,80 @@ function renderDetalleAgentes() {
     });
   });
 
-  window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes, anio };
+  window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel };
+
+  const inactivosPorSup = {};
+  let totalInactivos = 0;
+  let totalActivosEvaluados = 0;
+  const hoyStrInac = new Date().toISOString().split('T')[0];
+  const finRefStr = esMesActual ? hoyStrInac : finMesStr;
+
+  plantillaData.forEach(p => {
+    if (!p.fecha_ingreso) return;
+    if (p.fecha_ingreso > finRefStr) return;
+    if (p.fecha_baja && p.fecha_baja <= iniMesStr) return;
+    if (!SUPERVISORES.includes(p.supervisor)) return;
+
+    const ingresoEnMes = p.fecha_ingreso > iniMesStr ? p.fecha_ingreso : iniMesStr;
+    const ingresoDate = new Date(ingresoEnMes + 'T12:00:00');
+    const refDate = new Date(finRefStr + 'T12:00:00');
+    const diasEnMes = Math.floor((refDate - ingresoDate) / (1000 * 60 * 60 * 24));
+    if (diasEnMes < 7) return;
+
+    totalActivosEvaluados++;
+    const ventas = actPorAgente[p.nombre] || 0;
+    if (ventas === 0) {
+      totalInactivos++;
+      if (!inactivosPorSup[p.supervisor]) inactivosPorSup[p.supervisor] = [];
+      inactivosPorSup[p.supervisor].push({
+        nombre: p.nombre,
+        ingreso: p.fecha_ingreso,
+        diasEnMes
+      });
+    }
+  });
+
+  window.__inactivosData = { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey };
+
+  const banner = document.getElementById('agentes-inactivos-banner');
+  if (totalInactivos === 0) {
+    banner.innerHTML = `
+      <div class="alert success" style="margin-bottom: 16px;">
+        <div>✅</div>
+        <div><strong>Excelente:</strong> los ${totalActivosEvaluados} agentes activos del periodo ya tienen al menos 1 venta.</div>
+      </div>
+    `;
+  } else {
+    const pctInac = totalActivosEvaluados > 0 ? (totalInactivos / totalActivosEvaluados * 100) : 0;
+    banner.innerHTML = `
+      <div class="alert warn" style="margin-bottom: 16px; cursor: pointer;" id="banner-inactivos-clickable">
+        <div>⚠️</div>
+        <div style="flex: 1;">
+          <strong>${totalInactivos} agente${totalInactivos > 1 ? 's' : ''} sin venta</strong> en el periodo
+          (${pctInac.toFixed(1)}% de ${totalActivosEvaluados} evaluados).
+          <span style="font-size: 11px; color: var(--text-soft);"> Clic para ver lista detallada.</span>
+        </div>
+        <button id="btn-descargar-inactivos" style="background: var(--green); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">📥 Excel</button>
+      </div>
+    `;
+
+    setTimeout(() => {
+      const clickable = document.getElementById('banner-inactivos-clickable');
+      const btnExcel = document.getElementById('btn-descargar-inactivos');
+      if (clickable) {
+        clickable.addEventListener('click', (e) => {
+          if (e.target.id === 'btn-descargar-inactivos') return;
+          mostrarModalInactivos();
+        });
+      }
+      if (btnExcel) {
+        btnExcel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          descargarInactivosExcel();
+        });
+      }
+    }, 100);
+  }
 
   const html = supervisoresData.map(s => {
     const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => b.pct - a.pct);
@@ -2645,6 +2800,7 @@ function renderDetalleAgentes() {
     const cumplidos = agentes.filter(a => a.meta > 0 && a.pct >= 100).length;
     const enRiesgo = agentes.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
     const alertaInactivos = agentes.filter(a => a.diasSinAct !== null && a.diasSinAct >= 5).length;
+    const sinVentas = agentes.filter(a => a.avance === 0).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
 
@@ -2658,6 +2814,7 @@ function renderDetalleAgentes() {
               ${cumplidos > 0 ? `<span style="color:var(--green);font-weight:600;">✓ ${cumplidos} al 100%</span> · ` : ''}
               ${enRiesgo > 0 ? `<span style="color:var(--amber);font-weight:600;">⚠ ${enRiesgo} en riesgo</span> · ` : ''}
               ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span> · ` : ''}
+              ${sinVentas > 0 ? `<span style="color:var(--red);font-weight:700;">⛔ ${sinVentas} sin venta</span> · ` : ''}
               ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 5+ días</span>` : ''}
             </span>
           </span>
@@ -2947,6 +3104,101 @@ function mostrarHistoricoAgente(ejecutivo, supervisorActual) {
       }
     });
   }, 100);
+}
+
+function mostrarModalInactivos() {
+  if (!window.__inactivosData) return;
+  const { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey } = window.__inactivosData;
+
+  const [a, mm] = mesKey.split('-');
+  const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const nombreMes = `${noms[parseInt(mm) - 1]} ${a}`;
+
+  const modal = document.getElementById('modal-agente');
+  const body = document.getElementById('modal-agente-body');
+  const titulo = document.getElementById('modal-agente-titulo');
+
+  titulo.textContent = `⛔ Agentes sin venta · ${nombreMes}`;
+
+  let html = `
+    <div class="alert warn" style="margin-bottom: 16px;">
+      <div>⚠️</div>
+      <div>
+        <strong>${totalInactivos} agente${totalInactivos > 1 ? 's' : ''}</strong> con plantilla activa pero sin ventas en ${nombreMes}.
+        Esto representa el ${(totalInactivos / totalActivosEvaluados * 100).toFixed(1)}% de los ${totalActivosEvaluados} agentes evaluados.
+        <br><br>
+        <em>Solo se evalúan agentes con al menos 7 días en plantilla durante el periodo.</em>
+      </div>
+    </div>
+  `;
+
+  const supsOrdenados = Object.keys(inactivosPorSup).sort((a, b) => inactivosPorSup[b].length - inactivosPorSup[a].length);
+
+  supsOrdenados.forEach(sup => {
+    const ags = inactivosPorSup[sup].sort((a, b) => b.diasEnMes - a.diasEnMes);
+    html += `
+      <div style="margin-bottom: 18px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;">
+        <div style="background: var(--bg); padding: 10px 14px; font-weight: 700; color: var(--att-navy); font-size: 13px;">
+          ${sup} · ${ags.length} sin venta
+        </div>
+        <table style="font-size: 12.5px; margin: 0;">
+          <thead>
+            <tr>
+              <th>Agente</th>
+              <th class="num" style="text-align:center;">Fecha ingreso</th>
+              <th class="num" style="text-align:center;">Días en periodo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ags.map(a => `
+              <tr>
+                <td>${a.nombre}</td>
+                <td class="num" style="text-align:center;">${a.ingreso}</td>
+                <td class="num" style="text-align:center; font-weight:700; color: ${a.diasEnMes >= 14 ? 'var(--red)' : 'var(--amber)'};">${a.diasEnMes}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  });
+
+  body.innerHTML = html;
+  modal.classList.add('abierto');
+}
+
+function descargarInactivosExcel() {
+  if (!window.__inactivosData) return;
+  const { inactivosPorSup, mesKey } = window.__inactivosData;
+
+  const [a, mm] = mesKey.split('-');
+  const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const nombreMes = noms[parseInt(mm) - 1];
+
+  const filas = [];
+  Object.keys(inactivosPorSup).sort().forEach(sup => {
+    inactivosPorSup[sup].forEach(ag => {
+      filas.push({
+        'Supervisor': sup,
+        'Agente': ag.nombre,
+        'Fecha ingreso': ag.ingreso,
+        'Dias en periodo': ag.diasEnMes
+      });
+    });
+  });
+
+  if (filas.length === 0) {
+    alert('No hay agentes inactivos para descargar.');
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(filas);
+  ws['!cols'] = [{wch: 14}, {wch: 35}, {wch: 14}, {wch: 16}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sin venta');
+
+  const fecha = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `agentes_sin_venta_${nombreMes}_${a}_${fecha}.xlsx`);
 }
 
 function descargarEquipoExcel(supervisor) {
