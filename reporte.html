@@ -3230,6 +3230,60 @@ function actualizarVista() {
   const labelMetrica = metrica === 'act' ? 'Activadas' : metrica === 'prog' ? 'Programadas' : metrica === 'canc' ? 'Canceladas' : 'ARPU';
   const labelBucket = tab === 'diaria' ? 'día' : 'semana';
 
+  let thresholdMin = null;
+  let thresholdIdeal = null;
+  let semanasIdeal = 0, semanasMin = 0, semanasBajo = 0, semanasEvaluadas = 0;
+  let tendenciaPct = null;
+  let tendenciaPromActual = 0;
+  let tendenciaPromAnterior = 0;
+
+  if (tab === 'semanal' && (metrica === 'act' || metrica === 'prog')) {
+    const hoyStrThr = new Date().toISOString().split('T')[0];
+
+    const plantillaTotalActiva = plantillaData.filter(p =>
+      p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
+      (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
+      ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'].includes(p.supervisor)
+    ).length;
+
+    const plantillaFiltradaActiva = plantillaData.filter(p =>
+      p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
+      (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
+      SUPERVISORES.includes(p.supervisor)
+    ).length;
+
+    const baseRefPlant = plantillaTotalActiva > 0 ? plantillaTotalActiva : 95;
+    const proporcion = plantillaFiltradaActiva / baseRefPlant;
+
+    thresholdMin = Math.round(200 * proporcion);
+    thresholdIdeal = Math.round(250 * proporcion);
+
+    const semanaActualNumber = window.__avanceData ? semanaSeleccionada : null;
+
+    buckets.forEach(b => {
+      if (semanaActualNumber !== null && b === semanaActualNumber) return;
+
+      const total = Object.values(agrupacion[b] || {}).reduce((a, v) => a + v, 0);
+      semanasEvaluadas++;
+      if (total >= thresholdIdeal) semanasIdeal++;
+      else if (total >= thresholdMin) semanasMin++;
+      else semanasBajo++;
+    });
+
+    const semanasOrdenadasNoActual = buckets.filter(b => b !== semanaActualNumber);
+    if (semanasOrdenadasNoActual.length >= 8) {
+      const ultimas4 = semanasOrdenadasNoActual.slice(-4);
+      const previas4 = semanasOrdenadasNoActual.slice(-8, -4);
+      const sumU = ultimas4.reduce((a, b) => a + Object.values(agrupacion[b] || {}).reduce((x, v) => x + v, 0), 0);
+      const sumP = previas4.reduce((a, b) => a + Object.values(agrupacion[b] || {}).reduce((x, v) => x + v, 0), 0);
+      tendenciaPromActual = sumU / 4;
+      tendenciaPromAnterior = sumP / 4;
+      if (tendenciaPromAnterior > 0) {
+        tendenciaPct = (tendenciaPromActual - tendenciaPromAnterior) / tendenciaPromAnterior * 100;
+      }
+    }
+  }
+
   function formatBucket(b) {
     if (tab === 'diaria') {
       const [a, m, d] = b.split('-');
@@ -3302,6 +3356,45 @@ function actualizarVista() {
       : `${labelMetrica.toLowerCase()} / ${labelBucket}`;
     const valorProm = tab === 'diaria' && periodoSel !== 'todos' ? promPorDiaHabil : prom;
 
+    let tarjetasSemanal = '';
+    if (tab === 'semanal' && thresholdMin !== null) {
+      const pctIdeal = semanasEvaluadas > 0 ? (semanasIdeal / semanasEvaluadas * 100) : 0;
+      const pctMin = semanasEvaluadas > 0 ? ((semanasIdeal + semanasMin) / semanasEvaluadas * 100) : 0;
+
+      let tarjetaTendencia = '';
+      if (tendenciaPct !== null) {
+        const colorTend = tendenciaPct >= 5 ? 'var(--green)' : tendenciaPct <= -5 ? 'var(--red)' : 'var(--amber)';
+        const iconTend = tendenciaPct >= 5 ? '📈' : tendenciaPct <= -5 ? '📉' : '➡️';
+        const textoTend = tendenciaPct >= 5 ? 'mejorando' : tendenciaPct <= -5 ? 'cayendo' : 'estable';
+        tarjetaTendencia = `
+          <div class="stat-card" style="border-left-color: ${colorTend};">
+            <div class="stat-label">Tendencia 4 sem ${iconTend}</div>
+            <div class="stat-value" style="color: ${colorTend};">${tendenciaPct >= 0 ? '+' : ''}${tendenciaPct.toFixed(1)}%</div>
+            <div class="stat-sub">${textoTend} (${tendenciaPromActual.toFixed(0)} vs ${tendenciaPromAnterior.toFixed(0)})</div>
+          </div>
+        `;
+      }
+
+      tarjetasSemanal = `
+        <div class="stat-card" style="border-left-color: var(--green);">
+          <div class="stat-label">Semanas ≥ ${thresholdIdeal} (ideal)</div>
+          <div class="stat-value" style="color: var(--green);">${semanasIdeal}</div>
+          <div class="stat-sub">${pctIdeal.toFixed(0)}% del total</div>
+        </div>
+        <div class="stat-card" style="border-left-color: var(--amber);">
+          <div class="stat-label">Cumplen mínimo ≥ ${thresholdMin}</div>
+          <div class="stat-value" style="color: var(--amber);">${semanasIdeal + semanasMin}</div>
+          <div class="stat-sub">${pctMin.toFixed(0)}% del total</div>
+        </div>
+        <div class="stat-card" style="border-left-color: var(--red);">
+          <div class="stat-label">Bajo ${thresholdMin}</div>
+          <div class="stat-value" style="color: var(--red);">${semanasBajo}</div>
+          <div class="stat-sub">en riesgo</div>
+        </div>
+        ${tarjetaTendencia}
+      `;
+    }
+
     resumenHtml = `
       <div class="stat-card">
         <div class="stat-label">Promedio ${labelProm}</div>
@@ -3310,6 +3403,7 @@ function actualizarVista() {
       </div>
       ${tarjetaTarget}
       ${tarjetaAjustado}
+      ${tarjetasSemanal}
       <div class="stat-card" style="border-left-color: var(--green);">
         <div class="stat-label">Total ${labelMetrica}</div>
         <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
@@ -3340,6 +3434,8 @@ function actualizarVista() {
     'Carmen': '#F472B6', 'Emilio': '#A78BFA', 'Ana Paola': '#FBBF24'
   };
 
+  const semanaActualNum = window.__avanceData ? semanaSeleccionada : null;
+
   const datasets = cats.map((cat, i) => {
     const data = buckets.map(b => {
       if (metrica === 'arpu') {
@@ -3348,14 +3444,54 @@ function actualizarVista() {
       }
       return (agrupacion[b] && agrupacion[b][cat]) || 0;
     });
+
+    let backgroundColor = colores[cat] || '#94A3B8';
+
+    if (tab === 'semanal' && cats.length === 1 && thresholdMin !== null) {
+      backgroundColor = buckets.map(b => {
+        if (b === semanaActualNum) return '#94A3B8';
+        const total = Object.values(agrupacion[b] || {}).reduce((a, v) => a + v, 0);
+        if (total >= thresholdIdeal) return '#16A34A';
+        if (total >= thresholdMin) return '#F59E0B';
+        return '#DC2626';
+      });
+    }
+
     return {
       label: cat,
       data,
-      backgroundColor: colores[cat] || '#94A3B8',
+      backgroundColor,
       borderRadius: 4,
       stack: metrica === 'arpu' ? undefined : 'stack1'
     };
   });
+
+  if (tab === 'semanal' && thresholdMin !== null) {
+    datasets.push({
+      type: 'line',
+      label: `Ideal (${thresholdIdeal})`,
+      data: buckets.map(() => thresholdIdeal),
+      borderColor: '#16A34A',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [6, 3],
+      pointRadius: 0,
+      tension: 0,
+      stack: undefined
+    });
+    datasets.push({
+      type: 'line',
+      label: `Mínimo (${thresholdMin})`,
+      data: buckets.map(() => thresholdMin),
+      borderColor: '#F59E0B',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [6, 3],
+      pointRadius: 0,
+      tension: 0,
+      stack: undefined
+    });
+  }
 
   const promData = buckets.map(() => Number(promValor.toFixed(1)));
   datasets.push({
