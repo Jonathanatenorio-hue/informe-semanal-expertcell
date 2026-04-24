@@ -789,7 +789,6 @@
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
         <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
         <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
-        <button class="nav-btn" data-target="sec-vista-diaria">📆 Vista diaria</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
@@ -901,38 +900,6 @@
           <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">JV (Luisa Meza)</div>
           <div id="estructura-jv"></div>
         </div>
-      </div>
-      </div>
-    </div>
-
-    <!-- VISTA DIARIA DEL MES -->
-    <div class="section collapsible" id="sec-vista-diaria">
-      <div class="section-title">📆 Vista diaria del mes</div>
-      <div class="section-body">
-      <div class="section-subtitle">Actividad día por día del mes en curso. Cambia entre cantidad y monto, y filtra por centro o supervisor.</div>
-
-      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
-        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Ver:</span>
-        <button class="vd-vista-btn active" data-vista="total">Total equipo</button>
-        <button class="vd-vista-btn" data-vista="centro">Por centro</button>
-        <button class="vd-vista-btn" data-vista="supervisor">Por supervisor</button>
-      </div>
-
-      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
-        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Métrica:</span>
-        <button class="vd-metrica-btn active" data-metrica="activadas">Activadas (cantidad)</button>
-        <button class="vd-metrica-btn" data-metrica="programadas">Programadas (cantidad)</button>
-        <button class="vd-metrica-btn" data-metrica="canceladas">Canceladas (cantidad)</button>
-        <button class="vd-metrica-btn" data-metrica="monto_bruto">Monto bruto (activadas)</button>
-        <button class="vd-metrica-btn" data-metrica="monto_sin_imp">Sin impuestos (activadas)</button>
-      </div>
-
-      <div id="vd-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 20px 0;"></div>
-
-      <div class="chart-wrap" style="height: 380px;"><canvas id="chart-vista-diaria"></canvas></div>
-
-      <div style="font-size: 11px; color: var(--text-soft); margin-top: 10px;">
-        💡 <strong>Línea naranja</strong> = promedio real por día hábil · <strong>Línea roja punteada</strong> = ritmo objetivo para cumplir meta
       </div>
       </div>
     </div>
@@ -1897,7 +1864,6 @@ function renderReporte(wActual, wCurrent) {
   renderAvanceMensual(wActual);
   renderVistaTiempo();
   renderEstructura();
-  renderVistaDiaria();
   renderEmbudo(actual, anterior);
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
@@ -3183,6 +3149,51 @@ function actualizarVista() {
   const prom = buckets.length > 0 ? (totalCount / buckets.length) : 0;
   const promValor = buckets.length > 0 ? (metrica === 'arpu' ? totalValor : totalCount / buckets.length) : 0;
 
+  let diasHabilesBase = buckets.length;
+  let promPorDiaHabil = prom;
+  let targetDiario = null;
+  const periodoSel = document.getElementById('vt-mes-select').value;
+
+  if (tab === 'diaria' && periodoSel !== 'todos' && metrica !== 'arpu') {
+    const [aSel, mSel] = periodoSel.split('-').map(Number);
+    const iniMesSel = `${aSel}-${String(mSel).padStart(2,'0')}-01`;
+    const ultDiaSel = new Date(aSel, mSel, 0).getDate();
+    const finMesSel = `${aSel}-${String(mSel).padStart(2,'0')}-${String(ultDiaSel).padStart(2,'0')}`;
+
+    const diasHabilesTotalesMes = calendarioData
+      .filter(d => d.fecha >= iniMesSel && d.fecha <= finMesSel)
+      .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+    const hoyStrNow = new Date().toISOString().split('T')[0];
+    const hasta = periodoSel === `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2,'0')}`
+      ? (hoyStrNow < finMesSel ? hoyStrNow : finMesSel)
+      : finMesSel;
+
+    const diasHabilesTranscurridos = calendarioData
+      .filter(d => d.fecha >= iniMesSel && d.fecha <= hasta)
+      .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+    if (diasHabilesTranscurridos > 0) {
+      diasHabilesBase = diasHabilesTranscurridos;
+      promPorDiaHabil = totalCount / diasHabilesTranscurridos;
+    }
+
+    if (metrica === 'act' && window.__avanceData && diasHabilesTotalesMes > 0) {
+      const metasMesSel = metasSupData.filter(m =>
+        m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
+      );
+      const metaMesSel = metasMesSel.reduce((a, m) => a + m.meta_activadas, 0);
+      if (metaMesSel > 0) {
+        targetDiario = metaMesSel / diasHabilesTotalesMes;
+      }
+    } else if (metrica === 'prog' && window.__avanceData && diasHabilesTotalesMes > 0) {
+      const metaProgFija = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+      if (metaProgFija > 0) {
+        targetDiario = metaProgFija / diasHabilesTotalesMes;
+      }
+    }
+  }
+
   const labelMetrica = metrica === 'act' ? 'Activadas' : metrica === 'prog' ? 'Programadas' : metrica === 'canc' ? 'Canceladas' : 'ARPU';
   const labelBucket = tab === 'diaria' ? 'día' : 'semana';
 
@@ -3220,12 +3231,38 @@ function actualizarVista() {
     `;
   } else {
     const montoAprox = filtroRegistros.reduce((a, r) => a + (r.precio || 0), 0);
+
+    let tarjetaTarget = '';
+    if (targetDiario !== null && targetDiario > 0) {
+      const diff = promPorDiaHabil - targetDiario;
+      const pctDiff = targetDiario > 0 ? (diff / targetDiario * 100) : 0;
+      const colorT = diff >= 0 ? 'var(--green)' : pctDiff > -15 ? 'var(--amber)' : 'var(--red)';
+      const icon = diff >= 0 ? '✓' : '⚠';
+      const subT = diff >= 0
+        ? `+${diff.toFixed(1)}/día sobre meta ${icon}`
+        : `${diff.toFixed(1)}/día bajo meta ${icon}`;
+      tarjetaTarget = `
+        <div class="stat-card" style="border-left-color: ${colorT};">
+          <div class="stat-label">Ritmo objetivo/día</div>
+          <div class="stat-value" style="color: ${colorT};">${targetDiario.toFixed(1)}</div>
+          <div class="stat-sub">${subT}</div>
+        </div>
+      `;
+    }
+
+    const labelProm = tab === 'diaria' && periodoSel !== 'todos' ? 'día hábil' : labelBucket;
+    const subtextoProm = tab === 'diaria' && periodoSel !== 'todos'
+      ? `por día hábil (${diasHabilesBase.toFixed(1)} días)`
+      : `${labelMetrica.toLowerCase()} / ${labelBucket}`;
+    const valorProm = tab === 'diaria' && periodoSel !== 'todos' ? promPorDiaHabil : prom;
+
     resumenHtml = `
       <div class="stat-card">
-        <div class="stat-label">Promedio ${labelBucket}</div>
-        <div class="stat-value">${prom.toFixed(1)}</div>
-        <div class="stat-sub">${labelMetrica.toLowerCase()} / ${labelBucket}</div>
+        <div class="stat-label">Promedio ${labelProm}</div>
+        <div class="stat-value">${valorProm.toFixed(1)}</div>
+        <div class="stat-sub">${subtextoProm}</div>
       </div>
+      ${tarjetaTarget}
       <div class="stat-card" style="border-left-color: var(--green);">
         <div class="stat-label">Total ${labelMetrica}</div>
         <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
@@ -3276,15 +3313,30 @@ function actualizarVista() {
   const promData = buckets.map(() => Number(promValor.toFixed(1)));
   datasets.push({
     type: 'line',
-    label: metrica === 'arpu' ? 'ARPU promedio' : `Promedio por ${labelBucket}`,
+    label: metrica === 'arpu' ? 'ARPU promedio' : `Promedio real`,
     data: promData,
-    borderColor: '#DC2626',
+    borderColor: '#FF7200',
     backgroundColor: 'transparent',
     borderWidth: 2,
     pointRadius: 0,
     tension: 0,
     stack: undefined
   });
+
+  if (targetDiario !== null && targetDiario > 0 && tab === 'diaria') {
+    datasets.push({
+      type: 'line',
+      label: 'Ritmo objetivo',
+      data: buckets.map(() => Number(targetDiario.toFixed(1))),
+      borderColor: '#DC2626',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      pointRadius: 0,
+      tension: 0,
+      stack: undefined
+    });
+  }
 
   const ctx = document.getElementById('chart-vt');
   if (window.__chartVT) window.__chartVT.destroy();
