@@ -623,7 +623,8 @@
         <table id="config-tabla" style="font-size: 12.5px;">
           <thead>
             <tr>
-              <th>Nombre</th>
+              <th>Nombre corto</th>
+              <th>Nombre completo (en Excel)</th>
               <th style="text-align:center;">Centro</th>
               <th class="num" style="text-align:center;">Tope</th>
               <th style="text-align:center;">Vigencia desde</th>
@@ -657,7 +658,7 @@ const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const SUPERVISORES_MAP = {
+let SUPERVISORES_MAP = {
   'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
   'ALFREDO CABRERA PADRON': 'Alfred',
   'CARLOS ALBERTO AGUILAR CANO': 'Carlos',
@@ -665,6 +666,29 @@ const SUPERVISORES_MAP = {
   'MARIA LUISA MEZA GOEL': 'Luisa',
   'REYNA LIZZETTE MARTINEZ GARCIA': 'Reyna',
 };
+const SUPERVISORES_MAP_REASIGNACIONES = {
+  'MARIA FERNANDA MARTINEZ BISTRAIN': 'Luisa',
+  'TOMAS ROSAS ROJAS': 'Luisa',
+};
+
+async function actualizarSupervisoresMap() {
+  try {
+    const { data } = await db.from('supervisores_config').select('supervisor, nombre_completo');
+    if (data && data.length > 0) {
+      SUPERVISORES_MAP = {};
+      data.forEach(s => {
+        if (s.nombre_completo) SUPERVISORES_MAP[s.nombre_completo] = s.supervisor;
+      });
+      Object.entries(SUPERVISORES_MAP_REASIGNACIONES).forEach(([k, v]) => {
+        SUPERVISORES_MAP[k] = v;
+      });
+    }
+  } catch (e) {
+    console.warn('No se pudo cargar SUPERVISORES_MAP desde Supabase, usando default', e);
+  }
+}
+
+actualizarSupervisoresMap();
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
@@ -814,6 +838,8 @@ function clasificarTipoMeta(dias) {
 async function procesar() {
   document.getElementById('btn-procesar').disabled = true;
   log('Iniciando procesamiento...', 'info');
+  await actualizarSupervisoresMap();
+  log(`Mapeo de supervisores cargado: ${Object.keys(SUPERVISORES_MAP).length} entradas`, 'info');
 
   try {
     const buf = await state.file.arrayBuffer();
@@ -1115,6 +1141,8 @@ function limpiarPlant() {
 async function procesarPlant() {
   document.getElementById('btn-procesar-plant').disabled = true;
   logPlant('Iniciando procesamiento...', 'info');
+  await actualizarSupervisoresMap();
+  logPlant(`Mapeo de supervisores cargado: ${Object.keys(SUPERVISORES_MAP).length} entradas`, 'info');
 
   try {
     const buf = await plantState.file.arrayBuffer();
@@ -2034,6 +2062,9 @@ function renderConfigTabla() {
       <td>
         <input type="text" class="config-input-nombre" data-id="${s.id}" value="${s.supervisor}" style="width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-weight: 600;">
       </td>
+      <td>
+        <input type="text" class="config-input-nombre-completo" data-id="${s.id}" value="${s.nombre_completo || ''}" placeholder="NOMBRE COMPLETO (como en Excel)" style="width: 100%; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px;">
+      </td>
       <td style="text-align:center;">
         <select class="config-input-centro" data-id="${s.id}" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px;">
           <option value="CC2" ${s.centro === 'CC2' ? 'selected' : ''}>CC2</option>
@@ -2074,6 +2105,7 @@ function renderConfigTabla() {
 
 async function guardarSupervisor(id) {
   const nombreEl = document.querySelector(`.config-input-nombre[data-id="${id}"]`);
+  const nombreCompletoEl = document.querySelector(`.config-input-nombre-completo[data-id="${id}"]`);
   const centroEl = document.querySelector(`.config-input-centro[data-id="${id}"]`);
   const topeEl = document.querySelector(`.config-input-tope[data-id="${id}"]`);
   const activoEl = document.querySelector(`.config-input-activo[data-id="${id}"]`);
@@ -2082,12 +2114,14 @@ async function guardarSupervisor(id) {
 
   const original = configState.supervisores.find(s => s.id === id);
   const nombreNuevo = nombreEl.value.trim();
+  const nombreCompletoNuevo = nombreCompletoEl.value.trim().toUpperCase();
 
-  if (!nombreNuevo) { alert('El nombre no puede estar vacío'); return; }
+  if (!nombreNuevo) { alert('El nombre corto no puede estar vacío'); return; }
 
   try {
     const updates = {
       supervisor: nombreNuevo,
+      nombre_completo: nombreCompletoNuevo || null,
       centro: centroEl.value,
       tope_agentes: parseInt(topeEl.value),
       activo: activoEl.checked,
@@ -2096,13 +2130,14 @@ async function guardarSupervisor(id) {
     };
 
     if (original.supervisor !== nombreNuevo) {
-      const conf = confirm(`Estás cambiando el nombre de "${original.supervisor}" a "${nombreNuevo}".\n\n¿También quieres actualizar todas las asignaciones y metas con este nombre nuevo?`);
+      const conf = confirm(`Estás cambiando el nombre corto de "${original.supervisor}" a "${nombreNuevo}".\n\n¿También quieres actualizar todas las asignaciones, ventas y metas con este nombre nuevo?`);
       if (conf) {
         await db.from('asignaciones_supervisor').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
         await db.from('metas_supervisor').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
         await db.from('metas_agente').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
         await db.from('plantilla').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
-        logConfig(`Asignaciones, metas y plantilla actualizadas de "${original.supervisor}" a "${nombreNuevo}"`, 'ok');
+        await db.from('ventas_detalle').update({ supervisor: nombreNuevo }).eq('supervisor', original.supervisor);
+        logConfig(`Asignaciones, metas, plantilla y ventas actualizadas de "${original.supervisor}" a "${nombreNuevo}"`, 'ok');
       }
     }
 
@@ -2133,8 +2168,12 @@ async function eliminarSupervisor(id) {
 }
 
 async function agregarSupervisorNuevo() {
-  const nombre = prompt('Nombre del nuevo supervisor:');
+  const nombre = prompt('Nombre corto del nuevo supervisor (ej: "Carmen"):');
   if (!nombre || !nombre.trim()) return;
+  const nombreCompleto = prompt('Nombre completo como aparece en el Excel (ej: "CARMEN RIVAS GONZALEZ"):');
+  if (!nombreCompleto || !nombreCompleto.trim()) {
+    if (!confirm('No pusiste nombre completo. Sin esto, sus ventas NO se cruzarán automáticamente. ¿Continuar igual?')) return;
+  }
   const centro = prompt('Centro (CC2 o JV):', 'CC2');
   if (!centro || !['CC2', 'JV'].includes(centro.toUpperCase())) { alert('Centro debe ser CC2 o JV'); return; }
   const topeStr = prompt('Tope de agentes:', '12');
@@ -2147,6 +2186,7 @@ async function agregarSupervisorNuevo() {
     const maxOrden = Math.max(...configState.supervisores.filter(s => s.centro === centro.toUpperCase()).map(s => s.orden || 0), 0);
     const { error } = await db.from('supervisores_config').insert({
       supervisor: nombre.trim(),
+      nombre_completo: nombreCompleto ? nombreCompleto.trim().toUpperCase() : null,
       centro: centro.toUpperCase(),
       tope_agentes: tope,
       activo: false,
