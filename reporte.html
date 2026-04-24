@@ -328,6 +328,20 @@
   .vd-vista-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
   .vd-metrica-btn.active { background: var(--att-orange); color: white; border-color: #CC5A00; }
 
+  .sanity-filter-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .sanity-filter-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .sanity-filter-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
   .vt-tab-btn {
     background: white;
     color: var(--text);
@@ -781,6 +795,7 @@
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
         <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
         <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
+        <button class="nav-btn" data-target="sec-sanity">🩺 Sanity Check</button>
         <button class="nav-btn" data-target="sec-top-agentes">⭐ Top agentes</button>
         <button class="nav-btn" data-target="sec-historico-mensual">📅 Histórico meses</button>
         <button class="nav-btn" data-target="sec-proyeccion-anual">🔮 Proyección anual</button>
@@ -1244,6 +1259,43 @@
           </thead>
           <tbody id="rot-bajas-body"></tbody>
         </table>
+      </div>
+      </div>
+    </div>
+
+    <!-- SANITY CHECK AGENTES -->
+    <div class="section collapsible" id="sec-sanity">
+      <div class="section-title">🩺 Sanity Check de agentes</div>
+      <div class="section-body">
+      <div class="section-subtitle">Diagnóstico de cada agente: compara su mes actual vs su promedio de los últimos 3 meses para detectar agentes en caída (risky), estables (warning) o consistentes (healthy).</div>
+
+      <div id="sanity-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0;"></div>
+
+      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Filtrar:</span>
+        <button class="sanity-filter-btn active" data-filter="all">Todos</button>
+        <button class="sanity-filter-btn" data-filter="healthy">🟢 Healthy</button>
+        <button class="sanity-filter-btn" data-filter="warning">🟡 Warning</button>
+        <button class="sanity-filter-btn" data-filter="risky">🔴 Risky</button>
+        <span style="margin-left: auto; font-size: 13px; color: var(--text-soft); font-weight: 600;">Ordenar:</span>
+        <select id="sanity-orden" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
+          <option value="delta">Por delta</option>
+          <option value="ventas">Por ventas mes</option>
+          <option value="prom">Por promedio</option>
+          <option value="nombre">Por nombre</option>
+        </select>
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 20px 0 8px; color: var(--att-navy);">Gráfica de salud (verde = healthy, amarillo = warning, rojo = risky)</div>
+      <div class="chart-wrap" id="sanity-chart-wrap" style="height: 800px; overflow-y: auto;"><canvas id="chart-sanity"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Tabla detallada</div>
+      <div style="overflow-x: auto; max-height: 600px;">
+        <table id="sanity-tabla" style="font-size: 12.5px;"></table>
+      </div>
+
+      <div style="font-size: 11px; color: var(--text-soft); margin-top: 10px;">
+        💡 Clic en el nombre del agente para ver su tendencia histórica. Los thresholds son: HEALTHY ≥ -10% del promedio · WARNING entre -10% y -25% · RISKY < -25%.
       </div>
       </div>
     </div>
@@ -1852,6 +1904,7 @@ function renderReporte(wActual, wCurrent) {
   renderFlujoEntrega();
   renderRecuperacion();
   renderRotacion();
+  renderSanityCheck();
   renderTopAgentes();
   renderHistoricoMensual();
   renderProyeccionAnual();
@@ -5080,6 +5133,273 @@ function descargarBajasExcel(periodo) {
   const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
   const periodoStr = periodo === 'todo' ? 'historico' : periodo;
   XLSX.writeFile(wb, `bajas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
+}
+
+const SANITY_STATE = { filter: 'all', orden: 'delta' };
+
+function renderSanityCheck() {
+  if (!window.__avanceData) return;
+  const { mes, anio, iniMesStr, fechaCorteStr, diasTranscurridos, diasHabilesTotales } = window.__avanceData;
+
+  const hoy = new Date();
+  const hoyStr = hoy.toISOString().split('T')[0];
+
+  const mesesPrevios = [];
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(anio, mes - 1 - i, 1);
+    mesesPrevios.push({
+      anio: d.getFullYear(),
+      mes: d.getMonth() + 1,
+      inicio: new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0],
+      fin: new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
+    });
+  }
+
+  const actPorAgenteMes = {};
+  ventasData.forEach(r => {
+    if (!r.ejecutivo || !r.fecha_activacion) return;
+    if (r.estatus !== 'activada') return;
+    const mesKey = r.fecha_activacion.substring(0, 7);
+    if (!actPorAgenteMes[r.ejecutivo]) actPorAgenteMes[r.ejecutivo] = {};
+    actPorAgenteMes[r.ejecutivo][mesKey] = (actPorAgenteMes[r.ejecutivo][mesKey] || 0) + 1;
+  });
+
+  const plantMap = {};
+  plantillaData.forEach(p => { plantMap[p.nombre] = p; });
+
+  const agentesData = [];
+
+  Object.entries(actPorAgenteMes).forEach(([ejec, ventasPorMes]) => {
+    const plant = plantMap[ejec];
+    if (!plant || !plant.fecha_ingreso) return;
+    if (plant.fecha_baja && plant.fecha_baja < hoyStr) return;
+
+    const ingresoStr = plant.fecha_ingreso;
+    const limiteEval = new Date(anio, mes - 2, 1).toISOString().split('T')[0];
+    if (ingresoStr > limiteEval) return;
+
+    if (!SUPERVISORES.includes(plant.supervisor)) return;
+
+    const ventasPrevios = [];
+    mesesPrevios.forEach(mp => {
+      const mesKey = `${mp.anio}-${String(mp.mes).padStart(2, '0')}`;
+      const ingresoDate = new Date(ingresoStr + 'T12:00:00');
+      const inicioMesDate = new Date(mp.inicio + 'T12:00:00');
+      if (ingresoDate > inicioMesDate) return;
+      const v = ventasPorMes[mesKey] || 0;
+      ventasPrevios.push({ mes: mesKey, ventas: v });
+    });
+
+    if (ventasPrevios.length === 0) return;
+
+    const promPrevios = ventasPrevios.reduce((a, b) => a + b.ventas, 0) / ventasPrevios.length;
+    const mesActualKey = `${anio}-${String(mes).padStart(2, '0')}`;
+    const ventasActual = ventasPorMes[mesActualKey] || 0;
+
+    const esperadoHoy = promPrevios * (diasTranscurridos / diasHabilesTotales);
+    const delta = ventasActual - esperadoHoy;
+    const pctDelta = esperadoHoy > 0 ? (delta / esperadoHoy * 100) : 0;
+
+    let estado;
+    if (pctDelta >= -10) estado = 'healthy';
+    else if (pctDelta >= -25) estado = 'warning';
+    else estado = 'risky';
+
+    let tendencia = 'estable';
+    if (ventasPrevios.length >= 2) {
+      const primera = ventasPrevios[ventasPrevios.length - 1].ventas;
+      const ultima = ventasPrevios[0].ventas;
+      if (ultima > primera + 2) tendencia = 'mejorando';
+      else if (ultima < primera - 2) tendencia = 'bajando';
+    }
+
+    const ingresoDate = new Date(ingresoStr + 'T12:00:00');
+    const diasAntig = Math.floor((hoy - ingresoDate) / (1000 * 60 * 60 * 24));
+    const mesesAntig = Math.floor(diasAntig / 30);
+    const diasResto = diasAntig % 30;
+    const antigLabel = `${mesesAntig}m ${diasResto}d`;
+
+    agentesData.push({
+      ejecutivo: ejec,
+      supervisor: plant.supervisor,
+      ingreso: ingresoStr,
+      antigLabel,
+      diasAntig,
+      promPrevios,
+      ventasActual,
+      esperadoHoy,
+      delta,
+      pctDelta,
+      estado,
+      tendencia,
+      ventasPrevios,
+      mesesEvaluados: ventasPrevios.length
+    });
+  });
+
+  window.__sanityData = agentesData;
+
+  document.querySelectorAll('.sanity-filter-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.sanity-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      SANITY_STATE.filter = btn.dataset.filter;
+      dibujarSanity();
+    };
+  });
+  document.getElementById('sanity-orden').onchange = (e) => {
+    SANITY_STATE.orden = e.target.value;
+    dibujarSanity();
+  };
+
+  dibujarSanity();
+}
+
+function dibujarSanity() {
+  if (!window.__sanityData) return;
+
+  let datos = [...window.__sanityData];
+  if (SANITY_STATE.filter !== 'all') {
+    datos = datos.filter(d => d.estado === SANITY_STATE.filter);
+  }
+
+  if (SANITY_STATE.orden === 'delta') datos.sort((a, b) => b.pctDelta - a.pctDelta);
+  else if (SANITY_STATE.orden === 'ventas') datos.sort((a, b) => b.ventasActual - a.ventasActual);
+  else if (SANITY_STATE.orden === 'prom') datos.sort((a, b) => b.promPrevios - a.promPrevios);
+  else if (SANITY_STATE.orden === 'nombre') datos.sort((a, b) => a.ejecutivo.localeCompare(b.ejecutivo));
+
+  const healthy = window.__sanityData.filter(d => d.estado === 'healthy').length;
+  const warning = window.__sanityData.filter(d => d.estado === 'warning').length;
+  const risky = window.__sanityData.filter(d => d.estado === 'risky').length;
+  const total = window.__sanityData.length;
+  const promGeneral = total > 0 ? window.__sanityData.reduce((a, b) => a + b.ventasActual, 0) / total : 0;
+
+  document.getElementById('sanity-resumen-cards').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Evaluados</div>
+      <div class="stat-value">${total}</div>
+      <div class="stat-sub">agentes con baseline</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--green);">
+      <div class="stat-label">🟢 Healthy</div>
+      <div class="stat-value" style="color: var(--green);">${healthy}</div>
+      <div class="stat-sub">${total > 0 ? (healthy/total*100).toFixed(0) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--amber);">
+      <div class="stat-label">🟡 Warning</div>
+      <div class="stat-value" style="color: var(--amber);">${warning}</div>
+      <div class="stat-sub">${total > 0 ? (warning/total*100).toFixed(0) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--red);">
+      <div class="stat-label">🔴 Risky</div>
+      <div class="stat-value" style="color: var(--red);">${risky}</div>
+      <div class="stat-sub">${total > 0 ? (risky/total*100).toFixed(0) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color: var(--att-blue);">
+      <div class="stat-label">Promedio actual</div>
+      <div class="stat-value" style="color: var(--att-blue);">${promGeneral.toFixed(1)}</div>
+      <div class="stat-sub">ventas mes en curso</div>
+    </div>
+  `;
+
+  const wrap = document.getElementById('sanity-chart-wrap');
+  wrap.style.height = Math.max(400, datos.length * 22) + 'px';
+
+  const ctx = document.getElementById('chart-sanity');
+  if (window.__chartSanity) window.__chartSanity.destroy();
+  window.__chartSanity = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: datos.map(d => d.ejecutivo),
+      datasets: [{
+        label: 'Ventas mes actual',
+        data: datos.map(d => d.ventasActual),
+        backgroundColor: datos.map(d =>
+          d.estado === 'healthy' ? 'rgba(22, 163, 74, 0.75)' :
+          d.estado === 'warning' ? 'rgba(217, 119, 6, 0.75)' :
+          'rgba(220, 38, 38, 0.75)'
+        ),
+        borderColor: datos.map(d =>
+          d.estado === 'healthy' ? '#15803D' :
+          d.estado === 'warning' ? '#B45309' :
+          '#B91C1C'
+        ),
+        borderWidth: 1,
+        borderRadius: 3
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const d = datos[ctx.dataIndex];
+              return [
+                `Estado: ${d.estado.toUpperCase()}`,
+                `Ventas mes: ${d.ventasActual}`,
+                `Promedio 3m: ${d.promPrevios.toFixed(1)}`,
+                `Esperado hoy: ${d.esperadoHoy.toFixed(1)}`,
+                `Delta: ${d.delta >= 0 ? '+' : ''}${d.delta.toFixed(1)} (${d.pctDelta >= 0 ? '+' : ''}${d.pctDelta.toFixed(0)}%)`,
+                `Antigüedad: ${d.antigLabel}`,
+                `Tendencia: ${d.tendencia}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } },
+        y: { grid: { display: false }, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+
+  let html = `<thead><tr>
+    <th style="text-align:center;">#</th>
+    <th>Agente</th>
+    <th style="text-align:center;">Supervisor</th>
+    <th style="text-align:center;">Antigüedad</th>
+    <th class="num" style="text-align:center;">Prom 3m</th>
+    <th class="num" style="text-align:center;">Mes actual</th>
+    <th class="num" style="text-align:center;">Esperado</th>
+    <th class="num" style="text-align:center;">Delta</th>
+    <th class="num" style="text-align:center;">% Delta</th>
+    <th style="text-align:center;">Tendencia</th>
+    <th style="text-align:center;">Estado</th>
+  </tr></thead><tbody>`;
+
+  datos.forEach((d, idx) => {
+    const colorEstado = d.estado === 'healthy' ? 'var(--green)' : d.estado === 'warning' ? 'var(--amber)' : 'var(--red)';
+    const emoji = d.estado === 'healthy' ? '🟢' : d.estado === 'warning' ? '🟡' : '🔴';
+    const tendEmoji = d.tendencia === 'mejorando' ? '📈' : d.tendencia === 'bajando' ? '📉' : '➡️';
+    const colorDelta = d.delta >= 0 ? 'var(--green)' : 'var(--red)';
+
+    html += `<tr>
+      <td class="num" style="text-align:center; color: var(--text-soft);">${idx + 1}</td>
+      <td><a href="javascript:void(0)" class="link-agente-sanity" data-agente="${d.ejecutivo}" data-supervisor="${d.supervisor}" style="color: var(--att-blue-dark); text-decoration: none; font-weight: 600; cursor: pointer;">${d.ejecutivo}</a></td>
+      <td style="text-align:center;">${d.supervisor}</td>
+      <td style="text-align:center; font-size: 11px;">${d.antigLabel}</td>
+      <td class="num" style="text-align:center;">${d.promPrevios.toFixed(1)}</td>
+      <td class="num" style="text-align:center; font-weight:700;">${d.ventasActual}</td>
+      <td class="num" style="text-align:center;">${d.esperadoHoy.toFixed(1)}</td>
+      <td class="num" style="text-align:center; color:${colorDelta}; font-weight:700;">${d.delta >= 0 ? '+' : ''}${d.delta.toFixed(1)}</td>
+      <td class="num" style="text-align:center; color:${colorDelta}; font-weight:700;">${d.pctDelta >= 0 ? '+' : ''}${d.pctDelta.toFixed(0)}%</td>
+      <td style="text-align:center;" title="${d.tendencia}">${tendEmoji}</td>
+      <td style="text-align:center; color:${colorEstado}; font-weight:700;">${emoji} ${d.estado.toUpperCase()}</td>
+    </tr>`;
+  });
+  html += '</tbody>';
+  document.getElementById('sanity-tabla').innerHTML = html;
+
+  document.querySelectorAll('.link-agente-sanity').forEach(link => {
+    link.onclick = (e) => {
+      e.preventDefault();
+      mostrarHistoricoAgente(link.dataset.agente, link.dataset.supervisor);
+    };
+  });
 }
 
 function renderTopAgentes() {
