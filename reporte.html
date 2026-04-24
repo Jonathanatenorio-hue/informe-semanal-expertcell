@@ -313,6 +313,57 @@
   .top-ord-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
   .top-ord-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
 
+  .modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 43, 92, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 20px;
+    overflow-y: auto;
+  }
+  .modal-overlay.abierto { display: flex; }
+  .modal-content {
+    background: white;
+    border-radius: 16px;
+    max-width: 1100px;
+    width: 100%;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    max-height: calc(100vh - 80px);
+    overflow-y: auto;
+  }
+  .modal-header {
+    background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
+    color: white;
+    padding: 20px 28px;
+    border-radius: 16px 16px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .modal-header h2 { font-size: 18px; font-weight: 700; margin: 0; }
+  .modal-header .modal-close {
+    background: rgba(255,255,255,0.2);
+    border: none;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-header .modal-close:hover { background: rgba(255,255,255,0.35); }
+  .modal-body { padding: 24px 28px; }
+
   .tarjeta-principal {
     background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%);
     color: white;
@@ -1142,6 +1193,17 @@
 
     <div class="footer">
       ExpertCell · Distribuidor Autorizado AT&T · Datos en tiempo real desde Supabase
+    </div>
+  </div>
+
+  <!-- MODAL HISTORICO AGENTE -->
+  <div class="modal-overlay" id="modal-agente">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modal-agente-titulo">Histórico del agente</h2>
+        <button class="modal-close" id="modal-cerrar">✕</button>
+      </div>
+      <div class="modal-body" id="modal-agente-body"></div>
     </div>
   </div>
 
@@ -2207,6 +2269,7 @@ function renderDetalleAgentes() {
   const actPorAgente = {};
   const progPorAgente = {};
   const cancPorAgente = {};
+  const transitoPorAgente = {};
   const diasActivosPorAgente = {};
   const ultActPorAgente = {};
   const ultProgPorAgente = {};
@@ -2223,6 +2286,10 @@ function renderDetalleAgentes() {
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
       cancPorAgente[r.ejecutivo] = (cancPorAgente[r.ejecutivo] || 0) + 1;
+    }
+
+    if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
+      transitoPorAgente[r.ejecutivo] = (transitoPorAgente[r.ejecutivo] || 0) + 1;
     }
 
     if (r.fecha_activacion && r.fecha_activacion <= fechaCorteStr) {
@@ -2308,6 +2375,7 @@ function renderDetalleAgentes() {
       ejecutivo: m.ejecutivo,
       meta: m.meta_activadas,
       avance, programadas, canceladas, diasActivos,
+      transito: transitoPorAgente[m.ejecutivo] || 0,
       pct, ritmoActual, proyeccion, ritmoNecesario,
       tipo: m.tipo_meta,
       diasSinAct, diasSinProg, nuncaActivo, nuncaProgramo,
@@ -2358,6 +2426,7 @@ function renderDetalleAgentes() {
                   <th class="num" style="text-align:center;" title="Días hábiles desde la última venta programada (BO)">Sin prog.</th>
                   <th class="num" style="text-align:center;" title="Días hábiles desde la última venta activada">Sin activar</th>
                   <th class="num" style="text-align:center;">Prog</th>
+                  <th class="num" style="text-align:center;" title="Ventas en proceso de entrega o pendientes de evidencia">Tránsito</th>
                   <th class="num" style="text-align:center;">Act</th>
                   <th class="num" style="text-align:center;">Canc</th>
                   <th class="num" style="text-align:center;">Meta</th>
@@ -2400,12 +2469,13 @@ function renderDetalleAgentes() {
 
                   return `<tr style="${colorFila}">
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
-                    <td>${a.ejecutivo}</td>
+                    <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: var(--att-blue-dark); text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
                     <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinAct, a.nuncaActivo)}</td>
                     <td class="num" style="text-align:center;">${a.programadas}</td>
+                    <td class="num" style="text-align:center; color: var(--amber); font-weight: 700;">${a.transito || '—'}</td>
                     <td class="num" style="text-align:center;"><strong>${a.avance}</strong></td>
                     <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
                     <td class="num" style="text-align:center;">${a.meta}</td>
@@ -2432,6 +2502,197 @@ function renderDetalleAgentes() {
       descargarEquipoExcel(btn.dataset.sup);
     };
   });
+
+  document.querySelectorAll('.link-agente').forEach(link => {
+    link.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      mostrarHistoricoAgente(link.dataset.agente, link.dataset.supervisor);
+    };
+  });
+}
+
+function mostrarHistoricoAgente(ejecutivo, supervisorActual) {
+  const modal = document.getElementById('modal-agente');
+  const body = document.getElementById('modal-agente-body');
+  const titulo = document.getElementById('modal-agente-titulo');
+
+  titulo.textContent = `📊 ${ejecutivo}`;
+
+  const ventasAgente = ventasData.filter(r => r.ejecutivo === ejecutivo);
+  const plant = plantillaData.find(p => p.nombre === ejecutivo);
+
+  const porMes = {};
+  ventasAgente.forEach(r => {
+    if (r.fecha_bo) {
+      const mesKey = r.fecha_bo.substring(0, 7);
+      if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
+      porMes[mesKey].prog++;
+    }
+    if (r.fecha_activacion) {
+      const mesKey = r.fecha_activacion.substring(0, 7);
+      if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
+      porMes[mesKey].act++;
+    }
+    if (r.fecha_cancelacion) {
+      const mesKey = r.fecha_cancelacion.substring(0, 7);
+      if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
+      porMes[mesKey].canc++;
+    }
+  });
+
+  const transitoActual = ventasAgente.filter(r => r.estatus === 'en_transito' || r.estatus === 'por_activar').length;
+
+  metasAgeData.filter(m => m.ejecutivo === ejecutivo).forEach(m => {
+    const mesKey = `${m.anio}-${String(m.mes).padStart(2, '0')}`;
+    if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: m.supervisor };
+    porMes[mesKey].meta = m.meta_activadas;
+    porMes[mesKey].tipoMeta = m.tipo_meta;
+  });
+
+  const meses = Object.values(porMes).sort((a, b) => a.mes.localeCompare(b.mes));
+
+  const totalProg = meses.reduce((a, m) => a + m.prog, 0);
+  const totalAct = meses.reduce((a, m) => a + m.act, 0);
+  const totalCanc = meses.reduce((a, m) => a + m.canc, 0);
+  const mesesConVenta = meses.filter(m => m.act > 0).length;
+  const promMensual = mesesConVenta > 0 ? totalAct / mesesConVenta : 0;
+  let mejorMes = null, peorMes = null;
+  meses.forEach(m => {
+    if (m.act > 0) {
+      if (!mejorMes || m.act > mejorMes.act) mejorMes = m;
+      if (!peorMes || m.act < peorMes.act) peorMes = m;
+    }
+  });
+
+  const nombreMes = (mesKey) => {
+    const [a, mm] = mesKey.split('-');
+    const noms = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    return `${noms[parseInt(mm) - 1]} ${a.substring(2)}`;
+  };
+
+  const tasaConv = totalProg > 0 ? (totalAct / totalProg * 100).toFixed(1) : 0;
+  const tasaCanc = totalProg > 0 ? (totalCanc / totalProg * 100).toFixed(1) : 0;
+
+  let html = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
+      <div class="stat-card">
+        <div class="stat-label">Supervisor actual</div>
+        <div class="stat-value" style="font-size: 16px;">${supervisorActual}</div>
+        <div class="stat-sub">${plant && plant.fecha_ingreso ? 'Ingreso ' + plant.fecha_ingreso : ''}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">Total activadas</div>
+        <div class="stat-value" style="color: var(--green);">${totalAct}</div>
+        <div class="stat-sub">en histórico</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Promedio/mes</div>
+        <div class="stat-value" style="color: var(--att-blue);">${promMensual.toFixed(1)}</div>
+        <div class="stat-sub">en ${mesesConVenta} meses activos</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--amber);">
+        <div class="stat-label">En tránsito hoy</div>
+        <div class="stat-value" style="color: var(--amber);">${transitoActual}</div>
+        <div class="stat-sub">por activar/entregar</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Tasa conversión</div>
+        <div class="stat-value" style="color: var(--att-orange);">${tasaConv}%</div>
+        <div class="stat-sub">activadas / programadas</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">Tasa cancelación</div>
+        <div class="stat-value" style="color: var(--red);">${tasaCanc}%</div>
+        <div class="stat-sub">canceladas / programadas</div>
+      </div>
+      ${mejorMes ? `<div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">⭐ Mejor mes</div>
+        <div class="stat-value" style="color: var(--green); font-size: 22px;">${nombreMes(mejorMes.mes)}</div>
+        <div class="stat-sub">${mejorMes.act} activadas</div>
+      </div>` : ''}
+      ${peorMes && peorMes !== mejorMes ? `<div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">Peor mes</div>
+        <div class="stat-value" style="color: var(--red); font-size: 22px;">${nombreMes(peorMes.mes)}</div>
+        <div class="stat-sub">${peorMes.act} activadas</div>
+      </div>` : ''}
+    </div>
+
+    <div style="font-weight: 600; font-size: 14px; margin: 20px 0 8px; color: var(--att-navy);">Tendencia mensual</div>
+    <div style="height: 280px; position: relative;"><canvas id="modal-chart-tendencia"></canvas></div>
+
+    <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Detalle mes a mes</div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 12.5px;">
+        <thead>
+          <tr>
+            <th>Mes</th>
+            <th style="text-align:center;">Supervisor</th>
+            <th class="num" style="text-align:center;">Meta</th>
+            <th class="num" style="text-align:center;">Programadas</th>
+            <th class="num" style="text-align:center;">Activadas</th>
+            <th class="num" style="text-align:center;">Canceladas</th>
+            <th class="num" style="text-align:center;">% cumplimiento</th>
+            <th class="num" style="text-align:center;">% conversión</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${meses.map(m => {
+            const meta = m.meta || 0;
+            const pctCumpl = meta > 0 ? (m.act / meta * 100) : 0;
+            const pctConv = m.prog > 0 ? (m.act / m.prog * 100) : 0;
+            const colorPct = pctCumpl >= 100 ? 'var(--green)' : pctCumpl >= 85 ? 'var(--amber)' : pctCumpl >= 50 ? 'var(--amber)' : 'var(--red)';
+            return `<tr>
+              <td><strong>${nombreMes(m.mes)}</strong></td>
+              <td style="text-align:center;">${m.supervisor || '—'}</td>
+              <td class="num" style="text-align:center;">${meta || '—'}</td>
+              <td class="num" style="text-align:center;">${m.prog}</td>
+              <td class="num" style="text-align:center; font-weight:700;">${m.act}</td>
+              <td class="num" style="text-align:center; color: var(--red);">${m.canc}</td>
+              <td class="num" style="text-align:center; color: ${colorPct}; font-weight: 700;">${meta > 0 ? pctCumpl.toFixed(0) + '%' : '—'}</td>
+              <td class="num" style="text-align:center;">${pctConv.toFixed(0)}%</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  body.innerHTML = html;
+  modal.classList.add('abierto');
+
+  setTimeout(() => {
+    const ctx = document.getElementById('modal-chart-tendencia');
+    if (!ctx) return;
+    if (window.__chartModalAgente) window.__chartModalAgente.destroy();
+    window.__chartModalAgente = new Chart(ctx, {
+      data: {
+        labels: meses.map(m => nombreMes(m.mes)),
+        datasets: [
+          {
+            type: 'bar', label: 'Programadas', data: meses.map(m => m.prog),
+            backgroundColor: 'rgba(0, 168, 224, 0.5)', borderColor: '#00A8E0', borderWidth: 1, borderRadius: 4
+          },
+          {
+            type: 'bar', label: 'Activadas', data: meses.map(m => m.act),
+            backgroundColor: 'rgba(22, 163, 74, 0.8)', borderColor: '#15803D', borderWidth: 1, borderRadius: 4
+          },
+          {
+            type: 'line', label: 'Meta', data: meses.map(m => m.meta || null),
+            borderColor: '#FF7200', borderWidth: 2, borderDash: [5, 4], pointRadius: 4, fill: false, spanGaps: true
+          }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 11, weight: '600' } } } },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+        }
+      }
+    });
+  }, 100);
 }
 
 function descargarEquipoExcel(supervisor) {
@@ -3683,21 +3944,8 @@ function renderRotConFiltro(periodo) {
     <div class="stat-card" style="border-left-color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">
       <div class="stat-label">Rotación equipo</div>
       <div class="stat-value" style="color: ${rotATotal >= 15 ? 'var(--red)' : rotATotal >= 10 ? 'var(--amber)' : 'var(--green)'};">${rotATotal.toFixed(1)}%</div>
-      <div class="stat-sub">${esHistorico ? 'histórica total' : 'fórmula estándar'}</div>
+      <div class="stat-sub">${esHistorico ? 'histórica acumulada (poco accionable)' : 'fórmula estándar mensual'}</div>
     </div>
-    ${esHistorico ? (() => {
-      const diaIni = new Date(inicioStr);
-      const diaFin = new Date(finStr);
-      const mesesTransc = Math.max(1, (diaFin.getFullYear() - diaIni.getFullYear()) * 12 + (diaFin.getMonth() - diaIni.getMonth()) + (diaFin.getDate() - diaIni.getDate()) / 30);
-      const rotMens = rotATotal / mesesTransc;
-      const colorMens = rotMens >= 15 ? 'var(--red)' : rotMens >= 8 ? 'var(--amber)' : 'var(--green)';
-      const estatusMens = rotMens >= 15 ? 'Por encima del benchmark' : rotMens >= 8 ? 'Dentro del rango industria' : 'Por debajo del benchmark';
-      return `<div class="stat-card" style="border-left-color: ${colorMens};">
-        <div class="stat-label">Rotación mensualizada</div>
-        <div class="stat-value" style="color: ${colorMens};">${rotMens.toFixed(1)}%</div>
-        <div class="stat-sub">${estatusMens} (call center 8-15%)</div>
-      </div>`;
-    })() : ''}
   `;
 
   const headerSimple = document.getElementById('rot-header-simple');
@@ -4729,6 +4977,11 @@ function seleccionarSemana(w) {
 cargarDatos().catch(e => console.error(e));
 
 document.addEventListener('click', (e) => {
+  if (e.target.id === 'modal-cerrar' || e.target.id === 'modal-agente') {
+    document.getElementById('modal-agente').classList.remove('abierto');
+    return;
+  }
+
   const title = e.target.closest('.section.collapsible > .section-title');
   if (title) {
     title.parentElement.classList.toggle('abierto');
