@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Reporte Semanal · ExpertCell</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -3647,33 +3650,38 @@ function dibujarVistaDiaria() {
   const maxFecha = fechasConDatos[maxDiaIdx];
 
   let targetDiario = null;
-  if (metrica === 'activadas') {
-    targetDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
-  } else if (metrica === 'programadas' && window.__avanceData) {
-    const metaProgFijaTotal = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
-    targetDiario = diasHabilesTotalesMes > 0 ? metaProgFijaTotal / diasHabilesTotalesMes : 0;
-  } else if (metrica === 'monto_sin_imp') {
-    let sumaRenta = 0, countAct = 0;
-    ventasData.forEach(r => {
-      if (r.estatus === 'activada' && r.renta_sin_impuestos) {
-        sumaRenta += parseFloat(r.renta_sin_impuestos);
-        countAct++;
-      }
-    });
-    const rentaProm = countAct > 0 ? sumaRenta / countAct : 0;
-    const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
-    targetDiario = targetActDiario * rentaProm;
-  } else if (metrica === 'monto_bruto') {
-    let sumaPrecio = 0, countAct = 0;
-    ventasData.forEach(r => {
-      if (r.estatus === 'activada' && r.precio) {
-        sumaPrecio += parseFloat(r.precio);
-        countAct++;
-      }
-    });
-    const precioProm = countAct > 0 ? sumaPrecio / countAct : 0;
-    const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
-    targetDiario = targetActDiario * precioProm;
+  try {
+    if (metrica === 'activadas') {
+      targetDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+    } else if (metrica === 'programadas' && window.__avanceData && window.__avanceData.supervisoresData) {
+      const metaProgFijaTotal = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+      targetDiario = diasHabilesTotalesMes > 0 ? metaProgFijaTotal / diasHabilesTotalesMes : 0;
+    } else if (metrica === 'monto_sin_imp') {
+      let sumaRenta = 0, countAct = 0;
+      ventasData.forEach(r => {
+        if (r.estatus === 'activada' && r.renta_sin_impuestos) {
+          sumaRenta += parseFloat(r.renta_sin_impuestos);
+          countAct++;
+        }
+      });
+      const rentaProm = countAct > 0 ? sumaRenta / countAct : 0;
+      const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+      targetDiario = targetActDiario * rentaProm;
+    } else if (metrica === 'monto_bruto') {
+      let sumaPrecio = 0, countAct = 0;
+      ventasData.forEach(r => {
+        if (r.estatus === 'activada' && r.precio) {
+          sumaPrecio += parseFloat(r.precio);
+          countAct++;
+        }
+      });
+      const precioProm = countAct > 0 ? sumaPrecio / countAct : 0;
+      const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+      targetDiario = targetActDiario * precioProm;
+    }
+  } catch (err) {
+    console.error('Error calculando target:', err);
+    targetDiario = null;
   }
 
   const totalPromedioLine = {
