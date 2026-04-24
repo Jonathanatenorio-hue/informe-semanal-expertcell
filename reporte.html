@@ -3473,6 +3473,14 @@ function actualizarVista() {
   const prom = buckets.length > 0 ? (totalCount / buckets.length) : 0;
   const promValor = buckets.length > 0 ? (metrica === 'arpu' ? totalValor : totalCount / buckets.length) : 0;
 
+  console.log('=== DEBUG VT ===');
+  console.log('vista:', vista, 'filtroExtra:', vtState.filtroExtra, 'metrica:', metrica);
+  console.log('filtroRegistros.length:', filtroRegistros.length);
+  console.log('totalCount:', totalCount);
+  console.log('buckets.length:', buckets.length);
+  console.log('prom:', prom, 'promValor:', promValor);
+  console.log('thresholdMin:', thresholdMin, 'thresholdIdeal:', thresholdIdeal);
+
   let diasHabilesBase = buckets.length;
   let promPorDiaHabil = prom;
   let targetDiario = null;
@@ -3837,17 +3845,33 @@ function actualizarVista() {
   }
 
   const promData = buckets.map(() => Number(promValor.toFixed(1)));
-  datasets.push({
-    type: 'line',
-    label: metrica === 'arpu' ? 'ARPU promedio' : `Promedio real`,
-    data: promData,
-    borderColor: '#FF7200',
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    pointRadius: 0,
-    tension: 0,
-    stack: undefined
-  });
+  const ocultarPromReal = (vista === 'centro' || vista === 'supervisor') && vtState.filtroExtra;
+
+  if (!ocultarPromReal) {
+    datasets.push({
+      type: 'line',
+      label: metrica === 'arpu' ? 'ARPU promedio' : `Promedio real`,
+      data: promData,
+      borderColor: '#FF7200',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0,
+      stack: undefined
+    });
+  } else {
+    datasets.push({
+      type: 'line',
+      label: `Promedio ${vtState.filtroExtra} (${promValor.toFixed(0)})`,
+      data: promData,
+      borderColor: '#FF7200',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0,
+      stack: undefined
+    });
+  }
 
   if (targetDiario !== null && targetDiario > 0 && tab === 'diaria') {
     datasets.push({
