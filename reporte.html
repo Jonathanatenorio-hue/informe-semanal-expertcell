@@ -882,6 +882,10 @@
               <button class="vt-view-btn" data-vt-view="supervisor">Por supervisor</button>
             </div>
           </div>
+          <div id="vt-filtro-extra-wrap" style="display: none;">
+            <label style="font-size: 11px; color: var(--text-soft); font-weight: 700; text-transform: uppercase;" id="vt-filtro-extra-label">Supervisor</label>
+            <select id="vt-filtro-extra" style="display: block; margin-top: 4px; padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 140px;"></select>
+          </div>
         </div>
       </div>
 
@@ -2728,7 +2732,7 @@ function renderDetalleAgentesConMes(mesKey) {
   plantillaData.forEach(p => {
     if (!p.fecha_ingreso) return;
     if (p.fecha_ingreso > finRefStr) return;
-    if (p.fecha_baja && p.fecha_baja <= iniMesStr) return;
+    if (p.fecha_baja) return;
     if (!SUPERVISORES.includes(p.supervisor)) return;
 
     const ingresoEnMes = p.fecha_ingreso > iniMesStr ? p.fecha_ingreso : iniMesStr;
@@ -2736,6 +2740,10 @@ function renderDetalleAgentesConMes(mesKey) {
     const refDate = new Date(finRefStr + 'T12:00:00');
     const diasEnMes = Math.floor((refDate - ingresoDate) / (1000 * 60 * 60 * 24));
     if (diasEnMes < 7) return;
+
+    const ingresoTotal = new Date(p.fecha_ingreso + 'T12:00:00');
+    const hoyDate = new Date(hoyStrInac + 'T12:00:00');
+    const diasTotales = Math.floor((hoyDate - ingresoTotal) / (1000 * 60 * 60 * 24));
 
     totalActivosEvaluados++;
     const ventas = actPorAgente[p.nombre] || 0;
@@ -2745,7 +2753,8 @@ function renderDetalleAgentesConMes(mesKey) {
       inactivosPorSup[p.supervisor].push({
         nombre: p.nombre,
         ingreso: p.fecha_ingreso,
-        diasEnMes
+        diasEnMes,
+        diasTotales
       });
     }
   });
@@ -2799,7 +2808,7 @@ function renderDetalleAgentesConMes(mesKey) {
     const criticos = agentes.filter(a => a.meta > 0 && a.pct < 50).length;
     const cumplidos = agentes.filter(a => a.meta > 0 && a.pct >= 100).length;
     const enRiesgo = agentes.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
-    const alertaInactivos = agentes.filter(a => a.diasSinAct !== null && a.diasSinAct >= 5).length;
+    const alertaInactivos = agentes.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5).length;
     const sinVentas = agentes.filter(a => a.avance === 0).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
@@ -2815,7 +2824,7 @@ function renderDetalleAgentesConMes(mesKey) {
               ${enRiesgo > 0 ? `<span style="color:var(--amber);font-weight:600;">⚠ ${enRiesgo} en riesgo</span> · ` : ''}
               ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span> · ` : ''}
               ${sinVentas > 0 ? `<span style="color:var(--red);font-weight:700;">⛔ ${sinVentas} sin venta</span> · ` : ''}
-              ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 5+ días</span>` : ''}
+              ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 3.5+ días</span>` : ''}
             </span>
           </span>
           <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
@@ -3146,6 +3155,7 @@ function mostrarModalInactivos() {
             <tr>
               <th>Agente</th>
               <th class="num" style="text-align:center;">Fecha ingreso</th>
+              <th class="num" style="text-align:center;">Días en plantilla</th>
               <th class="num" style="text-align:center;">Días en periodo</th>
             </tr>
           </thead>
@@ -3154,6 +3164,7 @@ function mostrarModalInactivos() {
               <tr>
                 <td>${a.nombre}</td>
                 <td class="num" style="text-align:center;">${a.ingreso}</td>
+                <td class="num" style="text-align:center; font-weight: 700;">${a.diasTotales}</td>
                 <td class="num" style="text-align:center; font-weight:700; color: ${a.diasEnMes >= 14 ? 'var(--red)' : 'var(--amber)'};">${a.diasEnMes}</td>
               </tr>
             `).join('')}
@@ -3182,6 +3193,7 @@ function descargarInactivosExcel() {
         'Supervisor': sup,
         'Agente': ag.nombre,
         'Fecha ingreso': ag.ingreso,
+        'Dias en plantilla': ag.diasTotales,
         'Dias en periodo': ag.diasEnMes
       });
     });
@@ -3193,7 +3205,7 @@ function descargarInactivosExcel() {
   }
 
   const ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{wch: 14}, {wch: 35}, {wch: 14}, {wch: 16}];
+  ws['!cols'] = [{wch: 14}, {wch: 35}, {wch: 14}, {wch: 18}, {wch: 16}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Sin venta');
 
@@ -3291,15 +3303,62 @@ function renderVistaTiempo() {
       document.querySelectorAll('.vt-view-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       vtState.vista = btn.dataset.vtView;
+      vtState.filtroExtra = null;
+      actualizarFiltroExtra();
       actualizarVista();
     };
   });
   selectMes.onchange = actualizarVista;
 
+  const filtroExtraEl = document.getElementById('vt-filtro-extra');
+  filtroExtraEl.onchange = () => {
+    vtState.filtroExtra = filtroExtraEl.value;
+    actualizarVista();
+  };
+
+  actualizarFiltroExtra();
   actualizarVista();
 }
 
-const vtState = { tab: 'diaria', metrica: 'act', vista: 'total' };
+function actualizarFiltroExtra() {
+  const wrap = document.getElementById('vt-filtro-extra-wrap');
+  const select = document.getElementById('vt-filtro-extra');
+  const label = document.getElementById('vt-filtro-extra-label');
+
+  if (vtState.vista === 'total') {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  wrap.style.display = '';
+  select.innerHTML = '';
+
+  if (vtState.vista === 'centro') {
+    label.textContent = 'Centro';
+    ['CC2', 'JV'].forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      select.appendChild(opt);
+    });
+    if (!vtState.filtroExtra) vtState.filtroExtra = 'CC2';
+    select.value = vtState.filtroExtra;
+  } else if (vtState.vista === 'supervisor') {
+    label.textContent = 'Supervisor';
+    SUPERVISORES.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s;
+      select.appendChild(opt);
+    });
+    if (!vtState.filtroExtra || !SUPERVISORES.includes(vtState.filtroExtra)) {
+      vtState.filtroExtra = SUPERVISORES[0];
+    }
+    select.value = vtState.filtroExtra;
+  }
+}
+
+const vtState = { tab: 'diaria', metrica: 'act', vista: 'total', filtroExtra: null };
 
 function actualizarVista() {
   const periodo = document.getElementById('vt-mes-select').value;
@@ -3324,6 +3383,15 @@ function actualizarVista() {
     filtroRegistros = filtroRegistros.filter(r => r[fechaCampo].startsWith(periodo));
   }
 
+  if (vista === 'centro' && vtState.filtroExtra) {
+    filtroRegistros = filtroRegistros.filter(r => {
+      const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
+      return supConf && supConf.centro === vtState.filtroExtra;
+    });
+  } else if (vista === 'supervisor' && vtState.filtroExtra) {
+    filtroRegistros = filtroRegistros.filter(r => r.supervisor === vtState.filtroExtra);
+  }
+
   const agrupacion = {};
   const agrupacionPrecios = {};
   const categorias = new Set();
@@ -3345,7 +3413,11 @@ function actualizarVista() {
     }
 
     let categoria;
-    if (vista === 'supervisor') {
+    if (vista === 'supervisor' && vtState.filtroExtra) {
+      categoria = vtState.filtroExtra;
+    } else if (vista === 'centro' && vtState.filtroExtra) {
+      categoria = vtState.filtroExtra;
+    } else if (vista === 'supervisor') {
       categoria = r.supervisor || 'Sin sup';
     } else if (vista === 'centro') {
       const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
@@ -3495,17 +3567,36 @@ function actualizarVista() {
     const plantillaTotalActiva = plantillaData.filter(p =>
       p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
       (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
-      ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna'].includes(p.supervisor)
+      ['Alan', 'Alfred', 'Carlos', 'Jorge', 'Luisa', 'Reyna', 'Ana Paola', 'Carmen', 'Emilio'].includes(p.supervisor)
     ).length;
 
-    const plantillaFiltradaActiva = plantillaData.filter(p =>
-      p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
-      (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
-      SUPERVISORES.includes(p.supervisor)
-    ).length;
+    let plantillaParaThr = 0;
+
+    if (vista === 'total') {
+      plantillaParaThr = plantillaData.filter(p =>
+        p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
+        (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
+        SUPERVISORES.includes(p.supervisor)
+      ).length;
+    } else if (vista === 'centro' && vtState.filtroExtra) {
+      const supsDelCentro = supConfigData
+        .filter(s => s.centro === vtState.filtroExtra && SUPERVISORES.includes(s.supervisor))
+        .map(s => s.supervisor);
+      plantillaParaThr = plantillaData.filter(p =>
+        p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
+        (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
+        supsDelCentro.includes(p.supervisor)
+      ).length;
+    } else if (vista === 'supervisor' && vtState.filtroExtra) {
+      plantillaParaThr = plantillaData.filter(p =>
+        p.fecha_ingreso && p.fecha_ingreso <= hoyStrThr &&
+        (!p.fecha_baja || p.fecha_baja > hoyStrThr) &&
+        p.supervisor === vtState.filtroExtra
+      ).length;
+    }
 
     const baseRefPlant = plantillaTotalActiva > 0 ? plantillaTotalActiva : 95;
-    const proporcion = plantillaFiltradaActiva / baseRefPlant;
+    const proporcion = plantillaParaThr / baseRefPlant;
 
     thresholdMin = Math.round(200 * proporcion);
     thresholdIdeal = Math.round(250 * proporcion);
