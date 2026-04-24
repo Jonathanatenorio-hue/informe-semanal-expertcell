@@ -3166,8 +3166,23 @@ function actualizarVista() {
       .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
 
     const hoyStrNow = new Date().toISOString().split('T')[0];
-    const hasta = periodoSel === `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2,'0')}`
-      ? (hoyStrNow < finMesSel ? hoyStrNow : finMesSel)
+
+    let ultDiaConDatos = null;
+    ventasData.forEach(r => {
+      if (r.fecha_bo && r.fecha_bo <= hoyStrNow && r.fecha_bo >= iniMesSel && r.fecha_bo <= finMesSel) {
+        if (!ultDiaConDatos || r.fecha_bo > ultDiaConDatos) ultDiaConDatos = r.fecha_bo;
+      }
+      if (r.fecha_activacion && r.fecha_activacion <= hoyStrNow && r.fecha_activacion >= iniMesSel && r.fecha_activacion <= finMesSel) {
+        if (!ultDiaConDatos || r.fecha_activacion > ultDiaConDatos) ultDiaConDatos = r.fecha_activacion;
+      }
+      if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStrNow && r.fecha_cancelacion >= iniMesSel && r.fecha_cancelacion <= finMesSel) {
+        if (!ultDiaConDatos || r.fecha_cancelacion > ultDiaConDatos) ultDiaConDatos = r.fecha_cancelacion;
+      }
+    });
+
+    const esMesEnCurso = periodoSel === `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2,'0')}`;
+    const hasta = esMesEnCurso
+      ? (ultDiaConDatos || hoyStrNow)
       : finMesSel;
 
     const diasHabilesTranscurridos = calendarioData
