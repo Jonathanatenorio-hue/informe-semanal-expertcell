@@ -3152,6 +3152,7 @@ function actualizarVista() {
   let diasHabilesBase = buckets.length;
   let promPorDiaHabil = prom;
   let targetDiario = null;
+  let ritmoAjustadoActual = null;
   const periodoSel = document.getElementById('vt-mes-select').value;
 
   if (tab === 'diaria' && periodoSel !== 'todos' && metrica !== 'arpu') {
@@ -3190,6 +3191,23 @@ function actualizarVista() {
       const metaProgFija = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
       if (metaProgFija > 0) {
         targetDiario = metaProgFija / diasHabilesTotalesMes;
+      }
+    }
+
+    if (targetDiario !== null && targetDiario > 0) {
+      const diasHabilesRestantes = diasHabilesTotalesMes - diasHabilesTranscurridos;
+      let metaActual = 0;
+      if (metrica === 'act') {
+        const metasMesSel2 = metasSupData.filter(m =>
+          m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
+        );
+        metaActual = metasMesSel2.reduce((a, m) => a + m.meta_activadas, 0);
+      } else if (metrica === 'prog' && window.__avanceData) {
+        metaActual = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+      }
+      if (diasHabilesRestantes > 0) {
+        const faltan = Math.max(0, metaActual - totalCount);
+        ritmoAjustadoActual = faltan / diasHabilesRestantes;
       }
     }
   }
@@ -3243,9 +3261,22 @@ function actualizarVista() {
         : `${diff.toFixed(1)}/día bajo meta ${icon}`;
       tarjetaTarget = `
         <div class="stat-card" style="border-left-color: ${colorT};">
-          <div class="stat-label">Ritmo objetivo/día</div>
+          <div class="stat-label">Ritmo objetivo fijo</div>
           <div class="stat-value" style="color: ${colorT};">${targetDiario.toFixed(1)}</div>
           <div class="stat-sub">${subT}</div>
+        </div>
+      `;
+    }
+
+    let tarjetaAjustado = '';
+    if (ritmoAjustadoActual !== null && ritmoAjustadoActual >= 0) {
+      const diffAj = promPorDiaHabil - ritmoAjustadoActual;
+      const colorAj = diffAj >= 0 ? 'var(--green)' : ritmoAjustadoActual > (targetDiario || 0) * 1.3 ? 'var(--red)' : 'var(--amber)';
+      tarjetaAjustado = `
+        <div class="stat-card" style="border-left-color: ${colorAj};">
+          <div class="stat-label">Ritmo ajustado hoy</div>
+          <div class="stat-value" style="color: ${colorAj};">${ritmoAjustadoActual.toFixed(1)}</div>
+          <div class="stat-sub">necesario para alcanzar meta</div>
         </div>
       `;
     }
@@ -3263,10 +3294,11 @@ function actualizarVista() {
         <div class="stat-sub">${subtextoProm}</div>
       </div>
       ${tarjetaTarget}
+      ${tarjetaAjustado}
       <div class="stat-card" style="border-left-color: var(--green);">
         <div class="stat-label">Total ${labelMetrica}</div>
         <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
-        <div class="stat-sub">${buckets.length} ${labelBucket}s con datos</div>
+        <div class="stat-sub">${tab === 'diaria' && periodoSel !== 'todos' ? `${diasHabilesBase.toFixed(1)} días hábiles` : `${buckets.length} ${labelBucket}s con datos`}</div>
       </div>
       <div class="stat-card" style="border-left-color: var(--att-orange);">
         <div class="stat-label">Máximo en ${labelBucket === 'día' ? 'un día' : 'una semana'}</div>
@@ -3326,7 +3358,7 @@ function actualizarVista() {
   if (targetDiario !== null && targetDiario > 0 && tab === 'diaria') {
     datasets.push({
       type: 'line',
-      label: 'Ritmo objetivo',
+      label: 'Ritmo objetivo fijo',
       data: buckets.map(() => Number(targetDiario.toFixed(1))),
       borderColor: '#DC2626',
       backgroundColor: 'transparent',
@@ -3334,6 +3366,58 @@ function actualizarVista() {
       borderDash: [6, 4],
       pointRadius: 0,
       tension: 0,
+      stack: undefined
+    });
+
+    const [aSel, mSel] = periodoSel.split('-').map(Number);
+    const iniMesSel = `${aSel}-${String(mSel).padStart(2,'0')}-01`;
+    const ultDiaSel = new Date(aSel, mSel, 0).getDate();
+    const finMesSel = `${aSel}-${String(mSel).padStart(2,'0')}-${String(ultDiaSel).padStart(2,'0')}`;
+
+    const calMap = {};
+    calendarioData.forEach(c => {
+      if (c.fecha >= iniMesSel && c.fecha <= finMesSel) calMap[c.fecha] = parseFloat(c.factor_dia);
+    });
+
+    const metasMesSel = metasSupData.filter(m =>
+      m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
+    );
+    const metaMesSelTotal = metasMesSel.reduce((a, m) => a + m.meta_activadas, 0);
+    let metaUsar = metaMesSelTotal;
+    if (metrica === 'prog' && window.__avanceData) {
+      metaUsar = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+    }
+
+    let ventasAcum = 0;
+    const ajustadoData = buckets.map((b, idx) => {
+      const ventasDelDia = Object.values(agrupacion[b] || {}).reduce((a, v) => a + v, 0);
+
+      let ventasAcumParaAjuste = ventasAcum;
+      ventasAcum += ventasDelDia;
+
+      const diasRestantes = Object.entries(calMap)
+        .filter(([f]) => f >= b)
+        .reduce((a, [_, fac]) => a + fac, 0);
+
+      if (diasRestantes <= 0) return null;
+
+      const faltan = metaUsar - ventasAcumParaAjuste;
+      if (faltan <= 0) return 0;
+
+      return Number((faltan / diasRestantes).toFixed(1));
+    });
+
+    datasets.push({
+      type: 'line',
+      label: 'Ritmo ajustado',
+      data: ajustadoData,
+      borderColor: '#7C3AED',
+      backgroundColor: 'transparent',
+      borderWidth: 2,
+      borderDash: [2, 3],
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      tension: 0.1,
       stack: undefined
     });
   }
