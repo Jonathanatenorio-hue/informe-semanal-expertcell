@@ -929,7 +929,7 @@
       <div class="chart-wrap" style="height: 380px;"><canvas id="chart-vista-diaria"></canvas></div>
 
       <div style="font-size: 11px; color: var(--text-soft); margin-top: 10px;">
-        💡 La línea naranja es el promedio diario. Las etiquetas arriba de cada barra muestran el valor exacto.
+        💡 <strong>Línea naranja</strong> = promedio real por día hábil · <strong>Línea roja punteada</strong> = ritmo objetivo para cumplir meta
       </div>
       </div>
     </div>
@@ -3632,14 +3632,53 @@ function dibujarVistaDiaria() {
 
   const suma = totalesDiarios.reduce((a, b) => a + b, 0);
   const diasConDatos = totalesDiarios.filter(v => v > 0).length;
-  const promedio = diasConDatos > 0 ? suma / diasConDatos : 0;
+
+  const diasHabilesTranscurridos = calendarioData
+    .filter(d => d.fecha >= iniMesStr && d.fecha <= fechaCorteStr)
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+  const diasHabilesTotalesMes = calendarioData
+    .filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`))
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+
+  const promedio = diasHabilesTranscurridos > 0 ? suma / diasHabilesTranscurridos : 0;
   const maxValor = Math.max(...totalesDiarios, 0);
   const maxDiaIdx = totalesDiarios.indexOf(maxValor);
   const maxFecha = fechasConDatos[maxDiaIdx];
 
+  let targetDiario = null;
+  if (metrica === 'activadas') {
+    targetDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+  } else if (metrica === 'programadas' && window.__avanceData) {
+    const metaProgFijaTotal = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+    targetDiario = diasHabilesTotalesMes > 0 ? metaProgFijaTotal / diasHabilesTotalesMes : 0;
+  } else if (metrica === 'monto_sin_imp') {
+    let sumaRenta = 0, countAct = 0;
+    ventasData.forEach(r => {
+      if (r.estatus === 'activada' && r.renta_sin_impuestos) {
+        sumaRenta += parseFloat(r.renta_sin_impuestos);
+        countAct++;
+      }
+    });
+    const rentaProm = countAct > 0 ? sumaRenta / countAct : 0;
+    const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+    targetDiario = targetActDiario * rentaProm;
+  } else if (metrica === 'monto_bruto') {
+    let sumaPrecio = 0, countAct = 0;
+    ventasData.forEach(r => {
+      if (r.estatus === 'activada' && r.precio) {
+        sumaPrecio += parseFloat(r.precio);
+        countAct++;
+      }
+    });
+    const precioProm = countAct > 0 ? sumaPrecio / countAct : 0;
+    const targetActDiario = diasHabilesTotalesMes > 0 ? metaMes / diasHabilesTotalesMes : 0;
+    targetDiario = targetActDiario * precioProm;
+  }
+
   const totalPromedioLine = {
     type: 'line',
-    label: 'Promedio diario',
+    label: 'Promedio real',
     data: fechas.map(f => f <= fechaCorteStr ? promedio : null),
     borderColor: '#FF7200',
     borderWidth: 2,
@@ -3648,6 +3687,20 @@ function dibujarVistaDiaria() {
     order: 0
   };
   datasets.push(totalPromedioLine);
+
+  if (targetDiario !== null && targetDiario > 0) {
+    datasets.push({
+      type: 'line',
+      label: 'Ritmo objetivo',
+      data: fechas.map(() => targetDiario),
+      borderColor: '#DC2626',
+      borderWidth: 2,
+      borderDash: [6, 4],
+      pointRadius: 0,
+      fill: false,
+      order: 0
+    });
+  }
 
   const fmtMonto = (v) => '$' + (v / 1000).toFixed(1) + 'K';
   const fmtCount = (v) => Math.round(v).toLocaleString();
@@ -3671,16 +3724,43 @@ function dibujarVistaDiaria() {
     if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) totalCancMes++;
   });
 
+  let tarjetaTarget = '';
+  if (targetDiario !== null) {
+    const diffVsTarget = promedio - targetDiario;
+    const pctVsTarget = targetDiario > 0 ? (diffVsTarget / targetDiario * 100) : 0;
+    const colorTarget = diffVsTarget >= 0 ? 'var(--green)' : pctVsTarget > -15 ? 'var(--amber)' : 'var(--red)';
+    const iconTarget = diffVsTarget >= 0 ? '✓' : '⚠';
+    const subText = diffVsTarget >= 0
+      ? `+${fmt(Math.abs(diffVsTarget))}/día sobre meta ${iconTarget}`
+      : `${fmt(diffVsTarget)}/día bajo meta ${iconTarget}`;
+    tarjetaTarget = `
+      <div class="stat-card" style="border-left-color: ${colorTarget};">
+        <div class="stat-label">Ritmo objetivo/día</div>
+        <div class="stat-value" style="color: ${colorTarget};">${fmt(targetDiario)}</div>
+        <div class="stat-sub">${subText}</div>
+      </div>
+    `;
+  } else {
+    tarjetaTarget = `
+      <div class="stat-card" style="border-left-color: var(--text-soft);">
+        <div class="stat-label">Ritmo objetivo/día</div>
+        <div class="stat-value" style="color: var(--text-soft);">—</div>
+        <div class="stat-sub">no aplica para canceladas</div>
+      </div>
+    `;
+  }
+
   document.getElementById('vd-resumen-cards').innerHTML = `
     <div class="stat-card">
-      <div class="stat-label">Promedio diario</div>
+      <div class="stat-label">Promedio día</div>
       <div class="stat-value">${fmt(promedio)}</div>
-      <div class="stat-sub">de ${etiquetaMetrica(metrica).toLowerCase()}</div>
+      <div class="stat-sub">por día hábil (${diasHabilesTranscurridos.toFixed(1)} días)</div>
     </div>
+    ${tarjetaTarget}
     <div class="stat-card" style="border-left-color: var(--green);">
       <div class="stat-label">Total del periodo</div>
       <div class="stat-value" style="color: var(--green);">${fmt(suma)}</div>
-      <div class="stat-sub">acumulado mes</div>
+      <div class="stat-sub">${diasConDatos} días con datos</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--att-orange);">
       <div class="stat-label">Máximo en un día</div>
@@ -3712,13 +3792,14 @@ function dibujarVistaDiaria() {
             label: (ctx) => {
               const v = ctx.parsed.y;
               if (v === null || v === undefined) return null;
-              if (ctx.dataset.label === 'Promedio diario') return `Promedio: ${fmt(v)}`;
+              if (ctx.dataset.label === 'Promedio real') return `Promedio real: ${fmt(v)}`;
+              if (ctx.dataset.label === 'Ritmo objetivo') return `Ritmo objetivo: ${fmt(v)}`;
               return `${ctx.dataset.label}: ${fmt(v)}`;
             },
             footer: vista !== 'total' ? (items) => {
               let tot = 0;
               items.forEach(i => {
-                if (i.dataset.label !== 'Promedio diario' && i.parsed.y) tot += i.parsed.y;
+                if (i.dataset.label !== 'Promedio real' && i.dataset.label !== 'Ritmo objetivo' && i.parsed.y) tot += i.parsed.y;
               });
               return `Total: ${fmt(tot)}`;
             } : undefined
