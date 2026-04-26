@@ -561,6 +561,12 @@ async function procesar() {
         } else {
           estatus = 'en_transito';
         }
+      } else if (fechaCan && actInfo && actInfo.fecha) {
+        if (actInfo.fecha >= fechaCan) {
+          estatus = 'activada';
+        } else {
+          estatus = 'cancelada';
+        }
       } else if (fechaCan) {
         estatus = 'cancelada';
       } else if (actInfo) {
@@ -575,7 +581,7 @@ async function procesar() {
         supervisor,
         fecha_bo: fechaBO,
         fecha_activacion: actInfo ? actInfo.fecha : null,
-        fecha_cancelacion: fechaCan || null,
+        fecha_cancelacion: estatus === 'activada' ? null : (fechaCan || null),
         estatus,
         centro: row.Centro || null,
         plan: actInfo ? actInfo.plan : null,
