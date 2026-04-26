@@ -2121,13 +2121,24 @@ function renderAvanceMensual(wActual) {
 
   let avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
 
+  let avanceSinSup = 0;
   ventasData.forEach(r => {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return;
     if (!esVentaDelFiltro(r)) return;
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
       avanceTotal++;
+      avanceSinSup++;
     }
   });
+  console.log('=== DEBUG AVANCE MENSUAL ===');
+  console.log('Suma de supervisores:', Object.values(avancesPorSup).reduce((a, b) => a + b, 0));
+  console.log('Sin supervisor sumadas:', avanceSinSup);
+  console.log('Avance total:', avanceTotal);
+  console.log('Total ventas sin supervisor en data:', ventasData.filter(r => !r.supervisor).length);
+  console.log('Sin sup con centro:', ventasData.filter(r => !r.supervisor && r.centro).length);
+  console.log('Sin sup en abril:', ventasData.filter(r => !r.supervisor && r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr).length);
+  console.log('Coordinador filtro:', coordinadorFiltro);
+  console.log('iniMesStr:', iniMesStr, 'fechaCorteStr:', fechaCorteStr);
 
   const finUltimaSem = new Date(fechaCorte);
   const diaSem = finUltimaSem.getDay();
