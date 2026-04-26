@@ -2086,26 +2086,48 @@ function renderAvanceMensual(wActual) {
   SUPERVISORES.forEach(s => { transitoPorSup[s] = 0; });
   let transitoTotal = 0;
 
+  function esVentaDelFiltro(r) {
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
+    if (!r.supervisor && r.centro) {
+      if (coordinadorFiltro === 'todos') return true;
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      if (coord && coord.centro === r.centro) return true;
+    }
+    return false;
+  }
+
   ventasData.forEach(r => {
-    if (!SUPERVISORES.includes(r.supervisor)) return;
+    if (!esVentaDelFiltro(r)) return;
+
+    const tieneSup = r.supervisor && SUPERVISORES.includes(r.supervisor);
 
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-      avancesPorSup[r.supervisor]++;
-      avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+      if (tieneSup) {
+        avancesPorSup[r.supervisor]++;
+        avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+      }
     }
 
     if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
-      avancesProgPorSup[r.supervisor]++;
+      if (tieneSup) avancesProgPorSup[r.supervisor]++;
       avanceProgTotal++;
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
-      transitoPorSup[r.supervisor]++;
+      if (tieneSup) transitoPorSup[r.supervisor]++;
       transitoTotal++;
     }
   });
 
-  const avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
+  let avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
+
+  ventasData.forEach(r => {
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return;
+    if (!esVentaDelFiltro(r)) return;
+    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
+      avanceTotal++;
+    }
+  });
 
   const finUltimaSem = new Date(fechaCorte);
   const diaSem = finUltimaSem.getDay();
@@ -2128,8 +2150,10 @@ function renderAvanceMensual(wActual) {
   ventasData.forEach(r => {
     if (!r.fecha_activacion) return;
     if (r.fecha_activacion < iniSemStr || r.fecha_activacion > finSemStr) return;
-    if (!SUPERVISORES.includes(r.supervisor)) return;
-    avancesSemanaPorSup[r.supervisor]++;
+    if (!esVentaDelFiltro(r)) return;
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
+      avancesSemanaPorSup[r.supervisor]++;
+    }
     avanceUltSem++;
   });
 
@@ -3364,7 +3388,17 @@ function actualizarVista() {
   const periodo = document.getElementById('vt-mes-select').value;
   const { tab, metrica, vista } = vtState;
 
-  const ventasFiltradas = ventasData.filter(r => SUPERVISORES.includes(r.supervisor));
+  function esVentaIncluida(r) {
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
+    if (!r.supervisor && r.centro) {
+      if (coordinadorFiltro === 'todos') return true;
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      if (coord && coord.centro === r.centro) return true;
+    }
+    return false;
+  }
+
+  const ventasFiltradas = ventasData.filter(esVentaIncluida);
 
   let fechaCampo;
   let filtroRegistros;
@@ -3385,8 +3419,11 @@ function actualizarVista() {
 
   if (vista === 'centro' && vtState.filtroExtra) {
     filtroRegistros = filtroRegistros.filter(r => {
-      const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
-      return supConf && supConf.centro === vtState.filtroExtra;
+      if (r.supervisor) {
+        const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
+        return supConf && supConf.centro === vtState.filtroExtra;
+      }
+      return r.centro === vtState.filtroExtra;
     });
   } else if (vista === 'supervisor' && vtState.filtroExtra) {
     filtroRegistros = filtroRegistros.filter(r => r.supervisor === vtState.filtroExtra);
@@ -3420,8 +3457,12 @@ function actualizarVista() {
     } else if (vista === 'supervisor') {
       categoria = r.supervisor || 'Sin sup';
     } else if (vista === 'centro') {
-      const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
-      categoria = supConf ? supConf.centro : 'Sin centro';
+      if (r.supervisor) {
+        const supConf = supConfigData.find(s => s.supervisor === r.supervisor);
+        categoria = supConf ? supConf.centro : (r.centro || 'Sin centro');
+      } else {
+        categoria = r.centro || 'Sin centro';
+      }
     } else {
       categoria = 'Total';
     }
