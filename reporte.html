@@ -797,6 +797,7 @@
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
         <button class="nav-btn" data-target="sec-canceladas">🔄 Canceladas</button>
         <button class="nav-btn" data-target="sec-rotacion">🔃 Rotación</button>
+        <button class="nav-btn" data-target="sec-capacitadores">🎓 Capacitadores</button>
         <button class="nav-btn" data-target="sec-sanity">🩺 Sanity Check</button>
         <button class="nav-btn" data-target="sec-top-agentes">⭐ Top agentes</button>
         <button class="nav-btn" data-target="sec-historico-mensual">📅 Histórico meses</button>
@@ -1245,6 +1246,30 @@
       </div>
     </div>
 
+    <!-- CAPACITADORES -->
+    <div class="section collapsible" id="sec-capacitadores">
+      <div class="section-title">🎓 Capacitadores</div>
+      <div class="section-body">
+      <div class="section-subtitle">Eficiencia de los capacitadores medida sobre los agentes nuevos (ingreso en últimos 3 meses) que cada uno formó. Mide qué tan bien sobreviven, qué tan rápido producen, y cuánto venden en su primer mes.</div>
+
+      <div id="cap-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 20px 0;"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 20px 0 8px; color: var(--att-navy);">Comparativo</div>
+      <div class="chart-wrap" style="height: 300px;"><canvas id="chart-cap-comparativo"></canvas></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Detalle de agentes formados</div>
+      <div style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Capacitador:</span>
+        <select id="cap-filtro-select" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
+          <option value="all">Todos</option>
+        </select>
+      </div>
+      <div style="overflow-x: auto; max-height: 600px;">
+        <table id="cap-tabla" style="font-size: 12.5px;"></table>
+      </div>
+      </div>
+    </div>
+
     <!-- SANITY CHECK AGENTES -->
     <div class="section collapsible" id="sec-sanity">
       <div class="section-title">🩺 Sanity Check de agentes</div>
@@ -1528,6 +1553,7 @@ let coordinadoresData = [];
 let coordSupData = [];
 let supConfigData = [];
 let foliosIgnoradosData = [];
+let capacitadoresData = [];
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
 let coordinadorFiltro = 'todos';
@@ -1617,6 +1643,9 @@ async function cargarDatos() {
 
   const { data: foliosIgn } = await db.from('folios_ignorados').select('*').order('created_at', { ascending: false });
   foliosIgnoradosData = foliosIgn || [];
+
+  const { data: capData } = await db.from('capacitadores').select('*').eq('activo', true);
+  capacitadoresData = capData || [];
 
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
@@ -1885,6 +1914,7 @@ function renderReporte(wActual, wCurrent) {
   renderFlujoEntrega();
   renderRecuperacion();
   renderRotacion();
+  renderCapacitadores();
   renderSanityCheck();
   renderTopAgentes();
   renderHistoricoMensual();
@@ -5932,6 +5962,291 @@ function descargarBajasExcel(periodo) {
 }
 
 const SANITY_STATE = { filter: 'all', orden: 'delta' };
+
+function renderCapacitadores() {
+  if (!capacitadoresData || capacitadoresData.length === 0) return;
+  if (!window.__avanceData) return;
+
+  const hoy = new Date();
+  const hoyStr = hoy.toISOString().split('T')[0];
+  const hace3mDate = new Date(hoy);
+  hace3mDate.setMonth(hace3mDate.getMonth() - 3);
+  const hace3mStr = hace3mDate.toISOString().split('T')[0];
+
+  const supsPorCentro = { CC2: [], JV: [] };
+  supConfigData.forEach(s => {
+    if (supsPorCentro[s.centro]) supsPorCentro[s.centro].push(s.supervisor);
+  });
+
+  const datosPorCap = capacitadoresData.map(cap => {
+    const fechaIni = cap.fecha_inicio;
+    const fechaFin = cap.fecha_fin || hoyStr;
+    const sups = supsPorCentro[cap.centro] || [];
+
+    const agentesFormados = plantillaData.filter(p => {
+      if (!p.fecha_ingreso) return false;
+      if (p.fecha_ingreso < fechaIni) return false;
+      if (p.fecha_ingreso > fechaFin) return false;
+      if (p.fecha_ingreso < hace3mStr) return false;
+      if (!sups.includes(p.supervisor)) return false;
+      return true;
+    });
+
+    const total = agentesFormados.length;
+    if (total === 0) {
+      return {
+        cap, total: 0, sobrevivientes: 0, pctSup: 0,
+        bajas: 0, primMesProm: 0, diasPrimera: null,
+        agentes: []
+      };
+    }
+
+    const evaluablesSup = agentesFormados.filter(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const dias = Math.floor((hoy - ing) / (1000 * 60 * 60 * 24));
+      return dias >= 42;
+    });
+
+    const sobrevivientes = evaluablesSup.filter(p => {
+      if (!p.fecha_baja) return true;
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const baj = new Date(p.fecha_baja + 'T12:00:00');
+      const dias = (baj - ing) / (1000 * 60 * 60 * 24);
+      return dias > 42;
+    });
+
+    const pctSup = evaluablesSup.length > 0 ? (sobrevivientes.length / evaluablesSup.length * 100) : 0;
+    const bajas = agentesFormados.filter(p => p.fecha_baja).length;
+
+    const primerMes = [];
+    const diasParaPrimera = [];
+
+    agentesFormados.forEach(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const finPrimerMes = new Date(ing);
+      finPrimerMes.setDate(finPrimerMes.getDate() + 30);
+      const finPrimerMesStr = finPrimerMes.toISOString().split('T')[0];
+
+      const ventasPrimerMes = ventasData.filter(r =>
+        r.ejecutivo === p.nombre &&
+        r.estatus === 'activada' &&
+        r.fecha_activacion &&
+        r.fecha_activacion >= p.fecha_ingreso &&
+        r.fecha_activacion <= finPrimerMesStr
+      );
+
+      const ing30Dias = new Date(ing);
+      ing30Dias.setDate(ing30Dias.getDate() + 30);
+      if (ing30Dias <= hoy) {
+        primerMes.push(ventasPrimerMes.length);
+      }
+
+      if (ventasPrimerMes.length > 0) {
+        const fechasOrd = ventasPrimerMes
+          .map(r => new Date(r.fecha_activacion + 'T12:00:00'))
+          .sort((a, b) => a - b);
+        const primera = fechasOrd[0];
+        const dias = Math.floor((primera - ing) / (1000 * 60 * 60 * 24));
+        diasParaPrimera.push(dias);
+      }
+    });
+
+    const primMesProm = primerMes.length > 0
+      ? primerMes.reduce((a, b) => a + b, 0) / primerMes.length
+      : 0;
+    const diasPrimera = diasParaPrimera.length > 0
+      ? Math.round(diasParaPrimera.reduce((a, b) => a + b, 0) / diasParaPrimera.length)
+      : null;
+
+    const agentes = agentesFormados.map(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const ventas = ventasData.filter(r =>
+        r.ejecutivo === p.nombre &&
+        r.estatus === 'activada' &&
+        r.fecha_activacion
+      );
+      const totalVentas = ventas.length;
+      const venPrimera = ventas
+        .map(r => new Date(r.fecha_activacion + 'T12:00:00'))
+        .sort((a, b) => a - b)[0];
+      const diasPrim = venPrimera ? Math.floor((venPrimera - ing) / (1000 * 60 * 60 * 24)) : null;
+      const ing30 = new Date(ing); ing30.setDate(ing30.getDate() + 30);
+      const ing30Str = ing30.toISOString().split('T')[0];
+      const ventasMes1 = ventas.filter(r => r.fecha_activacion >= p.fecha_ingreso && r.fecha_activacion <= ing30Str).length;
+
+      const refDate = p.fecha_baja ? new Date(p.fecha_baja + 'T12:00:00') : hoy;
+      const diasActivo = Math.floor((refDate - ing) / (1000 * 60 * 60 * 24));
+
+      let estado = 'activo';
+      if (p.fecha_baja) {
+        if (diasActivo <= 42) estado = 'baja_curva';
+        else estado = 'baja_post_curva';
+      }
+
+      return {
+        nombre: p.nombre,
+        supervisor: p.supervisor,
+        ingreso: p.fecha_ingreso,
+        baja: p.fecha_baja,
+        diasActivo,
+        diasPrim,
+        ventasMes1,
+        totalVentas,
+        estado
+      };
+    }).sort((a, b) => b.totalVentas - a.totalVentas);
+
+    return { cap, total, sobrevivientes: sobrevivientes.length, evaluablesSup: evaluablesSup.length, pctSup, bajas, primMesProm, diasPrimera, agentes };
+  });
+
+  window.__capData = datosPorCap;
+
+  document.getElementById('cap-cards-grid').innerHTML = datosPorCap.map(d => {
+    const colorSup = d.pctSup >= 85 ? 'var(--green)' : d.pctSup >= 70 ? 'var(--amber)' : 'var(--red)';
+    const colorMes = d.primMesProm >= 6 ? 'var(--green)' : d.primMesProm >= 3 ? 'var(--amber)' : 'var(--red)';
+    const colorDias = d.diasPrimera === null ? 'var(--text-soft)' :
+                      d.diasPrimera <= 5 ? 'var(--green)' :
+                      d.diasPrimera <= 10 ? 'var(--amber)' : 'var(--red)';
+
+    return `
+      <div style="background: white; border-radius: 12px; border: 1px solid var(--border); padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 2px solid var(--bg);">
+          <div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--att-navy);">🎓 ${d.cap.nombre}</div>
+            <div style="font-size: 11px; color: var(--text-soft); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;">Capacitador · Centro ${d.cap.centro}</div>
+          </div>
+          <div style="background: ${d.cap.centro === 'CC2' ? 'rgba(0,43,92,0.1)' : 'rgba(255,114,0,0.1)'}; color: ${d.cap.centro === 'CC2' ? 'var(--att-navy)' : 'var(--att-orange)'}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700;">${d.total} agentes</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="stat-card" style="border-left-color: ${colorSup};">
+            <div class="stat-label">Supervivencia</div>
+            <div class="stat-value" style="color: ${colorSup};">${d.pctSup.toFixed(0)}%</div>
+            <div class="stat-sub">${d.sobrevivientes} de ${d.evaluablesSup} pasaron 6 sem</div>
+          </div>
+          <div class="stat-card" style="border-left-color: var(--red);">
+            <div class="stat-label">Bajas totales</div>
+            <div class="stat-value" style="color: var(--red);">${d.bajas}</div>
+            <div class="stat-sub">${d.total > 0 ? (d.bajas / d.total * 100).toFixed(0) : 0}% del grupo</div>
+          </div>
+          <div class="stat-card" style="border-left-color: ${colorMes};">
+            <div class="stat-label">Prom 1er mes</div>
+            <div class="stat-value" style="color: ${colorMes};">${d.primMesProm.toFixed(1)}</div>
+            <div class="stat-sub">ventas / agente</div>
+          </div>
+          <div class="stat-card" style="border-left-color: ${colorDias};">
+            <div class="stat-label">Días 1ª venta</div>
+            <div class="stat-value" style="color: ${colorDias};">${d.diasPrimera === null ? '—' : d.diasPrimera}</div>
+            <div class="stat-sub">desde ingreso</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const ctx = document.getElementById('chart-cap-comparativo');
+  if (window.__chartCap) window.__chartCap.destroy();
+  window.__chartCap = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: datosPorCap.map(d => d.cap.nombre + ' (' + d.cap.centro + ')'),
+      datasets: [
+        {
+          label: 'Supervivencia %',
+          data: datosPorCap.map(d => Number(d.pctSup.toFixed(1))),
+          backgroundColor: 'rgba(22, 163, 74, 0.7)',
+          borderColor: '#15803D',
+          borderWidth: 1, borderRadius: 4,
+          yAxisID: 'y'
+        },
+        {
+          label: 'Prom 1er mes',
+          data: datosPorCap.map(d => Number(d.primMesProm.toFixed(1))),
+          backgroundColor: 'rgba(0, 168, 224, 0.7)',
+          borderColor: '#00A8E0',
+          borderWidth: 1, borderRadius: 4,
+          yAxisID: 'y1'
+        },
+        {
+          label: 'Bajas',
+          data: datosPorCap.map(d => d.bajas),
+          backgroundColor: 'rgba(220, 38, 38, 0.7)',
+          borderColor: '#B91C1C',
+          borderWidth: 1, borderRadius: 4,
+          yAxisID: 'y1'
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { font: { size: 11, weight: '600' }, boxWidth: 18 } }
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: { position: 'left', beginAtZero: true, max: 100, title: { display: true, text: '% Supervivencia' }, grid: { color: 'rgba(0,0,0,0.06)' } },
+        y1: { position: 'right', beginAtZero: true, title: { display: true, text: 'Cantidad' }, grid: { display: false } }
+      }
+    }
+  });
+
+  const filtro = document.getElementById('cap-filtro-select');
+  filtro.innerHTML = '<option value="all">Todos</option>' +
+    datosPorCap.map(d => `<option value="${d.cap.nombre}">${d.cap.nombre}</option>`).join('');
+  filtro.onchange = () => renderCapTabla(filtro.value);
+
+  renderCapTabla('all');
+}
+
+function renderCapTabla(filtro) {
+  if (!window.__capData) return;
+  let agentesAll = [];
+  window.__capData.forEach(d => {
+    d.agentes.forEach(a => agentesAll.push({ ...a, capacitador: d.cap.nombre }));
+  });
+
+  if (filtro !== 'all') {
+    agentesAll = agentesAll.filter(a => a.capacitador === filtro);
+  }
+
+  let html = `<thead><tr>
+    <th>Agente</th>
+    <th style="text-align:center;">Capacitador</th>
+    <th style="text-align:center;">Supervisor</th>
+    <th style="text-align:center;">Ingreso</th>
+    <th class="num" style="text-align:center;">Días activo</th>
+    <th class="num" style="text-align:center;">Días 1ª venta</th>
+    <th class="num" style="text-align:center;">Ventas mes 1</th>
+    <th class="num" style="text-align:center;">Total ventas</th>
+    <th style="text-align:center;">Estado</th>
+  </tr></thead><tbody>`;
+
+  agentesAll.forEach(a => {
+    let estadoTxt, estadoColor;
+    if (a.estado === 'baja_curva') { estadoTxt = '🚨 Baja en curva'; estadoColor = 'var(--red)'; }
+    else if (a.estado === 'baja_post_curva') { estadoTxt = '⚠️ Baja post-curva'; estadoColor = 'var(--amber)'; }
+    else { estadoTxt = '✓ Activo'; estadoColor = 'var(--green)'; }
+
+    const colorDP = a.diasPrim === null ? 'var(--text-soft)' :
+                    a.diasPrim <= 5 ? 'var(--green)' :
+                    a.diasPrim <= 10 ? 'var(--amber)' : 'var(--red)';
+
+    html += `<tr>
+      <td><strong>${a.nombre}</strong></td>
+      <td style="text-align:center;">${a.capacitador}</td>
+      <td style="text-align:center;">${a.supervisor}</td>
+      <td class="num" style="text-align:center; font-size:11px;">${a.ingreso}</td>
+      <td class="num" style="text-align:center;">${a.diasActivo}</td>
+      <td class="num" style="text-align:center; color:${colorDP}; font-weight:700;">${a.diasPrim === null ? '—' : a.diasPrim}</td>
+      <td class="num" style="text-align:center;">${a.ventasMes1}</td>
+      <td class="num" style="text-align:center; font-weight:700;">${a.totalVentas}</td>
+      <td style="text-align:center; color:${estadoColor}; font-weight:700;">${estadoTxt}</td>
+    </tr>`;
+  });
+
+  html += '</tbody>';
+  document.getElementById('cap-tabla').innerHTML = html;
+}
 
 function renderSanityCheck() {
   if (!window.__avanceData) return;
