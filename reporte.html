@@ -1620,7 +1620,7 @@ async function cargarDatos() {
 
   const { data: plantData, error: plantErr } = await db
     .from('plantilla')
-    .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus, tipo_baja, motivo_baja');
+    .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus, tipo_baja, motivo_baja, centro');
 
   if (plantErr) {
     document.getElementById('loader-msg').innerHTML = '<span style="color:red">Error en plantilla: ' + plantErr.message + '</span>';
@@ -6021,12 +6021,20 @@ function calcularCapacitadores(filtroMes) {
     const fechaFin = cap.fecha_fin && cap.fecha_fin < fechaFinFiltro ? cap.fecha_fin : fechaFinFiltro;
     const sups = supsPorCentro[cap.centro] || [];
 
+    function detectarCentro(p) {
+      if (sups.includes(p.supervisor)) return cap.centro;
+      const txt = String(p.centro || '').toUpperCase();
+      if (txt.includes('C CENTER 2') || txt.includes('CCENTER 2')) return 'CC2';
+      if (txt.includes('JUAREZ 701') || txt.includes('JUAREZ701')) return 'JV';
+      return null;
+    }
+
     const agentesFormados = plantillaData.filter(p => {
       if (!p.fecha_ingreso) return false;
       if (p.fecha_ingreso < fechaIni) return false;
       if (p.fecha_ingreso > fechaFin) return false;
-      if (!sups.includes(p.supervisor)) return false;
-      return true;
+      const centroAgente = detectarCentro(p);
+      return centroAgente === cap.centro;
     });
 
     const total = agentesFormados.length;
