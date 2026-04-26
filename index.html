@@ -536,7 +536,16 @@ async function procesar() {
       const ejecutivo = row.Ejecutivo;
 
       const supervisor = resolverSupervisorPorFecha(ejecutivo, fechaBO, asignaciones);
-      if (!supervisor) {
+
+      let centroDetectado = null;
+      const centroTxt = String(row.Centro || '').toUpperCase();
+      if (centroTxt.includes('C CENTER 2') || centroTxt.includes('CCENTER 2')) {
+        centroDetectado = 'CC2';
+      } else if (centroTxt.includes('JUAREZ 701') || centroTxt.includes('JUAREZ701')) {
+        centroDetectado = 'JV';
+      }
+
+      if (!supervisor && !centroDetectado) {
         sinSupervisor++;
         if (ejecutivo) ejecutivosSinResolver.add(ejecutivo);
         continue;
@@ -566,12 +575,12 @@ async function procesar() {
       registros.push({
         folio,
         ejecutivo,
-        supervisor,
+        supervisor: supervisor || null,
         fecha_bo: fechaBO,
         fecha_activacion: actInfo ? actInfo.fecha : null,
         fecha_cancelacion: fechaCan || null,
         estatus,
-        centro: row.Centro || null,
+        centro: centroDetectado,
         plan: actInfo ? actInfo.plan : null,
         precio: actInfo ? actInfo.precio : null,
         renta_sin_impuestos: actInfo ? actInfo.renta : null,
