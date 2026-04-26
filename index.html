@@ -541,7 +541,7 @@ async function procesar() {
       const centroTxt = String(row.Centro || '').toUpperCase();
       if (centroTxt.includes('C CENTER 2') || centroTxt.includes('CCENTER 2')) {
         centroDetectado = 'CC2';
-      } else if (centroTxt.includes('JUAREZ 701') || centroTxt.includes('JUAREZ701')) {
+      } else if (centroTxt.includes('JUAREZ 701') || centroTxt.includes('JUAREZ701') || centroTxt.includes('CCENTER JV') || centroTxt.includes('C CENTER JV')) {
         centroDetectado = 'JV';
       }
 
