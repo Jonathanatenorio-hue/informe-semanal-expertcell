@@ -545,8 +545,8 @@
   }
   .nav-sticky-inner {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
-    overflow-x: auto;
     scrollbar-width: thin;
     scrollbar-color: var(--border) transparent;
   }
@@ -554,12 +554,12 @@
   .nav-sticky-inner::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
   .nav-btn {
     flex: 0 0 auto;
-    padding: 8px 14px;
+    padding: 7px 12px;
     background: white;
     color: var(--text);
     border: 1px solid var(--border);
     border-radius: 8px;
-    font-size: 12.5px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s;
@@ -1250,7 +1250,14 @@
     <div class="section collapsible" id="sec-capacitadores">
       <div class="section-title">🎓 Capacitadores</div>
       <div class="section-body">
-      <div class="section-subtitle">Eficiencia de los capacitadores medida sobre los agentes nuevos (ingreso en últimos 3 meses) que cada uno formó. Mide qué tan bien sobreviven, qué tan rápido producen, y cuánto venden en su primer mes.</div>
+      <div class="section-subtitle">Eficiencia de los capacitadores medida sobre los agentes nuevos que cada uno formó. Mide qué tan bien sobreviven, qué tan rápido producen, y cuánto venden en su primer mes.</div>
+
+      <div style="display: flex; gap: 10px; margin: 16px 0; align-items: center; flex-wrap: wrap;">
+        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+        <select id="cap-mes-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
+          <option value="all">Todo el año</option>
+        </select>
+      </div>
 
       <div id="cap-cards-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; margin: 20px 0;"></div>
 
@@ -2284,7 +2291,7 @@ function renderAvanceMensual(wActual) {
   document.getElementById('avance-subtitle').textContent =
     `${mesNombre} ${anio} · ${diasTranscurridos.toFixed(1)} de ${diasHabilesTotales.toFixed(1)} días hábiles transcurridos · Corte al ${fechaCorteStr}`;
 
-  window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr };
+  window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasHabilesTotales, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr };
 
   document.querySelectorAll('.proy-btn').forEach(btn => {
     btn.onclick = () => {
@@ -5967,11 +5974,42 @@ function renderCapacitadores() {
   if (!capacitadoresData || capacitadoresData.length === 0) return;
   if (!window.__avanceData) return;
 
+  const selectMes = document.getElementById('cap-mes-select');
+  if (selectMes && !selectMes.dataset.inicializado) {
+    const mesesDisp = new Set();
+    plantillaData.forEach(p => {
+      if (p.fecha_ingreso && p.fecha_ingreso >= '2026-01-01') {
+        mesesDisp.add(p.fecha_ingreso.substring(0, 7));
+      }
+    });
+    const mesesOrdenados = [...mesesDisp].sort().reverse();
+    const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    selectMes.innerHTML = '<option value="all">Todo el año</option>' +
+      mesesOrdenados.map(m => {
+        const [a, mm] = m.split('-');
+        return `<option value="${m}">Ingresos de ${noms[parseInt(mm) - 1]} ${a}</option>`;
+      }).join('');
+    selectMes.addEventListener('change', () => calcularCapacitadores(selectMes.value));
+    selectMes.dataset.inicializado = 'true';
+  }
+
+  const filtroMes = selectMes ? selectMes.value : 'all';
+  calcularCapacitadores(filtroMes);
+}
+
+function calcularCapacitadores(filtroMes) {
   const hoy = new Date();
   const hoyStr = hoy.toISOString().split('T')[0];
-  const hace3mDate = new Date(hoy);
-  hace3mDate.setMonth(hace3mDate.getMonth() - 3);
-  const hace3mStr = hace3mDate.toISOString().split('T')[0];
+
+  let fechaIniFiltro = '2026-01-01';
+  let fechaFinFiltro = hoyStr;
+
+  if (filtroMes && filtroMes !== 'all') {
+    const [a, m] = filtroMes.split('-').map(Number);
+    fechaIniFiltro = `${a}-${String(m).padStart(2, '0')}-01`;
+    const ultDia = new Date(a, m, 0).getDate();
+    fechaFinFiltro = `${a}-${String(m).padStart(2, '0')}-${String(ultDia).padStart(2, '0')}`;
+  }
 
   const supsPorCentro = { CC2: [], JV: [] };
   supConfigData.forEach(s => {
@@ -5979,15 +6017,14 @@ function renderCapacitadores() {
   });
 
   const datosPorCap = capacitadoresData.map(cap => {
-    const fechaIni = cap.fecha_inicio;
-    const fechaFin = cap.fecha_fin || hoyStr;
+    const fechaIni = cap.fecha_inicio > fechaIniFiltro ? cap.fecha_inicio : fechaIniFiltro;
+    const fechaFin = cap.fecha_fin && cap.fecha_fin < fechaFinFiltro ? cap.fecha_fin : fechaFinFiltro;
     const sups = supsPorCentro[cap.centro] || [];
 
     const agentesFormados = plantillaData.filter(p => {
       if (!p.fecha_ingreso) return false;
       if (p.fecha_ingreso < fechaIni) return false;
       if (p.fecha_ingreso > fechaFin) return false;
-      if (p.fecha_ingreso < hace3mStr) return false;
       if (!sups.includes(p.supervisor)) return false;
       return true;
     });
@@ -5995,7 +6032,7 @@ function renderCapacitadores() {
     const total = agentesFormados.length;
     if (total === 0) {
       return {
-        cap, total: 0, sobrevivientes: 0, pctSup: 0,
+        cap, total: 0, sobrevivientes: 0, evaluablesSup: 0, pctSup: 0,
         bajas: 0, primMesProm: 0, diasPrimera: null,
         agentes: []
       };
@@ -6250,7 +6287,8 @@ function renderCapTabla(filtro) {
 
 function renderSanityCheck() {
   if (!window.__avanceData) return;
-  const { mes, anio, iniMesStr, fechaCorteStr, diasTranscurridos, diasHabilesTotales } = window.__avanceData;
+  const { mes, anio, iniMesStr, fechaCorteStr, diasTranscurridos } = window.__avanceData;
+  const diasHabilesTotales = window.__avanceData.estadoTotal ? window.__avanceData.estadoTotal.diasHabilesTotales : 22;
 
   const hoy = new Date();
   const hoyStr = hoy.toISOString().split('T')[0];
