@@ -6025,7 +6025,7 @@ function calcularCapacitadores(filtroMes) {
       if (sups.includes(p.supervisor)) return cap.centro;
       const txt = String(p.centro || '').toUpperCase();
       if (txt.includes('C CENTER 2') || txt.includes('CCENTER 2')) return 'CC2';
-      if (txt.includes('JUAREZ 701') || txt.includes('JUAREZ701')) return 'JV';
+      if (txt.includes('JUAREZ 701') || txt.includes('JUAREZ701') || txt.includes('CCENTER JV') || txt.includes('C CENTER JV')) return 'JV';
       return null;
     }
 
