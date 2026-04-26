@@ -1191,7 +1191,6 @@ async function procesarPlant() {
       const supervisor = resolverRecursivo(r['Jefe Directo'], new Set());
       if (!supervisor) {
         sinSup.push({ nombre: r['Nombre'], jefe: r['Jefe Directo'], estatus: r['Estatus'] });
-        continue;
       }
 
       const fechaIng = r['Fecha Ingreso'];
@@ -1215,7 +1214,7 @@ async function procesarPlant() {
       agentes.push({
         nombre: r['Nombre'],
         jefe_directo: r['Jefe Directo'] || null,
-        supervisor,
+        supervisor: supervisor || null,
         fecha_ingreso: fechaIngStr,
         fecha_baja: fechaBajaStr,
         estatus: r['Estatus'],
