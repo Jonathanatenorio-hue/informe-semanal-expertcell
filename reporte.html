@@ -3473,14 +3473,6 @@ function actualizarVista() {
   const prom = buckets.length > 0 ? (totalCount / buckets.length) : 0;
   const promValor = buckets.length > 0 ? (metrica === 'arpu' ? totalValor : totalCount / buckets.length) : 0;
 
-  console.log('=== DEBUG VT ===');
-  console.log('vista:', vista, 'filtroExtra:', vtState.filtroExtra, 'metrica:', metrica);
-  console.log('filtroRegistros.length:', filtroRegistros.length);
-  console.log('totalCount:', totalCount);
-  console.log('buckets.length:', buckets.length);
-  console.log('prom:', prom, 'promValor:', promValor);
-  console.log('thresholdMin:', thresholdMin, 'thresholdIdeal:', thresholdIdeal);
-
   let diasHabilesBase = buckets.length;
   let promPorDiaHabil = prom;
   let targetDiario = null;
@@ -3844,7 +3836,27 @@ function actualizarVista() {
     });
   }
 
-  const promData = buckets.map(() => Number(promValor.toFixed(1)));
+  let promCalculadoDesdeBuckets = 0;
+  if (buckets.length > 0) {
+    let sumaTotal = 0;
+    if (metrica === 'arpu') {
+      let sumaPrecios = 0, countPrecios = 0;
+      buckets.forEach(b => {
+        Object.keys(agrupacionPrecios[b] || {}).forEach(cat => {
+          sumaPrecios += agrupacionPrecios[b][cat].sum;
+          countPrecios += agrupacionPrecios[b][cat].count;
+        });
+      });
+      promCalculadoDesdeBuckets = countPrecios > 0 ? sumaPrecios / countPrecios : 0;
+    } else {
+      buckets.forEach(b => {
+        Object.values(agrupacion[b] || {}).forEach(v => sumaTotal += v);
+      });
+      promCalculadoDesdeBuckets = sumaTotal / buckets.length;
+    }
+  }
+
+  const promData = buckets.map(() => Number(promCalculadoDesdeBuckets.toFixed(1)));
   const ocultarPromReal = (vista === 'centro' || vista === 'supervisor') && vtState.filtroExtra;
 
   if (!ocultarPromReal) {
@@ -3862,7 +3874,7 @@ function actualizarVista() {
   } else {
     datasets.push({
       type: 'line',
-      label: `Promedio ${vtState.filtroExtra} (${promValor.toFixed(0)})`,
+      label: `Promedio ${vtState.filtroExtra} (${promCalculadoDesdeBuckets.toFixed(0)})`,
       data: promData,
       borderColor: '#FF7200',
       backgroundColor: 'transparent',
