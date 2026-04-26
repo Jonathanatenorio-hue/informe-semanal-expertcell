@@ -1358,16 +1358,25 @@ async function cargarPlantASupabase() {
     logPlant(`Plantilla cargada: ${insertados} agentes`, 'ok');
 
     if (sinAsignacion.length > 0) {
-      logPlant(`Creando asignaciones iniciales para ${sinAsignacion.length} agentes nuevos...`, 'info');
-      const nuevasAsig = sinAsignacion.map(a => ({
-        ejecutivo: a.nombre,
-        supervisor: a.supervisor,
-        fecha_inicio: a.fecha_ingreso || hoy,
-        fecha_fin: null
-      }));
-      const { error: e3 } = await db.from('asignaciones_supervisor').insert(nuevasAsig);
-      if (e3) throw e3;
-      logPlant(`${sinAsignacion.length} asignaciones iniciales creadas`, 'ok');
+      const conSup = sinAsignacion.filter(a => a.supervisor);
+      const sinSup = sinAsignacion.filter(a => !a.supervisor);
+
+      if (conSup.length > 0) {
+        logPlant(`Creando asignaciones iniciales para ${conSup.length} agentes nuevos...`, 'info');
+        const nuevasAsig = conSup.map(a => ({
+          ejecutivo: a.nombre,
+          supervisor: a.supervisor,
+          fecha_inicio: a.fecha_ingreso || hoy,
+          fecha_fin: null
+        }));
+        const { error: e3 } = await db.from('asignaciones_supervisor').insert(nuevasAsig);
+        if (e3) throw e3;
+        logPlant(`${conSup.length} asignaciones iniciales creadas`, 'ok');
+      }
+
+      if (sinSup.length > 0) {
+        logPlant(`${sinSup.length} agentes nuevos sin supervisor formal (ENCUBADORA): se cargaron a plantilla pero sin asignación. Se les asignará supervisor cuando se muevan al equipo formal.`, 'warn');
+      }
     }
 
     if (supervisorCambiado.length > 0) {
