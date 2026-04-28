@@ -1835,19 +1835,30 @@ function agregarPorFechaDeActividad(inicioStr, finStr) {
   });
   let totProg = 0, totAct = 0, totCanc = 0, totPend = 0;
 
+  function aplica(r) {
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
+    if (!r.supervisor && r.centro) {
+      if (coordinadorFiltro === 'todos') return true;
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      if (coord && coord.centro === r.centro) return true;
+    }
+    return false;
+  }
+
   ventasData.forEach(r => {
-    if (!porSup[r.supervisor]) return;
+    if (!aplica(r)) return;
+    const tieneSup = r.supervisor && porSup[r.supervisor];
 
     if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
-      porSup[r.supervisor].prog++;
+      if (tieneSup) porSup[r.supervisor].prog++;
       totProg++;
     }
     if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
-      porSup[r.supervisor].act++;
+      if (tieneSup) porSup[r.supervisor].act++;
       totAct++;
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
-      porSup[r.supervisor].canc++;
+      if (tieneSup) porSup[r.supervisor].canc++;
       totCanc++;
     }
   });
@@ -1867,15 +1878,26 @@ function agregarPorBloqueBO(inicioStr, finStr) {
   });
   let totProg = 0, totAct = 0, totCanc = 0, totPend = 0;
 
-  ventasData.forEach(r => {
-    if (!porSup[r.supervisor]) return;
-    if (r.fecha_bo < inicioStr || r.fecha_bo > finStr) return;
+  function aplica(r) {
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
+    if (!r.supervisor && r.centro) {
+      if (coordinadorFiltro === 'todos') return true;
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      if (coord && coord.centro === r.centro) return true;
+    }
+    return false;
+  }
 
-    porSup[r.supervisor].prog++;
+  ventasData.forEach(r => {
+    if (!aplica(r)) return;
+    if (r.fecha_bo < inicioStr || r.fecha_bo > finStr) return;
+    const tieneSup = r.supervisor && porSup[r.supervisor];
+
+    if (tieneSup) porSup[r.supervisor].prog++;
     totProg++;
-    if (r.estatus === 'activada') { porSup[r.supervisor].act++; totAct++; }
-    else if (r.estatus === 'cancelada') { porSup[r.supervisor].canc++; totCanc++; }
-    else { porSup[r.supervisor].pend++; totPend++; }
+    if (r.estatus === 'activada') { if (tieneSup) porSup[r.supervisor].act++; totAct++; }
+    else if (r.estatus === 'cancelada') { if (tieneSup) porSup[r.supervisor].canc++; totCanc++; }
+    else { if (tieneSup) porSup[r.supervisor].pend++; totPend++; }
   });
 
   return { porSup, totales: { prog: totProg, act: totAct, canc: totCanc, pend: totPend } };
