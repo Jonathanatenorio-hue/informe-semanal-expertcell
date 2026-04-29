@@ -1968,8 +1968,19 @@ function renderReporte(wActual, wCurrent) {
   const iniAntStr = rangoAnterior.inicio.toISOString().split('T')[0];
   const finAntStr = rangoAnterior.fin.toISOString().split('T')[0];
 
+  const hoyStrCmp = new Date().toISOString().split('T')[0];
+
+  let diasHabActual = 0, diasHabAnterior = 0;
+  calendarioData.forEach(d => {
+    const factor = parseFloat(d.factor_dia) || 0;
+    if (d.fecha >= iniActStr && d.fecha <= finActStr && d.fecha <= hoyStrCmp) diasHabActual += factor;
+    if (d.fecha >= iniAntStr && d.fecha <= finAntStr) diasHabAnterior += factor;
+  });
+
   const actual = agregarPorFechaDeActividad(iniActStr, finActStr);
   const anterior = agregarPorFechaDeActividad(iniAntStr, finAntStr);
+  actual.diasHab = diasHabActual;
+  anterior.diasHab = diasHabAnterior;
 
   renderHeaderTags(actual, anterior, wActual, wCurrent);
   renderAvanceMensual(wActual);
@@ -1998,13 +2009,35 @@ function renderHeaderTags(actual, anterior, wActual, wCurrent) {
   const container = document.getElementById('header-tags');
   const warnContainer = document.getElementById('warning-container');
 
-  const dProg = actual.totales.prog - anterior.totales.prog;
-  const dAct = actual.totales.act - anterior.totales.act;
-  const pctAct = anterior.totales.act > 0 ? ((dAct / anterior.totales.act) * 100).toFixed(1) : '—';
+  const diasAct = actual.diasHab || 0;
+  const diasAnt = anterior.diasHab || 0;
+
+  const ritmoActAct = diasAct > 0 ? actual.totales.act / diasAct : 0;
+  const ritmoAntAct = diasAnt > 0 ? anterior.totales.act / diasAnt : 0;
+  const ritmoActProg = diasAct > 0 ? actual.totales.prog / diasAct : 0;
+  const ritmoAntProg = diasAnt > 0 ? anterior.totales.prog / diasAnt : 0;
+
+  const dRitmoAct = ritmoActAct - ritmoAntAct;
+  const dRitmoProg = ritmoActProg - ritmoAntProg;
+  const pctRitmoAct = ritmoAntAct > 0 ? ((dRitmoAct / ritmoAntAct) * 100).toFixed(1) : '—';
+
+  const diasIguales = Math.abs(diasAct - diasAnt) < 0.1;
+  const labelComp = diasIguales
+    ? `${actual.totales.act} ${dRitmoAct >= 0 ? '↑' : '↓'} ${pctRitmoAct}%`
+    : `${actual.totales.act} (${ritmoActAct.toFixed(1)}/día hábil) ${dRitmoAct >= 0 ? '↑' : '↓'} ${pctRitmoAct}%`;
+
+  const labelProg = diasIguales
+    ? `${actual.totales.prog} ${dRitmoProg >= 0 ? '↑' : '↓'}`
+    : `${actual.totales.prog} (${ritmoActProg.toFixed(1)}/día) ${dRitmoProg >= 0 ? '↑' : '↓'}`;
+
+  const tooltipProporcional = !diasIguales
+    ? `title="Comparación ajustada: ${diasAct.toFixed(1)} vs ${diasAnt.toFixed(1)} días hábiles. El % refleja el cambio en ritmo por día hábil, no en total bruto."`
+    : '';
 
   container.innerHTML = `
-    <span class="date-tag tag-green">Activadas: ${actual.totales.act} ${dAct >= 0 ? '↑' : '↓'} ${pctAct}%</span>
-    <span class="date-tag tag-blue">Programadas: ${actual.totales.prog} ${dProg >= 0 ? '↑' : '↓'}</span>
+    <span class="date-tag tag-green" ${tooltipProporcional}>Activadas: ${labelComp}</span>
+    <span class="date-tag tag-blue" ${tooltipProporcional}>Programadas: ${labelProg}</span>
+    ${!diasIguales ? `<span class="date-tag" style="background:#FEF3C7;color:#92400E;border-color:#F59E0B;" title="Las semanas tienen distinto número de días hábiles. La comparación está ajustada por día.">📅 Comparación proporcional</span>` : ''}
   `;
 
   if (wActual === wCurrent) {
@@ -2106,6 +2139,40 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
   }).join('');
 
   const t_a = actual.totales, t_p = anterior.totales;
+  const diasA = actual.diasHab || 0;
+  const diasP = anterior.diasHab || 0;
+  const diasIguales = Math.abs(diasA - diasP) < 0.1;
+
+  let filaProporcional = '';
+  if (!diasIguales && diasA > 0 && diasP > 0) {
+    const ritmoActProg = (t_a.prog / diasA).toFixed(1);
+    const ritmoAntProg = (t_p.prog / diasP).toFixed(1);
+    const ritmoActAct = (t_a.act / diasA).toFixed(1);
+    const ritmoAntAct = (t_p.act / diasP).toFixed(1);
+    const ritmoActCanc = (t_a.canc / diasA).toFixed(1);
+    const ritmoAntCanc = (t_p.canc / diasP).toFixed(1);
+    const dRitmoProg = (parseFloat(ritmoActProg) - parseFloat(ritmoAntProg)).toFixed(1);
+    const dRitmoAct = (parseFloat(ritmoActAct) - parseFloat(ritmoAntAct)).toFixed(1);
+    const dRitmoCanc = (parseFloat(ritmoActCanc) - parseFloat(ritmoAntCanc)).toFixed(1);
+
+    const fmtDeltaRitmo = (d, invert = false) => {
+      const num = parseFloat(d);
+      if (num === 0) return `<td class="num" style="font-style:italic;">0</td>`;
+      const cls = invert ? (num <= 0 ? 'delta-pos' : 'delta-neg') : (num >= 0 ? 'delta-pos' : 'delta-neg');
+      const sign = num >= 0 ? '+' : '';
+      return `<td class="num ${cls}" style="font-style:italic;">${sign}${d}</td>`;
+    };
+
+    filaProporcional = `
+      <tr style="background:#FEF3C7; font-style:italic;">
+        <td><strong>Por día hábil</strong> <span style="font-size:10px; color:var(--text-soft);">(${diasA.toFixed(1)}d vs ${diasP.toFixed(1)}d)</span></td>
+        <td class="num" style="font-style:italic;">${ritmoAntProg}</td><td class="num" style="font-style:italic;"><strong>${ritmoActProg}</strong></td>${fmtDeltaRitmo(dRitmoProg)}
+        <td class="num col-divider" style="font-style:italic;">${ritmoAntAct}</td><td class="num" style="font-style:italic;"><strong>${ritmoActAct}</strong></td>${fmtDeltaRitmo(dRitmoAct)}
+        <td class="num col-divider" style="font-style:italic;">${ritmoAntCanc}</td><td class="num" style="font-style:italic;"><strong>${ritmoActCanc}</strong></td>${fmtDeltaRitmo(dRitmoCanc, true)}
+      </tr>
+    `;
+  }
+
   document.getElementById('tabla-sup-foot').innerHTML = `
     <tr style="background:var(--bg);font-weight:700;">
       <td>TOTAL</td>
@@ -2113,6 +2180,7 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
       <td class="num col-divider">${t_p.act}</td><td class="num">${t_a.act}</td>${fmtDelta(t_a.act - t_p.act)}
       <td class="num col-divider">${t_p.canc}</td><td class="num">${t_a.canc}</td>${fmtDelta(t_a.canc - t_p.canc, true)}
     </tr>
+    ${filaProporcional}
   `;
 }
 
