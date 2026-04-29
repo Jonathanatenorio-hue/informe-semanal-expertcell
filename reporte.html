@@ -813,10 +813,16 @@
       <div class="section-title">Avance mensual vs metas</div>
       <div class="section-subtitle" id="avance-subtitle"></div>
 
-      <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
-        <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Proyección basada en:</span>
-        <button class="proy-btn active" data-proy="mes">Ritmo del mes</button>
-        <button class="proy-btn" data-proy="semana">Ritmo última semana</button>
+      <div style="display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; align-items: center;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Mes:</span>
+          <select id="avance-mes-select" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 160px;"></select>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Proyección basada en:</span>
+          <button class="proy-btn active" data-proy="mes">Ritmo del mes</button>
+          <button class="proy-btn" data-proy="semana">Ritmo última semana</button>
+        </div>
       </div>
 
       <div id="avance-tarjeta-principal"></div>
@@ -2093,9 +2099,44 @@ function renderAvanceMensual(wActual) {
   });
   if (!ultimoDiaConDatosStr) ultimoDiaConDatosStr = hoyStr;
 
-  const fechaRef = new Date(ultimoDiaConDatosStr + 'T12:00:00');
-  const anio = fechaRef.getFullYear();
-  const mes = fechaRef.getMonth() + 1;
+  const selMes = document.getElementById('avance-mes-select');
+  if (selMes && !selMes.dataset.inicializado) {
+    const mesesDisp = new Set();
+    ventasData.forEach(r => {
+      if (r.fecha_bo) mesesDisp.add(r.fecha_bo.substring(0, 7));
+      if (r.fecha_activacion) mesesDisp.add(r.fecha_activacion.substring(0, 7));
+    });
+    metasSupData.forEach(m => {
+      mesesDisp.add(`${m.anio}-${String(m.mes).padStart(2, '0')}`);
+    });
+    const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const mesesOrdenados = [...mesesDisp].sort().reverse();
+    selMes.innerHTML = mesesOrdenados.map(m => {
+      const [a, mm] = m.split('-');
+      return `<option value="${m}">${noms[parseInt(mm) - 1]} ${a}</option>`;
+    }).join('');
+
+    const mesActualKey = ultimoDiaConDatosStr.substring(0, 7);
+    selMes.value = mesActualKey;
+    selMes.addEventListener('change', () => {
+      window.__avanceMesOverride = selMes.value;
+      renderAvanceMensual(wActual);
+      if (typeof renderDetalleAgentes === 'function') renderDetalleAgentes();
+    });
+    selMes.dataset.inicializado = 'true';
+  }
+
+  let anio, mes;
+  const mesOverride = window.__avanceMesOverride || (selMes ? selMes.value : null);
+  if (mesOverride) {
+    const partes = mesOverride.split('-');
+    anio = parseInt(partes[0]);
+    mes = parseInt(partes[1]);
+  } else {
+    const fechaRef = new Date(ultimoDiaConDatosStr + 'T12:00:00');
+    anio = fechaRef.getFullYear();
+    mes = fechaRef.getMonth() + 1;
+  }
 
   const diasDelMes = calendarioData.filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`));
   if (diasDelMes.length === 0) {
@@ -2105,7 +2146,25 @@ function renderAvanceMensual(wActual) {
   document.getElementById('avance-mensual-section').style.display = 'block';
 
   const diasHabilesTotales = diasDelMes.reduce((a, d) => a + parseFloat(d.factor_dia), 0);
-  const fechaCorte = fechaRef;
+
+  const ultDiaMes = new Date(anio, mes, 0).getDate();
+  const finMesStr = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMes).padStart(2,'0')}`;
+  const iniMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-01`;
+
+  const esMesActual = (anio === new Date(ultimoDiaConDatosStr + 'T12:00:00').getFullYear() &&
+                       mes === new Date(ultimoDiaConDatosStr + 'T12:00:00').getMonth() + 1);
+
+  let ultimoDiaConDatosMesSel = null;
+  ventasData.forEach(r => {
+    [r.fecha_bo, r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
+      if (f && f >= iniMesStrEval && f <= finMesStr && f <= hoyStr) {
+        if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
+      }
+    });
+  });
+
+  const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStr;
+  const fechaCorte = new Date(corteRefStr + 'T12:00:00');
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
   const finMesStr = diasDelMes[diasDelMes.length-1].fecha;
@@ -2313,7 +2372,7 @@ function renderAvanceMensual(wActual) {
   document.getElementById('avance-subtitle').textContent =
     `${mesNombre} ${anio} · ${diasTranscurridos.toFixed(1)} de ${diasHabilesTotales.toFixed(1)} días hábiles transcurridos · Corte al ${fechaCorteStr}`;
 
-  window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasHabilesTotales, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr };
+  window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasHabilesTotales, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr, wActual };
 
   document.querySelectorAll('.proy-btn').forEach(btn => {
     btn.onclick = () => {
@@ -2603,6 +2662,8 @@ function renderDetalleAgentes() {
   if (!window.__avanceData) return;
 
   const selectMes = document.getElementById('detalle-mes-select');
+  const selectAvance = document.getElementById('avance-mes-select');
+
   if (selectMes && !selectMes.dataset.inicializado) {
     const mesesDisp = new Set();
     ventasData.forEach(r => {
@@ -2619,11 +2680,22 @@ function renderDetalleAgentes() {
       return `<option value="${m}">${noms[parseInt(mm) - 1]} ${a}</option>`;
     }).join('');
 
+    selectMes.addEventListener('change', () => {
+      if (selectAvance && selectAvance.value !== selectMes.value) {
+        selectAvance.value = selectMes.value;
+        window.__avanceMesOverride = selectMes.value;
+        renderAvanceMensual(window.__avanceData.wActual || 1);
+      }
+      renderDetalleAgentesConMes(selectMes.value);
+    });
+    selectMes.dataset.inicializado = 'true';
+  }
+
+  if (selectMes && selectAvance) {
+    selectMes.value = selectAvance.value;
+  } else if (selectMes) {
     const mesActualKey = `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`;
     selectMes.value = mesActualKey;
-
-    selectMes.addEventListener('change', () => renderDetalleAgentesConMes(selectMes.value));
-    selectMes.dataset.inicializado = 'true';
   }
 
   const mesSelKey = selectMes ? selectMes.value : `${window.__avanceData.anio}-${String(window.__avanceData.mes).padStart(2, '0')}`;
