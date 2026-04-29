@@ -465,8 +465,28 @@ async function procesar() {
         if (fechaStr && (!fechaMinActivadas || fechaStr < fechaMinActivadas)) {
           fechaMinActivadas = fechaStr;
         }
+
+        let horaStr = null;
+        if (r.Hora) {
+          if (r.Hora instanceof Date) {
+            const hh = String(r.Hora.getHours()).padStart(2, '0');
+            const mm = String(r.Hora.getMinutes()).padStart(2, '0');
+            const ss = String(r.Hora.getSeconds()).padStart(2, '0');
+            horaStr = `${hh}:${mm}:${ss}`;
+          } else if (typeof r.Hora === 'number') {
+            const totalSec = Math.round(r.Hora * 86400);
+            const hh = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+            const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+            const ss = String(totalSec % 60).padStart(2, '0');
+            horaStr = `${hh}:${mm}:${ss}`;
+          } else {
+            horaStr = String(r.Hora).trim();
+          }
+        }
+
         actPorFolio[folio] = {
           fecha: fechaStr,
+          hora: horaStr,
           plan: r.PLAN || null,
           precio: r.PRECIO || null,
           renta: r['RENTA SIN IMPUESTOS'] || null,
@@ -578,6 +598,7 @@ async function procesar() {
         supervisor: supervisor || null,
         fecha_bo: fechaBO,
         fecha_activacion: actInfo ? actInfo.fecha : null,
+        hora_activacion: actInfo ? actInfo.hora : null,
         fecha_cancelacion: fechaCan || null,
         estatus,
         centro: centroDetectado,
