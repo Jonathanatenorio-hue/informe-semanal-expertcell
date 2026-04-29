@@ -2163,7 +2163,7 @@ function _renderAvanceMensualImpl(wActual) {
   const diasHabilesTotales = diasDelMes.reduce((a, d) => a + parseFloat(d.factor_dia), 0);
 
   const ultDiaMes = new Date(anio, mes, 0).getDate();
-  const finMesStr = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMes).padStart(2,'0')}`;
+  const finMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMes).padStart(2,'0')}`;
   const iniMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-01`;
 
   const esMesActual = (anio === new Date(ultimoDiaConDatosStr + 'T12:00:00').getFullYear() &&
@@ -2172,18 +2172,18 @@ function _renderAvanceMensualImpl(wActual) {
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
     [r.fecha_bo, r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
-      if (f && f >= iniMesStrEval && f <= finMesStr && f <= hoyStr) {
+      if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr) {
         if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
       }
     });
   });
 
-  const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStr;
+  const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStrEval;
   const fechaCorte = new Date(corteRefStr + 'T12:00:00');
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
   const finMesStr = diasDelMes[diasDelMes.length-1].fecha;
-  const fechaCorteStr = ultimoDiaConDatosStr;
+  const fechaCorteStr = corteRefStr;
 
   const diasTranscurridos = diasDelMes
     .filter(d => d.fecha >= iniMesStr && d.fecha <= fechaCorteStr)
