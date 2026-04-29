@@ -2081,6 +2081,21 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
 }
 
 function renderAvanceMensual(wActual) {
+  if (window.__renderAvanceEnCurso) {
+    console.warn('renderAvanceMensual ya en curso, abortando para evitar loop');
+    return;
+  }
+  window.__renderAvanceEnCurso = true;
+  try {
+    _renderAvanceMensualImpl(wActual);
+  } catch (e) {
+    console.error('Error en renderAvanceMensual:', e);
+  } finally {
+    window.__renderAvanceEnCurso = false;
+  }
+}
+
+function _renderAvanceMensualImpl(wActual) {
   const rangoSem = fechasDeSemana(wActual);
   const ahora = new Date();
   const hoyStr = ahora.toISOString().split('T')[0];
@@ -2127,8 +2142,8 @@ function renderAvanceMensual(wActual) {
   }
 
   let anio, mes;
-  const mesOverride = window.__avanceMesOverride || (selMes ? selMes.value : null);
-  if (mesOverride) {
+  const mesOverride = window.__avanceMesOverride || (selMes && selMes.value ? selMes.value : null);
+  if (mesOverride && /^\d{4}-\d{2}$/.test(mesOverride)) {
     const partes = mesOverride.split('-');
     anio = parseInt(partes[0]);
     mes = parseInt(partes[1]);
