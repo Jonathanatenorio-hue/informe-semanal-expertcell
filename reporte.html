@@ -7354,6 +7354,18 @@ function aaLTV(cont) {
     ejecutivosMap[r.ejecutivo].montoSinImp += parseFloat(r.renta_sin_impuestos) || 0;
   });
 
+  console.log('=== DEBUG LTV ===');
+  console.log('Total ventasData:', ventasData.length);
+  console.log('Total activadas:', ventasData.filter(r => r.estatus === 'activada').length);
+  console.log('Activadas con renta_sin_impuestos:', ventasData.filter(r => r.estatus === 'activada' && r.renta_sin_impuestos).length);
+  console.log('Activadas con precio:', ventasData.filter(r => r.estatus === 'activada' && r.precio).length);
+  console.log('Activadas con plan:', ventasData.filter(r => r.estatus === 'activada' && r.plan).length);
+  console.log('Total ejecutivos:', Object.keys(ejecutivosMap).length);
+  const muestra = Object.values(ejecutivosMap).slice(0, 3);
+  console.log('Muestra primeros 3 ejecutivos:', muestra);
+  const ventaMuestra = ventasData.filter(r => r.estatus === 'activada')[0];
+  console.log('Muestra primera venta activada:', ventaMuestra);
+
   Object.values(ejecutivosMap).forEach(e => {
     const plant = plantillaData.find(p => p.nombre === e.nombre);
     if (plant && plant.fecha_ingreso) {
