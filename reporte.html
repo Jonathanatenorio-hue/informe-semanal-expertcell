@@ -6895,9 +6895,9 @@ function renderTopTabla(criterio) {
   document.getElementById('top-tabla').innerHTML = html;
 }
 
-const AA_STATE = { tab: 'hora', mes: 'all' };
+const AA_STATE = { tab: 'hora', mes: 'all', sup: 'all' };
 
-function aaSelectorMes(idSelect) {
+function aaFiltrosHTML(idMes, idSup) {
   const meses = new Set();
   ventasData.forEach(r => {
     if (r.fecha_activacion) meses.add(r.fecha_activacion.substring(0, 7));
@@ -6905,25 +6905,82 @@ function aaSelectorMes(idSelect) {
   const mesesOrd = [...meses].sort().reverse();
   const noms = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  const opciones = '<option value="all">Todo el histórico</option>' +
+  const opcMes = '<option value="all">Todo el histórico</option>' +
     mesesOrd.map(m => {
       const [a, mm] = m.split('-');
       return `<option value="${m}">${noms[parseInt(mm)-1]} ${a}</option>`;
     }).join('');
 
+  const opcSup = '<option value="all">Todos los supervisores</option>' +
+    SUPERVISORES.map(s => `<option value="${s}">${s}</option>`).join('');
+
   return `
-    <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
-      <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
-      <select id="${idSelect}" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
-        ${opciones}
-      </select>
+    <div style="display: flex; gap: 14px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
+      ${idMes ? `
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+          <select id="${idMes}" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;">
+            ${opcMes}
+          </select>
+        </div>
+      ` : ''}
+      ${idSup ? `
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Supervisor:</span>
+          <select id="${idSup}" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;">
+            ${opcSup}
+          </select>
+        </div>
+      ` : ''}
     </div>
   `;
+}
+
+function aaInstalarFiltros(idMes, idSup, callback) {
+  setTimeout(() => {
+    if (idMes) {
+      const sel = document.getElementById(idMes);
+      if (sel && !sel.dataset.inicializado) {
+        sel.value = AA_STATE.mes || 'all';
+        sel.addEventListener('change', () => {
+          AA_STATE.mes = sel.value;
+          callback();
+        });
+        sel.dataset.inicializado = 'true';
+      }
+    }
+    if (idSup) {
+      const sel = document.getElementById(idSup);
+      if (sel && !sel.dataset.inicializado) {
+        sel.value = AA_STATE.sup || 'all';
+        sel.addEventListener('change', () => {
+          AA_STATE.sup = sel.value;
+          callback();
+        });
+        sel.dataset.inicializado = 'true';
+      }
+    }
+  }, 50);
+}
+
+function aaSelectorMes(idSelect) {
+  return aaFiltrosHTML(idSelect, null);
 }
 
 function aaFiltrarVentasPorMes(ventas, filtroMes) {
   if (!filtroMes || filtroMes === 'all') return ventas;
   return ventas.filter(r => r.fecha_activacion && r.fecha_activacion.startsWith(filtroMes));
+}
+
+function aaFiltrarVentas(ventas, filtroMes, filtroSup) {
+  let res = ventas;
+  if (filtroMes && filtroMes !== 'all') {
+    res = res.filter(r => r.fecha_activacion && r.fecha_activacion.startsWith(filtroMes));
+  }
+  if (filtroSup && filtroSup !== 'all') {
+    res = res.filter(r => r.supervisor === filtroSup);
+  }
+  return res;
 }
 
 function aaInstalarSelectorListener(idSelect, callback) {
@@ -6938,6 +6995,18 @@ function aaInstalarSelectorListener(idSelect, callback) {
       sel.dataset.inicializado = 'true';
     }
   }, 50);
+}
+
+function aaLabelPeriodo() {
+  if (!AA_STATE.mes || AA_STATE.mes === 'all') return 'todo el histórico';
+  const [a, mm] = AA_STATE.mes.split('-');
+  const noms = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  return `${noms[parseInt(mm)-1]} ${a}`;
+}
+
+function aaLabelSupervisor() {
+  if (!AA_STATE.sup || AA_STATE.sup === 'all') return 'todos los equipos';
+  return `equipo de ${AA_STATE.sup}`;
 }
 
 function renderAnalitica() {
@@ -6965,19 +7034,19 @@ function pintarAnalitica() {
 
 function aaHora(cont) {
   const ventasBase = ventasData.filter(r => r.estatus === 'activada' && r.fecha_activacion);
-  const ventas = aaFiltrarVentasPorMes(ventasBase, AA_STATE.mes);
+  const ventas = aaFiltrarVentas(ventasBase, AA_STATE.mes, AA_STATE.sup);
   const ventasConHora = ventas.filter(r => r.hora_activacion);
 
-  const selectorHTML = aaSelectorMes('aa-hora-mes');
+  const filtrosHTML = aaFiltrosHTML('aa-hora-mes', 'aa-hora-sup');
 
   if (ventasConHora.length === 0) {
-    cont.innerHTML = selectorHTML + `
+    cont.innerHTML = filtrosHTML + `
       <div class="alert warn" style="margin-bottom: 16px;">
         <div>⚠️</div>
-        <div><strong>No hay datos de hora en el periodo seleccionado.</strong> Cambia el periodo o recarga las ventas en el cargador.</div>
+        <div><strong>No hay datos de hora con estos filtros.</strong> Cambia el periodo o supervisor.</div>
       </div>
     `;
-    aaInstalarSelectorListener('aa-hora-mes', () => aaHora(cont));
+    aaInstalarFiltros('aa-hora-mes', 'aa-hora-sup', () => aaHora(cont));
     return;
   }
 
@@ -7033,10 +7102,10 @@ function aaHora(cont) {
     return `${noms[parseInt(mm)-1]} ${a}`;
   })();
 
-  cont.innerHTML = selectorHTML + `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>🕐</div>
-      <div><strong>${totalConHora.toLocaleString()} ventas con hora registrada</strong> (periodo: ${labelPeriodo}). Solo se muestran las ${horasActivas.length} horas con actividad.</div>
+      <div><strong>${totalConHora.toLocaleString()} ventas con hora registrada</strong> (periodo: ${labelPeriodo}, ${aaLabelSupervisor()}). Solo se muestran las ${horasActivas.length} horas con actividad.</div>
     </div>
 
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
@@ -7124,7 +7193,7 @@ function aaHora(cont) {
     </table>
   `;
 
-  aaInstalarSelectorListener('aa-hora-mes', () => aaHora(cont));
+  aaInstalarFiltros('aa-hora-mes', 'aa-hora-sup', () => aaHora(cont));
 
   setTimeout(() => {
     const ctx = document.getElementById('aa-hora-chart');
@@ -7166,20 +7235,8 @@ function aaHora(cont) {
 function aaBajas(cont) {
   if (!window.__avanceData) { cont.innerHTML = '<div class="alert info">Datos no disponibles</div>'; return; }
 
-  const supsDisponibles = ['all', ...SUPERVISORES];
-  const filtroSup = AA_STATE.bajaSup || 'all';
-
-  const opcionesSup = '<option value="all">Todos los supervisores</option>' +
-    SUPERVISORES.map(s => `<option value="${s}">${s}</option>`).join('');
-
-  const filtroHTML = `
-    <div style="display: flex; gap: 10px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;">
-      <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Supervisor:</span>
-      <select id="aa-bajas-sup" style="padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 200px;">
-        ${opcionesSup}
-      </select>
-    </div>
-  `;
+  const filtroSup = AA_STATE.sup || 'all';
+  const filtrosHTML = aaFiltrosHTML(null, 'aa-bajas-sup');
 
   const hoy = new Date();
   const hoyStr = hoy.toISOString().split('T')[0];
@@ -7274,7 +7331,7 @@ function aaBajas(cont) {
     else porSupervisor[e.supervisor].bajo++;
   });
 
-  cont.innerHTML = filtroHTML + `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>💡</div>
       <div>
@@ -7367,24 +7424,19 @@ function aaBajas(cont) {
     </div>
   `;
 
-  setTimeout(() => {
-    const sel = document.getElementById('aa-bajas-sup');
-    if (sel && !sel.dataset.inicializado) {
-      sel.value = filtroSup;
-      sel.addEventListener('change', () => {
-        AA_STATE.bajaSup = sel.value;
-        aaBajas(cont);
-      });
-      sel.dataset.inicializado = 'true';
-    }
-  }, 50);
+  aaInstalarFiltros(null, 'aa-bajas-sup', () => aaBajas(cont));
 }
 
 function aaScore(cont) {
+  const filtrosHTML = aaFiltrosHTML(null, 'aa-score-sup');
+  const filtroSup = AA_STATE.sup || 'all';
+
   const hoy = new Date();
   const hoyStr = hoy.toISOString().split('T')[0];
 
-  const sups = SUPERVISORES.map(sup => {
+  const supsAUsar = filtroSup === 'all' ? SUPERVISORES : [filtroSup];
+
+  const sups = supsAUsar.map(sup => {
     const agentesSup = plantillaData.filter(p =>
       p.supervisor === sup && p.fecha_ingreso && p.fecha_ingreso <= hoyStr &&
       (!p.fecha_baja || p.fecha_baja > hoyStr)
@@ -7452,7 +7504,7 @@ function aaScore(cont) {
 
   sups.sort((a, b) => b.score - a.score);
 
-  cont.innerHTML = `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>💡</div>
       <div>Score 0-100 que combina <strong>cumplimiento de meta (30%)</strong>, <strong>supervivencia de equipo (25%)</strong>, <strong>% agentes Healthy (20%)</strong>, <strong>baja % sin venta (15%)</strong> y <strong>baja rotación (10%)</strong>.</div>
@@ -7487,29 +7539,25 @@ function aaScore(cont) {
       </table>
     </div>
   `;
+
+  aaInstalarFiltros(null, 'aa-score-sup', () => aaScore(cont));
 }
 
 function aaLTV(cont) {
+  const filtrosHTML = aaFiltrosHTML('aa-ltv-mes', 'aa-ltv-sup');
+  const filtroMes = AA_STATE.mes || 'all';
+  const filtroSup = AA_STATE.sup || 'all';
+
   const ejecutivosMap = {};
   ventasData.forEach(r => {
     if (r.estatus !== 'activada' || !r.ejecutivo) return;
+    if (filtroMes !== 'all' && (!r.fecha_activacion || !r.fecha_activacion.startsWith(filtroMes))) return;
+    if (filtroSup !== 'all' && r.supervisor !== filtroSup) return;
     if (!ejecutivosMap[r.ejecutivo]) ejecutivosMap[r.ejecutivo] = { nombre: r.ejecutivo, ventas: 0, monto: 0, montoSinImp: 0, supervisor: r.supervisor };
     ejecutivosMap[r.ejecutivo].ventas++;
     ejecutivosMap[r.ejecutivo].monto += parseFloat(r.precio) || 0;
     ejecutivosMap[r.ejecutivo].montoSinImp += parseFloat(r.renta_sin_impuestos) || 0;
   });
-
-  console.log('=== DEBUG LTV ===');
-  console.log('Total ventasData:', ventasData.length);
-  console.log('Total activadas:', ventasData.filter(r => r.estatus === 'activada').length);
-  console.log('Activadas con renta_sin_impuestos:', ventasData.filter(r => r.estatus === 'activada' && r.renta_sin_impuestos).length);
-  console.log('Activadas con precio:', ventasData.filter(r => r.estatus === 'activada' && r.precio).length);
-  console.log('Activadas con plan:', ventasData.filter(r => r.estatus === 'activada' && r.plan).length);
-  console.log('Total ejecutivos:', Object.keys(ejecutivosMap).length);
-  const muestra = Object.values(ejecutivosMap).slice(0, 3);
-  console.log('Muestra primeros 3 ejecutivos:', muestra);
-  const ventaMuestra = ventasData.filter(r => r.estatus === 'activada')[0];
-  console.log('Muestra primera venta activada:', ventaMuestra);
 
   Object.values(ejecutivosMap).forEach(e => {
     const plant = plantillaData.find(p => p.nombre === e.nombre);
@@ -7535,10 +7583,10 @@ function aaLTV(cont) {
   const ventasPromActivo = activos.length > 0 ? activos.reduce((a, b) => a + b.ventas, 0) / activos.length : 0;
   const ventasPromBaja = bajas.length > 0 ? bajas.reduce((a, b) => a + b.ventas, 0) / bajas.length : 0;
 
-  cont.innerHTML = `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>💰</div>
-      <div>Lifetime Value: monto sin impuestos total facturado por cada agente durante su vida laboral. Sirve para entender cuánto vale formar y retener a un agente.</div>
+      <div>Lifetime Value: monto sin impuestos total facturado por cada agente (${aaLabelPeriodo()}, ${aaLabelSupervisor()}). Sirve para entender cuánto vale formar y retener a un agente.</div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
       <div class="stat-card" style="border-left-color: var(--green);">
@@ -7591,11 +7639,13 @@ function aaLTV(cont) {
       </table>
     </div>
   `;
+
+  aaInstalarFiltros('aa-ltv-mes', 'aa-ltv-sup', () => aaLTV(cont));
 }
 
 function aaDiaSemana(cont) {
   const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  const selectorHTML = aaSelectorMes('aa-diasem-mes');
+  const filtrosHTML = aaFiltrosHTML('aa-diasem-mes', 'aa-diasem-sup');
 
   const conteo = [0,0,0,0,0,0,0];
   const monto = [0,0,0,0,0,0,0];
@@ -7603,8 +7653,11 @@ function aaDiaSemana(cont) {
   const programadas = [0,0,0,0,0,0,0];
 
   const filtroEsHistorico = !AA_STATE.mes || AA_STATE.mes === 'all';
+  const filtroSup = AA_STATE.sup || 'all';
 
   ventasData.forEach(r => {
+    if (filtroSup !== 'all' && r.supervisor !== filtroSup) return;
+
     if (r.fecha_activacion && r.estatus === 'activada') {
       if (filtroEsHistorico || r.fecha_activacion.startsWith(AA_STATE.mes)) {
         const d = new Date(r.fecha_activacion + 'T12:00:00');
@@ -7628,8 +7681,8 @@ function aaDiaSemana(cont) {
 
   const totalAct = conteo.reduce((a, b) => a + b, 0);
   if (totalAct === 0) {
-    cont.innerHTML = selectorHTML + `<div class="alert warn"><div>⚠️</div><div>No hay datos de ventas en el periodo seleccionado.</div></div>`;
-    aaInstalarSelectorListener('aa-diasem-mes', () => aaDiaSemana(cont));
+    cont.innerHTML = filtrosHTML + `<div class="alert warn"><div>⚠️</div><div>No hay datos de ventas en el periodo y filtro seleccionado.</div></div>`;
+    aaInstalarFiltros('aa-diasem-mes', 'aa-diasem-sup', () => aaDiaSemana(cont));
     return;
   }
 
@@ -7647,10 +7700,10 @@ function aaDiaSemana(cont) {
     return `${noms[parseInt(mm)-1]} ${a}`;
   })();
 
-  cont.innerHTML = selectorHTML + `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>📆</div>
-      <div>Distribución de ventas por día de la semana en <strong>${labelPeriodo}</strong>. Sirve para identificar tu día más productivo y optimizar campañas y turnos.</div>
+      <div>Distribución de ventas por día de la semana en <strong>${labelPeriodo}</strong> (${aaLabelSupervisor()}). Sirve para identificar tu día más productivo y optimizar campañas y turnos.</div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
       <div class="stat-card" style="border-left-color: var(--green);">
@@ -7694,7 +7747,7 @@ function aaDiaSemana(cont) {
     </table>
   `;
 
-  aaInstalarSelectorListener('aa-diasem-mes', () => aaDiaSemana(cont));
+  aaInstalarFiltros('aa-diasem-mes', 'aa-diasem-sup', () => aaDiaSemana(cont));
 
   setTimeout(() => {
     const ctx = document.getElementById('aa-diasem-chart');
@@ -7720,8 +7773,9 @@ function aaDiaSemana(cont) {
 }
 
 function aaPlanes(cont) {
-  const selectorHTML = aaSelectorMes('aa-planes-mes');
+  const filtrosHTML = aaFiltrosHTML('aa-planes-mes', 'aa-planes-sup');
   const filtroEsHistorico = !AA_STATE.mes || AA_STATE.mes === 'all';
+  const filtroSup = AA_STATE.sup || 'all';
 
   const planesMap = {};
   let totalConPlan = 0, totalSinPlan = 0;
@@ -7731,6 +7785,7 @@ function aaPlanes(cont) {
       const fecha = r.fecha_activacion || r.fecha_bo || r.fecha_cancelacion;
       if (!fecha || !fecha.startsWith(AA_STATE.mes)) return;
     }
+    if (filtroSup !== 'all' && r.supervisor !== filtroSup) return;
 
     if (!r.plan || String(r.plan).trim() === '') {
       totalSinPlan++;
@@ -7750,23 +7805,15 @@ function aaPlanes(cont) {
     }
   });
 
-  console.log('=== DEBUG PLANES ===');
-  console.log('Total ventasData:', ventasData.length);
-  console.log('Filtro:', AA_STATE.mes);
-  console.log('Con plan:', totalConPlan);
-  console.log('Sin plan:', totalSinPlan);
-  console.log('Planes únicos detectados:', Object.keys(planesMap).length);
-
   if (Object.keys(planesMap).length === 0) {
-    cont.innerHTML = selectorHTML + `
+    cont.innerHTML = filtrosHTML + `
       <div class="alert warn">
         <div>⚠️</div>
-        <div><strong>No se encontraron planes en el periodo seleccionado.</strong>
-        <br>Revisé ${ventasData.length} ventas, ${totalConPlan} tenían plan pero ninguna en el periodo "${filtroEsHistorico ? 'histórico' : AA_STATE.mes}".
-        <br>Si en histórico tampoco aparecen, recarga las ventas en el cargador para guardar la columna PLAN.</div>
+        <div><strong>No se encontraron planes con estos filtros.</strong>
+        <br>Cambia el periodo o supervisor.</div>
       </div>
     `;
-    aaInstalarSelectorListener('aa-planes-mes', () => aaPlanes(cont));
+    aaInstalarFiltros('aa-planes-mes', 'aa-planes-sup', () => aaPlanes(cont));
     return;
   }
 
@@ -7788,10 +7835,10 @@ function aaPlanes(cont) {
     return `${noms[parseInt(mm)-1]} ${a}`;
   })();
 
-  cont.innerHTML = selectorHTML + `
+  cont.innerHTML = filtrosHTML + `
     <div class="alert info" style="margin-bottom: 16px;">
       <div>📦</div>
-      <div>Análisis de planes vendidos en <strong>${labelPeriodo}</strong>: cuántos se vendieron, ARPU por plan y % de cancelación.</div>
+      <div>Análisis de planes vendidos en <strong>${labelPeriodo}</strong> (${aaLabelSupervisor()}): cuántos se vendieron, ARPU por plan y % de cancelación.</div>
     </div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
       <div class="stat-card">
@@ -7844,7 +7891,7 @@ function aaPlanes(cont) {
     </div>
   `;
 
-  aaInstalarSelectorListener('aa-planes-mes', () => aaPlanes(cont));
+  aaInstalarFiltros('aa-planes-mes', 'aa-planes-sup', () => aaPlanes(cont));
 }
 
 function renderHistoricoMensual() {
