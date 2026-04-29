@@ -1641,7 +1641,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, fecha_cancelacion, estatus, telefono, precio, centro')
+      .select('folio, ejecutivo, supervisor, fecha_bo, fecha_activacion, hora_activacion, fecha_cancelacion, estatus, telefono, precio, centro, renta_sin_impuestos, plan')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
@@ -6922,44 +6922,192 @@ function pintarAnalitica() {
 
 function aaHora(cont) {
   const ventas = ventasData.filter(r => r.estatus === 'activada' && r.fecha_activacion);
+  const ventasConHora = ventas.filter(r => r.hora_activacion);
+
+  if (ventasConHora.length === 0) {
+    cont.innerHTML = `
+      <div class="alert warn" style="margin-bottom: 16px;">
+        <div>⚠️</div>
+        <div><strong>No hay datos de hora aún.</strong> Para que aparezca este análisis, recarga las ventas en el cargador con la versión nueva (que ya guarda la columna Hora). Mientras, te muestro el análisis por día de la semana.</div>
+      </div>
+    `;
+    const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+    const conteoPorDia = [0,0,0,0,0,0,0];
+    ventas.forEach(r => {
+      const d = new Date(r.fecha_activacion + 'T12:00:00');
+      conteoPorDia[d.getDay()]++;
+    });
+    cont.innerHTML += `<div class="chart-wrap" style="height: 280px;"><canvas id="aa-hora-chart"></canvas></div>`;
+    setTimeout(() => {
+      const ctx = document.getElementById('aa-hora-chart');
+      if (window.__chartAAHora) window.__chartAAHora.destroy();
+      window.__chartAAHora = new Chart(ctx, {
+        type: 'bar',
+        data: { labels: dias, datasets: [{ label: 'Activadas', data: conteoPorDia, backgroundColor: 'rgba(0, 168, 224, 0.7)', borderRadius: 4 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+      });
+    }, 50);
+    return;
+  }
+
+  // Análisis por hora
+  const conteoHora = new Array(24).fill(0);
+  const montoHora = new Array(24).fill(0);
+
+  // Heatmap día x hora (7 días x 24 horas)
+  const heatmap = Array.from({length: 7}, () => new Array(24).fill(0));
+
+  ventasConHora.forEach(r => {
+    const horaParts = r.hora_activacion.split(':');
+    const hora = parseInt(horaParts[0]);
+    if (isNaN(hora) || hora < 0 || hora > 23) return;
+
+    const d = new Date(r.fecha_activacion + 'T12:00:00');
+    const diaSem = d.getDay();
+
+    conteoHora[hora]++;
+    montoHora[hora] += parseFloat(r.renta_sin_impuestos) || 0;
+    heatmap[diaSem][hora]++;
+  });
+
+  let maxHora = 0, maxConteo = 0;
+  conteoHora.forEach((c, i) => { if (c > maxConteo) { maxConteo = c; maxHora = i; } });
+
+  let minHora = 0, minConteo = Infinity;
+  conteoHora.forEach((c, i) => { if (c > 0 && c < minConteo) { minConteo = c; minHora = i; } });
+
+  const totalConHora = ventasConHora.length;
+  const totalSinHora = ventas.length - totalConHora;
+
+  const formatHora = (h) => `${String(h).padStart(2,'0')}:00`;
+
+  // Top 5 horas
+  const topHoras = conteoHora
+    .map((c, i) => ({ hora: i, conteo: c }))
+    .filter(x => x.conteo > 0)
+    .sort((a, b) => b.conteo - a.conteo)
+    .slice(0, 5);
 
   cont.innerHTML = `
     <div class="alert info" style="margin-bottom: 16px;">
-      <div>💡</div>
-      <div>Ventas activadas distribuidas por día de la semana y hora del día. Esta vista usa la fecha de activación, no la hora exacta de venta. <strong>Para datos por hora reales, en una próxima sesión cargamos la columna "Hora" del Excel.</strong></div>
+      <div>🕐</div>
+      <div><strong>${totalConHora.toLocaleString()} ventas con hora registrada</strong> de ${ventas.length.toLocaleString()} totales (${(totalConHora/ventas.length*100).toFixed(1)}%). ${totalSinHora > 0 ? `${totalSinHora} ventas viejas sin hora (de antes del cambio).` : ''}</div>
     </div>
-    <div style="font-weight: 700; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Distribución de ventas por día de semana</div>
-    <div class="chart-wrap" style="height: 280px;"><canvas id="aa-hora-chart"></canvas></div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">🏆 Hora pico</div>
+        <div class="stat-value" style="color: var(--green);">${formatHora(maxHora)}</div>
+        <div class="stat-sub">${maxConteo} ventas</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">📉 Hora más floja</div>
+        <div class="stat-value" style="color: var(--red);">${formatHora(minHora)}</div>
+        <div class="stat-sub">${minConteo} ventas</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Promedio por hora activa</div>
+        <div class="stat-value" style="color: var(--att-blue);">${(totalConHora / conteoHora.filter(c => c > 0).length).toFixed(1)}</div>
+        <div class="stat-sub">solo horas con ventas</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Top 3 horas</div>
+        <div class="stat-value" style="color: var(--att-orange); font-size: 14px;">${topHoras.slice(0,3).map(h => formatHora(h.hora)).join(' · ')}</div>
+        <div class="stat-sub">${topHoras.slice(0,3).reduce((a,b) => a+b.conteo, 0)} ventas suma</div>
+      </div>
+    </div>
+
+    <div style="font-weight: 700; font-size: 14px; margin: 20px 0 8px; color: var(--att-navy);">Distribución horaria de ventas</div>
+    <div class="chart-wrap" style="height: 320px;"><canvas id="aa-hora-chart"></canvas></div>
+
+    <div style="font-weight: 700; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Heatmap día × hora (intensidad de ventas)</div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 11px; min-width: 100%;">
+        <thead>
+          <tr>
+            <th style="background:var(--att-navy);color:white;">Día / Hora</th>
+            ${Array.from({length: 24}, (_, h) => `<th style="background:var(--att-navy);color:white;text-align:center;font-size:10px;">${String(h).padStart(2,'0')}</th>`).join('')}
+            <th style="background:var(--att-navy);color:white;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map((diaSem, idx) => {
+            const totalDia = heatmap[idx].reduce((a, b) => a + b, 0);
+            return `<tr>
+              <td style="font-weight:700;">${diaSem}</td>
+              ${heatmap[idx].map(c => {
+                if (c === 0) return '<td style="text-align:center; color:#D1D5DB;">·</td>';
+                const intensidad = Math.min(1, c / Math.max(...heatmap.flat()));
+                const r2 = Math.round(255 - intensidad * 215);
+                const g2 = Math.round(255 - intensidad * 100);
+                const b2 = Math.round(255 - intensidad * 60);
+                const fontColor = intensidad > 0.5 ? 'white' : 'var(--text)';
+                return `<td style="background:rgb(${r2},${g2},${b2}); color:${fontColor}; text-align:center; font-weight:600;">${c}</td>`;
+              }).join('')}
+              <td style="text-align:center; font-weight:700; background:var(--bg);">${totalDia}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div style="font-size: 11px; color: var(--text-soft); margin-top: 8px;">
+      💡 Verde más oscuro = más ventas en esa hora. Permite identificar las "horas de oro" para programar campañas o ajustar turnos.
+    </div>
+
+    <div style="font-weight: 700; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Top 10 horas más productivas</div>
+    <table style="font-size: 13px;">
+      <thead>
+        <tr>
+          <th>#</th><th>Hora</th><th class="num">Activadas</th><th class="num">% del total</th><th class="num">Monto sin imp.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${conteoHora
+          .map((c, i) => ({ hora: i, conteo: c, monto: montoHora[i] }))
+          .filter(x => x.conteo > 0)
+          .sort((a, b) => b.conteo - a.conteo)
+          .slice(0, 10)
+          .map((h, i) => `
+            <tr>
+              <td class="num" style="text-align:center;">${i+1}</td>
+              <td style="text-align:center;"><strong>${formatHora(h.hora)} - ${formatHora((h.hora + 1) % 24)}</strong></td>
+              <td class="num" style="text-align:center; font-weight:700;">${h.conteo}</td>
+              <td class="num" style="text-align:center;">${(h.conteo / totalConHora * 100).toFixed(1)}%</td>
+              <td class="num" style="text-align:center; color: var(--green);">$${(h.monto / 1000).toFixed(1)}K</td>
+            </tr>
+          `).join('')}
+      </tbody>
+    </table>
   `;
 
-  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  const conteoPorDia = [0,0,0,0,0,0,0];
-  ventas.forEach(r => {
-    const d = new Date(r.fecha_activacion + 'T12:00:00');
-    conteoPorDia[d.getDay()]++;
-  });
-
-  const ctx = document.getElementById('aa-hora-chart');
-  if (window.__chartAAHora) window.__chartAAHora.destroy();
-  window.__chartAAHora = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: dias,
-      datasets: [{
-        label: 'Activadas',
-        data: conteoPorDia,
-        backgroundColor: dias.map((_, i) => i === 0 ? '#E5E7EB' : 'rgba(0, 168, 224, 0.7)'),
-        borderColor: '#00A8E0',
-        borderWidth: 1,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { beginAtZero: true } }
-    }
-  });
+  setTimeout(() => {
+    const ctx = document.getElementById('aa-hora-chart');
+    if (!ctx) return;
+    if (window.__chartAAHora) window.__chartAAHora.destroy();
+    window.__chartAAHora = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: Array.from({length: 24}, (_, h) => formatHora(h)),
+        datasets: [{
+          label: 'Activadas',
+          data: conteoHora,
+          backgroundColor: conteoHora.map((c, i) => i === maxHora ? 'rgba(22, 163, 74, 0.9)' : 'rgba(0, 168, 224, 0.7)'),
+          borderColor: '#00A8E0',
+          borderWidth: 1,
+          borderRadius: 4
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { title: (items) => `Hora ${items[0].label}`, label: (ctx) => `${ctx.parsed.y} ventas` } } },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+          y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.06)' } }
+        }
+      }
+    });
+  }, 50);
 }
 
 function aaBajas(cont) {
