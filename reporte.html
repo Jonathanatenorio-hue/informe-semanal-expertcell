@@ -345,6 +345,20 @@
   .sanity-filter-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
   .sanity-filter-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
 
+  .aa-tab-btn {
+    background: white;
+    color: var(--text);
+    border: 1.5px solid var(--border);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .aa-tab-btn:hover { background: #E8F4FC; border-color: var(--att-blue); }
+  .aa-tab-btn.active { background: var(--att-navy); color: white; border-color: var(--att-navy); }
+
   .vt-tab-btn {
     background: white;
     color: var(--text);
@@ -800,10 +814,12 @@
         <button class="nav-btn" data-target="sec-capacitadores">🎓 Capacitadores</button>
         <button class="nav-btn" data-target="sec-sanity">🩺 Sanity Check</button>
         <button class="nav-btn" data-target="sec-top-agentes">⭐ Top agentes</button>
+        <button class="nav-btn" data-target="sec-analitica">📊 Analítica Avanzada</button>
         <button class="nav-btn" data-target="sec-historico-mensual">📅 Histórico meses</button>
         <button class="nav-btn" data-target="sec-proyeccion-anual">🔮 Proyección anual</button>
         <button class="nav-btn" data-target="sec-atipicos">⚠️ Atípicos</button>
         <button class="nav-btn" data-target="sec-calendario">📅 Calendario</button>
+        <button class="nav-btn" id="btn-toggle-all" style="background: var(--att-blue); color: white; border-color: var(--att-blue);">📂 Expandir todo</button>
         <button class="nav-btn" id="btn-exportar-pdf" style="margin-left: auto; background: var(--att-orange); color: white; border-color: #CC5A00;">📄 Exportar PDF</button>
       </div>
     </div>
@@ -1346,6 +1362,25 @@
       <div style="overflow-x: auto;">
         <table id="top-tabla" style="font-size: 13px;"></table>
       </div>
+      </div>
+    </div>
+
+    <!-- ANALÍTICA AVANZADA -->
+    <div class="section collapsible" id="sec-analitica">
+      <div class="section-title">📊 Analítica Avanzada</div>
+      <div class="section-body">
+      <div class="section-subtitle">6 análisis profundos en un solo lugar: hora pico, predicción de bajas, score de salud por supervisor, lifetime value, mejor día y planes vendidos.</div>
+
+      <div style="display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap;">
+        <button class="aa-tab-btn active" data-aa-tab="hora">🕐 Por hora</button>
+        <button class="aa-tab-btn" data-aa-tab="bajas">⚠️ Riesgo de baja</button>
+        <button class="aa-tab-btn" data-aa-tab="score">🏆 Score Supervisores</button>
+        <button class="aa-tab-btn" data-aa-tab="ltv">💰 Lifetime Value</button>
+        <button class="aa-tab-btn" data-aa-tab="diasem">📆 Mejor día</button>
+        <button class="aa-tab-btn" data-aa-tab="planes">📦 Planes vendidos</button>
+      </div>
+
+      <div id="aa-content"></div>
       </div>
     </div>
 
@@ -1952,6 +1987,7 @@ function renderReporte(wActual, wCurrent) {
   renderCapacitadores();
   renderSanityCheck();
   renderTopAgentes();
+  renderAnalitica();
   renderHistoricoMensual();
   renderProyeccionAnual();
   renderAtipicos();
@@ -6859,6 +6895,586 @@ function renderTopTabla(criterio) {
   document.getElementById('top-tabla').innerHTML = html;
 }
 
+const AA_STATE = { tab: 'hora' };
+
+function renderAnalitica() {
+  document.querySelectorAll('.aa-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.aa-tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      AA_STATE.tab = btn.dataset.aaTab;
+      pintarAnalitica();
+    };
+  });
+  pintarAnalitica();
+}
+
+function pintarAnalitica() {
+  const cont = document.getElementById('aa-content');
+  if (!cont) return;
+  if (AA_STATE.tab === 'hora') aaHora(cont);
+  else if (AA_STATE.tab === 'bajas') aaBajas(cont);
+  else if (AA_STATE.tab === 'score') aaScore(cont);
+  else if (AA_STATE.tab === 'ltv') aaLTV(cont);
+  else if (AA_STATE.tab === 'diasem') aaDiaSemana(cont);
+  else if (AA_STATE.tab === 'planes') aaPlanes(cont);
+}
+
+function aaHora(cont) {
+  const ventas = ventasData.filter(r => r.estatus === 'activada' && r.fecha_activacion);
+
+  cont.innerHTML = `
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>💡</div>
+      <div>Ventas activadas distribuidas por día de la semana y hora del día. Esta vista usa la fecha de activación, no la hora exacta de venta. <strong>Para datos por hora reales, en una próxima sesión cargamos la columna "Hora" del Excel.</strong></div>
+    </div>
+    <div style="font-weight: 700; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Distribución de ventas por día de semana</div>
+    <div class="chart-wrap" style="height: 280px;"><canvas id="aa-hora-chart"></canvas></div>
+  `;
+
+  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const conteoPorDia = [0,0,0,0,0,0,0];
+  ventas.forEach(r => {
+    const d = new Date(r.fecha_activacion + 'T12:00:00');
+    conteoPorDia[d.getDay()]++;
+  });
+
+  const ctx = document.getElementById('aa-hora-chart');
+  if (window.__chartAAHora) window.__chartAAHora.destroy();
+  window.__chartAAHora = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: dias,
+      datasets: [{
+        label: 'Activadas',
+        data: conteoPorDia,
+        backgroundColor: dias.map((_, i) => i === 0 ? '#E5E7EB' : 'rgba(0, 168, 224, 0.7)'),
+        borderColor: '#00A8E0',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true } }
+    }
+  });
+}
+
+function aaBajas(cont) {
+  if (!window.__avanceData) { cont.innerHTML = '<div class="alert info">Datos no disponibles</div>'; return; }
+
+  const hoy = new Date();
+  const hoyStr = hoy.toISOString().split('T')[0];
+
+  const agentes = plantillaData.filter(p => {
+    if (!p.fecha_ingreso) return false;
+    if (p.fecha_baja) return false;
+    if (!SUPERVISORES.includes(p.supervisor)) return false;
+    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+    const dias = (hoy - ing) / (1000*60*60*24);
+    return dias >= 21;
+  });
+
+  const evaluados = agentes.map(p => {
+    const ventas = ventasData.filter(r => r.ejecutivo === p.nombre && r.estatus === 'activada' && r.fecha_activacion);
+    let ultAct = null;
+    ventas.forEach(r => {
+      if (!ultAct || r.fecha_activacion > ultAct) ultAct = r.fecha_activacion;
+    });
+    const ultActDate = ultAct ? new Date(ultAct + 'T12:00:00') : new Date(p.fecha_ingreso + 'T12:00:00');
+    const diasSinAct = Math.floor((hoy - ultActDate) / (1000*60*60*24));
+
+    const ahoraD = new Date(hoy);
+    const mesActualKey = `${ahoraD.getFullYear()}-${String(ahoraD.getMonth()+1).padStart(2,'0')}`;
+    const mesAntKey = (() => { const d = new Date(ahoraD); d.setMonth(d.getMonth()-1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; })();
+    const mes2AntKey = (() => { const d = new Date(ahoraD); d.setMonth(d.getMonth()-2); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; })();
+    const mActual = ventas.filter(r => r.fecha_activacion.startsWith(mesActualKey)).length;
+    const mAnt = ventas.filter(r => r.fecha_activacion.startsWith(mesAntKey)).length;
+    const m2Ant = ventas.filter(r => r.fecha_activacion.startsWith(mes2AntKey)).length;
+
+    const ingDate = new Date(p.fecha_ingreso + 'T12:00:00');
+    const antDias = Math.floor((hoy - ingDate) / (1000*60*60*24));
+
+    let score = 0;
+    if (diasSinAct >= 14) score += 35;
+    else if (diasSinAct >= 7) score += 20;
+    else if (diasSinAct >= 4) score += 10;
+
+    if (mActual === 0 && mAnt === 0) score += 25;
+    else if (mActual === 0) score += 15;
+
+    if (m2Ant > 0 && mAnt > 0 && mActual < mAnt && mAnt < m2Ant) score += 20;
+    else if (mAnt > 0 && mActual < mAnt * 0.5) score += 12;
+
+    if (antDias < 60 && mActual + mAnt < 6) score += 15;
+
+    if (score > 100) score = 100;
+
+    let estado, color;
+    if (score >= 70) { estado = 'ALTO'; color = 'var(--red)'; }
+    else if (score >= 40) { estado = 'MEDIO'; color = 'var(--amber)'; }
+    else { estado = 'BAJO'; color = 'var(--green)'; }
+
+    return {
+      nombre: p.nombre, supervisor: p.supervisor, antDias,
+      diasSinAct, mActual, mAnt, m2Ant, score, estado, color
+    };
+  });
+
+  evaluados.sort((a, b) => b.score - a.score);
+
+  const altoR = evaluados.filter(e => e.estado === 'ALTO').length;
+  const medioR = evaluados.filter(e => e.estado === 'MEDIO').length;
+  const bajoR = evaluados.filter(e => e.estado === 'BAJO').length;
+
+  cont.innerHTML = `
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">🔴 Alto riesgo</div>
+        <div class="stat-value" style="color: var(--red);">${altoR}</div>
+        <div class="stat-sub">score ≥ 70</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--amber);">
+        <div class="stat-label">🟡 Riesgo medio</div>
+        <div class="stat-value" style="color: var(--amber);">${medioR}</div>
+        <div class="stat-sub">score 40-69</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">🟢 Bajo riesgo</div>
+        <div class="stat-value" style="color: var(--green);">${bajoR}</div>
+        <div class="stat-sub">score &lt; 40</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total evaluados</div>
+        <div class="stat-value">${evaluados.length}</div>
+        <div class="stat-sub">21+ días en plantilla</div>
+      </div>
+    </div>
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>💡</div>
+      <div>Score basado en: días sin activar (35pts), meses sin venta (25pts), tendencia decreciente (20pts) y curva inicial débil (15pts). Total máximo 100. Identifica agentes con mayor probabilidad estadística de baja.</div>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 12.5px;">
+        <thead>
+          <tr>
+            <th>#</th><th>Agente</th><th>Supervisor</th>
+            <th class="num">Antig</th><th class="num">Días sin act</th>
+            <th class="num">Mes -2</th><th class="num">Mes -1</th><th class="num">Mes actual</th>
+            <th class="num">Score</th><th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${evaluados.slice(0, 50).map((e, i) => `
+            <tr ${e.estado === 'ALTO' ? 'style="background:#FEE2E2;"' : ''}>
+              <td class="num" style="text-align:center;">${i+1}</td>
+              <td><strong>${e.nombre}</strong></td>
+              <td style="text-align:center;">${e.supervisor}</td>
+              <td class="num" style="text-align:center;">${e.antDias}d</td>
+              <td class="num" style="text-align:center; color:${e.diasSinAct >= 7 ? 'var(--red)' : 'var(--text)'}; font-weight:${e.diasSinAct >= 7 ? '700' : 'normal'};">${e.diasSinAct}</td>
+              <td class="num" style="text-align:center;">${e.m2Ant}</td>
+              <td class="num" style="text-align:center;">${e.mAnt}</td>
+              <td class="num" style="text-align:center;">${e.mActual}</td>
+              <td class="num" style="text-align:center; color:${e.color}; font-weight:700; font-size:14px;">${e.score}</td>
+              <td style="text-align:center; color:${e.color}; font-weight:700;">${e.estado}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function aaScore(cont) {
+  const hoy = new Date();
+  const hoyStr = hoy.toISOString().split('T')[0];
+
+  const sups = SUPERVISORES.map(sup => {
+    const agentesSup = plantillaData.filter(p =>
+      p.supervisor === sup && p.fecha_ingreso && p.fecha_ingreso <= hoyStr &&
+      (!p.fecha_baja || p.fecha_baja > hoyStr)
+    );
+
+    const totalAg = agentesSup.length;
+    if (totalAg === 0) return null;
+
+    let cumplPromedio = 0;
+    if (window.__avanceData) {
+      const supData = window.__avanceData.supervisoresData.find(s => s.sup === sup);
+      if (supData && supData.metaProporcional > 0) {
+        cumplPromedio = Math.min(100, (supData.avance / supData.metaProporcional * 100));
+      }
+    }
+
+    const evalSup = agentesSup.filter(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      return Math.floor((hoy - ing)/(1000*60*60*24)) >= 42;
+    });
+    const sobrev = evalSup.length > 0 ? (evalSup.length / agentesSup.filter(p => {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      return Math.floor((hoy - ing)/(1000*60*60*24)) >= 42;
+    }).length * 100) : 100;
+
+    let healthyCount = 0, evaluadosSanity = 0;
+    agentesSup.forEach(p => {
+      const ventas = ventasData.filter(r => r.ejecutivo === p.nombre && r.estatus === 'activada');
+      const mesActualKey = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+      const mActual = ventas.filter(r => r.fecha_activacion && r.fecha_activacion.startsWith(mesActualKey)).length;
+      if (mActual >= 6) { healthyCount++; evaluadosSanity++; }
+      else if (mActual > 0) { evaluadosSanity++; }
+    });
+    const pctHealthy = evaluadosSanity > 0 ? (healthyCount / evaluadosSanity * 100) : 0;
+
+    const mesActualKey2 = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
+    let sinVenta = 0;
+    agentesSup.forEach(p => {
+      const tieneVenta = ventasData.some(r => r.ejecutivo === p.nombre && r.estatus === 'activada' && r.fecha_activacion && r.fecha_activacion.startsWith(mesActualKey2));
+      if (!tieneVenta) sinVenta++;
+    });
+    const pctSinVenta = (sinVenta / totalAg) * 100;
+
+    const bajasUlt30 = plantillaData.filter(p => {
+      if (p.supervisor !== sup || !p.fecha_baja) return false;
+      const baj = new Date(p.fecha_baja + 'T12:00:00');
+      const dias = (hoy - baj) / (1000*60*60*24);
+      return dias <= 30 && dias >= 0;
+    }).length;
+    const promPlant = totalAg + bajasUlt30 / 2;
+    const rotacion = promPlant > 0 ? (bajasUlt30 / promPlant * 100) : 0;
+
+    const score = Math.round(
+      cumplPromedio * 0.30 +
+      sobrev * 0.25 +
+      pctHealthy * 0.20 +
+      Math.max(0, 100 - pctSinVenta * 2) * 0.15 +
+      Math.max(0, 100 - rotacion * 5) * 0.10
+    );
+
+    return {
+      sup, totalAg, cumplPromedio, sobrev, pctHealthy, pctSinVenta, rotacion, score, sinVenta, bajasUlt30
+    };
+  }).filter(x => x !== null);
+
+  sups.sort((a, b) => b.score - a.score);
+
+  cont.innerHTML = `
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>💡</div>
+      <div>Score 0-100 que combina <strong>cumplimiento de meta (30%)</strong>, <strong>supervivencia de equipo (25%)</strong>, <strong>% agentes Healthy (20%)</strong>, <strong>baja % sin venta (15%)</strong> y <strong>baja rotación (10%)</strong>.</div>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 13px;">
+        <thead>
+          <tr>
+            <th>Ranking</th><th>Supervisor</th><th class="num">Plantilla</th>
+            <th class="num">Cumpl %</th><th class="num">Supervivencia</th>
+            <th class="num">% Healthy</th><th class="num">Sin venta</th>
+            <th class="num">Bajas 30d</th><th class="num">SCORE</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sups.map((s, i) => {
+            const medalla = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i+1);
+            const colorScore = s.score >= 75 ? 'var(--green)' : s.score >= 50 ? 'var(--amber)' : 'var(--red)';
+            return `<tr>
+              <td class="num" style="text-align:center; font-size:18px;">${medalla}</td>
+              <td><strong>${s.sup}</strong></td>
+              <td class="num" style="text-align:center;">${s.totalAg}</td>
+              <td class="num" style="text-align:center;">${s.cumplPromedio.toFixed(0)}%</td>
+              <td class="num" style="text-align:center;">${s.sobrev.toFixed(0)}%</td>
+              <td class="num" style="text-align:center;">${s.pctHealthy.toFixed(0)}%</td>
+              <td class="num" style="text-align:center; color:${s.pctSinVenta > 20 ? 'var(--red)' : 'var(--text)'};">${s.sinVenta}</td>
+              <td class="num" style="text-align:center; color:${s.bajasUlt30 > 0 ? 'var(--red)' : 'var(--text)'};">${s.bajasUlt30}</td>
+              <td class="num" style="text-align:center; color:${colorScore}; font-weight:700; font-size:18px;">${s.score}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function aaLTV(cont) {
+  const ejecutivosMap = {};
+  ventasData.forEach(r => {
+    if (r.estatus !== 'activada' || !r.ejecutivo) return;
+    if (!ejecutivosMap[r.ejecutivo]) ejecutivosMap[r.ejecutivo] = { nombre: r.ejecutivo, ventas: 0, monto: 0, montoSinImp: 0, supervisor: r.supervisor };
+    ejecutivosMap[r.ejecutivo].ventas++;
+    ejecutivosMap[r.ejecutivo].monto += parseFloat(r.precio) || 0;
+    ejecutivosMap[r.ejecutivo].montoSinImp += parseFloat(r.renta_sin_impuestos) || 0;
+  });
+
+  Object.values(ejecutivosMap).forEach(e => {
+    const plant = plantillaData.find(p => p.nombre === e.nombre);
+    if (plant && plant.fecha_ingreso) {
+      const ing = new Date(plant.fecha_ingreso + 'T12:00:00');
+      const fin = plant.fecha_baja ? new Date(plant.fecha_baja + 'T12:00:00') : new Date();
+      e.dias = Math.floor((fin - ing) / (1000*60*60*24));
+      e.activo = !plant.fecha_baja;
+    } else {
+      e.dias = 0;
+      e.activo = false;
+    }
+    e.arpu = e.ventas > 0 ? e.montoSinImp / e.ventas : 0;
+    e.ventasMes = e.dias > 0 ? (e.ventas / (e.dias / 30)) : 0;
+  });
+
+  const todos = Object.values(ejecutivosMap).sort((a, b) => b.montoSinImp - a.montoSinImp);
+  const activos = todos.filter(e => e.activo);
+  const bajas = todos.filter(e => !e.activo);
+
+  const ltvActivo = activos.length > 0 ? activos.reduce((a, b) => a + b.montoSinImp, 0) / activos.length : 0;
+  const ltvBaja = bajas.length > 0 ? bajas.reduce((a, b) => a + b.montoSinImp, 0) / bajas.length : 0;
+  const ventasPromActivo = activos.length > 0 ? activos.reduce((a, b) => a + b.ventas, 0) / activos.length : 0;
+  const ventasPromBaja = bajas.length > 0 ? bajas.reduce((a, b) => a + b.ventas, 0) / bajas.length : 0;
+
+  cont.innerHTML = `
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>💰</div>
+      <div>Lifetime Value: monto sin impuestos total facturado por cada agente durante su vida laboral. Sirve para entender cuánto vale formar y retener a un agente.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">LTV promedio · Activos</div>
+        <div class="stat-value" style="color: var(--green);">$${(ltvActivo / 1000).toFixed(1)}K</div>
+        <div class="stat-sub">${ventasPromActivo.toFixed(0)} ventas/agente</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--text-soft);">
+        <div class="stat-label">LTV promedio · Bajas</div>
+        <div class="stat-value" style="color: var(--text-soft);">$${(ltvBaja / 1000).toFixed(1)}K</div>
+        <div class="stat-sub">${ventasPromBaja.toFixed(0)} ventas/agente</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">Top performer histórico</div>
+        <div class="stat-value" style="color: var(--att-orange); font-size: 16px;">${todos[0] ? todos[0].nombre.split(' ')[0] + ' ' + (todos[0].nombre.split(' ')[1] || '') : '—'}</div>
+        <div class="stat-sub">$${todos[0] ? (todos[0].montoSinImp / 1000).toFixed(1) : 0}K · ${todos[0] ? todos[0].ventas : 0} ventas</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-blue);">
+        <div class="stat-label">Total facturado histórico</div>
+        <div class="stat-value" style="color: var(--att-blue);">$${(todos.reduce((a, b) => a + b.montoSinImp, 0) / 1000000).toFixed(2)}M</div>
+        <div class="stat-sub">${todos.length} agentes evaluados</div>
+      </div>
+    </div>
+    <div style="font-weight: 700; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Top 30 agentes por LTV</div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 12.5px;">
+        <thead>
+          <tr>
+            <th>#</th><th>Agente</th><th>Supervisor</th><th>Estado</th>
+            <th class="num">Total ventas</th><th class="num">ARPU</th>
+            <th class="num">LTV (sin imp.)</th><th class="num">Días</th>
+            <th class="num">Vtas/mes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${todos.slice(0, 30).map((e, i) => `
+            <tr>
+              <td class="num" style="text-align:center;">${i+1}</td>
+              <td><strong>${e.nombre}</strong></td>
+              <td style="text-align:center;">${e.supervisor || '—'}</td>
+              <td style="text-align:center; color:${e.activo ? 'var(--green)' : 'var(--text-soft)'};">${e.activo ? '✓ Activo' : '✕ Baja'}</td>
+              <td class="num" style="text-align:center; font-weight:700;">${e.ventas}</td>
+              <td class="num" style="text-align:center;">$${e.arpu.toFixed(0)}</td>
+              <td class="num" style="text-align:center; color:var(--green); font-weight:700;">$${(e.montoSinImp / 1000).toFixed(1)}K</td>
+              <td class="num" style="text-align:center;">${e.dias}</td>
+              <td class="num" style="text-align:center;">${e.ventasMes.toFixed(1)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function aaDiaSemana(cont) {
+  const dias = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+
+  const conteo = [0,0,0,0,0,0,0];
+  const monto = [0,0,0,0,0,0,0];
+  const cancel = [0,0,0,0,0,0,0];
+  const programadas = [0,0,0,0,0,0,0];
+
+  ventasData.forEach(r => {
+    if (r.fecha_activacion && r.estatus === 'activada') {
+      const d = new Date(r.fecha_activacion + 'T12:00:00');
+      conteo[d.getDay()]++;
+      monto[d.getDay()] += parseFloat(r.renta_sin_impuestos) || 0;
+    }
+    if (r.fecha_cancelacion) {
+      const d = new Date(r.fecha_cancelacion + 'T12:00:00');
+      cancel[d.getDay()]++;
+    }
+    if (r.fecha_bo) {
+      const d = new Date(r.fecha_bo + 'T12:00:00');
+      programadas[d.getDay()]++;
+    }
+  });
+
+  const totalAct = conteo.reduce((a, b) => a + b, 0);
+  let mejor = 1, peor = 1;
+  for (let i = 1; i < 7; i++) {
+    if (conteo[i] > conteo[mejor]) mejor = i;
+    if (conteo[i] > 0 && conteo[i] < conteo[peor]) peor = i;
+  }
+
+  cont.innerHTML = `
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>📆</div>
+      <div>Distribución de ventas por día de la semana en TODO el histórico. Sirve para identificar tu día más productivo y optimizar campañas y turnos.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">🏆 Mejor día</div>
+        <div class="stat-value" style="color: var(--green);">${dias[mejor]}</div>
+        <div class="stat-sub">${conteo[mejor]} ventas (${(conteo[mejor]/totalAct*100).toFixed(1)}%)</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">📉 Día más bajo</div>
+        <div class="stat-value" style="color: var(--red);">${dias[peor]}</div>
+        <div class="stat-sub">${conteo[peor]} ventas (${(conteo[peor]/totalAct*100).toFixed(1)}%)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total activadas</div>
+        <div class="stat-value">${totalAct.toLocaleString()}</div>
+        <div class="stat-sub">en histórico</div>
+      </div>
+    </div>
+    <div class="chart-wrap" style="height: 320px;"><canvas id="aa-diasem-chart"></canvas></div>
+    <div style="font-weight: 700; font-size: 14px; margin: 24px 0 8px; color: var(--att-navy);">Tabla detallada</div>
+    <table style="font-size: 13px;">
+      <thead>
+        <tr>
+          <th>Día</th><th class="num">Programadas</th><th class="num">Activadas</th>
+          <th class="num">Canceladas</th><th class="num">% del total</th>
+          <th class="num">Monto sin imp.</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dias.map((d, i) => `
+          <tr ${i === mejor ? 'style="background:#DCFCE7;"' : i === peor ? 'style="background:#FEE2E2;"' : ''}>
+            <td><strong>${d}</strong></td>
+            <td class="num" style="text-align:center;">${programadas[i]}</td>
+            <td class="num" style="text-align:center; font-weight:700;">${conteo[i]}</td>
+            <td class="num" style="text-align:center; color: var(--red);">${cancel[i]}</td>
+            <td class="num" style="text-align:center;">${(conteo[i]/totalAct*100).toFixed(1)}%</td>
+            <td class="num" style="text-align:center;">$${(monto[i]/1000).toFixed(1)}K</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  setTimeout(() => {
+    const ctx = document.getElementById('aa-diasem-chart');
+    if (!ctx) return;
+    if (window.__chartAADiaSem) window.__chartAADiaSem.destroy();
+    window.__chartAADiaSem = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: dias,
+        datasets: [
+          { label: 'Programadas', data: programadas, backgroundColor: 'rgba(0, 168, 224, 0.7)', borderRadius: 4 },
+          { label: 'Activadas', data: conteo, backgroundColor: 'rgba(22, 163, 74, 0.8)', borderRadius: 4 },
+          { label: 'Canceladas', data: cancel, backgroundColor: 'rgba(220, 38, 38, 0.7)', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top' } },
+        scales: { x: { grid: { display: false } }, y: { beginAtZero: true } }
+      }
+    });
+  }, 50);
+}
+
+function aaPlanes(cont) {
+  const planesMap = {};
+  ventasData.forEach(r => {
+    if (!r.plan) return;
+    if (!planesMap[r.plan]) planesMap[r.plan] = { plan: r.plan, total: 0, activadas: 0, canceladas: 0, montoBruto: 0, montoSinImp: 0, precios: [] };
+    planesMap[r.plan].total++;
+    if (r.estatus === 'activada') {
+      planesMap[r.plan].activadas++;
+      planesMap[r.plan].montoBruto += parseFloat(r.precio) || 0;
+      planesMap[r.plan].montoSinImp += parseFloat(r.renta_sin_impuestos) || 0;
+      if (r.precio) planesMap[r.plan].precios.push(parseFloat(r.precio));
+    } else if (r.estatus === 'cancelada') {
+      planesMap[r.plan].canceladas++;
+    }
+  });
+
+  const planes = Object.values(planesMap).map(p => ({
+    ...p,
+    pctCancel: p.total > 0 ? (p.canceladas / p.total * 100) : 0,
+    arpuBruto: p.activadas > 0 ? p.montoBruto / p.activadas : 0,
+    arpuSinImp: p.activadas > 0 ? p.montoSinImp / p.activadas : 0
+  })).sort((a, b) => b.activadas - a.activadas);
+
+  const totalAct = planes.reduce((a, b) => a + b.activadas, 0);
+  const totalMonto = planes.reduce((a, b) => a + b.montoSinImp, 0);
+
+  const peorCanc = [...planes].filter(p => p.total >= 5).sort((a, b) => b.pctCancel - a.pctCancel)[0];
+  const mayorARPU = [...planes].filter(p => p.activadas >= 5).sort((a, b) => b.arpuSinImp - a.arpuSinImp)[0];
+
+  cont.innerHTML = `
+    <div class="alert info" style="margin-bottom: 16px;">
+      <div>📦</div>
+      <div>Análisis de planes vendidos: cuántos se vendieron, ARPU por plan y % de cancelación. Ayuda a identificar qué planes son los más rentables y cuáles cancelan más.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px;">
+      <div class="stat-card">
+        <div class="stat-label">Total planes únicos</div>
+        <div class="stat-value">${planes.length}</div>
+        <div class="stat-sub">en histórico</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--green);">
+        <div class="stat-label">🥇 Plan más vendido</div>
+        <div class="stat-value" style="color: var(--green); font-size: 14px;">${planes[0] ? planes[0].plan.substring(0, 22) : '—'}</div>
+        <div class="stat-sub">${planes[0] ? planes[0].activadas + ' ventas' : ''}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--att-orange);">
+        <div class="stat-label">💰 Mayor ARPU</div>
+        <div class="stat-value" style="color: var(--att-orange); font-size: 14px;">${mayorARPU ? mayorARPU.plan.substring(0, 22) : '—'}</div>
+        <div class="stat-sub">${mayorARPU ? '$' + mayorARPU.arpuSinImp.toFixed(0) : ''}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: var(--red);">
+        <div class="stat-label">⚠️ Más cancelado</div>
+        <div class="stat-value" style="color: var(--red); font-size: 14px;">${peorCanc ? peorCanc.plan.substring(0, 22) : '—'}</div>
+        <div class="stat-sub">${peorCanc ? peorCanc.pctCancel.toFixed(1) + '% cancelación' : ''}</div>
+      </div>
+    </div>
+    <div style="overflow-x: auto;">
+      <table style="font-size: 12.5px;">
+        <thead>
+          <tr>
+            <th>#</th><th>Plan</th><th class="num">Activadas</th>
+            <th class="num">Canceladas</th><th class="num">% Cancel</th>
+            <th class="num">ARPU sin imp.</th><th class="num">Total facturado</th>
+            <th class="num">% del total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${planes.slice(0, 30).map((p, i) => {
+            const colorCanc = p.pctCancel >= 20 ? 'var(--red)' : p.pctCancel >= 10 ? 'var(--amber)' : 'var(--green)';
+            return `<tr>
+              <td class="num" style="text-align:center;">${i+1}</td>
+              <td>${p.plan}</td>
+              <td class="num" style="text-align:center; font-weight:700;">${p.activadas}</td>
+              <td class="num" style="text-align:center; color: var(--red);">${p.canceladas}</td>
+              <td class="num" style="text-align:center; color:${colorCanc}; font-weight:700;">${p.pctCancel.toFixed(1)}%</td>
+              <td class="num" style="text-align:center;">$${p.arpuSinImp.toFixed(0)}</td>
+              <td class="num" style="text-align:center; color: var(--green); font-weight:600;">$${(p.montoSinImp / 1000).toFixed(1)}K</td>
+              <td class="num" style="text-align:center;">${(p.activadas / totalAct * 100).toFixed(1)}%</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function renderHistoricoMensual() {
   const metasFiltradas = metasSupData.filter(m => SUPERVISORES.includes(m.supervisor));
   if (metasFiltradas.length === 0) return;
@@ -7470,6 +8086,20 @@ document.addEventListener('click', (e) => {
   const pdfBtn = e.target.closest('#btn-exportar-pdf');
   if (pdfBtn) {
     exportarPDF();
+    return;
+  }
+
+  const toggleAllBtn = e.target.closest('#btn-toggle-all');
+  if (toggleAllBtn) {
+    const secciones = document.querySelectorAll('.section.collapsible');
+    const algunaCerrada = [...secciones].some(s => !s.classList.contains('abierto'));
+    if (algunaCerrada) {
+      secciones.forEach(s => s.classList.add('abierto'));
+      toggleAllBtn.textContent = '📁 Cerrar todo';
+    } else {
+      secciones.forEach(s => s.classList.remove('abierto'));
+      toggleAllBtn.textContent = '📂 Expandir todo';
+    }
     return;
   }
 
