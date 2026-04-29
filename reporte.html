@@ -2762,6 +2762,23 @@ function renderDetalleAgentesConMes(mesKey) {
 
   const agentesPorSup = {};
   metasDelMes.forEach(m => {
+    const plant = plantMap[m.ejecutivo];
+
+    let estaDeBaja = false;
+    let bajaEnMesActual = false;
+    let fechaBajaStr = null;
+
+    if (plant && plant.fecha_baja) {
+      fechaBajaStr = plant.fecha_baja;
+      if (fechaBajaStr < iniMesStr) {
+        return;
+      }
+      estaDeBaja = true;
+      if (fechaBajaStr >= iniMesStr && fechaBajaStr <= finMesStr) {
+        bajaEnMesActual = true;
+      }
+    }
+
     if (!agentesPorSup[m.supervisor]) agentesPorSup[m.supervisor] = [];
     const avance = actPorAgente[m.ejecutivo] || 0;
     const programadas = progPorAgente[m.ejecutivo] || 0;
@@ -2773,7 +2790,6 @@ function renderDetalleAgentesConMes(mesKey) {
     const faltan = Math.max(0, m.meta_activadas - avance);
     const ritmoNecesario = diasRestantes > 0 ? faltan / diasRestantes : 0;
 
-    const plant = plantMap[m.ejecutivo];
     const fechaIng = plant ? plant.fecha_ingreso : null;
 
     const ultAct = ultActPorAgente[m.ejecutivo] || null;
@@ -2782,14 +2798,18 @@ function renderDetalleAgentesConMes(mesKey) {
     const refActStr = ultAct || fechaIng;
     const refProgStr = ultProg || fechaIng;
 
-    const diasSinAct = refActStr ? diasHabilesEntre(refActStr, fechaCorteStr) : null;
-    const diasSinProg = refProgStr ? diasHabilesEntre(refProgStr, fechaCorteStr) : null;
+    const cortePara_dias = estaDeBaja ? fechaBajaStr : fechaCorteStr;
+
+    const diasSinAct = refActStr ? diasHabilesEntre(refActStr, cortePara_dias) : null;
+    const diasSinProg = refProgStr ? diasHabilesEntre(refProgStr, cortePara_dias) : null;
 
     const nuncaActivo = !ultAct;
     const nuncaProgramo = !ultProg;
 
     const arpuInfo = arpuPorAgente[m.ejecutivo];
     const arpu = arpuInfo && arpuInfo.count > 0 ? arpuInfo.sum / arpuInfo.count : 0;
+
+    const tipoFinal = estaDeBaja ? 'baja' : m.tipo_meta;
 
     agentesPorSup[m.supervisor].push({
       ejecutivo: m.ejecutivo,
@@ -2798,7 +2818,11 @@ function renderDetalleAgentesConMes(mesKey) {
       transito: transitoPorAgente[m.ejecutivo] || 0,
       arpu,
       pct, ritmoActual, proyeccion, ritmoNecesario,
-      tipo: m.tipo_meta,
+      tipo: tipoFinal,
+      tipoMetaOriginal: m.tipo_meta,
+      esBaja: estaDeBaja,
+      bajaEnMesActual,
+      fechaBaja: fechaBajaStr,
       diasSinAct, diasSinProg, nuncaActivo, nuncaProgramo,
       ultAct, ultProg
     });
@@ -2885,14 +2909,19 @@ function renderDetalleAgentesConMes(mesKey) {
   }
 
   const html = supervisoresData.map(s => {
-    const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => b.pct - a.pct);
+    const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => {
+      if (a.esBaja !== b.esBaja) return a.esBaja ? 1 : -1;
+      return b.pct - a.pct;
+    });
     if (agentes.length === 0) return '';
 
-    const criticos = agentes.filter(a => a.meta > 0 && a.pct < 50).length;
-    const cumplidos = agentes.filter(a => a.meta > 0 && a.pct >= 100).length;
-    const enRiesgo = agentes.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
-    const alertaInactivos = agentes.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5).length;
-    const sinVentas = agentes.filter(a => a.avance === 0).length;
+    const activos = agentes.filter(a => !a.esBaja);
+    const bajas = agentes.filter(a => a.esBaja).length;
+    const criticos = activos.filter(a => a.meta > 0 && a.pct < 50).length;
+    const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100).length;
+    const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
+    const alertaInactivos = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5).length;
+    const sinVentas = activos.filter(a => a.avance === 0).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
 
@@ -2901,12 +2930,13 @@ function renderDetalleAgentesConMes(mesKey) {
         <div class="agente-acordeon-header" onclick="toggleAgenteAcordeon('${s.sup}')">
           <span><span class="flecha">▸</span> <strong style="color: ${colorEstado};">${s.sup}</strong>
             <span style="margin-left: 10px; font-size: 12px; color: var(--text-soft);">
-              ${agentes.length} agentes ·
+              ${activos.length} activos${bajas > 0 ? ` + ${bajas} baja${bajas > 1 ? 's' : ''}` : ''} ·
               ${s.pctCumpl.toFixed(1)}% cumplimiento ·
               ${cumplidos > 0 ? `<span style="color:var(--green);font-weight:600;">✓ ${cumplidos} al 100%</span> · ` : ''}
               ${enRiesgo > 0 ? `<span style="color:var(--amber);font-weight:600;">⚠ ${enRiesgo} en riesgo</span> · ` : ''}
               ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span> · ` : ''}
               ${sinVentas > 0 ? `<span style="color:var(--red);font-weight:700;">⛔ ${sinVentas} sin venta</span> · ` : ''}
+              ${bajas > 0 ? `<span style="color:#6B7280;font-weight:600;">🔻 ${bajas} baja${bajas > 1 ? 's' : ''}</span> · ` : ''}
               ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 3.5+ días</span>` : ''}
             </span>
           </span>
@@ -2942,7 +2972,10 @@ function renderDetalleAgentesConMes(mesKey) {
               <tbody>
                 ${agentes.map((a, idx) => {
                   let emoji, colorFila = '';
-                  if (a.meta === 0) {
+                  if (a.esBaja) {
+                    emoji = '🔻';
+                    colorFila = 'background: #F3F4F6; color: #6B7280;';
+                  } else if (a.meta === 0) {
                     emoji = '➖';
                   } else if (a.pct >= 100) {
                     emoji = '🟢';
@@ -2954,9 +2987,23 @@ function renderDetalleAgentesConMes(mesKey) {
                     emoji = '🚨';
                     colorFila = 'background: #FEE2E2;';
                   }
-                  const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Exp';
-                  const tipoBadge = a.tipo === 'sin_meta' ? 'background:#E5E7EB;color:#374151;' : a.tipo === 'fija_6' ? 'background:#DBEAFE;color:#1E40AF;' : 'background:#DCFCE7;color:#15803D;';
-                  const colorPct = a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)';
+
+                  let tipoLbl, tipoBadge;
+                  if (a.esBaja) {
+                    tipoLbl = a.bajaEnMesActual ? 'Baja' : 'Baja prev.';
+                    tipoBadge = 'background:#9CA3AF;color:white;';
+                  } else if (a.tipo === 'sin_meta') {
+                    tipoLbl = 'Sin meta';
+                    tipoBadge = 'background:#E5E7EB;color:#374151;';
+                  } else if (a.tipo === 'fija_6') {
+                    tipoLbl = 'Nuevo';
+                    tipoBadge = 'background:#DBEAFE;color:#1E40AF;';
+                  } else {
+                    tipoLbl = 'Exp';
+                    tipoBadge = 'background:#DCFCE7;color:#15803D;';
+                  }
+
+                  const colorPct = a.esBaja ? '#6B7280' : (a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)');
 
                   function formatDias(dias, nunca) {
                     if (dias === null) return '—';
@@ -2969,9 +3016,11 @@ function renderDetalleAgentesConMes(mesKey) {
                     return `<span style="color:${color};${weight}" title="${prefijo}${dias} días hábiles">${dias.toFixed(1)}</span>`;
                   }
 
-                  return `<tr style="${colorFila}">
+                  const fechaBajaTooltip = a.esBaja && a.fechaBaja ? `title="Baja el ${a.fechaBaja}"` : '';
+
+                  return `<tr style="${colorFila}" ${fechaBajaTooltip}>
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
-                    <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: var(--att-blue-dark); text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
+                    <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: ${a.esBaja ? '#6B7280' : 'var(--att-blue-dark)'}; text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
                     <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
