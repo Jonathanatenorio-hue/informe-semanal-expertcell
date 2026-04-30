@@ -9,7 +9,7 @@
 <title>Reporte Semanal · ExpertCell</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <style>
   :root {
     --att-blue: #00A8E0;
@@ -801,12 +801,12 @@
     <div class="nav-sticky">
       <div class="nav-sticky-inner">
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
-        <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
-        <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
-        <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
+        <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
+        <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
+        <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
         <button class="nav-btn" data-target="sec-estado">⏳ Estado cierre</button>
         <button class="nav-btn" data-target="sec-historico">📉 Histórico</button>
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
@@ -871,6 +871,96 @@
 
     <!-- EMBUDO PRINCIPAL -->
     <div id="embudo-section"></div>
+
+    <!-- COMPARATIVO POR SUPERVISOR -->
+    <div class="section" id="sec-comparativo">
+      <div class="section-title">Comparativo por supervisor</div>
+      <div class="section-subtitle" id="comp-sup-subtitle"></div>
+      <div class="legend" id="comp-sup-legend"></div>
+      <div class="chart-wrap tall"><canvas id="chart-sup"></canvas></div>
+      <table style="margin-top: 20px;">
+        <thead>
+          <tr>
+            <th rowspan="2">Supervisor</th>
+            <th colspan="3" class="center" style="background: #1E40AF;">Programadas</th>
+            <th colspan="3" class="center col-divider" style="background: #16A34A;">Activadas</th>
+            <th colspan="3" class="center col-divider" style="background: #DC2626;">Canceladas</th>
+          </tr>
+          <tr class="subhead" id="tabla-sup-subhead"></tr>
+        </thead>
+        <tbody id="tabla-sup-body"></tbody>
+        <tfoot id="tabla-sup-foot"></tfoot>
+      </table>
+    </div>
+
+    <!-- PRODUCTIVIDAD POR AGENTE -->
+    <div class="section collapsible" id="sec-productividad">
+      <div class="section-title">Productividad por agente</div>
+      <div class="section-body">
+      <div class="section-subtitle" id="prod-agente-subtitle"></div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;" id="prod-resumen-cards"></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Promedios por supervisor</div>
+      <div style="display: flex; gap: 8px; margin-bottom: 14px;" id="prod-metric-selector">
+        <button class="metric-btn active" data-metric="act">Activadas</button>
+        <button class="metric-btn" data-metric="prog">Programadas</button>
+        <button class="metric-btn" data-metric="canc">Canceladas</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2" style="text-align:center;">Supervisor</th>
+            <th colspan="3" class="center" style="background: var(--att-blue-dark);">Plantilla</th>
+            <th colspan="3" class="center col-divider" id="prod-totales-header" style="background: #16A34A;">Totales</th>
+            <th colspan="3" class="center col-divider" id="prod-metric-header" style="background: #16A34A;">Promedios por agente</th>
+          </tr>
+          <tr class="subhead">
+            <th class="num" style="text-align:center;">Total</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
+            <th class="num col-divider" style="text-align:center;">General</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
+            <th class="num col-divider" style="text-align:center;">General</th>
+            <th class="num" style="text-align:center;">Nuevos</th>
+            <th class="num" style="text-align:center;">Exp</th>
+          </tr>
+        </thead>
+        <tbody id="prod-tabla-body"></tbody>
+        <tfoot id="prod-tabla-foot"></tfoot>
+      </table>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Ranking ajustado (activadas por agente)</div>
+      <div class="section-subtitle" style="margin-bottom: 12px;">Este ranking normaliza por tamaño de equipo. Muestra quién es el supervisor más productivo por persona, no por volumen total.</div>
+      <div class="chart-wrap" style="height: 280px;"><canvas id="chart-ranking-agente"></canvas></div>
+      </div>
+    </div>
+
+    <!-- MAPAS DE CALOR -->
+    <div class="section collapsible" id="sec-mapas">
+      <div class="section-title">Mapas de calor: día × supervisor</div>
+      <div class="section-body">
+      <div class="section-subtitle">Diferencia vs la semana anterior. Verde = mejora, rojo = retroceso. Los números chicos muestran los valores de ambas semanas.</div>
+
+      <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; font-size: 11px; color: var(--text-soft);">
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#15803D;border-radius:3px;"></span>+4 o más</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#86EFAC;border-radius:3px;"></span>+1 a +3</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#E5E7EB;border-radius:3px;"></span>igual</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#FCA5A5;border-radius:3px;"></span>-1 a -3</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#B91C1C;border-radius:3px;"></span>-4 o menos</span>
+      </div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--prog-color);">Programadas</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-prog"></table></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--act-color);">Activadas</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-act"></table></div>
+
+      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--canc-color);">Canceladas (nota: menos es mejor)</div>
+      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-canc"></table></div>
+      </div>
+    </div>
 
     <!-- SIMULADOR WHAT-IF -->
     <div class="section collapsible" id="sec-whatif">
@@ -977,96 +1067,6 @@
           <div id="estructura-jv"></div>
         </div>
       </div>
-      </div>
-    </div>
-
-    <!-- COMPARATIVO POR SUPERVISOR -->
-    <div class="section" id="sec-comparativo">
-      <div class="section-title">Comparativo por supervisor</div>
-      <div class="section-subtitle" id="comp-sup-subtitle"></div>
-      <div class="legend" id="comp-sup-legend"></div>
-      <div class="chart-wrap tall"><canvas id="chart-sup"></canvas></div>
-      <table style="margin-top: 20px;">
-        <thead>
-          <tr>
-            <th rowspan="2">Supervisor</th>
-            <th colspan="3" class="center" style="background: #1E40AF;">Programadas</th>
-            <th colspan="3" class="center col-divider" style="background: #16A34A;">Activadas</th>
-            <th colspan="3" class="center col-divider" style="background: #DC2626;">Canceladas</th>
-          </tr>
-          <tr class="subhead" id="tabla-sup-subhead"></tr>
-        </thead>
-        <tbody id="tabla-sup-body"></tbody>
-        <tfoot id="tabla-sup-foot"></tfoot>
-      </table>
-    </div>
-
-    <!-- PRODUCTIVIDAD POR AGENTE -->
-    <div class="section collapsible" id="sec-productividad">
-      <div class="section-title">Productividad por agente</div>
-      <div class="section-body">
-      <div class="section-subtitle" id="prod-agente-subtitle"></div>
-
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;" id="prod-resumen-cards"></div>
-
-      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--att-navy);">Promedios por supervisor</div>
-      <div style="display: flex; gap: 8px; margin-bottom: 14px;" id="prod-metric-selector">
-        <button class="metric-btn active" data-metric="act">Activadas</button>
-        <button class="metric-btn" data-metric="prog">Programadas</button>
-        <button class="metric-btn" data-metric="canc">Canceladas</button>
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th rowspan="2" style="text-align:center;">Supervisor</th>
-            <th colspan="3" class="center" style="background: var(--att-blue-dark);">Plantilla</th>
-            <th colspan="3" class="center col-divider" id="prod-totales-header" style="background: #16A34A;">Totales</th>
-            <th colspan="3" class="center col-divider" id="prod-metric-header" style="background: #16A34A;">Promedios por agente</th>
-          </tr>
-          <tr class="subhead">
-            <th class="num" style="text-align:center;">Total</th>
-            <th class="num" style="text-align:center;">Nuevos</th>
-            <th class="num" style="text-align:center;">Exp</th>
-            <th class="num col-divider" style="text-align:center;">General</th>
-            <th class="num" style="text-align:center;">Nuevos</th>
-            <th class="num" style="text-align:center;">Exp</th>
-            <th class="num col-divider" style="text-align:center;">General</th>
-            <th class="num" style="text-align:center;">Nuevos</th>
-            <th class="num" style="text-align:center;">Exp</th>
-          </tr>
-        </thead>
-        <tbody id="prod-tabla-body"></tbody>
-        <tfoot id="prod-tabla-foot"></tfoot>
-      </table>
-
-      <div style="font-weight: 600; font-size: 14px; margin: 28px 0 8px; color: var(--att-navy);">Ranking ajustado (activadas por agente)</div>
-      <div class="section-subtitle" style="margin-bottom: 12px;">Este ranking normaliza por tamaño de equipo. Muestra quién es el supervisor más productivo por persona, no por volumen total.</div>
-      <div class="chart-wrap" style="height: 280px;"><canvas id="chart-ranking-agente"></canvas></div>
-      </div>
-    </div>
-
-    <!-- MAPAS DE CALOR -->
-    <div class="section collapsible" id="sec-mapas">
-      <div class="section-title">Mapas de calor: día × supervisor</div>
-      <div class="section-body">
-      <div class="section-subtitle">Diferencia vs la semana anterior. Verde = mejora, rojo = retroceso. Los números chicos muestran los valores de ambas semanas.</div>
-
-      <div style="display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; font-size: 11px; color: var(--text-soft);">
-        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#15803D;border-radius:3px;"></span>+4 o más</span>
-        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#86EFAC;border-radius:3px;"></span>+1 a +3</span>
-        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#E5E7EB;border-radius:3px;"></span>igual</span>
-        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#FCA5A5;border-radius:3px;"></span>-1 a -3</span>
-        <span style="display:flex;align-items:center;gap:6px;"><span style="width:14px;height:14px;background:#B91C1C;border-radius:3px;"></span>-4 o menos</span>
-      </div>
-
-      <div style="font-weight: 600; font-size: 14px; margin: 16px 0 8px; color: var(--prog-color);">Programadas</div>
-      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-prog"></table></div>
-
-      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--act-color);">Activadas</div>
-      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-act"></table></div>
-
-      <div style="font-weight: 600; font-size: 14px; margin: 24px 0 8px; color: var(--canc-color);">Canceladas (nota: menos es mejor)</div>
-      <div class="heatmap-wrap"><table class="heatmap" id="heatmap-canc"></table></div>
       </div>
     </div>
 
@@ -1646,6 +1646,7 @@ let capacitadoresData = [];
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
 let coordinadorFiltro = 'todos';
+let umbralInactividad = 3.5;
 
 function semanaDeFecha(fechaStr) {
   const f = new Date(fechaStr + 'T12:00:00');
@@ -3564,36 +3565,131 @@ function renderDetalleAgentesConMes(mesKey) {
   window.__inactivosData = { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey };
 
   const banner = document.getElementById('agentes-inactivos-banner');
-  // Calcular agentes con 3.5+ días sin actividad para banner global
+  // Guardar todos los agentes (no-baja) para recalcular alertas según umbral dinámico
   const todosAgentesData = [];
   Object.keys(agentesPorSup).forEach(sup => {
     agentesPorSup[sup].forEach(a => {
       if (!a.esBaja) todosAgentesData.push({ ...a, supervisor: sup });
     });
   });
-  const sinActAlerta = todosAgentesData.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5);
-  const sinProgAlerta = todosAgentesData.filter(a => a.diasSinProg !== null && a.diasSinProg >= 3.5);
-  window.__inactividadAgentes = { sinActAlerta, sinProgAlerta, mes: mesSel, anio: anioSel };
+  window.__todosAgentesInactividad = { todosAgentesData, mes: mesSel, anio: anioSel };
 
-  let bannerInactividadHTML = '';
-  if (sinActAlerta.length > 0 || sinProgAlerta.length > 0) {
+  // Función que renderiza el banner de inactividad según el umbral actual
+  function renderBannerInactividad() {
+    const sinActAlerta = todosAgentesData.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad);
+    const sinProgAlerta = todosAgentesData.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad);
+    window.__inactividadAgentes = { sinActAlerta, sinProgAlerta, mes: mesSel, anio: anioSel, umbral: umbralInactividad };
+
+    let bannerInactividadHTML = '';
+    // Mostramos el banner siempre (con selector de umbral); aunque no haya alertas el director puede ajustar
+    const sinAlertas = sinActAlerta.length === 0 && sinProgAlerta.length === 0;
     bannerInactividadHTML = `
-      <div style="background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px;">
-        <div style="font-size:20px;">⏰</div>
-        <div style="flex:1; font-size:13px;">
-          <strong>Inactividad de agentes (3.5+ días hábiles):</strong>
-          ${sinActAlerta.length > 0 ? `<span style="color:#DC2626;font-weight:700;"> ${sinActAlerta.length} sin activar</span>` : ''}
-          ${sinActAlerta.length > 0 && sinProgAlerta.length > 0 ? ' · ' : ''}
-          ${sinProgAlerta.length > 0 ? `<span style="color:#7C3AED;font-weight:700;">${sinProgAlerta.length} sin programar</span>` : ''}
-          <span style="display:block;font-size:11px;color:var(--text-soft);margin-top:2px;">Excel con 2 hojas listo para enviar a supervisores diariamente.</span>
+      <div style="background:${sinAlertas ? '#DCFCE7' : '#FEF3C7'}; border-left:4px solid ${sinAlertas ? '#16A34A' : '#D97706'}; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <div style="font-size:20px;">${sinAlertas ? '✅' : '⏰'}</div>
+        <div style="flex:1; min-width:240px; font-size:13px;">
+          <strong>Inactividad de agentes</strong>
+          <span style="display:inline-flex; align-items:center; gap:6px; margin-left:8px; padding:2px 8px; background:white; border:1.5px solid var(--border); border-radius:6px;">
+            <label for="umbral-inact-input" style="font-size:11px; color:var(--text-soft); font-weight:600;">Umbral:</label>
+            <input type="number" id="umbral-inact-input" min="1" max="10" step="0.5" value="${umbralInactividad}" style="width:54px; padding:2px 4px; border:none; font-size:13px; font-weight:700; color:var(--att-navy); text-align:center;">
+            <span style="font-size:11px; color:var(--text-soft);">días hábiles</span>
+          </span>
+          <div style="margin-top:6px;">
+            ${sinActAlerta.length > 0 ? `<span style="color:#DC2626;font-weight:700;">❄️ ${sinActAlerta.length} sin activar</span>` : '<span style="color:var(--text-soft);">0 sin activar</span>'}
+            <span style="color:var(--text-soft);"> · </span>
+            ${sinProgAlerta.length > 0 ? `<span style="color:#7C3AED;font-weight:700;">📋 ${sinProgAlerta.length} sin programar</span>` : '<span style="color:var(--text-soft);">0 sin programar</span>'}
+          </div>
+          <span style="display:block;font-size:11px;color:var(--text-soft);margin-top:2px;">Excel formateado con semáforo y emojis listo para enviar a supervisores.</span>
         </div>
-        <button id="btn-descargar-inactividad" style="background:#D97706; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">📥 Excel inactividad</button>
+        <button id="btn-descargar-inactividad" style="background:#D97706; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;" ${sinAlertas ? 'disabled style="background:#9CA3AF; cursor:not-allowed;"' : ''}>📥 Excel inactividad</button>
       </div>
     `;
+    return bannerInactividadHTML;
+  }
+
+  // Función que cablea el input del umbral (re-render reactivo)
+  function wireUmbralInput() {
+    const inp = document.getElementById('umbral-inact-input');
+    if (!inp) return;
+    inp.addEventListener('change', () => {
+      const v = parseFloat(inp.value);
+      if (isNaN(v) || v < 1 || v > 10) {
+        inp.value = umbralInactividad;
+        return;
+      }
+      umbralInactividad = v;
+      // Re-renderizar banner + actualizar marcadores de supervisores sin recargar todo
+      reRenderBannerYMarcadores();
+    });
+    const btnInac = document.getElementById('btn-descargar-inactividad');
+    if (btnInac) {
+      btnInac.addEventListener('click', (e) => {
+        e.stopPropagation();
+        descargarInactividadExcel();
+      });
+    }
+  }
+
+  // Re-render solo del banner y los conteos en headers de supervisor cuando cambia el umbral
+  function reRenderBannerYMarcadores() {
+    // Re-render banner (preservando el resto del innerHTML)
+    const bannerHtml = renderBannerInactividad();
+    // Si totalInactivos > 0, hay un alert warn debajo; si no, hay alert success
+    let restoBanner = '';
+    if (totalInactivos === 0) {
+      restoBanner = `
+        <div class="alert success" style="margin-bottom: 16px;">
+          <div>✅</div>
+          <div><strong>Excelente:</strong> los ${totalActivosEvaluados} agentes activos del periodo ya tienen al menos 1 venta.</div>
+        </div>
+      `;
+    } else {
+      const pctInac = totalActivosEvaluados > 0 ? (totalInactivos / totalActivosEvaluados * 100) : 0;
+      restoBanner = `
+        <div class="alert warn" style="margin-bottom: 16px; cursor: pointer;" id="banner-inactivos-clickable">
+          <div>⚠️</div>
+          <div style="flex: 1;">
+            <strong>${totalInactivos} agente${totalInactivos > 1 ? 's' : ''} sin venta</strong> en el periodo
+            (${pctInac.toFixed(1)}% de ${totalActivosEvaluados} evaluados).
+            <span style="font-size: 11px; color: var(--text-soft);"> Clic para ver lista detallada.</span>
+          </div>
+          <button id="btn-descargar-inactivos" style="background: var(--green); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">📥 Excel</button>
+        </div>
+      `;
+    }
+    banner.innerHTML = bannerHtml + restoBanner;
+    wireUmbralInput();
+    // Re-cablear el banner de inactivos también
+    if (totalInactivos > 0) {
+      const clickable = document.getElementById('banner-inactivos-clickable');
+      const btnExcel = document.getElementById('btn-descargar-inactivos');
+      if (clickable) {
+        clickable.addEventListener('click', (e) => {
+          if (e.target.id === 'btn-descargar-inactivos') return;
+          mostrarModalInactivos();
+        });
+      }
+      if (btnExcel) {
+        btnExcel.addEventListener('click', (e) => {
+          e.stopPropagation();
+          descargarInactivosExcel();
+        });
+      }
+    }
+    // Actualizar los conteos en cada header de supervisor
+    document.querySelectorAll('.agente-acordeon-header [data-marcador-inactividad]').forEach(el => {
+      const sup = el.getAttribute('data-marcador-inactividad');
+      const ags = (agentesPorSup[sup] || []).filter(a => !a.esBaja);
+      const sinAct = ags.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad).length;
+      const sinProg = ags.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad).length;
+      let html = '';
+      if (sinAct > 0) html += `<span style="color:var(--red);font-weight:600;">❄️ ${sinAct} sin activar ${umbralInactividad}+ días</span>`;
+      if (sinProg > 0) html += `${sinAct > 0 ? ' · ' : ''}<span style="color:#7C3AED;font-weight:600;">📋 ${sinProg} sin programar ${umbralInactividad}+ días</span>`;
+      el.innerHTML = html;
+    });
   }
 
   if (totalInactivos === 0) {
-    banner.innerHTML = bannerInactividadHTML + `
+    banner.innerHTML = renderBannerInactividad() + `
       <div class="alert success" style="margin-bottom: 16px;">
         <div>✅</div>
         <div><strong>Excelente:</strong> los ${totalActivosEvaluados} agentes activos del periodo ya tienen al menos 1 venta.</div>
@@ -3601,7 +3697,7 @@ function renderDetalleAgentesConMes(mesKey) {
     `;
   } else {
     const pctInac = totalActivosEvaluados > 0 ? (totalInactivos / totalActivosEvaluados * 100) : 0;
-    banner.innerHTML = bannerInactividadHTML + `
+    banner.innerHTML = renderBannerInactividad() + `
       <div class="alert warn" style="margin-bottom: 16px; cursor: pointer;" id="banner-inactivos-clickable">
         <div>⚠️</div>
         <div style="flex: 1;">
@@ -3631,16 +3727,8 @@ function renderDetalleAgentesConMes(mesKey) {
     }, 100);
   }
 
-  // Wire del botón de inactividad (siempre, exista o no banner de "sin venta")
-  setTimeout(() => {
-    const btnInac = document.getElementById('btn-descargar-inactividad');
-    if (btnInac) {
-      btnInac.addEventListener('click', (e) => {
-        e.stopPropagation();
-        descargarInactividadExcel();
-      });
-    }
-  }, 100);
+  // Wire del input de umbral y botón de inactividad
+  setTimeout(() => { wireUmbralInput(); }, 100);
 
   const html = supervisoresData.map(s => {
     const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => {
@@ -3654,11 +3742,15 @@ function renderDetalleAgentesConMes(mesKey) {
     const criticos = activos.filter(a => a.meta > 0 && a.pct < 50).length;
     const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100).length;
     const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
-    const alertaInactivos = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5).length;
-    const alertaSinProg = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= 3.5).length;
+    const alertaInactivos = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad).length;
+    const alertaSinProg = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad).length;
     const sinVentas = activos.filter(a => a.avance === 0).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
+
+    let marcadorInactHTML = '';
+    if (alertaInactivos > 0) marcadorInactHTML += `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar ${umbralInactividad}+ días</span>`;
+    if (alertaSinProg > 0) marcadorInactHTML += `${alertaInactivos > 0 ? ' · ' : ''}<span style="color:#7C3AED;font-weight:600;">📋 ${alertaSinProg} sin programar ${umbralInactividad}+ días</span>`;
 
     return `
       <div class="agente-acordeon" data-sup="${s.sup}">
@@ -3672,8 +3764,7 @@ function renderDetalleAgentesConMes(mesKey) {
               ${criticos > 0 ? `<span style="color:var(--red);font-weight:600;">🚨 ${criticos} críticos</span> · ` : ''}
               ${sinVentas > 0 ? `<span style="color:var(--red);font-weight:700;">⛔ ${sinVentas} sin venta</span> · ` : ''}
               ${bajas > 0 ? `<span style="color:#6B7280;font-weight:600;">🔻 ${bajas} baja${bajas > 1 ? 's' : ''}</span> · ` : ''}
-              ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 3.5+ días</span>` : ''}
-              ${alertaSinProg > 0 ? `${alertaInactivos > 0 ? ' · ' : ''}<span style="color:#7C3AED;font-weight:600;">📋 ${alertaSinProg} sin programar 3.5+ días</span>` : ''}
+              <span data-marcador-inactividad="${s.sup}">${marcadorInactHTML}</span>
             </span>
           </span>
           <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
@@ -4086,83 +4177,269 @@ function descargarInactividadExcel() {
     alert('Datos de inactividad no disponibles. Recarga el reporte.');
     return;
   }
-  const { sinActAlerta, sinProgAlerta, mes, anio } = window.__inactividadAgentes;
+  const { sinActAlerta, sinProgAlerta, mes, anio, umbral } = window.__inactividadAgentes;
 
   if (sinActAlerta.length === 0 && sinProgAlerta.length === 0) {
-    alert('No hay agentes con 3.5+ días sin actividad.');
+    alert(`No hay agentes con ${umbral}+ días sin actividad.`);
     return;
   }
 
   const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
   const nombreMes = noms[mes - 1];
+  const fecha = new Date().toISOString().split('T')[0];
 
-  // Mapear plantilla para obtener centro
+  // Mapear plantilla para obtener centro y fecha de ingreso
   const centroPorAgente = {};
-  plantillaData.forEach(p => { centroPorAgente[p.nombre] = p.centro || ''; });
+  const ingresoPorAgente = {};
+  plantillaData.forEach(p => {
+    centroPorAgente[p.nombre] = p.centro || '';
+    ingresoPorAgente[p.nombre] = p.fecha_ingreso || '';
+  });
 
   const wb = XLSX.utils.book_new();
 
-  // Hoja 1: Sin activar 3.5+ días
+  // ===== Estilos reutilizables =====
+  const ATT_BLUE = 'FF002B5C';
+  const ATT_LIGHT = 'FF00A8E0';
+  const WHITE = 'FFFFFFFF';
+  const STRIPE_BG = 'FFF5F8FB';
+
+  const headerStyle = {
+    fill: { fgColor: { rgb: ATT_BLUE.slice(2) } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+    border: {
+      top: { style: 'thin', color: { rgb: '000000' } },
+      bottom: { style: 'thin', color: { rgb: '000000' } },
+      left: { style: 'thin', color: { rgb: '000000' } },
+      right: { style: 'thin', color: { rgb: '000000' } }
+    }
+  };
+  const titleStyle = {
+    fill: { fgColor: { rgb: '002B5C' } },
+    font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  };
+  const subtitleStyle = {
+    fill: { fgColor: { rgb: '0077A8' } },
+    font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  };
+  const baseCell = (extra = {}) => ({
+    font: { name: 'Calibri', sz: 10 },
+    alignment: { vertical: 'center' },
+    border: {
+      top: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      bottom: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      left: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      right: { style: 'thin', color: { rgb: 'D0D7DE' } }
+    },
+    ...extra
+  });
+  const stripeCell = (extra = {}) => baseCell({
+    fill: { fgColor: { rgb: 'F5F8FB' } },
+    ...extra
+  });
+
+  // Color del semáforo según días sin actividad
+  function colorSemaforo(dias) {
+    if (dias >= 7) return { bg: 'B91C1C', fg: 'FFFFFF', emoji: '🔴' };
+    if (dias >= 5) return { bg: 'DC2626', fg: 'FFFFFF', emoji: '🔴' };
+    if (dias >= 3.5) return { bg: 'F59E0B', fg: 'FFFFFF', emoji: '🟡' };
+    if (dias >= 2.5) return { bg: 'FCD34D', fg: '000000', emoji: '🟠' };
+    return { bg: 'FACC15', fg: '000000', emoji: '🟡' };
+  }
+
+  // Color de estatus
+  function colorEstatus(estatus) {
+    if (estatus === 'Cumplido') return { bg: '16A34A', fg: 'FFFFFF' };
+    if (estatus === 'En riesgo') return { bg: 'F59E0B', fg: 'FFFFFF' };
+    if (estatus === 'Atrasado') return { bg: 'F97316', fg: 'FFFFFF' };
+    if (estatus === 'Crítico') return { bg: 'DC2626', fg: 'FFFFFF' };
+    return { bg: 'E5E7EB', fg: '000000' };
+  }
+
+  // Helper para construir hoja con formato
+  function construirHoja(filas, columnas, titulo, anchoColumnas, tipoSheet) {
+    // Estructura: Fila 0 = Título; Fila 1 = Subtítulo; Fila 2 = headers; Fila 3+ = datos
+    const aoa = [];
+    const merges = [];
+    const rangoCols = columnas.length - 1;
+
+    // Título
+    const tituloFila = new Array(columnas.length).fill('');
+    tituloFila[0] = titulo;
+    aoa.push(tituloFila);
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: rangoCols } });
+
+    // Subtítulo
+    const subtituloFila = new Array(columnas.length).fill('');
+    subtituloFila[0] = `Mes: ${nombreMes} ${anio}  ·  Corte: ${fecha}  ·  Umbral: ${umbral} días hábiles  ·  Total registros: ${filas.length}`;
+    aoa.push(subtituloFila);
+    merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: rangoCols } });
+
+    // Headers
+    aoa.push(columnas);
+
+    // Datos
+    filas.forEach(fila => {
+      aoa.push(columnas.map(col => fila[col] !== undefined ? fila[col] : ''));
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    // Aplicar merges
+    ws['!merges'] = merges;
+
+    // Aplicar anchos
+    ws['!cols'] = anchoColumnas.map(w => ({ wch: w }));
+
+    // Aplicar alturas
+    ws['!rows'] = [
+      { hpt: 28 }, // título
+      { hpt: 18 }, // subtítulo
+      { hpt: 30 }, // headers
+    ];
+    for (let i = 0; i < filas.length; i++) ws['!rows'].push({ hpt: 18 });
+
+    // Congelar primera fila de headers
+    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+
+    // Aplicar estilos a celdas
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+        if (R === 0) {
+          ws[ref].s = titleStyle;
+        } else if (R === 1) {
+          ws[ref].s = subtitleStyle;
+        } else if (R === 2) {
+          ws[ref].s = headerStyle;
+        } else {
+          // Filas de datos
+          const isStripe = (R - 3) % 2 === 1;
+          const colName = columnas[C];
+          const fila = filas[R - 3];
+
+          let cellStyle = isStripe ? stripeCell() : baseCell();
+
+          // Columnas con formato especial
+          if (colName === 'Días sin activar' || colName === 'Días sin programar') {
+            const dias = parseFloat(fila[colName]) || 0;
+            const c = colorSemaforo(dias);
+            cellStyle = baseCell({
+              fill: { fgColor: { rgb: c.bg } },
+              font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: c.fg } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Estatus') {
+            const c = colorEstatus(fila[colName]);
+            cellStyle = baseCell({
+              fill: { fgColor: { rgb: c.bg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: c.fg } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Severidad') {
+            cellStyle = baseCell({
+              ...((isStripe) ? { fill: { fgColor: { rgb: 'F5F8FB' } } } : {}),
+              font: { name: 'Calibri', sz: 14 },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === '#' || colName === 'Centro' || colName === 'Tipo' ||
+                     colName === 'Activadas mes' || colName === 'Programadas mes' ||
+                     colName === 'Meta' || colName === '% Cumplimiento') {
+            cellStyle = isStripe ? stripeCell({ alignment: { horizontal: 'center', vertical: 'center' } })
+                                 : baseCell({ alignment: { horizontal: 'center', vertical: 'center' } });
+          } else if (colName === 'Tipo') {
+            const tipo = fila[colName];
+            const tipoBg = tipo === 'Nuevo' ? 'DBEAFE' : tipo === 'Experimentado' ? 'D1FAE5' : 'F3F4F6';
+            cellStyle = baseCell({
+              fill: { fgColor: { rgb: tipoBg } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Supervisor') {
+            cellStyle = (isStripe ? stripeCell({}) : baseCell({}));
+            cellStyle.font = { name: 'Calibri', sz: 10, bold: true };
+          }
+
+          ws[ref].s = cellStyle;
+        }
+      }
+    }
+
+    return ws;
+  }
+
+  // ===== HOJA 1: Sin activar =====
   if (sinActAlerta.length > 0) {
     const filasAct = [...sinActAlerta]
       .sort((a, b) => {
-        // Orden: por supervisor, luego por días sin activar descendente
         if (a.supervisor !== b.supervisor) return a.supervisor.localeCompare(b.supervisor);
         return (b.diasSinAct || 0) - (a.diasSinAct || 0);
       })
-      .map((a, idx) => ({
-        '#': idx + 1,
-        'Supervisor': a.supervisor,
-        'Agente': a.ejecutivo,
-        'Centro': centroPorAgente[a.ejecutivo] || '',
-        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
-        'Dias sin activar': Number((a.diasSinAct || 0).toFixed(1)),
-        'Ultima activada': a.ultAct || '— Nunca —',
-        'Activadas mes': a.avance,
-        'Programadas mes': a.programadas,
-        'Meta': a.meta,
-        '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
-        'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
-      }));
-    const ws1 = XLSX.utils.json_to_sheet(filasAct);
-    ws1['!cols'] = [{wch:5},{wch:14},{wch:35},{wch:8},{wch:14},{wch:14},{wch:14},{wch:13},{wch:15},{wch:7},{wch:14},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, ws1, 'Sin activar 3.5+');
-  } else {
-    // Hoja vacía con mensaje
-    const ws1 = XLSX.utils.aoa_to_sheet([['Sin agentes en esta categoría']]);
-    XLSX.utils.book_append_sheet(wb, ws1, 'Sin activar 3.5+');
+      .map((a, idx) => {
+        const dias = Number((a.diasSinAct || 0).toFixed(1));
+        const sem = colorSemaforo(dias);
+        const estatus = a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+        return {
+          '#': idx + 1,
+          'Severidad': sem.emoji,
+          'Supervisor': a.supervisor,
+          'Agente': a.ejecutivo,
+          'Centro': centroPorAgente[a.ejecutivo] || '',
+          'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+          'Días sin activar': dias,
+          'Última activada': a.ultAct || '— Nunca —',
+          'Activadas mes': a.avance,
+          'Programadas mes': a.programadas,
+          'Meta': a.meta,
+          '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : 0,
+          'Estatus': estatus
+        };
+      });
+    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin activar','Última activada','Activadas mes','Programadas mes','Meta','% Cumplimiento','Estatus'];
+    const anchos = [4,11,14,32,8,14,16,14,14,16,7,14,12];
+    const ws = construirHoja(filasAct, cols, '❄️ AGENTES SIN ACTIVAR', anchos, 'act');
+    XLSX.utils.book_append_sheet(wb, ws, 'Sin activar');
   }
 
-  // Hoja 2: Sin programar 3.5+ días
+  // ===== HOJA 2: Sin programar =====
   if (sinProgAlerta.length > 0) {
     const filasProg = [...sinProgAlerta]
       .sort((a, b) => {
         if (a.supervisor !== b.supervisor) return a.supervisor.localeCompare(b.supervisor);
         return (b.diasSinProg || 0) - (a.diasSinProg || 0);
       })
-      .map((a, idx) => ({
-        '#': idx + 1,
-        'Supervisor': a.supervisor,
-        'Agente': a.ejecutivo,
-        'Centro': centroPorAgente[a.ejecutivo] || '',
-        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
-        'Dias sin programar': Number((a.diasSinProg || 0).toFixed(1)),
-        'Ultima programada': a.ultProg || '— Nunca —',
-        'Programadas mes': a.programadas,
-        'Activadas mes': a.avance,
-        'Meta': a.meta,
-        '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
-        'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
-      }));
-    const ws2 = XLSX.utils.json_to_sheet(filasProg);
-    ws2['!cols'] = [{wch:5},{wch:14},{wch:35},{wch:8},{wch:14},{wch:16},{wch:16},{wch:15},{wch:13},{wch:7},{wch:14},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, ws2, 'Sin programar 3.5+');
-  } else {
-    const ws2 = XLSX.utils.aoa_to_sheet([['Sin agentes en esta categoría']]);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Sin programar 3.5+');
+      .map((a, idx) => {
+        const dias = Number((a.diasSinProg || 0).toFixed(1));
+        const sem = colorSemaforo(dias);
+        const estatus = a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+        return {
+          '#': idx + 1,
+          'Severidad': sem.emoji,
+          'Supervisor': a.supervisor,
+          'Agente': a.ejecutivo,
+          'Centro': centroPorAgente[a.ejecutivo] || '',
+          'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+          'Días sin programar': dias,
+          'Última programada': a.ultProg || '— Nunca —',
+          'Programadas mes': a.programadas,
+          'Activadas mes': a.avance,
+          'Meta': a.meta,
+          '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : 0,
+          'Estatus': estatus
+        };
+      });
+    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin programar','Última programada','Programadas mes','Activadas mes','Meta','% Cumplimiento','Estatus'];
+    const anchos = [4,11,14,32,8,14,18,16,16,14,7,14,12];
+    const ws = construirHoja(filasProg, cols, '📋 AGENTES SIN PROGRAMAR', anchos, 'prog');
+    XLSX.utils.book_append_sheet(wb, ws, 'Sin programar');
   }
 
-  // Hoja 3: Resumen por supervisor
+  // ===== HOJA 3: Resumen por supervisor (con barras y colores) =====
   const resumenSup = {};
   sinActAlerta.forEach(a => {
     if (!resumenSup[a.supervisor]) resumenSup[a.supervisor] = { sinAct: 0, sinProg: 0 };
@@ -4174,24 +4451,98 @@ function descargarInactividadExcel() {
   });
   const filasResumen = Object.keys(resumenSup).sort().map(sup => ({
     'Supervisor': sup,
-    'Agentes sin activar 3.5+ dias': resumenSup[sup].sinAct,
-    'Agentes sin programar 3.5+ dias': resumenSup[sup].sinProg,
-    'Total acciones requeridas': resumenSup[sup].sinAct + resumenSup[sup].sinProg
+    'Sin activar': resumenSup[sup].sinAct,
+    'Sin programar': resumenSup[sup].sinProg,
+    'Total acciones': resumenSup[sup].sinAct + resumenSup[sup].sinProg
   }));
   if (filasResumen.length > 0) {
     filasResumen.push({
       'Supervisor': 'TOTAL',
-      'Agentes sin activar 3.5+ dias': sinActAlerta.length,
-      'Agentes sin programar 3.5+ dias': sinProgAlerta.length,
-      'Total acciones requeridas': sinActAlerta.length + sinProgAlerta.length
+      'Sin activar': sinActAlerta.length,
+      'Sin programar': sinProgAlerta.length,
+      'Total acciones': sinActAlerta.length + sinProgAlerta.length
     });
-    const ws3 = XLSX.utils.json_to_sheet(filasResumen);
-    ws3['!cols'] = [{wch:14},{wch:30},{wch:32},{wch:25}];
-    XLSX.utils.book_append_sheet(wb, ws3, 'Resumen por supervisor');
+
+    // Construcción manual para resumen con estilos especiales
+    const aoa = [
+      ['📊 RESUMEN POR SUPERVISOR', '', '', ''],
+      [`Mes: ${nombreMes} ${anio}  ·  Corte: ${fecha}  ·  Umbral: ${umbral} días hábiles`, '', '', ''],
+      ['Supervisor', 'Sin activar', 'Sin programar', 'Total acciones'],
+      ...filasResumen.map(f => [f['Supervisor'], f['Sin activar'], f['Sin programar'], f['Total acciones']])
+    ];
+    const ws3 = XLSX.utils.aoa_to_sheet(aoa);
+    ws3['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }
+    ];
+    ws3['!cols'] = [{wch:18},{wch:14},{wch:16},{wch:16}];
+    ws3['!rows'] = [{hpt:28},{hpt:18},{hpt:30}];
+    for (let i = 0; i < filasResumen.length; i++) ws3['!rows'].push({ hpt: 22 });
+
+    // Estilos del resumen
+    const r3 = XLSX.utils.decode_range(ws3['!ref']);
+    for (let R = r3.s.r; R <= r3.e.r; R++) {
+      for (let C = r3.s.c; C <= r3.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws3[ref]) ws3[ref] = { t: 's', v: '' };
+        if (R === 0) ws3[ref].s = titleStyle;
+        else if (R === 1) ws3[ref].s = subtitleStyle;
+        else if (R === 2) ws3[ref].s = headerStyle;
+        else {
+          const fila = filasResumen[R - 3];
+          const esTotal = fila['Supervisor'] === 'TOTAL';
+          let cellStyle;
+          if (esTotal) {
+            cellStyle = {
+              fill: { fgColor: { rgb: '002B5C' } },
+              font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+              alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center' },
+              border: {
+                top: { style: 'medium', color: { rgb: '000000' } },
+                bottom: { style: 'medium', color: { rgb: '000000' } },
+                left: { style: 'thin', color: { rgb: '000000' } },
+                right: { style: 'thin', color: { rgb: '000000' } }
+              }
+            };
+          } else {
+            const isStripe = (R - 3) % 2 === 1;
+            cellStyle = isStripe ? stripeCell() : baseCell();
+            if (C === 0) cellStyle.font = { name: 'Calibri', sz: 10, bold: true };
+            else cellStyle.alignment = { horizontal: 'center', vertical: 'center' };
+
+            // Color de severidad en columna "Total acciones"
+            if (C === 3) {
+              const total = fila['Total acciones'];
+              if (total >= 5) cellStyle = baseCell({
+                fill: { fgColor: { rgb: 'DC2626' } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+              else if (total >= 3) cellStyle = baseCell({
+                fill: { fgColor: { rgb: 'F59E0B' } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+              else if (total > 0) cellStyle = baseCell({
+                fill: { fgColor: { rgb: 'FCD34D' } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: '000000' } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+              else cellStyle = baseCell({
+                fill: { fgColor: { rgb: 'D1FAE5' } },
+                font: { name: 'Calibri', sz: 11, color: { rgb: '065F46' } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+            }
+          }
+          ws3[ref].s = cellStyle;
+        }
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws3, 'Resumen');
   }
 
-  const fecha = new Date().toISOString().split('T')[0];
-  XLSX.writeFile(wb, `inactividad_agentes_${nombreMes}_${anio}_corte_${fecha}.xlsx`);
+  XLSX.writeFile(wb, `inactividad_${nombreMes}_${anio}_umbral${umbral}d_${fecha}.xlsx`);
 }
 
 function descargarEquipoExcel(supervisor) {
