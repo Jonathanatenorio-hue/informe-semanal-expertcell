@@ -801,6 +801,7 @@
     <div class="nav-sticky">
       <div class="nav-sticky-inner">
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
+        <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
         <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
         <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
@@ -870,6 +871,46 @@
 
     <!-- EMBUDO PRINCIPAL -->
     <div id="embudo-section"></div>
+
+    <!-- SIMULADOR WHAT-IF -->
+    <div class="section collapsible" id="sec-whatif">
+      <div class="section-title">🔮 Simulador "¿Qué hubiera pasado si...?"</div>
+      <div class="section-body">
+        <div class="section-subtitle">Compara el rendimiento de dos rangos del mes y proyecta qué habría pasado si el mes entero hubiera tenido el ritmo de cualquiera de esos rangos. También detecta automáticamente la mejor semana y la mejor mitad.</div>
+
+        <div style="display:flex; gap:16px; margin:16px 0 8px; flex-wrap:wrap; align-items:center;">
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span style="font-size:13px; color:var(--text-soft); font-weight:600;">Mes:</span>
+            <select id="whatif-mes-select" style="padding:8px 14px; border:1.5px solid var(--border); border-radius:8px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:160px;"></select>
+          </div>
+          <div style="display:flex; gap:6px;">
+            <button class="proy-btn active" data-whatif-modo="mitades">1ª vs 2ª mitad</button>
+            <button class="proy-btn" data-whatif-modo="custom">Rangos custom</button>
+            <button class="proy-btn" data-whatif-modo="auto">Mejor semana auto</button>
+          </div>
+        </div>
+
+        <div id="whatif-controles-custom" style="display:none; padding:14px; background:var(--bg); border-radius:10px; margin-bottom:14px; flex-wrap:wrap; gap:14px; align-items:end;">
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Rango A (desde - hasta)</span>
+            <div style="display:flex; gap:6px;">
+              <input type="date" id="whatif-a-desde" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;">
+              <input type="date" id="whatif-a-hasta" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;">
+            </div>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Rango B (desde - hasta)</span>
+            <div style="display:flex; gap:6px;">
+              <input type="date" id="whatif-b-desde" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;">
+              <input type="date" id="whatif-b-hasta" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;">
+            </div>
+          </div>
+          <button id="whatif-aplicar-custom" class="proy-btn" style="background:var(--att-blue); color:white; border-color:var(--att-blue);">Aplicar</button>
+        </div>
+
+        <div id="whatif-contenido"></div>
+      </div>
+    </div>
 
     <!-- VISTA DIARIA / SEMANAL -->
     <div class="section collapsible" id="sec-vista-tiempo">
@@ -1674,6 +1715,36 @@ async function cargarDatos() {
   const { data: calData } = await db.from('calendario_dias').select('*');
   calendarioData = calData || [];
 
+  // BLINDAJE: si en el mes en curso o en meses cercanos faltan días en calendario_dias,
+  // rellenarlos en memoria con la regla estándar (lun-vie=1, sáb=0.5, dom=0). Esto evita
+  // que un olvido en metas.html distorsione "X de Y días hábiles" en el reporte.
+  // Solo rellena en memoria; no escribe a Supabase.
+  (function autoRellenarCalendario(){
+    const fechasExistentes = new Set(calendarioData.map(c => c.fecha));
+    const hoy = new Date();
+    // Rellenar desde 6 meses atrás hasta 2 meses adelante para tener margen
+    const desde = new Date(hoy.getFullYear(), hoy.getMonth() - 6, 1);
+    const hasta = new Date(hoy.getFullYear(), hoy.getMonth() + 2, 0);
+    const agregados = [];
+    for (let d = new Date(desde); d <= hasta; d.setDate(d.getDate() + 1)) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const fechaStr = `${yyyy}-${mm}-${dd}`;
+      if (fechasExistentes.has(fechaStr)) continue;
+      const dow = d.getDay(); // 0=dom, 6=sáb
+      let tipo, factor;
+      if (dow === 0) { tipo = 'domingo'; factor = 0; }
+      else if (dow === 6) { tipo = 'sabado'; factor = 0.5; }
+      else { tipo = 'laborable'; factor = 1; }
+      agregados.push({ fecha: fechaStr, tipo, factor_dia: factor, _autorelleno: true });
+    }
+    if (agregados.length > 0) {
+      calendarioData = calendarioData.concat(agregados);
+      console.log(`[Calendario] Auto-rellenados ${agregados.length} días faltantes (no afecta Supabase). Si alguno debe ser festivo/descanso, márcalo en metas.html.`);
+    }
+  })();
+
   const { data: mSup } = await db.from('metas_supervisor').select('*');
   metasSupData = mSup || [];
 
@@ -1987,6 +2058,7 @@ function renderReporte(wActual, wCurrent) {
   renderVistaTiempo();
   renderEstructura();
   renderEmbudo(actual, anterior);
+  renderWhatIf();
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
   renderMapasCalor(iniActStr, finActStr, iniAntStr, finAntStr, wActual, wAnterior);
@@ -2082,6 +2154,320 @@ function renderEmbudo(actual, anterior) {
   const embudoSection = document.getElementById('embudo-section');
   embudoSection.innerHTML = '';
   embudoSection.appendChild(section);
+}
+
+// =====================================================================
+// SIMULADOR WHAT-IF: comparar rangos del mes y proyectar al mes completo
+// =====================================================================
+let whatifModo = 'mitades';
+let whatifMesSel = null; // formato 'YYYY-MM'
+
+function renderWhatIf() {
+  const sel = document.getElementById('whatif-mes-select');
+  if (!sel.dataset.inicializado) {
+    // Llenar selector con meses que tengan datos
+    const meses = new Set();
+    ventasData.forEach(r => {
+      if (r.fecha_activacion) meses.add(r.fecha_activacion.substring(0,7));
+      if (r.fecha_bo) meses.add(r.fecha_bo.substring(0,7));
+    });
+    const mesesArr = [...meses].sort().reverse();
+    sel.innerHTML = mesesArr.map(m => {
+      const [y, mm] = m.split('-');
+      const nombre = `${MESES_NOMBRE[parseInt(mm)-1]} ${y}`;
+      return `<option value="${m}">${nombre}</option>`;
+    }).join('');
+    whatifMesSel = mesesArr[0] || null;
+    sel.value = whatifMesSel;
+    sel.dataset.inicializado = '1';
+    sel.onchange = () => { whatifMesSel = sel.value; renderWhatIfContenido(); };
+
+    // Botones de modo
+    document.querySelectorAll('[data-whatif-modo]').forEach(btn => {
+      btn.onclick = () => {
+        document.querySelectorAll('[data-whatif-modo]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        whatifModo = btn.dataset.whatifModo;
+        document.getElementById('whatif-controles-custom').style.display =
+          whatifModo === 'custom' ? 'flex' : 'none';
+        renderWhatIfContenido();
+      };
+    });
+
+    // Botón aplicar custom
+    document.getElementById('whatif-aplicar-custom').onclick = () => renderWhatIfContenido();
+  }
+  renderWhatIfContenido();
+}
+
+function _whatifCalcularRango(desdeStr, hastaStr) {
+  // Devuelve { activadas, dias, ritmo } para un rango [desde, hasta]
+  let act = 0;
+  ventasData.forEach(r => {
+    if (r.estatus === 'activada' && r.fecha_activacion >= desdeStr && r.fecha_activacion <= hastaStr) {
+      if (SUPERVISORES.includes(r.supervisor)) act++;
+    }
+  });
+  let dias = 0;
+  calendarioData.forEach(d => {
+    if (d.fecha >= desdeStr && d.fecha <= hastaStr) dias += parseFloat(d.factor_dia) || 0;
+  });
+  const ritmo = dias > 0 ? act / dias : 0;
+  return { act, dias, ritmo };
+}
+
+function _whatifTarjeta(label, color, datos, diasMes, metaMes) {
+  const proyMes = Math.round(datos.ritmo * diasMes);
+  const pctMeta = metaMes > 0 ? (proyMes / metaMes * 100) : 0;
+  const sobrante = proyMes - metaMes;
+  const sobranteSig = sobrante >= 0 ? `+${sobrante}` : `${sobrante}`;
+  const pctColor = pctMeta >= 100 ? 'var(--green)' : pctMeta >= 90 ? 'var(--amber)' : 'var(--red)';
+  return `
+    <div style="background:white; border:2px solid ${color}; border-radius:12px; padding:18px;">
+      <div style="font-size:11px; font-weight:700; color:${color}; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">${label}</div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;">
+        <div>
+          <div style="font-size:11px; color:var(--text-soft); font-weight:600;">Activadas</div>
+          <div style="font-size:22px; font-weight:800; color:var(--att-navy);">${datos.act}</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-soft); font-weight:600;">Días hábiles</div>
+          <div style="font-size:22px; font-weight:800; color:var(--att-navy);">${datos.dias.toFixed(1)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-soft); font-weight:600;">Ritmo / día</div>
+          <div style="font-size:22px; font-weight:800; color:${color};">${datos.ritmo.toFixed(1)}</div>
+        </div>
+        <div>
+          <div style="font-size:11px; color:var(--text-soft); font-weight:600;">Proyección al mes</div>
+          <div style="font-size:22px; font-weight:800; color:${color};">${proyMes}</div>
+        </div>
+      </div>
+      <div style="border-top:1px solid var(--border); padding-top:12px;">
+        <div style="font-size:11px; color:var(--text-soft); font-weight:600; margin-bottom:4px;">Si todo el mes hubiera ido a este ritmo:</div>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:14px; font-weight:700;">${proyMes} de ${metaMes} meta</span>
+          <span style="font-size:18px; font-weight:800; color:${pctColor};">${pctMeta.toFixed(1)}% (${sobranteSig})</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWhatIfContenido() {
+  const cont = document.getElementById('whatif-contenido');
+  if (!whatifMesSel) {
+    cont.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-soft);">No hay datos disponibles</div>';
+    return;
+  }
+
+  const [anioStr, mesStr] = whatifMesSel.split('-');
+  const anio = parseInt(anioStr);
+  const mes = parseInt(mesStr);
+  const ultDia = new Date(anio, mes, 0).getDate();
+  const iniMes = `${anioStr}-${mesStr}-01`;
+  const finMes = `${anioStr}-${mesStr}-${String(ultDia).padStart(2,'0')}`;
+  const mid = Math.floor(ultDia / 2);
+  const finPrimera = `${anioStr}-${mesStr}-${String(mid).padStart(2,'0')}`;
+  const iniSegunda = `${anioStr}-${mesStr}-${String(mid+1).padStart(2,'0')}`;
+
+  // Días hábiles totales del mes (de calendarioData, ya con auto-relleno)
+  let diasMes = 0;
+  calendarioData.forEach(d => {
+    if (d.fecha >= iniMes && d.fecha <= finMes) diasMes += parseFloat(d.factor_dia) || 0;
+  });
+
+  // Meta total del mes (suma de metas de supervisores oficiales)
+  const metaMes = metasSupData
+    .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
+    .reduce((a,m) => a + m.meta_activadas, 0);
+
+  // Real del mes (referencia)
+  const real = _whatifCalcularRango(iniMes, finMes);
+
+  let html = '';
+
+  // Encabezado de referencia
+  const pctReal = metaMes > 0 ? (real.act / metaMes * 100) : 0;
+  html += `
+    <div style="background:linear-gradient(135deg, var(--att-navy), var(--att-blue-dark)); color:white; border-radius:12px; padding:16px 20px; margin-bottom:18px;">
+      <div style="font-size:11px; opacity:0.8; font-weight:700; text-transform:uppercase; margin-bottom:4px;">Referencia · ${MESES_NOMBRE[mes-1]} ${anio}</div>
+      <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
+        <div><span style="font-size:13px; opacity:0.85;">Real al cierre / corte:</span> <span style="font-size:20px; font-weight:800; margin-left:6px;">${real.act}</span></div>
+        <div><span style="font-size:13px; opacity:0.85;">Meta:</span> <span style="font-size:20px; font-weight:800; margin-left:6px;">${metaMes}</span></div>
+        <div><span style="font-size:13px; opacity:0.85;">Cumplimiento:</span> <span style="font-size:20px; font-weight:800; margin-left:6px; color:${pctReal>=100?'#22C55E':pctReal>=90?'#FBBF24':'#FCA5A5'};">${pctReal.toFixed(1)}%</span></div>
+        <div><span style="font-size:13px; opacity:0.85;">Días hábiles del mes:</span> <span style="font-size:20px; font-weight:800; margin-left:6px;">${diasMes.toFixed(1)}</span></div>
+      </div>
+    </div>
+  `;
+
+  if (whatifModo === 'mitades') {
+    // 1ª mitad vs 2ª mitad
+    const a = _whatifCalcularRango(iniMes, finPrimera);
+    const b = _whatifCalcularRango(iniSegunda, finMes);
+    const labelA = `1ª mitad (${iniMes.slice(8)}–${finPrimera.slice(8)} ${MESES_NOMBRE[mes-1]})`;
+    const labelB = `2ª mitad (${iniSegunda.slice(8)}–${finMes.slice(8)} ${MESES_NOMBRE[mes-1]})`;
+    html += `
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:14px;">
+        ${_whatifTarjeta(labelA, '#DC2626', a, diasMes, metaMes)}
+        ${_whatifTarjeta(labelB, '#16A34A', b, diasMes, metaMes)}
+      </div>
+    `;
+    html += _whatifLectura(a, b, labelA, labelB, real, metaMes, diasMes);
+  } else if (whatifModo === 'custom') {
+    // Inicializar inputs si están vacíos
+    const inA1 = document.getElementById('whatif-a-desde');
+    const inA2 = document.getElementById('whatif-a-hasta');
+    const inB1 = document.getElementById('whatif-b-desde');
+    const inB2 = document.getElementById('whatif-b-hasta');
+    if (!inA1.value) inA1.value = iniMes;
+    if (!inA2.value) inA2.value = finPrimera;
+    if (!inB1.value) inB1.value = iniSegunda;
+    if (!inB2.value) inB2.value = finMes;
+
+    const a = _whatifCalcularRango(inA1.value, inA2.value);
+    const b = _whatifCalcularRango(inB1.value, inB2.value);
+    const labelA = `Rango A (${inA1.value} → ${inA2.value})`;
+    const labelB = `Rango B (${inB1.value} → ${inB2.value})`;
+    html += `
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:14px;">
+        ${_whatifTarjeta(labelA, '#0077A8', a, diasMes, metaMes)}
+        ${_whatifTarjeta(labelB, '#FF7200', b, diasMes, metaMes)}
+      </div>
+    `;
+    html += _whatifLectura(a, b, labelA, labelB, real, metaMes, diasMes);
+  } else if (whatifModo === 'auto') {
+    // Mejor semana ISO del mes
+    // Agrupar activadas por semana ISO dentro del rango del mes
+    const semanas = {}; // wIso -> { act, dias, fechas:[] }
+    calendarioData.forEach(d => {
+      if (d.fecha < iniMes || d.fecha > finMes) return;
+      const w = semanaDeFecha(d.fecha);
+      if (!semanas[w]) semanas[w] = { act: 0, dias: 0, fechas: [] };
+      semanas[w].dias += parseFloat(d.factor_dia) || 0;
+      semanas[w].fechas.push(d.fecha);
+    });
+    ventasData.forEach(r => {
+      if (r.estatus === 'activada' && r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes && SUPERVISORES.includes(r.supervisor)) {
+        const w = semanaDeFecha(r.fecha_activacion);
+        if (semanas[w]) semanas[w].act++;
+      }
+    });
+
+    const semanasArr = Object.entries(semanas)
+      .map(([w, s]) => ({ w: parseInt(w), ...s, ritmo: s.dias > 0 ? s.act/s.dias : 0, ini: s.fechas.sort()[0], fin: s.fechas.sort()[s.fechas.length-1] }))
+      .filter(s => s.dias > 0)
+      .sort((a,b) => b.ritmo - a.ritmo);
+
+    if (semanasArr.length === 0) {
+      html += '<div style="padding:20px; text-align:center; color:var(--text-soft);">No hay datos suficientes para detectar mejor/peor semana.</div>';
+    } else {
+      const mejor = semanasArr[0];
+      const peor = semanasArr[semanasArr.length-1];
+      const proyMejor = Math.round(mejor.ritmo * diasMes);
+      const proyPeor = Math.round(peor.ritmo * diasMes);
+
+      // Tabla de todas las semanas
+      let tablaSem = `
+        <table style="width:100%; border-collapse:collapse; margin-bottom:14px;">
+          <thead>
+            <tr style="background:var(--bg);">
+              <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Semana ISO</th>
+              <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Rango</th>
+              <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Activadas</th>
+              <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Días háb.</th>
+              <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Ritmo/día</th>
+              <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Proy. mes</th>
+              <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">% meta</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      semanasArr.sort((a,b) => a.w - b.w).forEach(s => {
+        const proy = Math.round(s.ritmo * diasMes);
+        const pct = metaMes > 0 ? (proy/metaMes*100) : 0;
+        const pctColor = pct >= 100 ? 'var(--green)' : pct >= 90 ? 'var(--amber)' : 'var(--red)';
+        const esMejor = s.w === mejor.w;
+        const esPeor = s.w === peor.w && semanasArr.length > 1;
+        const bg = esMejor ? '#DCFCE7' : esPeor ? '#FEE2E2' : 'transparent';
+        const tag = esMejor ? ' 🏆' : esPeor ? ' ⚠️' : '';
+        tablaSem += `
+          <tr style="background:${bg}; border-bottom:1px solid var(--border);">
+            <td style="padding:8px; font-weight:700;">W${s.w}${tag}</td>
+            <td style="padding:8px; font-size:13px; color:var(--text-soft);">${s.ini} → ${s.fin}</td>
+            <td style="padding:8px; text-align:right; font-weight:600;">${s.act}</td>
+            <td style="padding:8px; text-align:right;">${s.dias.toFixed(1)}</td>
+            <td style="padding:8px; text-align:right; font-weight:700;">${s.ritmo.toFixed(1)}</td>
+            <td style="padding:8px; text-align:right; font-weight:700;">${proy}</td>
+            <td style="padding:8px; text-align:right; font-weight:800; color:${pctColor};">${pct.toFixed(0)}%</td>
+          </tr>
+        `;
+      });
+      tablaSem += '</tbody></table>';
+
+      const proyMejorPct = metaMes > 0 ? (proyMejor/metaMes*100) : 0;
+      const proyPeorPct = metaMes > 0 ? (proyPeor/metaMes*100) : 0;
+      const upliftMejor = proyMejor - real.act;
+      const upliftMejorSig = upliftMejor >= 0 ? `+${upliftMejor}` : `${upliftMejor}`;
+
+      html += `
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; margin-bottom:14px;">
+          <div style="background:white; border:2px solid #16A34A; border-radius:12px; padding:18px;">
+            <div style="font-size:11px; font-weight:700; color:#16A34A; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">🏆 Mejor semana · W${mejor.w}</div>
+            <div style="font-size:13px; color:var(--text-soft); margin-bottom:10px;">${mejor.ini} → ${mejor.fin}</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div><div style="font-size:11px; color:var(--text-soft);">Ritmo/día</div><div style="font-size:22px; font-weight:800; color:#16A34A;">${mejor.ritmo.toFixed(1)}</div></div>
+              <div><div style="font-size:11px; color:var(--text-soft);">Proyección al mes</div><div style="font-size:22px; font-weight:800; color:#16A34A;">${proyMejor}</div></div>
+            </div>
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:14px;">
+              Si todo abril hubiera ido al ritmo de W${mejor.w}: <strong style="color:#16A34A;">${proyMejorPct.toFixed(1)}%</strong> de meta (${upliftMejorSig} vs real)
+            </div>
+          </div>
+          <div style="background:white; border:2px solid #DC2626; border-radius:12px; padding:18px;">
+            <div style="font-size:11px; font-weight:700; color:#DC2626; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">⚠️ Peor semana · W${peor.w}</div>
+            <div style="font-size:13px; color:var(--text-soft); margin-bottom:10px;">${peor.ini} → ${peor.fin}</div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div><div style="font-size:11px; color:var(--text-soft);">Ritmo/día</div><div style="font-size:22px; font-weight:800; color:#DC2626;">${peor.ritmo.toFixed(1)}</div></div>
+              <div><div style="font-size:11px; color:var(--text-soft);">Proyección al mes</div><div style="font-size:22px; font-weight:800; color:#DC2626;">${proyPeor}</div></div>
+            </div>
+            <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:14px;">
+              Si todo abril hubiera ido al ritmo de W${peor.w}: <strong style="color:#DC2626;">${proyPeorPct.toFixed(1)}%</strong> de meta
+            </div>
+          </div>
+        </div>
+        <div style="font-weight:600; font-size:14px; margin:18px 0 8px; color:var(--att-navy);">Detalle por semana</div>
+        ${tablaSem}
+      `;
+
+      // Lectura ejecutiva
+      const gap = proyMejor - proyPeor;
+      html += `
+        <div style="background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px; padding:14px 18px; margin-top:8px;">
+          <strong>📌 Lectura:</strong> La diferencia entre la mejor y la peor semana representa <strong>${gap}</strong> ventas mensuales potenciales si lográramos sostener el ritmo de W${mejor.w} todo el mes.
+          ${proyMejor > metaMes ? `Ese ritmo basta para superar la meta de ${metaMes} en <strong>${proyMejor - metaMes}</strong> ventas.` : `Aún a ese ritmo faltarían <strong>${metaMes - proyMejor}</strong> ventas para llegar a la meta.`}
+        </div>
+      `;
+    }
+  }
+
+  cont.innerHTML = html;
+}
+
+function _whatifLectura(a, b, labelA, labelB, real, metaMes, diasMes) {
+  const pA = Math.round(a.ritmo * diasMes);
+  const pB = Math.round(b.ritmo * diasMes);
+  const mejor = a.ritmo >= b.ritmo ? { l: labelA, p: pA, r: a.ritmo } : { l: labelB, p: pB, r: b.ritmo };
+  const peor = a.ritmo < b.ritmo ? { l: labelA, p: pA, r: a.ritmo } : { l: labelB, p: pB, r: b.ritmo };
+  const gap = mejor.p - peor.p;
+  const vsReal = mejor.p - real.act;
+  const vsRealSig = vsReal >= 0 ? `+${vsReal}` : `${vsReal}`;
+  return `
+    <div style="background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px; padding:14px 18px;">
+      <strong>📌 Lectura:</strong> El ritmo de <strong>${mejor.l}</strong> (${mejor.r.toFixed(1)} act/día) habría rendido <strong>${mejor.p}</strong> ventas en el mes — ${vsRealSig} contra lo real.
+      La brecha entre ambos rangos equivale a <strong>${gap}</strong> ventas mensuales potenciales.
+      ${mejor.p >= metaMes ? `Ese ritmo basta para cumplir la meta de ${metaMes}.` : `Aún a ese ritmo faltarían <strong>${metaMes - mejor.p}</strong> ventas para llegar a la meta de ${metaMes}.`}
+    </div>
+  `;
 }
 
 function renderComparativoSup(actual, anterior, wActual, wAnterior) {
@@ -2204,6 +2590,9 @@ function _renderAvanceMensualImpl(wActual) {
   const ahora = new Date();
   const hoyStr = ahora.toISOString().split('T')[0];
 
+  // Para determinar el día de corte usamos SOLO fecha_activacion y fecha_bo.
+  // fecha_cancelacion puede llegar adelantada en el archivo de canceladas y desplazaría
+  // el corte a un día sin actividad real de ventas/activaciones.
   let ultimoDiaConDatosStr = null;
   ventasData.forEach(r => {
     if (r.fecha_bo && r.fecha_bo <= hoyStr) {
@@ -2267,6 +2656,10 @@ function _renderAvanceMensualImpl(wActual) {
   const finMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMes).padStart(2,'0')}`;
   const iniMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-01`;
 
+  const esMesActual = (anio === new Date(ultimoDiaConDatosStr + 'T12:00:00').getFullYear() &&
+                       mes === new Date(ultimoDiaConDatosStr + 'T12:00:00').getMonth() + 1);
+
+  // Mismo criterio acotado al mes: ignorar fecha_cancelacion
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
     [r.fecha_bo, r.fecha_activacion].forEach(f => {
@@ -2276,37 +2669,7 @@ function _renderAvanceMensualImpl(wActual) {
     });
   });
 
-  console.log('=== DEBUG CORTE ===');
-  console.log('Mes:', anio, mes);
-  console.log('iniMesStrEval:', iniMesStrEval);
-  console.log('finMesStrEval:', finMesStrEval);
-  console.log('hoyStr:', hoyStr);
-  console.log('ultimoDiaConDatosMesSel:', ultimoDiaConDatosMesSel);
-
-  // Buscar específicamente registros del 30 abril
-  const reg30 = ventasData.filter(r =>
-    (r.fecha_bo === '2026-04-30') ||
-    (r.fecha_activacion === '2026-04-30') ||
-    (r.fecha_cancelacion === '2026-04-30')
-  );
-  console.log('Registros con alguna fecha = 2026-04-30:', reg30.length);
-  if (reg30.length > 0) {
-    console.log('Muestra primeros 5:', reg30.slice(0, 5).map(r => ({
-      folio: r.folio,
-      ejec: r.ejecutivo,
-      bo: r.fecha_bo,
-      act: r.fecha_activacion,
-      canc: r.fecha_cancelacion,
-      estatus: r.estatus
-    })));
-  }
-
-  // El corte es el último día con datos cargados del mes
-
-  // El corte SIEMPRE es el último día con datos cargados del mes
-  // (no la fecha del sistema ni el último día del mes)
-  const esMesPasado = finMesStrEval < hoyStr.substring(0, 10) && ultimoDiaConDatosMesSel === finMesStrEval;
-  const corteRefStr = ultimoDiaConDatosMesSel || (esMesPasado ? finMesStrEval : iniMesStrEval);
+  const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStrEval;
   const fechaCorte = new Date(corteRefStr + 'T12:00:00');
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
