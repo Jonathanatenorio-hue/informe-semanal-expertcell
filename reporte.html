@@ -2203,10 +2203,28 @@ function renderWhatIf() {
 
 function _whatifCalcularRango(desdeStr, hastaStr) {
   // Devuelve { activadas, dias, ritmo } para un rango [desde, hasta]
+  // Lógica alineada con Avance Mensual: cuenta toda activación del rango cuyo supervisor
+  // esté en la lista vigente O sea huérfana (supervisor antiguo ya rotado, p.ej. Tomás,
+  // María Fernanda) — porque siguen siendo ventas reales que aportaron al avance del mes.
+  // Si hay filtro de coordinador activo, las huérfanas se filtran por centro.
   let act = 0;
   ventasData.forEach(r => {
-    if (r.estatus === 'activada' && r.fecha_activacion >= desdeStr && r.fecha_activacion <= hastaStr) {
-      if (SUPERVISORES.includes(r.supervisor)) act++;
+    if (r.estatus !== 'activada') return;
+    if (!r.fecha_activacion || r.fecha_activacion < desdeStr || r.fecha_activacion > hastaStr) return;
+
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
+      act++;
+      return;
+    }
+    // Huérfanas: supervisor no vigente o sin supervisor
+    if (coordinadorFiltro === 'todos') {
+      act++;
+      return;
+    }
+    // Con filtro de coordinador, solo contar huérfanas del centro de ese coordinador
+    if (r.centro) {
+      const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+      if (coord && coord.centro === r.centro) act++;
     }
   });
   let dias = 0;
@@ -2286,13 +2304,28 @@ function renderWhatIfContenido() {
   // Real del mes (referencia)
   const real = _whatifCalcularRango(iniMes, finMes);
 
+  // Diagnóstico: conteo por supervisor para entender de dónde sale el "Real"
+  const conteoSup = {};
+  let sinSupervisor = 0;
+  ventasData.forEach(r => {
+    if (r.estatus !== 'activada') return;
+    if (!r.fecha_activacion || r.fecha_activacion < iniMes || r.fecha_activacion > finMes) return;
+    const sup = r.supervisor || '(sin supervisor)';
+    if (!conteoSup[sup]) conteoSup[sup] = { total: 0, vigente: SUPERVISORES.includes(r.supervisor) };
+    conteoSup[sup].total++;
+    if (!r.supervisor) sinSupervisor++;
+  });
+
   let html = '';
 
   // Encabezado de referencia
   const pctReal = metaMes > 0 ? (real.act / metaMes * 100) : 0;
   html += `
     <div style="background:linear-gradient(135deg, var(--att-navy), var(--att-blue-dark)); color:white; border-radius:12px; padding:16px 20px; margin-bottom:18px;">
-      <div style="font-size:11px; opacity:0.8; font-weight:700; text-transform:uppercase; margin-bottom:4px;">Referencia · ${MESES_NOMBRE[mes-1]} ${anio}</div>
+      <div style="font-size:11px; opacity:0.8; font-weight:700; text-transform:uppercase; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+        <span>Referencia · ${MESES_NOMBRE[mes-1]} ${anio}</span>
+        <button type="button" id="whatif-diag-toggle" style="background:rgba(255,255,255,0.2); color:white; border:1px solid rgba(255,255,255,0.4); border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:700;">🔍 Diagnóstico</button>
+      </div>
       <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
         <div><span style="font-size:13px; opacity:0.85;">Real al cierre / corte:</span> <span style="font-size:20px; font-weight:800; margin-left:6px;">${real.act}</span></div>
         <div><span style="font-size:13px; opacity:0.85;">Meta:</span> <span style="font-size:20px; font-weight:800; margin-left:6px;">${metaMes}</span></div>
@@ -2349,10 +2382,21 @@ function renderWhatIfContenido() {
       semanas[w].fechas.push(d.fecha);
     });
     ventasData.forEach(r => {
-      if (r.estatus === 'activada' && r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes && SUPERVISORES.includes(r.supervisor)) {
-        const w = semanaDeFecha(r.fecha_activacion);
-        if (semanas[w]) semanas[w].act++;
+      if (r.estatus !== 'activada') return;
+      if (!r.fecha_activacion || r.fecha_activacion < iniMes || r.fecha_activacion > finMes) return;
+      // Misma regla que _whatifCalcularRango: cuenta supervisor vigente o huérfanas
+      let cuenta = false;
+      if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
+        cuenta = true;
+      } else if (coordinadorFiltro === 'todos') {
+        cuenta = true;
+      } else if (r.centro) {
+        const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+        if (coord && coord.centro === r.centro) cuenta = true;
       }
+      if (!cuenta) return;
+      const w = semanaDeFecha(r.fecha_activacion);
+      if (semanas[w]) semanas[w].act++;
     });
 
     const semanasArr = Object.entries(semanas)
@@ -2452,6 +2496,42 @@ function renderWhatIfContenido() {
   }
 
   cont.innerHTML = html;
+
+  // Cablear botón de diagnóstico
+  const diagBtn = document.getElementById('whatif-diag-toggle');
+  if (diagBtn) {
+    diagBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      let panel = document.getElementById('whatif-diag-panel');
+      if (panel) { panel.remove(); return; }
+      const sups = Object.keys(conteoSup).sort((a, b) => conteoSup[b].total - conteoSup[a].total);
+      let totalVigentes = 0;
+      let totalNoVigentes = 0;
+      sups.forEach(s => {
+        if (conteoSup[s].vigente) totalVigentes += conteoSup[s].total;
+        else totalNoVigentes += conteoSup[s].total;
+      });
+      let h = `<div id="whatif-diag-panel" style="background:#FEF3C7; border:2px solid #D97706; border-radius:8px; padding:14px 18px; margin-bottom:14px; font-family:monospace; font-size:12px;">`;
+      h += `<strong style="font-size:13px;">🔍 Activadas por supervisor en ${MESES_NOMBRE[mes-1]} ${anio} (todas, sin filtro):</strong>`;
+      h += `<table style="width:100%; margin-top:8px; border-collapse:collapse;">`;
+      h += `<thead><tr style="background:#FBBF24;"><th style="text-align:left; padding:4px;">Supervisor (en Supabase)</th><th style="text-align:right; padding:4px;">Activadas</th><th style="text-align:center; padding:4px;">¿Vigente en SUPERVISORES?</th></tr></thead><tbody>`;
+      sups.forEach(s => {
+        const c = conteoSup[s];
+        const bg = c.vigente ? 'transparent' : '#FCA5A5';
+        h += `<tr style="background:${bg}; border-bottom:1px solid #FBBF24;"><td style="padding:4px;">${s === '(sin supervisor)' ? '<em>(sin supervisor)</em>' : s}</td><td style="padding:4px; text-align:right; font-weight:700;">${c.total}</td><td style="padding:4px; text-align:center;">${c.vigente ? '✅' : '❌ huérfano'}</td></tr>`;
+      });
+      h += `</tbody></table>`;
+      h += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #D97706; line-height:1.7;">`;
+      h += `<strong>Total activadas:</strong> ${totalVigentes + totalNoVigentes}<br>`;
+      h += `<strong>Vigentes (en SUPERVISORES actual):</strong> ${totalVigentes}<br>`;
+      h += `<strong>Huérfanas (NO en SUPERVISORES):</strong> ${totalNoVigentes}<br>`;
+      h += `<strong>SUPERVISORES actual:</strong> [${SUPERVISORES.join(', ')}]<br>`;
+      h += `<strong>"Real al cierre" mostrado:</strong> ${real.act}`;
+      h += `</div></div>`;
+      cont.insertAdjacentHTML('afterbegin', h);
+    });
+  }
 }
 
 function _whatifLectura(a, b, labelA, labelB, real, metaMes, diasMes) {
@@ -4868,15 +4948,34 @@ function actualizarVista() {
     }
 
     if (metrica === 'act' && window.__avanceData && diasHabilesTotalesMes > 0) {
-      const metasMesSel = metasSupData.filter(m =>
+      // Filtrar metas según la vista: total / centro / supervisor
+      let metasMesSel = metasSupData.filter(m =>
         m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
       );
+      if (vista === 'supervisor' && vtState.filtroExtra) {
+        metasMesSel = metasMesSel.filter(m => m.supervisor === vtState.filtroExtra);
+      } else if (vista === 'centro' && vtState.filtroExtra) {
+        // Mapear supervisores a su centro vía supConfigData
+        const supsDelCentro = supConfigData
+          .filter(s => s.centro === vtState.filtroExtra)
+          .map(s => s.supervisor);
+        metasMesSel = metasMesSel.filter(m => supsDelCentro.includes(m.supervisor));
+      }
       const metaMesSel = metasMesSel.reduce((a, m) => a + m.meta_activadas, 0);
       if (metaMesSel > 0) {
         targetDiario = metaMesSel / diasHabilesTotalesMes;
       }
     } else if (metrica === 'prog' && window.__avanceData && diasHabilesTotalesMes > 0) {
-      const metaProgFija = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+      let supervisoresDataFiltrada = window.__avanceData.supervisoresData;
+      if (vista === 'supervisor' && vtState.filtroExtra) {
+        supervisoresDataFiltrada = supervisoresDataFiltrada.filter(d => d.sup === vtState.filtroExtra);
+      } else if (vista === 'centro' && vtState.filtroExtra) {
+        const supsDelCentro = supConfigData
+          .filter(s => s.centro === vtState.filtroExtra)
+          .map(s => s.supervisor);
+        supervisoresDataFiltrada = supervisoresDataFiltrada.filter(d => supsDelCentro.includes(d.sup));
+      }
+      const metaProgFija = supervisoresDataFiltrada.reduce((a, d) => a + (d.metaProgFija || 0), 0);
       if (metaProgFija > 0) {
         targetDiario = metaProgFija / diasHabilesTotalesMes;
       }
@@ -4886,12 +4985,29 @@ function actualizarVista() {
       const diasHabilesRestantes = diasHabilesTotalesMes - diasHabilesTranscurridos;
       let metaActual = 0;
       if (metrica === 'act') {
-        const metasMesSel2 = metasSupData.filter(m =>
+        let metasMesSel2 = metasSupData.filter(m =>
           m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
         );
+        if (vista === 'supervisor' && vtState.filtroExtra) {
+          metasMesSel2 = metasMesSel2.filter(m => m.supervisor === vtState.filtroExtra);
+        } else if (vista === 'centro' && vtState.filtroExtra) {
+          const supsDelCentro = supConfigData
+            .filter(s => s.centro === vtState.filtroExtra)
+            .map(s => s.supervisor);
+          metasMesSel2 = metasMesSel2.filter(m => supsDelCentro.includes(m.supervisor));
+        }
         metaActual = metasMesSel2.reduce((a, m) => a + m.meta_activadas, 0);
       } else if (metrica === 'prog' && window.__avanceData) {
-        metaActual = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+        let supData = window.__avanceData.supervisoresData;
+        if (vista === 'supervisor' && vtState.filtroExtra) {
+          supData = supData.filter(d => d.sup === vtState.filtroExtra);
+        } else if (vista === 'centro' && vtState.filtroExtra) {
+          const supsDelCentro = supConfigData
+            .filter(s => s.centro === vtState.filtroExtra)
+            .map(s => s.supervisor);
+          supData = supData.filter(d => supsDelCentro.includes(d.sup));
+        }
+        metaActual = supData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
       }
       if (diasHabilesRestantes > 0) {
         const faltan = Math.max(0, metaActual - totalCount);
@@ -5029,6 +5145,29 @@ function actualizarVista() {
       `;
     }
 
+    // Tarjeta: cuántos buckets cumplieron el ritmo objetivo
+    let tarjetaCumplenTarget = '';
+    if (targetDiario !== null && targetDiario > 0 && metrica !== 'arpu' && buckets.length > 0) {
+      let bucketsCumplen = 0;
+      buckets.forEach(b => {
+        let s = 0;
+        Object.values(agrupacion[b]).forEach(v => s += v);
+        if (s >= targetDiario) bucketsCumplen++;
+      });
+      const pctCumplen = (bucketsCumplen / buckets.length * 100);
+      const colorC = pctCumplen >= 60 ? 'var(--green)' : pctCumplen >= 40 ? 'var(--amber)' : 'var(--red)';
+      const iconC = pctCumplen >= 60 ? '🎯' : pctCumplen >= 40 ? '⚠' : '🔻';
+      // Ajustar etiqueta según contexto: "días" en vista diaria, "semanas" en semanal
+      const labelUnidad = (tab === 'diaria') ? 'días' : 'semanas';
+      tarjetaCumplenTarget = `
+        <div class="stat-card" style="border-left-color: ${colorC};">
+          <div class="stat-label">${labelUnidad} cumplen objetivo ${iconC}</div>
+          <div class="stat-value" style="color: ${colorC};">${bucketsCumplen} <span style="font-size:14px; color:var(--text-soft); font-weight:500;">de ${buckets.length}</span></div>
+          <div class="stat-sub">${pctCumplen.toFixed(0)}% ≥ ${targetDiario.toFixed(1)} ${(metrica==='act'?'act':metrica==='prog'?'prog':'canc')}/día</div>
+        </div>
+      `;
+    }
+
     let tarjetaAjustado = '';
     if (ritmoAjustadoActual !== null && ritmoAjustadoActual >= 0) {
       const diffAj = promPorDiaHabil - ritmoAjustadoActual;
@@ -5094,6 +5233,7 @@ function actualizarVista() {
         <div class="stat-sub">${subtextoProm}</div>
       </div>
       ${tarjetaTarget}
+      ${tarjetaCumplenTarget}
       ${tarjetaAjustado}
       ${tarjetasSemanal}
       <div class="stat-card" style="border-left-color: var(--green);">
@@ -5258,13 +5398,31 @@ function actualizarVista() {
       if (c.fecha >= iniMesSel && c.fecha <= finMesSel) calMap[c.fecha] = parseFloat(c.factor_dia);
     });
 
-    const metasMesSel = metasSupData.filter(m =>
+    // Calcular meta filtrada por la vista actual (igual lógica que targetDiario arriba)
+    let metasMesSel = metasSupData.filter(m =>
       m.anio === aSel && m.mes === mSel && SUPERVISORES.includes(m.supervisor)
     );
+    if (vista === 'supervisor' && vtState.filtroExtra) {
+      metasMesSel = metasMesSel.filter(m => m.supervisor === vtState.filtroExtra);
+    } else if (vista === 'centro' && vtState.filtroExtra) {
+      const supsDelCentro = supConfigData
+        .filter(s => s.centro === vtState.filtroExtra)
+        .map(s => s.supervisor);
+      metasMesSel = metasMesSel.filter(m => supsDelCentro.includes(m.supervisor));
+    }
     const metaMesSelTotal = metasMesSel.reduce((a, m) => a + m.meta_activadas, 0);
     let metaUsar = metaMesSelTotal;
     if (metrica === 'prog' && window.__avanceData) {
-      metaUsar = window.__avanceData.supervisoresData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+      let supData = window.__avanceData.supervisoresData;
+      if (vista === 'supervisor' && vtState.filtroExtra) {
+        supData = supData.filter(d => d.sup === vtState.filtroExtra);
+      } else if (vista === 'centro' && vtState.filtroExtra) {
+        const supsDelCentro = supConfigData
+          .filter(s => s.centro === vtState.filtroExtra)
+          .map(s => s.supervisor);
+        supData = supData.filter(d => supsDelCentro.includes(d.sup));
+      }
+      metaUsar = supData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
     }
 
     let ventasAcum = 0;
@@ -5303,6 +5461,25 @@ function actualizarVista() {
 
   const ctx = document.getElementById('chart-vt');
   if (window.__chartVT) window.__chartVT.destroy();
+
+  // Calcular max del eje Y basado en datos reales (barras) más un buffer.
+  // Si el "ritmo ajustado" es extremo (mes ya casi acabado), no debe aplastar las barras.
+  let yMaxSugerido;
+  if (metrica !== 'arpu') {
+    let maxBarra = 0;
+    buckets.forEach(b => {
+      let s = 0;
+      Object.values(agrupacion[b]).forEach(v => s += v);
+      if (s > maxBarra) maxBarra = s;
+    });
+    // Considerar también targetDiario (línea roja) para que se vea
+    const refs = [maxBarra];
+    if (targetDiario !== null && targetDiario > 0) refs.push(targetDiario);
+    // Buffer del 25% para que no quede pegado al borde
+    yMaxSugerido = Math.ceil(Math.max(...refs) * 1.25);
+    if (yMaxSugerido < 5) yMaxSugerido = 5;
+  }
+
   window.__chartVT = new Chart(ctx, {
     type: 'bar',
     data: { labels: buckets.map(formatBucket), datasets },
@@ -5334,6 +5511,7 @@ function actualizarVista() {
         y: {
           stacked: metrica !== 'arpu' && vista !== 'total',
           beginAtZero: true,
+          ...(yMaxSugerido !== undefined ? { max: yMaxSugerido } : {}),
           grid: { color: 'rgba(0,0,0,0.06)' },
           ticks: {
             callback: (v) => metrica === 'arpu' ? '$' + v.toLocaleString() : v.toLocaleString()
