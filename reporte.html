@@ -2270,9 +2270,6 @@ function _renderAvanceMensualImpl(wActual) {
   const finMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMes).padStart(2,'0')}`;
   const iniMesStrEval = `${anio}-${String(mes).padStart(2,'0')}-01`;
 
-  const esMesActual = (anio === new Date(ultimoDiaConDatosStr + 'T12:00:00').getFullYear() &&
-                       mes === new Date(ultimoDiaConDatosStr + 'T12:00:00').getMonth() + 1);
-
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
     [r.fecha_bo, r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
@@ -2282,7 +2279,10 @@ function _renderAvanceMensualImpl(wActual) {
     });
   });
 
-  const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStrEval;
+  // El corte SIEMPRE es el último día con datos cargados del mes
+  // (no la fecha del sistema ni el último día del mes)
+  const esMesPasado = finMesStrEval < hoyStr.substring(0, 10) && ultimoDiaConDatosMesSel === finMesStrEval;
+  const corteRefStr = ultimoDiaConDatosMesSel || (esMesPasado ? finMesStrEval : iniMesStrEval);
   const fechaCorte = new Date(corteRefStr + 'T12:00:00');
 
   const iniMesStr = `${anio}-${String(mes).padStart(2,'0')}-01`;
