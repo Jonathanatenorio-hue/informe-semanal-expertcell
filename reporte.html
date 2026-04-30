@@ -2875,40 +2875,47 @@ function _renderAvanceMensualImpl(wActual) {
   }).sort((a, b) => b.pctEsperado - a.pctEsperado);
 
   const mesNombre = MESES_NOMBRE[mes-1];
-  document.getElementById('avance-subtitle').innerHTML =
-    `${mesNombre} ${anio} · ${diasTranscurridos.toFixed(1)} de ${diasHabilesTotales.toFixed(1)} días hábiles transcurridos · Corte al ${fechaCorteStr} <a href="#" id="diag-cal-toggle" style="font-size:11px; color:var(--att-blue); margin-left:8px;">[diagnóstico calendario]</a>`;
+  const subEl = document.getElementById('avance-subtitle');
+  subEl.innerHTML =
+    `${mesNombre} ${anio} · ${diasTranscurridos.toFixed(1)} de ${diasHabilesTotales.toFixed(1)} días hábiles transcurridos · Corte al ${fechaCorteStr} <button type="button" id="diag-cal-toggle" style="font-size:11px; color:white; background:var(--att-orange); border:none; border-radius:4px; padding:3px 8px; margin-left:8px; cursor:pointer; font-weight:700;">🔍 Diagnóstico calendario</button>`;
 
-  // Panel de diagnóstico - muestra qué hay en calendarioData para el mes seleccionado
-  setTimeout(() => {
-    const tog = document.getElementById('diag-cal-toggle');
-    if (tog) {
-      tog.onclick = (e) => {
-        e.preventDefault();
-        let panel = document.getElementById('diag-cal-panel');
-        if (panel) { panel.remove(); return; }
-        panel = document.createElement('div');
-        panel.id = 'diag-cal-panel';
-        panel.style.cssText = 'background:#FEF3C7; border:1.5px solid #D97706; border-radius:8px; padding:12px 16px; margin-top:10px; font-size:12px; font-family:monospace;';
-        const diasMesDiag = calendarioData
-          .filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`))
-          .sort((a,b) => a.fecha.localeCompare(b.fecha));
-        let h = `<strong>Días en calendarioData para ${mesNombre} ${anio}: ${diasMesDiag.length}</strong><br>`;
-        h += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:4px; margin-top:8px;">`;
-        diasMesDiag.forEach(d => {
-          const factor = parseFloat(d.factor_dia);
-          const dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(d.fecha+'T12:00:00').getDay()];
-          const auto = d._autorelleno ? ' 🆕' : '';
-          const color = factor === 1 ? '#16A34A' : factor === 0.5 ? '#D97706' : '#DC2626';
-          h += `<div style="color:${color};">${d.fecha} (${dow}) → ${d.tipo} f=${factor}${auto}</div>`;
-        });
-        h += `</div>`;
-        h += `<div style="margin-top:10px; padding-top:8px; border-top:1px solid #D97706;"><strong>Total factor:</strong> ${diasMesDiag.reduce((a,d)=>a+parseFloat(d.factor_dia),0).toFixed(1)}</div>`;
-        h += `<div><strong>Día corte:</strong> ${fechaCorteStr} · <strong>diasTranscurridos:</strong> ${diasTranscurridos.toFixed(1)} · <strong>diasHabilesTotales:</strong> ${diasHabilesTotales.toFixed(1)}</div>`;
-        tog.parentNode.insertBefore(panel, tog.parentNode.nextSibling);
-        panel.innerHTML = h;
-      };
-    }
-  }, 0);
+  // Eliminar panel previo si existe (en re-render)
+  const prev = document.getElementById('diag-cal-panel');
+  if (prev) prev.remove();
+
+  const tog = document.getElementById('diag-cal-toggle');
+  if (tog) {
+    tog.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      let panel = document.getElementById('diag-cal-panel');
+      if (panel) { panel.remove(); return; }
+      const diasMesDiag = calendarioData
+        .filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`))
+        .sort((a,b) => a.fecha.localeCompare(b.fecha));
+      let h = `<div style="background:#FEF3C7; border:2px solid #D97706; border-radius:8px; padding:14px 18px; margin-top:12px; font-size:12px; font-family:monospace;" id="diag-cal-panel">`;
+      h += `<strong style="font-size:14px;">📅 Días en calendarioData para ${mesNombre} ${anio}: ${diasMesDiag.length}</strong>`;
+      h += `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:4px; margin-top:10px;">`;
+      diasMesDiag.forEach(d => {
+        const factor = parseFloat(d.factor_dia);
+        const dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(d.fecha+'T12:00:00').getDay()];
+        const auto = d._autorelleno ? ' 🆕auto' : '';
+        const color = factor === 1 ? '#16A34A' : factor === 0.5 ? '#D97706' : '#DC2626';
+        h += `<div style="color:${color}; padding:2px 4px;">${d.fecha} (${dow}) → <strong>${d.tipo}</strong> f=${factor}${auto}</div>`;
+      });
+      h += `</div>`;
+      const totalFactor = diasMesDiag.reduce((a,d)=>a+parseFloat(d.factor_dia),0);
+      h += `<div style="margin-top:12px; padding-top:10px; border-top:2px solid #D97706; line-height:1.7;">`;
+      h += `<strong>Total factor (suma):</strong> ${totalFactor.toFixed(1)}<br>`;
+      h += `<strong>Día corte calculado:</strong> ${fechaCorteStr}<br>`;
+      h += `<strong>diasTranscurridos:</strong> ${diasTranscurridos.toFixed(1)} · <strong>diasHabilesTotales:</strong> ${diasHabilesTotales.toFixed(1)}<br>`;
+      h += `<strong>ultimoDiaConDatosStr (global):</strong> ${ultimoDiaConDatosStr}<br>`;
+      h += `<strong>Hoy (sistema):</strong> ${hoyStr}`;
+      h += `</div></div>`;
+      // Insertar después de la sección entera del subtitle (más confiable)
+      subEl.insertAdjacentHTML('afterend', h);
+    });
+  }
 
   window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasHabilesTotales, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr, wActual };
 
