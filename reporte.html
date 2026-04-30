@@ -3564,8 +3564,36 @@ function renderDetalleAgentesConMes(mesKey) {
   window.__inactivosData = { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey };
 
   const banner = document.getElementById('agentes-inactivos-banner');
+  // Calcular agentes con 3.5+ días sin actividad para banner global
+  const todosAgentesData = [];
+  Object.keys(agentesPorSup).forEach(sup => {
+    agentesPorSup[sup].forEach(a => {
+      if (!a.esBaja) todosAgentesData.push({ ...a, supervisor: sup });
+    });
+  });
+  const sinActAlerta = todosAgentesData.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5);
+  const sinProgAlerta = todosAgentesData.filter(a => a.diasSinProg !== null && a.diasSinProg >= 3.5);
+  window.__inactividadAgentes = { sinActAlerta, sinProgAlerta, mes: mesSel, anio: anioSel };
+
+  let bannerInactividadHTML = '';
+  if (sinActAlerta.length > 0 || sinProgAlerta.length > 0) {
+    bannerInactividadHTML = `
+      <div style="background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px; padding:12px 16px; margin-bottom:16px; display:flex; align-items:center; gap:12px;">
+        <div style="font-size:20px;">⏰</div>
+        <div style="flex:1; font-size:13px;">
+          <strong>Inactividad de agentes (3.5+ días hábiles):</strong>
+          ${sinActAlerta.length > 0 ? `<span style="color:#DC2626;font-weight:700;"> ${sinActAlerta.length} sin activar</span>` : ''}
+          ${sinActAlerta.length > 0 && sinProgAlerta.length > 0 ? ' · ' : ''}
+          ${sinProgAlerta.length > 0 ? `<span style="color:#7C3AED;font-weight:700;">${sinProgAlerta.length} sin programar</span>` : ''}
+          <span style="display:block;font-size:11px;color:var(--text-soft);margin-top:2px;">Excel con 2 hojas listo para enviar a supervisores diariamente.</span>
+        </div>
+        <button id="btn-descargar-inactividad" style="background:#D97706; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">📥 Excel inactividad</button>
+      </div>
+    `;
+  }
+
   if (totalInactivos === 0) {
-    banner.innerHTML = `
+    banner.innerHTML = bannerInactividadHTML + `
       <div class="alert success" style="margin-bottom: 16px;">
         <div>✅</div>
         <div><strong>Excelente:</strong> los ${totalActivosEvaluados} agentes activos del periodo ya tienen al menos 1 venta.</div>
@@ -3573,7 +3601,7 @@ function renderDetalleAgentesConMes(mesKey) {
     `;
   } else {
     const pctInac = totalActivosEvaluados > 0 ? (totalInactivos / totalActivosEvaluados * 100) : 0;
-    banner.innerHTML = `
+    banner.innerHTML = bannerInactividadHTML + `
       <div class="alert warn" style="margin-bottom: 16px; cursor: pointer;" id="banner-inactivos-clickable">
         <div>⚠️</div>
         <div style="flex: 1;">
@@ -3603,6 +3631,17 @@ function renderDetalleAgentesConMes(mesKey) {
     }, 100);
   }
 
+  // Wire del botón de inactividad (siempre, exista o no banner de "sin venta")
+  setTimeout(() => {
+    const btnInac = document.getElementById('btn-descargar-inactividad');
+    if (btnInac) {
+      btnInac.addEventListener('click', (e) => {
+        e.stopPropagation();
+        descargarInactividadExcel();
+      });
+    }
+  }, 100);
+
   const html = supervisoresData.map(s => {
     const agentes = (agentesPorSup[s.sup] || []).sort((a, b) => {
       if (a.esBaja !== b.esBaja) return a.esBaja ? 1 : -1;
@@ -3616,6 +3655,7 @@ function renderDetalleAgentesConMes(mesKey) {
     const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100).length;
     const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
     const alertaInactivos = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= 3.5).length;
+    const alertaSinProg = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= 3.5).length;
     const sinVentas = activos.filter(a => a.avance === 0).length;
 
     const colorEstado = s.estado === 'verde' ? 'var(--green)' : s.estado === 'amarillo' ? 'var(--amber)' : 'var(--red)';
@@ -3633,6 +3673,7 @@ function renderDetalleAgentesConMes(mesKey) {
               ${sinVentas > 0 ? `<span style="color:var(--red);font-weight:700;">⛔ ${sinVentas} sin venta</span> · ` : ''}
               ${bajas > 0 ? `<span style="color:#6B7280;font-weight:600;">🔻 ${bajas} baja${bajas > 1 ? 's' : ''}</span> · ` : ''}
               ${alertaInactivos > 0 ? `<span style="color:var(--red);font-weight:600;">❄️ ${alertaInactivos} sin activar 3.5+ días</span>` : ''}
+              ${alertaSinProg > 0 ? `${alertaInactivos > 0 ? ' · ' : ''}<span style="color:#7C3AED;font-weight:600;">📋 ${alertaSinProg} sin programar 3.5+ días</span>` : ''}
             </span>
           </span>
           <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
@@ -4038,6 +4079,119 @@ function descargarInactivosExcel() {
 
   const fecha = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `agentes_sin_venta_${nombreMes}_${a}_${fecha}.xlsx`);
+}
+
+function descargarInactividadExcel() {
+  if (!window.__inactividadAgentes) {
+    alert('Datos de inactividad no disponibles. Recarga el reporte.');
+    return;
+  }
+  const { sinActAlerta, sinProgAlerta, mes, anio } = window.__inactividadAgentes;
+
+  if (sinActAlerta.length === 0 && sinProgAlerta.length === 0) {
+    alert('No hay agentes con 3.5+ días sin actividad.');
+    return;
+  }
+
+  const noms = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const nombreMes = noms[mes - 1];
+
+  // Mapear plantilla para obtener centro
+  const centroPorAgente = {};
+  plantillaData.forEach(p => { centroPorAgente[p.nombre] = p.centro || ''; });
+
+  const wb = XLSX.utils.book_new();
+
+  // Hoja 1: Sin activar 3.5+ días
+  if (sinActAlerta.length > 0) {
+    const filasAct = [...sinActAlerta]
+      .sort((a, b) => {
+        // Orden: por supervisor, luego por días sin activar descendente
+        if (a.supervisor !== b.supervisor) return a.supervisor.localeCompare(b.supervisor);
+        return (b.diasSinAct || 0) - (a.diasSinAct || 0);
+      })
+      .map((a, idx) => ({
+        '#': idx + 1,
+        'Supervisor': a.supervisor,
+        'Agente': a.ejecutivo,
+        'Centro': centroPorAgente[a.ejecutivo] || '',
+        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+        'Dias sin activar': Number((a.diasSinAct || 0).toFixed(1)),
+        'Ultima activada': a.ultAct || '— Nunca —',
+        'Activadas mes': a.avance,
+        'Programadas mes': a.programadas,
+        'Meta': a.meta,
+        '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
+        'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
+      }));
+    const ws1 = XLSX.utils.json_to_sheet(filasAct);
+    ws1['!cols'] = [{wch:5},{wch:14},{wch:35},{wch:8},{wch:14},{wch:14},{wch:14},{wch:13},{wch:15},{wch:7},{wch:14},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Sin activar 3.5+');
+  } else {
+    // Hoja vacía con mensaje
+    const ws1 = XLSX.utils.aoa_to_sheet([['Sin agentes en esta categoría']]);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Sin activar 3.5+');
+  }
+
+  // Hoja 2: Sin programar 3.5+ días
+  if (sinProgAlerta.length > 0) {
+    const filasProg = [...sinProgAlerta]
+      .sort((a, b) => {
+        if (a.supervisor !== b.supervisor) return a.supervisor.localeCompare(b.supervisor);
+        return (b.diasSinProg || 0) - (a.diasSinProg || 0);
+      })
+      .map((a, idx) => ({
+        '#': idx + 1,
+        'Supervisor': a.supervisor,
+        'Agente': a.ejecutivo,
+        'Centro': centroPorAgente[a.ejecutivo] || '',
+        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+        'Dias sin programar': Number((a.diasSinProg || 0).toFixed(1)),
+        'Ultima programada': a.ultProg || '— Nunca —',
+        'Programadas mes': a.programadas,
+        'Activadas mes': a.avance,
+        'Meta': a.meta,
+        '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
+        'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
+      }));
+    const ws2 = XLSX.utils.json_to_sheet(filasProg);
+    ws2['!cols'] = [{wch:5},{wch:14},{wch:35},{wch:8},{wch:14},{wch:16},{wch:16},{wch:15},{wch:13},{wch:7},{wch:14},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Sin programar 3.5+');
+  } else {
+    const ws2 = XLSX.utils.aoa_to_sheet([['Sin agentes en esta categoría']]);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Sin programar 3.5+');
+  }
+
+  // Hoja 3: Resumen por supervisor
+  const resumenSup = {};
+  sinActAlerta.forEach(a => {
+    if (!resumenSup[a.supervisor]) resumenSup[a.supervisor] = { sinAct: 0, sinProg: 0 };
+    resumenSup[a.supervisor].sinAct++;
+  });
+  sinProgAlerta.forEach(a => {
+    if (!resumenSup[a.supervisor]) resumenSup[a.supervisor] = { sinAct: 0, sinProg: 0 };
+    resumenSup[a.supervisor].sinProg++;
+  });
+  const filasResumen = Object.keys(resumenSup).sort().map(sup => ({
+    'Supervisor': sup,
+    'Agentes sin activar 3.5+ dias': resumenSup[sup].sinAct,
+    'Agentes sin programar 3.5+ dias': resumenSup[sup].sinProg,
+    'Total acciones requeridas': resumenSup[sup].sinAct + resumenSup[sup].sinProg
+  }));
+  if (filasResumen.length > 0) {
+    filasResumen.push({
+      'Supervisor': 'TOTAL',
+      'Agentes sin activar 3.5+ dias': sinActAlerta.length,
+      'Agentes sin programar 3.5+ dias': sinProgAlerta.length,
+      'Total acciones requeridas': sinActAlerta.length + sinProgAlerta.length
+    });
+    const ws3 = XLSX.utils.json_to_sheet(filasResumen);
+    ws3['!cols'] = [{wch:14},{wch:30},{wch:32},{wch:25}];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Resumen por supervisor');
+  }
+
+  const fecha = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `inactividad_agentes_${nombreMes}_${anio}_corte_${fecha}.xlsx`);
 }
 
 function descargarEquipoExcel(supervisor) {
