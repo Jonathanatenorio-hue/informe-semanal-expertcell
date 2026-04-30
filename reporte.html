@@ -4920,16 +4920,14 @@ function actualizarVista() {
 
     const hoyStrNow = new Date().toISOString().split('T')[0];
 
+    // Para determinar el último día operado real, usamos SOLO fecha_activacion.
+    // fecha_bo y fecha_cancelacion pueden venir adelantadas (BOs registradas tarde
+    // que AT&T marca con fecha del día siguiente, cancelaciones procesadas con delay)
+    // y no representan días con operación completa.
     let ultDiaConDatos = null;
     ventasData.forEach(r => {
-      if (r.fecha_bo && r.fecha_bo <= hoyStrNow && r.fecha_bo >= iniMesSel && r.fecha_bo <= finMesSel) {
-        if (!ultDiaConDatos || r.fecha_bo > ultDiaConDatos) ultDiaConDatos = r.fecha_bo;
-      }
       if (r.fecha_activacion && r.fecha_activacion <= hoyStrNow && r.fecha_activacion >= iniMesSel && r.fecha_activacion <= finMesSel) {
         if (!ultDiaConDatos || r.fecha_activacion > ultDiaConDatos) ultDiaConDatos = r.fecha_activacion;
-      }
-      if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStrNow && r.fecha_cancelacion >= iniMesSel && r.fecha_cancelacion <= finMesSel) {
-        if (!ultDiaConDatos || r.fecha_cancelacion > ultDiaConDatos) ultDiaConDatos = r.fecha_cancelacion;
       }
     });
 
@@ -5226,6 +5224,57 @@ function actualizarVista() {
       `;
     }
 
+    // Calcular meta del filtro actual para mostrar progreso en tarjeta Total
+    let metaParaTotal = 0;
+    if (metrica === 'act' && tab === 'diaria' && periodoSel !== 'todos') {
+      const [aSel2, mSel2] = periodoSel.split('-').map(Number);
+      let metasFiltradas = metasSupData.filter(m =>
+        m.anio === aSel2 && m.mes === mSel2 && SUPERVISORES.includes(m.supervisor)
+      );
+      if (vista === 'supervisor' && vtState.filtroExtra) {
+        metasFiltradas = metasFiltradas.filter(m => m.supervisor === vtState.filtroExtra);
+      } else if (vista === 'centro' && vtState.filtroExtra) {
+        const supsDelCentro = supConfigData
+          .filter(s => s.centro === vtState.filtroExtra)
+          .map(s => s.supervisor);
+        metasFiltradas = metasFiltradas.filter(m => supsDelCentro.includes(m.supervisor));
+      }
+      metaParaTotal = metasFiltradas.reduce((a, m) => a + m.meta_activadas, 0);
+    } else if (metrica === 'prog' && window.__avanceData && tab === 'diaria' && periodoSel !== 'todos') {
+      let supData = window.__avanceData.supervisoresData;
+      if (vista === 'supervisor' && vtState.filtroExtra) {
+        supData = supData.filter(d => d.sup === vtState.filtroExtra);
+      } else if (vista === 'centro' && vtState.filtroExtra) {
+        const supsDelCentro = supConfigData
+          .filter(s => s.centro === vtState.filtroExtra)
+          .map(s => s.supervisor);
+        supData = supData.filter(d => supsDelCentro.includes(d.sup));
+      }
+      metaParaTotal = supData.reduce((a, d) => a + (d.metaProgFija || 0), 0);
+    }
+
+    let tarjetaTotalHtml;
+    if (metaParaTotal > 0) {
+      const pctMeta = (totalCount / metaParaTotal * 100);
+      const colorTotal = pctMeta >= 100 ? 'var(--green)' : pctMeta >= 85 ? 'var(--amber)' : 'var(--red)';
+      const subTotal = `${pctMeta.toFixed(1)}% cumplimiento`;
+      tarjetaTotalHtml = `
+        <div class="stat-card" style="border-left-color: ${colorTotal};">
+          <div class="stat-label">Total ${labelMetrica}</div>
+          <div class="stat-value" style="color: ${colorTotal};">${totalCount.toLocaleString()} <span style="font-size:14px; color:var(--text-soft); font-weight:500;">/ ${metaParaTotal.toLocaleString()}</span></div>
+          <div class="stat-sub">${subTotal}</div>
+        </div>
+      `;
+    } else {
+      tarjetaTotalHtml = `
+        <div class="stat-card" style="border-left-color: var(--green);">
+          <div class="stat-label">Total ${labelMetrica}</div>
+          <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
+          <div class="stat-sub">${tab === 'diaria' && periodoSel !== 'todos' ? `${diasHabilesBase.toFixed(1)} días hábiles` : `${buckets.length} ${labelBucket}s con datos`}</div>
+        </div>
+      `;
+    }
+
     resumenHtml = `
       <div class="stat-card">
         <div class="stat-label">Promedio ${labelProm}</div>
@@ -5236,11 +5285,7 @@ function actualizarVista() {
       ${tarjetaCumplenTarget}
       ${tarjetaAjustado}
       ${tarjetasSemanal}
-      <div class="stat-card" style="border-left-color: var(--green);">
-        <div class="stat-label">Total ${labelMetrica}</div>
-        <div class="stat-value" style="color: var(--green);">${totalCount.toLocaleString()}</div>
-        <div class="stat-sub">${tab === 'diaria' && periodoSel !== 'todos' ? `${diasHabilesBase.toFixed(1)} días hábiles` : `${buckets.length} ${labelBucket}s con datos`}</div>
-      </div>
+      ${tarjetaTotalHtml}
       <div class="stat-card" style="border-left-color: var(--att-orange);">
         <div class="stat-label">Máximo en ${labelBucket === 'día' ? 'un día' : 'una semana'}</div>
         <div class="stat-value" style="color: var(--att-orange);">${maxValor}</div>
@@ -5480,12 +5525,60 @@ function actualizarVista() {
     if (yMaxSugerido < 5) yMaxSugerido = 5;
   }
 
+  // Plugin inline: dibuja el valor encima de cada barra (solo barras, no líneas)
+  // En modo stacked muestra el total apilado solo en el último dataset.
+  const barValueLabelsPlugin = {
+    id: 'barValueLabels',
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      const isStacked = chart.options.scales.y.stacked === true;
+      ctx.save();
+      ctx.font = '600 10px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#1a1a1a';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+
+      const barDatasets = chart.data.datasets
+        .map((ds, i) => ({ ds, i }))
+        .filter(({ ds }) => ds.type !== 'line');
+
+      if (isStacked && barDatasets.length > 0) {
+        // En stacked: pintar el total encima del último dataset (el de hasta arriba)
+        const lastIdx = barDatasets[barDatasets.length - 1].i;
+        const meta = chart.getDatasetMeta(lastIdx);
+        chart.data.labels.forEach((_, dataIdx) => {
+          let total = 0;
+          barDatasets.forEach(({ ds }) => { total += (ds.data[dataIdx] || 0); });
+          if (total <= 0) return;
+          const bar = meta.data[dataIdx];
+          if (!bar) return;
+          ctx.fillText(total.toLocaleString(), bar.x, bar.y - 4);
+        });
+      } else {
+        // No stacked: pintar el valor de cada barra
+        barDatasets.forEach(({ ds, i }) => {
+          const meta = chart.getDatasetMeta(i);
+          ds.data.forEach((val, dataIdx) => {
+            if (!val || val <= 0) return;
+            const bar = meta.data[dataIdx];
+            if (!bar) return;
+            const txt = (metrica === 'arpu') ? '$' + Math.round(val).toLocaleString() : Math.round(val).toLocaleString();
+            ctx.fillText(txt, bar.x, bar.y - 4);
+          });
+        });
+      }
+      ctx.restore();
+    }
+  };
+
   window.__chartVT = new Chart(ctx, {
     type: 'bar',
     data: { labels: buckets.map(formatBucket), datasets },
+    plugins: [barValueLabelsPlugin],
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 18 } },
       plugins: {
         legend: {
           display: cats.length > 1 || vista !== 'total',
