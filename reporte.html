@@ -2591,8 +2591,7 @@ function _renderAvanceMensualImpl(wActual) {
   const hoyStr = ahora.toISOString().split('T')[0];
 
   // Para determinar el día de corte usamos SOLO fecha_activacion y fecha_bo.
-  // fecha_cancelacion puede llegar adelantada en el archivo de canceladas y desplazaría
-  // el corte a un día sin actividad real de ventas/activaciones.
+  // fecha_cancelacion puede llegar adelantada en el archivo de canceladas.
   let ultimoDiaConDatosStr = null;
   ventasData.forEach(r => {
     if (r.fecha_bo && r.fecha_bo <= hoyStr) {
@@ -2911,6 +2910,60 @@ function _renderAvanceMensualImpl(wActual) {
       h += `<strong>diasTranscurridos:</strong> ${diasTranscurridos.toFixed(1)} · <strong>diasHabilesTotales:</strong> ${diasHabilesTotales.toFixed(1)}<br>`;
       h += `<strong>ultimoDiaConDatosStr (global):</strong> ${ultimoDiaConDatosStr}<br>`;
       h += `<strong>Hoy (sistema):</strong> ${hoyStr}`;
+      h += `</div>`;
+
+      // NUEVO: Mostrar TODAS las ventas con cualquier fecha = ultimoDiaConDatosStr
+      // para identificar de dónde viene el problema
+      h += `<div style="margin-top:12px; padding-top:10px; border-top:2px solid #D97706;">`;
+      h += `<strong style="font-size:13px;">🔬 Ventas en ventasData con alguna fecha = ${ultimoDiaConDatosStr}:</strong><br>`;
+
+      const conFechaUlt = ventasData.filter(r =>
+        r.fecha_bo === ultimoDiaConDatosStr ||
+        r.fecha_activacion === ultimoDiaConDatosStr ||
+        r.fecha_cancelacion === ultimoDiaConDatosStr
+      );
+      h += `<div style="margin:6px 0;">Total registros: <strong>${conFechaUlt.length}</strong></div>`;
+
+      if (conFechaUlt.length > 0) {
+        // Desglose por qué campo coincide
+        const porBO = conFechaUlt.filter(r => r.fecha_bo === ultimoDiaConDatosStr).length;
+        const porAct = conFechaUlt.filter(r => r.fecha_activacion === ultimoDiaConDatosStr).length;
+        const porCan = conFechaUlt.filter(r => r.fecha_cancelacion === ultimoDiaConDatosStr).length;
+        h += `<div style="margin-bottom:8px;">Por campo: fecha_bo=${porBO} · fecha_activacion=${porAct} · fecha_cancelacion=${porCan}</div>`;
+
+        h += `<table style="width:100%; font-size:11px; border-collapse:collapse;">`;
+        h += `<thead><tr style="background:#FBBF24;"><th style="text-align:left; padding:4px;">Folio</th><th style="text-align:left; padding:4px;">Sup</th><th style="text-align:left; padding:4px;">Ejecutivo</th><th style="text-align:left; padding:4px;">fecha_bo</th><th style="text-align:left; padding:4px;">fecha_activacion</th><th style="text-align:left; padding:4px;">fecha_cancelacion</th><th style="text-align:left; padding:4px;">Estatus</th></tr></thead><tbody>`;
+        conFechaUlt.slice(0, 20).forEach(r => {
+          const hl = (val) => val === ultimoDiaConDatosStr ? `<strong style="background:#FCA5A5; padding:1px 4px;">${val}</strong>` : (val || '-');
+          h += `<tr style="border-bottom:1px solid #FBBF24;"><td style="padding:4px;">${r.folio}</td><td style="padding:4px;">${r.supervisor || '-'}</td><td style="padding:4px;">${r.ejecutivo || '-'}</td><td style="padding:4px;">${hl(r.fecha_bo)}</td><td style="padding:4px;">${hl(r.fecha_activacion)}</td><td style="padding:4px;">${hl(r.fecha_cancelacion)}</td><td style="padding:4px;">${r.estatus}</td></tr>`;
+        });
+        if (conFechaUlt.length > 20) h += `<tr><td colspan="7" style="padding:6px; font-style:italic;">... y ${conFechaUlt.length - 20} más</td></tr>`;
+        h += `</tbody></table>`;
+      }
+
+      // Conteo por fecha en abril (top 10 más recientes)
+      h += `<div style="margin-top:14px;"><strong style="font-size:13px;">📊 Conteo de ventas por fecha (abril, últimos 10 días con datos):</strong></div>`;
+      const conteoAbril = {};
+      ventasData.forEach(r => {
+        ['fecha_bo','fecha_activacion','fecha_cancelacion'].forEach(campo => {
+          const f = r[campo];
+          if (f && f.startsWith(`${anio}-${String(mes).padStart(2,'0')}`)) {
+            if (!conteoAbril[f]) conteoAbril[f] = { bo:0, act:0, can:0 };
+            if (campo === 'fecha_bo') conteoAbril[f].bo++;
+            if (campo === 'fecha_activacion') conteoAbril[f].act++;
+            if (campo === 'fecha_cancelacion') conteoAbril[f].can++;
+          }
+        });
+      });
+      const fechasOrd = Object.keys(conteoAbril).sort().slice(-10);
+      h += `<table style="width:100%; font-size:11px; border-collapse:collapse; margin-top:6px;">`;
+      h += `<thead><tr style="background:#FBBF24;"><th style="text-align:left; padding:4px;">Fecha</th><th style="text-align:right; padding:4px;">fecha_bo</th><th style="text-align:right; padding:4px;">fecha_activacion</th><th style="text-align:right; padding:4px;">fecha_cancelacion</th></tr></thead><tbody>`;
+      fechasOrd.forEach(f => {
+        const c = conteoAbril[f];
+        h += `<tr style="border-bottom:1px solid #FBBF24;"><td style="padding:4px;"><strong>${f}</strong></td><td style="padding:4px; text-align:right;">${c.bo}</td><td style="padding:4px; text-align:right;">${c.act}</td><td style="padding:4px; text-align:right;">${c.can}</td></tr>`;
+      });
+      h += `</tbody></table>`;
+
       h += `</div></div>`;
       // Insertar después de la sección entera del subtitle (más confiable)
       subEl.insertAdjacentHTML('afterend', h);
