@@ -2590,17 +2590,32 @@ function _renderAvanceMensualImpl(wActual) {
   const ahora = new Date();
   const hoyStr = ahora.toISOString().split('T')[0];
 
-  // Para determinar el día de corte usamos SOLO fecha_activacion y fecha_bo.
-  // fecha_cancelacion puede llegar adelantada en el archivo de canceladas.
+  // Para determinar el día de corte usamos SOLO fecha_activacion y fecha_cancelacion.
+  // CAUSA RAÍZ del bug "22.5 de 22.5" cuando solo había datos al día 29:
+  // las fechas de fecha_bo pueden incluir registros prematuros del día actual
+  // (ventas que AT&T pre-registra pero que aún no se entregan ni activan).
+  // Estos quedan en estatus "en_transito" y no representan un día operado.
+  // En cambio, fecha_activacion y fecha_cancelacion solo aparecen cuando el día
+  // ya rindió actividad real procesada, así que son indicadores confiables del
+  // último día completo.
   let ultimoDiaConDatosStr = null;
   ventasData.forEach(r => {
-    if (r.fecha_bo && r.fecha_bo <= hoyStr) {
-      if (!ultimoDiaConDatosStr || r.fecha_bo > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_bo;
-    }
     if (r.fecha_activacion && r.fecha_activacion <= hoyStr) {
       if (!ultimoDiaConDatosStr || r.fecha_activacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_activacion;
     }
+    if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStr) {
+      if (!ultimoDiaConDatosStr || r.fecha_cancelacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_cancelacion;
+    }
   });
+  // Fallback: si no hay activaciones ni cancelaciones (caso muy raro, p.ej. mes recién iniciado),
+  // usar fecha_bo como antes.
+  if (!ultimoDiaConDatosStr) {
+    ventasData.forEach(r => {
+      if (r.fecha_bo && r.fecha_bo <= hoyStr) {
+        if (!ultimoDiaConDatosStr || r.fecha_bo > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_bo;
+      }
+    });
+  }
   if (!ultimoDiaConDatosStr) ultimoDiaConDatosStr = hoyStr;
 
   const selMes = document.getElementById('avance-mes-select');
@@ -2658,15 +2673,24 @@ function _renderAvanceMensualImpl(wActual) {
   const esMesActual = (anio === new Date(ultimoDiaConDatosStr + 'T12:00:00').getFullYear() &&
                        mes === new Date(ultimoDiaConDatosStr + 'T12:00:00').getMonth() + 1);
 
-  // Mismo criterio acotado al mes: ignorar fecha_cancelacion
+  // Mismo criterio acotado al mes seleccionado: usar fecha_activacion y fecha_cancelacion
+  // (NO fecha_bo) para determinar el último día con actividad real procesada.
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
-    [r.fecha_bo, r.fecha_activacion].forEach(f => {
+    [r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
       if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr) {
         if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
       }
     });
   });
+  // Fallback: solo si el mes no tiene NINGUNA activación/cancelación, recurrir a fecha_bo
+  if (!ultimoDiaConDatosMesSel) {
+    ventasData.forEach(r => {
+      if (r.fecha_bo && r.fecha_bo >= iniMesStrEval && r.fecha_bo <= finMesStrEval && r.fecha_bo <= hoyStr) {
+        if (!ultimoDiaConDatosMesSel || r.fecha_bo > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = r.fecha_bo;
+      }
+    });
+  }
 
   const corteRefStr = esMesActual ? (ultimoDiaConDatosMesSel || hoyStr) : finMesStrEval;
   const fechaCorte = new Date(corteRefStr + 'T12:00:00');
@@ -2909,7 +2933,8 @@ function _renderAvanceMensualImpl(wActual) {
       h += `<strong>Día corte calculado:</strong> ${fechaCorteStr}<br>`;
       h += `<strong>diasTranscurridos:</strong> ${diasTranscurridos.toFixed(1)} · <strong>diasHabilesTotales:</strong> ${diasHabilesTotales.toFixed(1)}<br>`;
       h += `<strong>ultimoDiaConDatosStr (global):</strong> ${ultimoDiaConDatosStr}<br>`;
-      h += `<strong>Hoy (sistema):</strong> ${hoyStr}`;
+      h += `<strong>Hoy (sistema):</strong> ${hoyStr}<br>`;
+      h += `<strong style="color:#16A34A;">✅ Versión: fix-act-cancel-v2 (2026-04-30 ~10am)</strong>`;
       h += `</div>`;
 
       // NUEVO: Mostrar TODAS las ventas con cualquier fecha = ultimoDiaConDatosStr
