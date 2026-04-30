@@ -2212,9 +2212,6 @@ function _renderAvanceMensualImpl(wActual) {
     if (r.fecha_activacion && r.fecha_activacion <= hoyStr) {
       if (!ultimoDiaConDatosStr || r.fecha_activacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_activacion;
     }
-    if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStr) {
-      if (!ultimoDiaConDatosStr || r.fecha_cancelacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_cancelacion;
-    }
   });
   if (!ultimoDiaConDatosStr) ultimoDiaConDatosStr = hoyStr;
 
@@ -2272,12 +2269,39 @@ function _renderAvanceMensualImpl(wActual) {
 
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
-    [r.fecha_bo, r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
+    [r.fecha_bo, r.fecha_activacion].forEach(f => {
       if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr) {
         if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
       }
     });
   });
+
+  console.log('=== DEBUG CORTE ===');
+  console.log('Mes:', anio, mes);
+  console.log('iniMesStrEval:', iniMesStrEval);
+  console.log('finMesStrEval:', finMesStrEval);
+  console.log('hoyStr:', hoyStr);
+  console.log('ultimoDiaConDatosMesSel:', ultimoDiaConDatosMesSel);
+
+  // Buscar específicamente registros del 30 abril
+  const reg30 = ventasData.filter(r =>
+    (r.fecha_bo === '2026-04-30') ||
+    (r.fecha_activacion === '2026-04-30') ||
+    (r.fecha_cancelacion === '2026-04-30')
+  );
+  console.log('Registros con alguna fecha = 2026-04-30:', reg30.length);
+  if (reg30.length > 0) {
+    console.log('Muestra primeros 5:', reg30.slice(0, 5).map(r => ({
+      folio: r.folio,
+      ejec: r.ejecutivo,
+      bo: r.fecha_bo,
+      act: r.fecha_activacion,
+      canc: r.fecha_cancelacion,
+      estatus: r.estatus
+    })));
+  }
+
+  // El corte es el último día con datos cargados del mes
 
   // El corte SIEMPRE es el último día con datos cargados del mes
   // (no la fecha del sistema ni el último día del mes)
