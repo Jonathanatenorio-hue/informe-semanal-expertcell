@@ -1580,7 +1580,7 @@
     <div class="modal-content" style="max-width:760px;">
       <div class="modal-header">
         <h2 id="modal-resumen-titulo">Resumen del supervisor</h2>
-        <button class="modal-close" onclick="document.getElementById('modal-resumen-sup').classList.remove('open')">✕</button>
+        <button class="modal-close" onclick="document.getElementById('modal-resumen-sup').classList.remove('abierto')">✕</button>
       </div>
       <div style="padding:16px 24px; background:#F8FAFC; border-bottom:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap;">
         <button id="btn-resumen-png" style="background:var(--att-blue); color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">🖼️ Descargar imagen PNG</button>
@@ -4792,7 +4792,7 @@ function abrirResumenSupervisor(supervisor) {
   }
   document.getElementById('modal-resumen-titulo').textContent = `📋 Resumen — ${supervisor}`;
   document.getElementById('modal-resumen-body').innerHTML = _renderHTMLResumenSup(d);
-  document.getElementById('modal-resumen-sup').classList.add('open');
+  document.getElementById('modal-resumen-sup').classList.add('abierto');
 
   document.getElementById('btn-resumen-png').onclick = () => exportarResumenPNG(supervisor);
   document.getElementById('btn-resumen-pdf').onclick = () => exportarResumenPDF(supervisor);
