@@ -2176,6 +2176,12 @@ function renderEmbudo(actual, anterior) {
   embudoSection.appendChild(section);
 }
 
+// =====================================================================
+// SIMULADOR WHAT-IF: comparar rangos del mes y proyectar al mes completo
+// =====================================================================
+let whatifModo = 'mitades';
+let whatifMesSel = null; // formato 'YYYY-MM'
+
 function renderWhatIf() {
   const sel = document.getElementById('whatif-mes-select');
   if (!sel.dataset.inicializado) {
