@@ -4698,7 +4698,7 @@ function _construirDatosResumenSup(supervisor) {
   if (!supData) return null;
 
   const { mesNombre, anio, fechaCorteStr, diasTranscurridos, diasHabilesTotales } = window.__avanceData;
-  const agentes = window.__detalleAgentesData[supervisor] || [];
+  const agentes = (window.__detalleAgentesData.agentesPorSup || {})[supervisor] || [];
   const activos = agentes.filter(a => !a.esBaja);
   const bajas = agentes.filter(a => a.esBaja);
 
