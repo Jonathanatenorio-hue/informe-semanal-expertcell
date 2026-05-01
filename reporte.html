@@ -5390,7 +5390,14 @@ function actualizarVista() {
     }
   }
 
-  const promData = buckets.map(() => Number(promCalculadoDesdeBuckets.toFixed(1)));
+  // Si estamos en vista diaria con periodo seleccionado y no es ARPU, usar el promedio
+  // ponderado por días hábiles reales (igual que la tarjeta "Promedio día hábil").
+  // Si no, usar el promedio simple de buckets. Esto evita inflar sábados como días enteros.
+  const promParaLineaGuia = (tab === 'diaria' && periodoSel !== 'todos' && metrica !== 'arpu')
+    ? promPorDiaHabil
+    : promCalculadoDesdeBuckets;
+
+  const promData = buckets.map(() => Number(promParaLineaGuia.toFixed(1)));
   const ocultarPromReal = (vista === 'centro' || vista === 'supervisor') && vtState.filtroExtra;
 
   if (!ocultarPromReal) {
@@ -5408,7 +5415,7 @@ function actualizarVista() {
   } else {
     datasets.push({
       type: 'line',
-      label: `Promedio ${vtState.filtroExtra} (${promCalculadoDesdeBuckets.toFixed(0)})`,
+      label: `Promedio ${vtState.filtroExtra} (${promParaLineaGuia.toFixed(0)})`,
       data: promData,
       borderColor: '#FF7200',
       backgroundColor: 'transparent',
@@ -5583,6 +5590,10 @@ function actualizarVista() {
       responsive: true,
       maintainAspectRatio: false,
       layout: { padding: { top: 18 } },
+      interaction: {
+        mode: 'index',
+        intersect: false
+      },
       plugins: {
         legend: {
           display: cats.length > 1 || vista !== 'total',
@@ -5590,11 +5601,14 @@ function actualizarVista() {
           labels: { font: { size: 11, weight: '600' }, boxWidth: 16 }
         },
         tooltip: {
+          mode: 'index',
+          intersect: false,
           callbacks: {
             label: (ctx) => {
               const v = ctx.parsed.y;
+              if (v === null || v === undefined) return null;
               if (metrica === 'arpu') return `${ctx.dataset.label}: $${v.toLocaleString()}`;
-              return `${ctx.dataset.label}: ${v}`;
+              return `${ctx.dataset.label}: ${typeof v === 'number' ? v.toLocaleString() : v}`;
             }
           }
         }
