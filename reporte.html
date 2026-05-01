@@ -10,6 +10,8 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root {
     --att-blue: #00A8E0;
@@ -1570,6 +1572,23 @@
         <button class="modal-close" id="modal-cerrar">✕</button>
       </div>
       <div class="modal-body" id="modal-agente-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL RESUMEN SUPERVISOR -->
+  <div class="modal-overlay" id="modal-resumen-sup">
+    <div class="modal-content" style="max-width:760px;">
+      <div class="modal-header">
+        <h2 id="modal-resumen-titulo">Resumen del supervisor</h2>
+        <button class="modal-close" onclick="document.getElementById('modal-resumen-sup').classList.remove('open')">✕</button>
+      </div>
+      <div style="padding:16px 24px; background:#F8FAFC; border-bottom:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap;">
+        <button id="btn-resumen-png" style="background:var(--att-blue); color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">🖼️ Descargar imagen PNG</button>
+        <button id="btn-resumen-pdf" style="background:var(--red); color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">📄 Descargar PDF</button>
+        <button id="btn-resumen-xlsx" style="background:var(--green); color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">📊 Descargar Excel</button>
+        <button id="btn-resumen-wa" style="background:#25D366; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">💬 Copiar texto WhatsApp</button>
+      </div>
+      <div class="modal-body" id="modal-resumen-body" style="padding:0;"></div>
     </div>
   </div>
 
@@ -3847,7 +3866,10 @@ function renderDetalleAgentesConMes(mesKey) {
               <span data-marcador-inactividad="${s.sup}">${marcadorInactHTML}</span>
             </span>
           </span>
-          <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
+          <span style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size: 11px; color: var(--text-soft);">Meta ${s.meta} · Avance ${s.avance}</span>
+            <button class="btn-resumen-sup" data-sup="${s.sup}" onclick="event.stopPropagation(); abrirResumenSupervisor('${s.sup}');" style="background:var(--att-orange); color:white; border:none; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;">📋 Resumen</button>
+          </span>
         </div>
         <div class="agente-acordeon-body">
           <div style="margin-bottom: 10px; display: flex; justify-content: flex-end;">
@@ -4665,6 +4687,479 @@ function descargarEquipoExcel(supervisor) {
 function toggleAgenteAcordeon(sup) {
   const el = document.querySelector(`.agente-acordeon[data-sup="${sup}"]`);
   if (el) el.classList.toggle('abierto');
+}
+
+// =====================================================================
+// RESUMEN SUPERVISOR: vista compartible con métricas relevantes
+// =====================================================================
+function _construirDatosResumenSup(supervisor) {
+  if (!window.__avanceData || !window.__detalleAgentesData) return null;
+  const supData = window.__avanceData.supervisoresData.find(s => s.sup === supervisor);
+  if (!supData) return null;
+
+  const { mesNombre, anio, fechaCorteStr, diasTranscurridos, diasHabilesTotales } = window.__avanceData;
+  const agentes = window.__detalleAgentesData[supervisor] || [];
+  const activos = agentes.filter(a => !a.esBaja);
+  const bajas = agentes.filter(a => a.esBaja);
+
+  const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100);
+  const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85);
+  const criticos = activos.filter(a => a.meta > 0 && a.pct < 50 && a.pct > 0);
+  const sinVenta = activos.filter(a => a.avance === 0);
+  const sinActAlerta = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad);
+  const sinProgAlerta = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad);
+
+  // Top 3 agentes por % cumplimiento (con avance > 0)
+  const top3 = [...activos]
+    .filter(a => a.avance > 0)
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 3);
+
+  // Críticos: sin venta + más días sin actividad (top 5)
+  const criticosCombinados = [...activos]
+    .filter(a => a.avance === 0 || (a.diasSinAct !== null && a.diasSinAct >= umbralInactividad))
+    .sort((a, b) => (b.diasSinAct || 0) - (a.diasSinAct || 0))
+    .slice(0, 5);
+
+  // Comparativo con mes anterior (si hay datos)
+  const mesIdx = MESES_NOMBRE.indexOf(mesNombre);
+  let mesAntStr = null;
+  if (mesIdx >= 0) {
+    const aAnt = mesIdx === 0 ? anio - 1 : anio;
+    const mAnt = mesIdx === 0 ? 12 : mesIdx;
+    mesAntStr = `${aAnt}-${String(mAnt).padStart(2, '0')}`;
+  }
+  let avanceAnt = 0;
+  if (mesAntStr) {
+    ventasData.forEach(r => {
+      if (r.estatus === 'activada' &&
+          r.fecha_activacion && r.fecha_activacion.startsWith(mesAntStr) &&
+          r.supervisor === supervisor) {
+        avanceAnt++;
+      }
+    });
+  }
+  const deltaVsMesAnt = supData.avance - avanceAnt;
+  const pctDeltaMes = avanceAnt > 0 ? ((deltaVsMesAnt / avanceAnt) * 100) : null;
+
+  // Canceladas / recuperadas del supervisor en el mes
+  let canceladasSup = 0;
+  ventasData.forEach(r => {
+    if (r.estatus === 'cancelada' && r.supervisor === supervisor &&
+        r.fecha_cancelacion && r.fecha_cancelacion.substring(0, 7) === `${anio}-${String(mesIdx + 1).padStart(2, '0')}`) {
+      canceladasSup++;
+    }
+  });
+
+  return {
+    supervisor,
+    mesNombre,
+    anio,
+    fechaCorteStr,
+    diasTranscurridos,
+    diasHabilesTotales,
+    meta: supData.meta,
+    avance: supData.avance,
+    pctCumpl: supData.pctCumpl,
+    pctEsperado: supData.pctEsperado,
+    proyMes: supData.proyMes,
+    ritmoNecesario: supData.ritmoNecesario,
+    estado: supData.estado,
+    activos: activos.length,
+    bajas: bajas.length,
+    cumplidos: cumplidos.length,
+    enRiesgo: enRiesgo.length,
+    criticos: criticos.length,
+    sinVenta: sinVenta.length,
+    sinActAlerta: sinActAlerta.length,
+    sinProgAlerta: sinProgAlerta.length,
+    top3,
+    criticosCombinados,
+    avanceAnt,
+    deltaVsMesAnt,
+    pctDeltaMes,
+    canceladasSup,
+    ritmoActual: diasTranscurridos > 0 ? (supData.avance / diasTranscurridos) : 0,
+    ritmoObjetivo: diasHabilesTotales > 0 ? (supData.meta / diasHabilesTotales) : 0,
+  };
+}
+
+function abrirResumenSupervisor(supervisor) {
+  const d = _construirDatosResumenSup(supervisor);
+  if (!d) {
+    alert('No hay datos disponibles para este supervisor.');
+    return;
+  }
+  document.getElementById('modal-resumen-titulo').textContent = `📋 Resumen — ${supervisor}`;
+  document.getElementById('modal-resumen-body').innerHTML = _renderHTMLResumenSup(d);
+  document.getElementById('modal-resumen-sup').classList.add('open');
+
+  document.getElementById('btn-resumen-png').onclick = () => exportarResumenPNG(supervisor);
+  document.getElementById('btn-resumen-pdf').onclick = () => exportarResumenPDF(supervisor);
+  document.getElementById('btn-resumen-xlsx').onclick = () => exportarResumenXLSX(supervisor);
+  document.getElementById('btn-resumen-wa').onclick = () => copiarResumenWhatsApp(supervisor);
+}
+
+function _renderHTMLResumenSup(d) {
+  const colorEstado = d.estado === 'verde' ? '#16A34A' : d.estado === 'amarillo' ? '#D97706' : '#DC2626';
+  const tipoTexto = d.estado === 'verde' ? '✅ EN META' : d.estado === 'amarillo' ? '⚠️ EN RIESGO' : '🚨 CRÍTICO';
+  const deltaLbl = d.deltaVsMesAnt >= 0 ? `+${d.deltaVsMesAnt}` : `${d.deltaVsMesAnt}`;
+  const deltaColor = d.deltaVsMesAnt >= 0 ? '#16A34A' : '#DC2626';
+  const ritmoColor = d.ritmoActual >= d.ritmoObjetivo ? '#16A34A' : '#DC2626';
+
+  return `
+    <div id="resumen-export-area" style="background:white; padding:28px 32px; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+      <!-- Header AT&T -->
+      <div style="background:linear-gradient(135deg, #002B5C, #0077A8); color:white; padding:18px 24px; border-radius:10px; margin-bottom:18px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px;">
+          <div>
+            <div style="font-size:11px; opacity:0.85; font-weight:700; letter-spacing:1px; text-transform:uppercase;">EXPERTCELL · DISTRIBUIDOR AT&T</div>
+            <div style="font-size:24px; font-weight:800; margin-top:4px;">${d.supervisor}</div>
+            <div style="font-size:13px; opacity:0.9;">${d.mesNombre} ${d.anio} · Corte: ${d.fechaCorteStr}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="background:${colorEstado === '#16A34A' ? 'rgba(34,197,94,0.25)' : colorEstado === '#D97706' ? 'rgba(245,158,11,0.25)' : 'rgba(220,38,38,0.25)'}; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:700; letter-spacing:0.5px;">${tipoTexto}</div>
+            <div style="font-size:32px; font-weight:800; margin-top:8px;">${d.pctCumpl.toFixed(1)}%</div>
+            <div style="font-size:11px; opacity:0.85;">cumplimiento</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Métricas principales -->
+      <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-bottom:18px;">
+        <div style="background:#F8FAFC; border-left:4px solid #002B5C; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#5a6a7a; font-weight:700; text-transform:uppercase;">Avance</div>
+          <div style="font-size:22px; font-weight:800; color:#002B5C;">${d.avance}</div>
+          <div style="font-size:11px; color:#5a6a7a;">de ${d.meta} meta</div>
+        </div>
+        <div style="background:#F8FAFC; border-left:4px solid ${ritmoColor}; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#5a6a7a; font-weight:700; text-transform:uppercase;">Ritmo / día</div>
+          <div style="font-size:22px; font-weight:800; color:${ritmoColor};">${d.ritmoActual.toFixed(1)}</div>
+          <div style="font-size:11px; color:#5a6a7a;">obj ${d.ritmoObjetivo.toFixed(1)}/día</div>
+        </div>
+        <div style="background:#F8FAFC; border-left:4px solid #00A8E0; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#5a6a7a; font-weight:700; text-transform:uppercase;">Días hábiles</div>
+          <div style="font-size:22px; font-weight:800; color:#002B5C;">${d.diasTranscurridos.toFixed(1)}</div>
+          <div style="font-size:11px; color:#5a6a7a;">de ${d.diasHabilesTotales.toFixed(1)} totales</div>
+        </div>
+        <div style="background:#F8FAFC; border-left:4px solid #FF7200; padding:12px; border-radius:8px;">
+          <div style="font-size:10px; color:#5a6a7a; font-weight:700; text-transform:uppercase;">Proyección mes</div>
+          <div style="font-size:22px; font-weight:800; color:#002B5C;">${d.proyMes}</div>
+          <div style="font-size:11px; color:${d.proyMes >= d.meta ? '#16A34A' : '#DC2626'};">${d.proyMes >= d.meta ? '+' : ''}${d.proyMes - d.meta} vs meta</div>
+        </div>
+      </div>
+
+      <!-- Equipo + Comparativo -->
+      <div style="display:grid; grid-template-columns:1.3fr 1fr; gap:12px; margin-bottom:18px;">
+        <div style="border:1.5px solid #E5E7EB; border-radius:10px; padding:14px;">
+          <div style="font-size:11px; font-weight:700; color:#002B5C; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">👥 Equipo (${d.activos} activos${d.bajas > 0 ? ` + ${d.bajas} bajas` : ''})</div>
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px;">
+            <div style="text-align:center; padding:6px; background:#F0FDF4; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#16A34A;">${d.cumplidos}</div>
+              <div style="font-size:10px; color:#5a6a7a;">al 100%</div>
+            </div>
+            <div style="text-align:center; padding:6px; background:#FEF3C7; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#D97706;">${d.enRiesgo}</div>
+              <div style="font-size:10px; color:#5a6a7a;">en riesgo</div>
+            </div>
+            <div style="text-align:center; padding:6px; background:#FEE2E2; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#DC2626;">${d.criticos}</div>
+              <div style="font-size:10px; color:#5a6a7a;">críticos</div>
+            </div>
+            <div style="text-align:center; padding:6px; background:#FEE2E2; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#DC2626;">${d.sinVenta}</div>
+              <div style="font-size:10px; color:#5a6a7a;">⛔ sin venta</div>
+            </div>
+            <div style="text-align:center; padding:6px; background:#FEF3C7; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#D97706;">${d.sinActAlerta}</div>
+              <div style="font-size:10px; color:#5a6a7a;">❄️ ${umbralInactividad}+ d sin act</div>
+            </div>
+            <div style="text-align:center; padding:6px; background:#F3E8FF; border-radius:6px;">
+              <div style="font-size:18px; font-weight:800; color:#7C3AED;">${d.sinProgAlerta}</div>
+              <div style="font-size:10px; color:#5a6a7a;">📋 ${umbralInactividad}+ d sin prog</div>
+            </div>
+          </div>
+        </div>
+        <div style="border:1.5px solid #E5E7EB; border-radius:10px; padding:14px;">
+          <div style="font-size:11px; font-weight:700; color:#002B5C; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">📈 Comparativo</div>
+          <div style="margin-bottom:10px;">
+            <div style="font-size:11px; color:#5a6a7a;">vs Mes anterior</div>
+            <div style="display:flex; align-items:baseline; gap:6px;">
+              <span style="font-size:18px; font-weight:800; color:${deltaColor};">${deltaLbl}</span>
+              ${d.pctDeltaMes !== null ? `<span style="font-size:12px; color:${deltaColor}; font-weight:600;">(${d.pctDeltaMes >= 0 ? '+' : ''}${d.pctDeltaMes.toFixed(1)}%)</span>` : ''}
+            </div>
+            <div style="font-size:10px; color:#5a6a7a;">${d.avanceAnt} ventas mes anterior</div>
+          </div>
+          <div>
+            <div style="font-size:11px; color:#5a6a7a;">Canceladas mes</div>
+            <div style="font-size:18px; font-weight:800; color:#DC2626;">${d.canceladasSup}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top 3 -->
+      ${d.top3.length > 0 ? `
+      <div style="border:1.5px solid #E5E7EB; border-radius:10px; padding:14px; margin-bottom:14px;">
+        <div style="font-size:11px; font-weight:700; color:#002B5C; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">🏆 Top 3 agentes</div>
+        ${d.top3.map((a, i) => {
+          const medal = ['🥇', '🥈', '🥉'][i];
+          const colorPct = a.pct >= 100 ? '#16A34A' : a.pct >= 85 ? '#D97706' : '#DC2626';
+          return `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:${i < d.top3.length - 1 ? '1px solid #F1F5F9' : 'none'};">
+              <span style="font-size:13px;">${medal} <strong>${a.ejecutivo}</strong></span>
+              <span style="font-size:13px;"><strong>${a.avance}</strong> de ${a.meta || '-'} <span style="color:${colorPct}; font-weight:700; margin-left:6px;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : ''}</span></span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ` : ''}
+
+      <!-- Atención requerida -->
+      ${d.criticosCombinados.length > 0 ? `
+      <div style="border:1.5px solid #FCA5A5; background:#FEF2F2; border-radius:10px; padding:14px; margin-bottom:14px;">
+        <div style="font-size:11px; font-weight:700; color:#991B1B; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">⚠️ Atención requerida (top ${d.criticosCombinados.length})</div>
+        ${d.criticosCombinados.map(a => {
+          const dias = a.diasSinAct !== null ? a.diasSinAct.toFixed(1) : '—';
+          return `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:12px;">
+              <span><strong>${a.ejecutivo}</strong></span>
+              <span style="color:#5a6a7a;">${a.avance} ventas · ${dias} días sin activar</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      ` : ''}
+
+      <!-- Footer -->
+      <div style="font-size:10px; color:#94a3b8; text-align:center; margin-top:14px; padding-top:10px; border-top:1px solid #E5E7EB;">
+        Generado el ${new Date().toLocaleString('es-MX')}
+      </div>
+    </div>
+  `;
+}
+
+async function exportarResumenPNG(supervisor) {
+  const area = document.getElementById('resumen-export-area');
+  if (!area) return;
+  try {
+    const canvas = await html2canvas(area, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    canvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resumen_${supervisor}_${new Date().toISOString().split('T')[0]}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  } catch (e) {
+    alert('Error al generar imagen: ' + e.message);
+  }
+}
+
+async function exportarResumenPDF(supervisor) {
+  const area = document.getElementById('resumen-export-area');
+  if (!area) return;
+  try {
+    const canvas = await html2canvas(area, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    // PDF tamaño carta
+    const pdf = new jsPDF('p', 'mm', 'letter');
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
+    const usableWidth = pageWidth - margin * 2;
+    const imgHeight = (canvas.height * usableWidth) / canvas.width;
+    let y = margin;
+    if (imgHeight <= pageHeight - margin * 2) {
+      pdf.addImage(imgData, 'PNG', margin, y, usableWidth, imgHeight);
+    } else {
+      // Multi-página si es muy alto
+      let posY = 0;
+      let restante = imgHeight;
+      while (restante > 0) {
+        const visibleHeight = Math.min(pageHeight - margin * 2, restante);
+        pdf.addImage(imgData, 'PNG', margin, margin - posY, usableWidth, imgHeight);
+        restante -= (pageHeight - margin * 2);
+        posY += (pageHeight - margin * 2);
+        if (restante > 0) pdf.addPage();
+      }
+    }
+    pdf.save(`resumen_${supervisor}_${new Date().toISOString().split('T')[0]}.pdf`);
+  } catch (e) {
+    alert('Error al generar PDF: ' + e.message);
+  }
+}
+
+function exportarResumenXLSX(supervisor) {
+  const d = _construirDatosResumenSup(supervisor);
+  if (!d) return;
+
+  const ATT_NAVY = '002B5C';
+  const headerStyle = {
+    fill: { fgColor: { rgb: ATT_NAVY } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: { top:{style:'thin',color:{rgb:'000000'}}, bottom:{style:'thin',color:{rgb:'000000'}}, left:{style:'thin',color:{rgb:'000000'}}, right:{style:'thin',color:{rgb:'000000'}} }
+  };
+  const titleStyle = {
+    fill: { fgColor: { rgb: ATT_NAVY } },
+    font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  };
+  const sectionStyle = {
+    fill: { fgColor: { rgb: '0077A8' } },
+    font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+    alignment: { horizontal: 'left', vertical: 'center' }
+  };
+  const cellStyle = {
+    font: { name: 'Calibri', sz: 10 },
+    border: { top:{style:'thin',color:{rgb:'D0D7DE'}}, bottom:{style:'thin',color:{rgb:'D0D7DE'}}, left:{style:'thin',color:{rgb:'D0D7DE'}}, right:{style:'thin',color:{rgb:'D0D7DE'}} }
+  };
+  const cellBoldStyle = { ...cellStyle, font: { name: 'Calibri', sz: 10, bold: true } };
+
+  const aoa = [
+    [`📋 RESUMEN — ${supervisor}`, ''],
+    [`${d.mesNombre} ${d.anio} · Corte: ${d.fechaCorteStr}`, ''],
+    ['', ''],
+    ['MÉTRICAS PRINCIPALES', ''],
+    ['Métrica', 'Valor'],
+    ['Avance', d.avance],
+    ['Meta', d.meta],
+    ['% Cumplimiento', `${d.pctCumpl.toFixed(1)}%`],
+    ['Estado', d.estado === 'verde' ? '✅ En meta' : d.estado === 'amarillo' ? '⚠️ En riesgo' : '🚨 Crítico'],
+    ['Días hábiles transcurridos', d.diasTranscurridos.toFixed(1)],
+    ['Días hábiles totales', d.diasHabilesTotales.toFixed(1)],
+    ['Ritmo actual (act/día)', d.ritmoActual.toFixed(1)],
+    ['Ritmo objetivo (act/día)', d.ritmoObjetivo.toFixed(1)],
+    ['Ritmo necesario para cumplir', d.ritmoNecesario.toFixed(1)],
+    ['Proyección al cierre', d.proyMes],
+    ['Proyección vs meta', d.proyMes - d.meta >= 0 ? `+${d.proyMes - d.meta}` : `${d.proyMes - d.meta}`],
+    ['', ''],
+    ['EQUIPO', ''],
+    ['Métrica', 'Valor'],
+    ['Activos', d.activos],
+    ['Bajas', d.bajas],
+    ['Cumplidos al 100%', d.cumplidos],
+    ['En riesgo', d.enRiesgo],
+    ['Críticos', d.criticos],
+    ['Sin venta', d.sinVenta],
+    [`Sin activar ${umbralInactividad}+ días`, d.sinActAlerta],
+    [`Sin programar ${umbralInactividad}+ días`, d.sinProgAlerta],
+    ['', ''],
+    ['COMPARATIVO', ''],
+    ['Métrica', 'Valor'],
+    ['Avance mes anterior', d.avanceAnt],
+    ['Delta vs mes anterior', d.deltaVsMesAnt >= 0 ? `+${d.deltaVsMesAnt}` : `${d.deltaVsMesAnt}`],
+    ['% cambio vs mes anterior', d.pctDeltaMes !== null ? `${d.pctDeltaMes >= 0 ? '+' : ''}${d.pctDeltaMes.toFixed(1)}%` : 'N/A'],
+    ['Canceladas del mes', d.canceladasSup],
+    ['', ''],
+  ];
+
+  if (d.top3.length > 0) {
+    aoa.push(['🏆 TOP 3 AGENTES', '']);
+    aoa.push(['Agente', 'Ventas', 'Meta', '% Cumplimiento']);
+    d.top3.forEach((a, i) => {
+      const medal = ['🥇', '🥈', '🥉'][i];
+      aoa.push([`${medal} ${a.ejecutivo}`, a.avance, a.meta || '-', a.meta > 0 ? `${a.pct.toFixed(1)}%` : '-']);
+    });
+    aoa.push(['', '']);
+  }
+
+  if (d.criticosCombinados.length > 0) {
+    aoa.push(['⚠️ ATENCIÓN REQUERIDA', '']);
+    aoa.push(['Agente', 'Ventas', 'Días sin activar']);
+    d.criticosCombinados.forEach(a => {
+      aoa.push([a.ejecutivo, a.avance, a.diasSinAct !== null ? a.diasSinAct.toFixed(1) : '—']);
+    });
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:38},{wch:18},{wch:18},{wch:18}];
+  ws['!merges'] = [
+    { s:{r:0,c:0}, e:{r:0,c:3} },
+    { s:{r:1,c:0}, e:{r:1,c:3} },
+  ];
+
+  // Aplicar estilos (recorrer todas las celdas)
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+      const valC0 = ws[XLSX.utils.encode_cell({ r: R, c: 0 })]?.v || '';
+      if (R === 0) {
+        ws[ref].s = titleStyle;
+      } else if (R === 1) {
+        ws[ref].s = { ...sectionStyle, font: { ...sectionStyle.font, sz: 10, italic: true } };
+      } else if (typeof valC0 === 'string' && valC0.match(/^(MÉTRICAS|EQUIPO|COMPARATIVO|🏆|⚠️)/)) {
+        ws[ref].s = sectionStyle;
+      } else if (valC0 === 'Métrica' || valC0 === 'Agente') {
+        ws[ref].s = headerStyle;
+      } else {
+        ws[ref].s = (C === 0) ? cellBoldStyle : cellStyle;
+      }
+    }
+  }
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, supervisor.substring(0, 30));
+  XLSX.writeFile(wb, `resumen_${supervisor}_${d.mesNombre}_${d.anio}_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+
+function copiarResumenWhatsApp(supervisor) {
+  const d = _construirDatosResumenSup(supervisor);
+  if (!d) return;
+
+  const estadoEmoji = d.estado === 'verde' ? '✅' : d.estado === 'amarillo' ? '⚠️' : '🚨';
+  const deltaLbl = d.deltaVsMesAnt >= 0 ? `+${d.deltaVsMesAnt}` : `${d.deltaVsMesAnt}`;
+
+  let txt = `📊 *${d.supervisor}* — ${d.mesNombre} ${d.anio}\n`;
+  txt += `_(corte ${d.fechaCorteStr})_\n\n`;
+  txt += `${estadoEmoji} *Cumplimiento:* ${d.avance} / ${d.meta} (*${d.pctCumpl.toFixed(1)}%*)\n`;
+  txt += `🎯 *Ritmo:* ${d.ritmoActual.toFixed(1)}/día | objetivo ${d.ritmoObjetivo.toFixed(1)}/día\n`;
+  txt += `📅 *Días hábiles:* ${d.diasTranscurridos.toFixed(1)} / ${d.diasHabilesTotales.toFixed(1)}\n`;
+  txt += `📈 *Proyección:* ${d.proyMes} (${d.proyMes - d.meta >= 0 ? '+' : ''}${d.proyMes - d.meta} vs meta)\n`;
+  txt += `📉 *vs mes anterior:* ${deltaLbl} (${d.avanceAnt} ventas)\n\n`;
+
+  txt += `👥 *Equipo* (${d.activos} activos${d.bajas > 0 ? `, ${d.bajas} bajas` : ''})\n`;
+  if (d.cumplidos > 0) txt += `   ✅ ${d.cumplidos} al 100%\n`;
+  if (d.enRiesgo > 0) txt += `   ⚠️ ${d.enRiesgo} en riesgo\n`;
+  if (d.criticos > 0) txt += `   🚨 ${d.criticos} críticos\n`;
+  if (d.sinVenta > 0) txt += `   ⛔ ${d.sinVenta} sin venta\n`;
+  if (d.sinActAlerta > 0) txt += `   ❄️ ${d.sinActAlerta} sin activar ${umbralInactividad}+ días\n`;
+  if (d.sinProgAlerta > 0) txt += `   📋 ${d.sinProgAlerta} sin programar ${umbralInactividad}+ días\n`;
+  txt += '\n';
+
+  if (d.top3.length > 0) {
+    txt += `🏆 *Top 3 agentes*\n`;
+    d.top3.forEach((a, i) => {
+      const medal = ['🥇', '🥈', '🥉'][i];
+      const pctTxt = a.meta > 0 ? ` (${a.pct.toFixed(0)}%)` : '';
+      txt += `   ${medal} ${a.ejecutivo} — *${a.avance}*${pctTxt}\n`;
+    });
+    txt += '\n';
+  }
+
+  if (d.criticosCombinados.length > 0) {
+    txt += `⚠️ *Atención requerida*\n`;
+    d.criticosCombinados.forEach(a => {
+      const dias = a.diasSinAct !== null ? a.diasSinAct.toFixed(1) : '—';
+      txt += `   • ${a.ejecutivo}: ${a.avance} ventas, ${dias} días sin activar\n`;
+    });
+    txt += '\n';
+  }
+
+  txt += `🔄 Canceladas: ${d.canceladasSup}`;
+
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.getElementById('btn-resumen-wa');
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copiado!';
+    setTimeout(() => { btn.textContent = orig; }, 2000);
+  }).catch(err => {
+    alert('No se pudo copiar al portapapeles. Texto:\n\n' + txt);
+  });
 }
 
 function renderVistaTiempo() {
