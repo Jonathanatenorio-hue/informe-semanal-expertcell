@@ -2190,34 +2190,56 @@ function renderEmbudo(actual, anterior) {
 // =====================================================================
 // PRODUCTIVIDAD DE EQUIPOS: ventas/agente actual + tendencia 6 meses
 // =====================================================================
+
+// Cache global de ventas indexadas: ventasPorMesYSup[mesStr][sup] = { ventas, ejecutivos:Set }
+let _cacheVentasIndexadas = null;
+let _cacheCalendarioIndexado = null;
+
+function _indexarVentas() {
+  if (_cacheVentasIndexadas !== null) return _cacheVentasIndexadas;
+  const idx = {};
+  ventasData.forEach(r => {
+    if (r.estatus !== 'activada' || !r.fecha_activacion || !r.supervisor) return;
+    const mesStr = r.fecha_activacion.substring(0, 7); // 'YYYY-MM'
+    if (!idx[mesStr]) idx[mesStr] = {};
+    if (!idx[mesStr][r.supervisor]) idx[mesStr][r.supervisor] = { ventas: 0, ejecutivos: new Set() };
+    idx[mesStr][r.supervisor].ventas++;
+    if (r.ejecutivo) idx[mesStr][r.supervisor].ejecutivos.add(r.ejecutivo);
+  });
+  _cacheVentasIndexadas = idx;
+  return idx;
+}
+
+function _indexarCalendario() {
+  if (_cacheCalendarioIndexado !== null) return _cacheCalendarioIndexado;
+  const idx = {};
+  calendarioData.forEach(d => {
+    const mesStr = d.fecha.substring(0, 7);
+    if (!idx[mesStr]) idx[mesStr] = 0;
+    idx[mesStr] += parseFloat(d.factor_dia) || 0;
+  });
+  _cacheCalendarioIndexado = idx;
+  return idx;
+}
+
+// Invalidar caches al re-renderizar (si cambian filtros/datos)
+function _invalidarCachesProductividad() {
+  _cacheVentasIndexadas = null;
+  _cacheCalendarioIndexado = null;
+}
+
 function _calcularProductividadMes(supervisor, anio, mes) {
-  // Devuelve: { activos, ventas, vAgenteMes, vAgenteSemana, semanasMes }
   const mesStr = `${anio}-${String(mes).padStart(2, '0')}`;
-  const iniMes = `${mesStr}-01`;
   const ultDia = new Date(anio, mes, 0).getDate();
+  const iniMes = `${mesStr}-01`;
   const finMes = `${mesStr}-${String(ultDia).padStart(2, '0')}`;
 
-  // Agentes activos del supervisor en ese mes (con asignación vigente)
-  // Usamos asignacionesData para saber qué agentes tenía el supervisor.
-  // Si no hay asignaciones vigentes, contamos los ejecutivos únicos que vendieron en ese mes.
-  const ejecutivosDelSup = new Set();
-  ventasData.forEach(r => {
-    if (r.estatus === 'activada' &&
-        r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes &&
-        r.supervisor === supervisor && r.ejecutivo) {
-      ejecutivosDelSup.add(r.ejecutivo);
-    }
-  });
+  const idxVentas = _indexarVentas();
+  const idxCal = _indexarCalendario();
 
-  // Ventas activadas del mes
-  let ventas = 0;
-  ventasData.forEach(r => {
-    if (r.estatus === 'activada' &&
-        r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes &&
-        r.supervisor === supervisor) {
-      ventas++;
-    }
-  });
+  const datosSup = (idxVentas[mesStr] && idxVentas[mesStr][supervisor]) || { ventas: 0, ejecutivos: new Set() };
+  const ventas = datosSup.ventas;
+  const ejecutivosDelSup = datosSup.ejecutivos;
 
   // Activos: si tenemos plantilla con asignaciones vigentes en el mes, usar eso.
   // Si no, usar ejecutivos únicos que vendieron.
@@ -2226,7 +2248,6 @@ function _calcularProductividadMes(supervisor, anio, mes) {
     plantillaData.forEach(p => {
       const ingreso = p.fecha_ingreso || iniMes;
       const baja = p.fecha_baja || '9999-12-31';
-      // Vigente si ingresó antes/durante el mes y no se dio de baja antes del mes
       if (p.supervisor === supervisor && ingreso <= finMes && baja >= iniMes) {
         activos++;
       }
@@ -2234,12 +2255,8 @@ function _calcularProductividadMes(supervisor, anio, mes) {
   }
   if (activos === 0) activos = ejecutivosDelSup.size;
 
-  // Días hábiles del mes (factor)
-  let diasHabilesMes = 0;
-  calendarioData.forEach(d => {
-    if (d.fecha >= iniMes && d.fecha <= finMes) diasHabilesMes += parseFloat(d.factor_dia) || 0;
-  });
-  const semanasMes = diasHabilesMes / 5; // 5 días hábiles por semana
+  const diasHabilesMes = idxCal[mesStr] || 0;
+  const semanasMes = diasHabilesMes / 5;
 
   const vAgenteMes = activos > 0 ? ventas / activos : 0;
   const vAgenteSemana = (activos > 0 && semanasMes > 0) ? (ventas / activos) / semanasMes : 0;
@@ -2250,6 +2267,9 @@ function _calcularProductividadMes(supervisor, anio, mes) {
 function renderProductividadEquipos() {
   const cont = document.getElementById('productividad-equipos-contenido');
   if (!cont || !window.__avanceData) return;
+
+  // Invalidar caches al inicio del render para reflejar cambios de datos
+  _invalidarCachesProductividad();
 
   const { mesNombre, anio, mes } = window.__avanceData;
 
