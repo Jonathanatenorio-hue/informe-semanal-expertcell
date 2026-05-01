@@ -6908,7 +6908,10 @@ function renderRecuperacion() {
 
   const conEstatus = canceladas.map(c => {
     const otras = (ventasPorTelefono[c.telefono] || []).filter(v => v.folio !== c.folio);
-    const posteriores = otras.filter(v => v.fecha_bo > c.fecha_cancelacion);
+    // >= para incluir BOs del mismo día de la cancelación (cliente que regresó el mismo
+    // día con otro folio). El caso de reactivación del MISMO folio ya se maneja en el
+    // index (la activación posterior a la cancelación se marca como 'activada' directo).
+    const posteriores = otras.filter(v => v.fecha_bo >= c.fecha_cancelacion);
 
     let estatusRecup = 'perdida';
     if (posteriores.some(v => v.estatus === 'activada')) estatusRecup = 'recuperada';
