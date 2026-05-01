@@ -2197,8 +2197,21 @@ function renderProductividadEquipos() {
   if (!cont) return;
 
   try {
+    // Diagnóstico: log estado de variables clave
+    console.log('[Productividad] Llamada con:', {
+      avanceData: !!window.__avanceData,
+      ventasData: Array.isArray(ventasData) ? ventasData.length : 'no-array',
+      plantillaData: Array.isArray(plantillaData) ? plantillaData.length : 'no-array',
+      calendarioData: Array.isArray(calendarioData) ? calendarioData.length : 'no-array',
+      SUPERVISORES: Array.isArray(SUPERVISORES) ? SUPERVISORES.length : 'no-array'
+    });
+
     if (!window.__avanceData) {
-      cont.innerHTML = '<div style="padding:20px; color:var(--text-soft);">Datos no disponibles aún.</div>';
+      cont.innerHTML = '<div style="padding:20px; color:var(--text-soft);">Datos no disponibles aún. <button onclick="renderProductividadEquipos()" style="margin-left:8px; padding:4px 10px; background:var(--att-blue); color:white; border:none; border-radius:4px; cursor:pointer; font-size:12px;">🔄 Reintentar</button></div>';
+      // Auto-reintento en 1.5s por si __avanceData se asigna después
+      setTimeout(() => {
+        if (window.__avanceData) renderProductividadEquipos();
+      }, 1500);
       return;
     }
     if (!Array.isArray(SUPERVISORES) || SUPERVISORES.length === 0) {
