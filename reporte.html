@@ -880,7 +880,12 @@
       <div class="section-title">📊 Productividad de equipos</div>
       <div class="section-body">
         <div class="section-subtitle">Ranking de supervisores por productividad real de su equipo. Mide ventas por agente activo, normalizado para que el tamaño del equipo no distorsione la comparación. Incluye evolución histórica de los últimos 6 meses.</div>
-        <div id="productividad-equipos-contenido"></div>
+        <div id="productividad-equipos-contenido">
+          <div style="padding:24px; text-align:center;">
+            <button onclick="renderProductividadEquipos()" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📊 Calcular productividad</button>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">El cálculo procesa el histórico completo. Hacer clic cuando lo necesites.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2088,7 +2093,8 @@ function renderReporte(wActual, wCurrent) {
   renderVistaTiempo();
   renderEstructura();
   renderEmbudo(actual, anterior);
-  renderProductividadEquipos();
+  // renderProductividadEquipos se ejecuta bajo demanda con un botón
+  // (estaba colgando el render principal por cómputo pesado)
   renderWhatIf();
   renderComparativoSup(actual, anterior, wActual, wAnterior);
   renderProductividadAgente(wActual, iniActStr, finActStr);
