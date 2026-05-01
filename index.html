@@ -367,6 +367,9 @@ async function leerExcel(file) {
 
 function normalizarFecha(val) {
   if (!val) return null;
+  // Caso 1: viene como Date (típicamente celdas Excel con cellDates:true que solo
+  // contienen fecha sin hora). SheetJS las construye como UTC midnight, así que
+  // getUTCDate() es lo correcto para preservar la fecha escrita.
   if (val instanceof Date) {
     const y = val.getUTCFullYear();
     if (y === 1900) return null;
@@ -374,12 +377,18 @@ function normalizarFecha(val) {
     const d = String(val.getUTCDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
+  // Caso 2: viene como string (típicamente la columna 'Back Office' que trae timestamp
+  // completo "2026-04-29 19:27:04.393"). new Date(s) lo interpreta como hora LOCAL del
+  // navegador. En zona México (UTC-6), un timestamp con hora >= 18:00 al convertirse a
+  // UTC suma 6 horas y queda en el día siguiente, lo que falseaba la fecha del BO.
+  // Usamos getDate/getMonth/getFullYear LOCALES para preservar la fecha que el
+  // ejecutivo registró realmente.
   if (typeof val === 'string') {
     const d = new Date(val);
-    if (!isNaN(d.getTime()) && d.getUTCFullYear() !== 1900) {
-      const y = d.getUTCFullYear();
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
+    if (!isNaN(d.getTime()) && d.getFullYear() !== 1900) {
+      const y = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
       return `${y}-${mm}-${dd}`;
     }
   }
