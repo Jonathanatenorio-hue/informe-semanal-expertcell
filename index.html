@@ -512,14 +512,36 @@ async function procesar() {
     const canceladasPreBO = [];
     state.can_data.forEach(r => {
       const fechaBO = normalizarFecha(r['Fecha Back Office']);
-      const fechaCanc = normalizarFecha(r['Fecha cancelacion']);
+      const fechaCancVal = r['Fecha cancelacion'];
+      const fechaCanc = normalizarFecha(fechaCancVal);
       if (!fechaBO) {
         canceladasPreBO.push(r);
         return;
       }
+      // Extraer hora de cancelación si el valor original tiene tiempo
+      let horaCancStr = null;
+      if (fechaCancVal) {
+        let dateObj = null;
+        if (fechaCancVal instanceof Date) {
+          dateObj = fechaCancVal;
+        } else if (typeof fechaCancVal === 'string') {
+          const tmp = new Date(fechaCancVal);
+          if (!isNaN(tmp.getTime())) dateObj = tmp;
+        }
+        if (dateObj) {
+          // Usar getHours/Minutes/Seconds locales (consistente con el fix de fechas)
+          const hh = String(dateObj.getHours()).padStart(2, '0');
+          const mm = String(dateObj.getMinutes()).padStart(2, '0');
+          const ss = String(dateObj.getSeconds()).padStart(2, '0');
+          // Solo guardar si no es 00:00:00 (típico cuando la celda solo tiene fecha)
+          if (!(hh === '00' && mm === '00' && ss === '00')) {
+            horaCancStr = `${hh}:${mm}:${ss}`;
+          }
+        }
+      }
       const folio = limpiarFolio(r.Folio);
       if (folio && folio !== 'null') {
-        canPorFolio[folio] = fechaCanc;
+        canPorFolio[folio] = { fecha: fechaCanc, hora: horaCancStr };
         const tel = normalizarTelefono(r['Telefono cliente']);
         if (tel) canTelPorFolio[folio] = tel;
       }
@@ -581,10 +603,25 @@ async function procesar() {
       }
 
       const actInfo = actPorFolio[folio];
-      const fechaCan = canPorFolio[folio];
+      const cancInfo = canPorFolio[folio]; // ahora es { fecha, hora } o undefined
+      const fechaCan = cancInfo ? cancInfo.fecha : null;
+      const horaCan = cancInfo ? cancInfo.hora : null;
       const ventaBO = row['Venta'];
       const tieneVentaBO = ventaBO !== null && ventaBO !== undefined && String(ventaBO).trim() !== '';
       const estatusBO = row['Estatus'];
+
+      // Si hay activación Y cancelación, comparar timestamps. Una activación posterior
+      // a la cancelación significa que la venta se reactivó (fue recuperada con el mismo folio).
+      // En ese caso debe contar como 'activada', no como 'cancelada'.
+      let activacionEsPosteriorACancelacion = false;
+      if (actInfo && fechaCan) {
+        const tsAct = actInfo.fecha + 'T' + (actInfo.hora || '00:00:00');
+        const tsCan = fechaCan + 'T' + (horaCan || '23:59:59');
+        // Si no hay hora de cancelación, asumimos final del día (más conservador:
+        // requiere que la activación sea de un día estrictamente posterior).
+        // Si hay hora de cancelación, compara timestamps reales.
+        activacionEsPosteriorACancelacion = tsAct > tsCan;
+      }
 
       let estatus;
       if (!tieneVentaBO) {
@@ -593,7 +630,7 @@ async function procesar() {
         } else {
           estatus = 'en_transito';
         }
-      } else if (fechaCan) {
+      } else if (fechaCan && !activacionEsPosteriorACancelacion) {
         estatus = 'cancelada';
       } else if (actInfo) {
         estatus = 'activada';
@@ -608,7 +645,8 @@ async function procesar() {
         fecha_bo: fechaBO,
         fecha_activacion: actInfo ? actInfo.fecha : null,
         hora_activacion: actInfo ? actInfo.hora : null,
-        fecha_cancelacion: fechaCan || null,
+        // Solo guardamos fecha_cancelacion si la cancelación NO fue superada por una reactivación
+        fecha_cancelacion: (fechaCan && !activacionEsPosteriorACancelacion) ? fechaCan : null,
         estatus,
         centro: centroDetectado,
         plan: actInfo ? actInfo.plan : null,
