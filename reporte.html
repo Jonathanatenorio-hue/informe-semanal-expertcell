@@ -5430,7 +5430,9 @@ function actualizarVista() {
       borderDash: [6, 4],
       pointRadius: 0,
       tension: 0,
-      stack: undefined
+      fill: false,
+      yAxisID: 'yLineas',
+      order: 0
     });
 
     const [aSel, mSel] = periodoSel.split('-').map(Number);
@@ -5500,7 +5502,9 @@ function actualizarVista() {
       pointRadius: 3,
       pointHoverRadius: 5,
       tension: 0.1,
-      stack: undefined
+      fill: false,
+      yAxisID: 'yLineas',
+      order: 0
     });
   }
 
@@ -5609,6 +5613,15 @@ function actualizarVista() {
           ticks: {
             callback: (v) => metrica === 'arpu' ? '$' + v.toLocaleString() : v.toLocaleString()
           }
+        },
+        // Eje secundario para las líneas (Ritmo objetivo fijo y Ritmo ajustado).
+        // Comparte rango con eje principal pero no se apila, para que se dibujen
+        // correctamente sobre las barras apiladas en vista por centro/supervisor.
+        yLineas: {
+          display: false,
+          beginAtZero: true,
+          ...(yMaxSugerido !== undefined ? { max: yMaxSugerido } : {}),
+          stacked: false
         }
       }
     }
