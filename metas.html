@@ -1742,10 +1742,10 @@ async function cargarAsignaciones() {
   // FIX: dropdown "Nuevo supervisor" debe usar supervisores_config filtrado por la
   // vigencia del MES SELECCIONADO (no por asignaciones históricas existentes).
   // Esto permite que aparezcan supervisores nuevos (Carmen, Emilio, Ana Paola) que
-  // aún no tienen agentes y oculta supervisores con vigencia_hasta vencida (Luisa).
+  // aún no tienen agentes y oculta supervisores con fecha_fin vencida (Luisa).
   const { data: supsConfig } = await db
     .from('supervisores_config')
-    .select('supervisor, vigencia_desde, vigencia_hasta, activo');
+    .select('supervisor, fecha_inicio, fecha_fin, activo');
 
   // Calcular rango del mes seleccionado
   const iniMesSel = `${asigState.anio}-${String(asigState.mes).padStart(2, '0')}-01`;
@@ -1754,9 +1754,8 @@ async function cargarAsignaciones() {
 
   const supsVigentesMes = (supsConfig || [])
     .filter(s => {
-      if (s.activo === false) return false;
-      const desde = s.vigencia_desde || '0000-01-01';
-      const hasta = s.vigencia_hasta || '9999-12-31';
+      const desde = s.fecha_inicio || '0000-01-01';
+      const hasta = s.fecha_fin || '9999-12-31';
       // Vigente si su rango se superpone con el mes seleccionado
       return desde <= finMesSel && hasta >= iniMesSel;
     })
@@ -2062,9 +2061,9 @@ function renderConfigTabla() {
 
   let totalTope = 0, totalActuales = 0, totalActivos = 0, totalPendientes = 0, totalArchivados = 0;
   supervisores.forEach(s => {
-    // Si la vigencia ya cerró (vigencia_hasta < hoy), el supervisor está ARCHIVADO.
+    // Si la vigencia ya cerró (fecha_fin < hoy), el supervisor está ARCHIVADO.
     // No suma a Capacidad ni a Pendientes — su rol terminó.
-    const archivado = s.vigencia_hasta && s.vigencia_hasta < hoy;
+    const archivado = s.fecha_fin && s.fecha_fin < hoy;
     if (archivado) {
       totalArchivados++;
       return; // No se cuenta en tope, activos ni pendientes
@@ -2102,7 +2101,7 @@ function renderConfigTabla() {
     const actuales = plantillaActual[s.supervisor] || 0;
     const vacantes = s.tope_agentes - actuales;
     const colorVac = vacantes > 0 ? 'var(--amber)' : vacantes === 0 ? 'var(--green)' : 'var(--red)';
-    const archivado = s.vigencia_hasta && s.vigencia_hasta < hoy;
+    const archivado = s.fecha_fin && s.fecha_fin < hoy;
     let bg = '';
     if (archivado) bg = 'background: #F3F4F6; opacity:0.65;';
     else if (!s.activo) bg = 'background: #FEF3C7;';
