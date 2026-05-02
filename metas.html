@@ -533,6 +533,10 @@
           <option value="all">Todos los supervisores</option>
         </select>
         <input type="text" id="asig-buscar" placeholder="Buscar agente..." style="flex: 1; min-width: 180px; padding: 8px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 13px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:var(--text-soft); cursor:pointer; user-select:none;">
+          <input type="checkbox" id="asig-mostrar-bajas" style="cursor:pointer;">
+          Mostrar bajas
+        </label>
       </div>
     </div>
 
@@ -1729,11 +1733,24 @@ async function cargarAsignaciones() {
 
   asigState.asignacionesActuales = asigData || [];
 
+  // Cargar plantilla para saber qué agentes están dados de baja
+  const { data: plantData } = await db
+    .from('plantilla')
+    .select('nombre, fecha_baja');
+  const bajasMap = {};
+  (plantData || []).forEach(p => {
+    if (p.fecha_baja) bajasMap[p.nombre] = p.fecha_baja;
+  });
+
   const hoy = new Date().toISOString().split('T')[0];
   const agentesMap = {};
   asigData.forEach(a => {
     if (a.fecha_inicio <= hoy && (!a.fecha_fin || a.fecha_fin >= hoy)) {
-      agentesMap[a.ejecutivo] = a;
+      agentesMap[a.ejecutivo] = {
+        ...a,
+        esBaja: !!bajasMap[a.ejecutivo],
+        fechaBaja: bajasMap[a.ejecutivo] || null
+      };
     }
   });
 
@@ -1795,8 +1812,12 @@ async function cargarAsignaciones() {
 function renderAsigTabla() {
   const filtroSup = document.getElementById('asig-sup-filter').value;
   const busqueda = document.getElementById('asig-buscar').value.trim().toLowerCase();
+  const mostrarBajas = document.getElementById('asig-mostrar-bajas').checked;
 
   let visible = asigState.agentes;
+  if (!mostrarBajas) {
+    visible = visible.filter(a => !a.esBaja);
+  }
   if (filtroSup !== 'all') {
     visible = visible.filter(a => a.supervisor === filtroSup);
   }
@@ -1804,21 +1825,27 @@ function renderAsigTabla() {
     visible = visible.filter(a => a.ejecutivo.toLowerCase().includes(busqueda));
   }
 
+  // Conteo de bajas ocultas para feedback al usuario
+  const bajasFiltradas = !mostrarBajas
+    ? asigState.agentes.filter(a => a.esBaja && (filtroSup === 'all' || a.supervisor === filtroSup)).length
+    : 0;
+
   const tbody = document.getElementById('asig-tabla-body');
   tbody.innerHTML = visible.map(a => {
     const cambio = asigState.cambios[a.ejecutivo];
     const nuevoSup = cambio ? cambio.nuevoSupervisor : '';
     const esCambio = cambio ? true : false;
+    const bgRow = a.esBaja ? 'background:#FEE2E2; opacity:0.7;' : (esCambio ? 'background: #FEF3C7;' : '');
 
-    return `<tr${esCambio ? ' style="background: #FEF3C7;"' : ''}>
+    return `<tr style="${bgRow}">
       <td style="text-align:center;">
-        <input type="checkbox" class="asig-row-check" data-ejecutivo="${a.ejecutivo}" ${esCambio ? 'checked' : ''}>
+        <input type="checkbox" class="asig-row-check" data-ejecutivo="${a.ejecutivo}" ${esCambio ? 'checked' : ''} ${a.esBaja ? 'disabled' : ''}>
       </td>
-      <td>${a.ejecutivo}</td>
+      <td>${a.ejecutivo}${a.esBaja ? ` <span style="background:#DC2626; color:white; font-size:9px; padding:2px 6px; border-radius:3px; font-weight:700; margin-left:6px;">BAJA ${a.fechaBaja || ''}</span>` : ''}</td>
       <td style="text-align:center;"><strong>${a.supervisor}</strong></td>
       <td style="text-align:center; font-size: 11px; color: var(--text-soft);">${a.fecha_inicio}</td>
       <td style="text-align:center;">
-        <select class="asig-row-select" data-ejecutivo="${a.ejecutivo}" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; min-width: 120px;">
+        <select class="asig-row-select" data-ejecutivo="${a.ejecutivo}" style="padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; min-width: 120px;" ${a.esBaja ? 'disabled' : ''}>
           <option value="">-- Sin cambio --</option>
           ${asigState.supervisoresDisponibles.map(s =>
             `<option value="${s}" ${nuevoSup === s ? 'selected' : ''}>${s}</option>`
@@ -1828,7 +1855,9 @@ function renderAsigTabla() {
     </tr>`;
   }).join('');
 
-  document.getElementById('asig-contador').textContent = `${visible.length} agentes visibles`;
+  document.getElementById('asig-contador').textContent = bajasFiltradas > 0
+    ? `${visible.length} agentes visibles (${bajasFiltradas} baja${bajasFiltradas > 1 ? 's' : ''} oculta${bajasFiltradas > 1 ? 's' : ''})`
+    : `${visible.length} agentes visibles`;
   actualizarContadorSeleccionados();
   actualizarResumenCambios();
 
@@ -2003,6 +2032,7 @@ cargarAsignaciones();
 
 document.getElementById('asig-sup-filter').addEventListener('change', renderAsigTabla);
 document.getElementById('asig-buscar').addEventListener('input', renderAsigTabla);
+document.getElementById('asig-mostrar-bajas').addEventListener('change', renderAsigTabla);
 document.getElementById('asig-check-all').addEventListener('change', (e) => {
   document.querySelectorAll('.asig-row-check').forEach(chk => {
     chk.checked = e.target.checked;
