@@ -1702,10 +1702,12 @@ function initAsigSelectores() {
   mesSel.addEventListener('change', () => {
     asigState.mes = parseInt(mesSel.value);
     asigState.anio = parseInt(anioSel.value);
+    cargarAsignaciones(); // refrescar dropdown según vigencia del nuevo mes
   });
   anioSel.addEventListener('change', () => {
     asigState.mes = parseInt(mesSel.value);
     asigState.anio = parseInt(anioSel.value);
+    cargarAsignaciones();
   });
 
   asigState.mes = parseInt(mesSel.value);
@@ -1737,7 +1739,36 @@ async function cargarAsignaciones() {
 
   asigState.agentes = Object.values(agentesMap).sort((a, b) => a.ejecutivo.localeCompare(b.ejecutivo));
 
-  const sups = [...new Set(asigData.map(a => a.supervisor))].filter(Boolean).sort();
+  // FIX: dropdown "Nuevo supervisor" debe usar supervisores_config filtrado por la
+  // vigencia del MES SELECCIONADO (no por asignaciones históricas existentes).
+  // Esto permite que aparezcan supervisores nuevos (Carmen, Emilio, Ana Paola) que
+  // aún no tienen agentes y oculta supervisores con vigencia_hasta vencida (Luisa).
+  const { data: supsConfig } = await db
+    .from('supervisores_config')
+    .select('supervisor, vigencia_desde, vigencia_hasta, activo');
+
+  // Calcular rango del mes seleccionado
+  const iniMesSel = `${asigState.anio}-${String(asigState.mes).padStart(2, '0')}-01`;
+  const ultDiaMes = new Date(asigState.anio, asigState.mes, 0).getDate();
+  const finMesSel = `${asigState.anio}-${String(asigState.mes).padStart(2, '0')}-${String(ultDiaMes).padStart(2, '0')}`;
+
+  const supsVigentesMes = (supsConfig || [])
+    .filter(s => {
+      if (s.activo === false) return false;
+      const desde = s.vigencia_desde || '0000-01-01';
+      const hasta = s.vigencia_hasta || '9999-12-31';
+      // Vigente si su rango se superpone con el mes seleccionado
+      return desde <= finMesSel && hasta >= iniMesSel;
+    })
+    .map(s => s.supervisor);
+
+  // Fallback: si por alguna razón no hay supervisores en config (datos vacíos), usar
+  // los del histórico de asignaciones para no romper la UI
+  let sups = supsVigentesMes;
+  if (sups.length === 0) {
+    sups = [...new Set(asigData.map(a => a.supervisor))].filter(Boolean);
+  }
+  sups.sort();
   asigState.supervisoresDisponibles = sups;
 
   const filterSel = document.getElementById('asig-sup-filter');
@@ -2027,9 +2058,17 @@ async function cargarConfig() {
 
 function renderConfigTabla() {
   const { supervisores, plantillaActual } = configState;
+  const hoy = new Date().toISOString().split('T')[0];
 
-  let totalTope = 0, totalActuales = 0, totalActivos = 0, totalPendientes = 0;
+  let totalTope = 0, totalActuales = 0, totalActivos = 0, totalPendientes = 0, totalArchivados = 0;
   supervisores.forEach(s => {
+    // Si la vigencia ya cerró (vigencia_hasta < hoy), el supervisor está ARCHIVADO.
+    // No suma a Capacidad ni a Pendientes — su rol terminó.
+    const archivado = s.vigencia_hasta && s.vigencia_hasta < hoy;
+    if (archivado) {
+      totalArchivados++;
+      return; // No se cuenta en tope, activos ni pendientes
+    }
     totalTope += s.tope_agentes;
     totalActuales += plantillaActual[s.supervisor] || 0;
     if (s.activo) totalActivos++;
@@ -2039,8 +2078,8 @@ function renderConfigTabla() {
   document.getElementById('config-resumen-cards').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Total supervisores</div>
-      <div class="stat-value">${supervisores.length}</div>
-      <div class="stat-sub">configurados</div>
+      <div class="stat-value">${supervisores.length - totalArchivados}</div>
+      <div class="stat-sub">vigentes${totalArchivados > 0 ? ` · ${totalArchivados} archivado${totalArchivados > 1 ? 's' : ''}` : ''}</div>
     </div>
     <div class="stat-card" style="border-left-color: var(--green);">
       <div class="stat-label">Activos</div>
@@ -2055,7 +2094,7 @@ function renderConfigTabla() {
     <div class="stat-card" style="border-left-color: var(--att-blue);">
       <div class="stat-label">Capacidad total</div>
       <div class="stat-value" style="color: var(--att-blue);">${totalTope}</div>
-      <div class="stat-sub">${totalActuales} ocupadas (${(totalActuales/totalTope*100).toFixed(0)}%)</div>
+      <div class="stat-sub">${totalActuales} ocupadas (${totalTope > 0 ? (totalActuales/totalTope*100).toFixed(0) : 0}%)</div>
     </div>
   `;
 
@@ -2063,7 +2102,10 @@ function renderConfigTabla() {
     const actuales = plantillaActual[s.supervisor] || 0;
     const vacantes = s.tope_agentes - actuales;
     const colorVac = vacantes > 0 ? 'var(--amber)' : vacantes === 0 ? 'var(--green)' : 'var(--red)';
-    const bg = !s.activo ? 'background: #FEF3C7;' : '';
+    const archivado = s.vigencia_hasta && s.vigencia_hasta < hoy;
+    let bg = '';
+    if (archivado) bg = 'background: #F3F4F6; opacity:0.65;';
+    else if (!s.activo) bg = 'background: #FEF3C7;';
     const vacText = vacantes > 0 ? `+${vacantes}` : vacantes === 0 ? '—' : vacantes;
 
     return `<tr style="${bg}">
