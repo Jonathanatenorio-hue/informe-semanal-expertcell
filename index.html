@@ -382,21 +382,35 @@ async function leerExcel(file) {
 // =====================================================================
 function procesarEntregas(rows) {
   if (!Array.isArray(rows)) return [];
-  const out = [];
-  const vistos = new Set();
+
+  // PASO 1: agrupar por folio. Si un folio aparece varias veces (cliente canceló y
+  // luego se le re-vendió con otro código de Venta), quedarse con la fila ENTREGADO
+  // (la versión exitosa). Si solo hay versión cancelada, esa se queda.
+  const mejorPorFolio = {}; // folio -> row
 
   for (const r of rows) {
     if (!r) continue;
-
-    // Filtro 1: debe tener folio en la columna Venta (folio de AT&T = entregada)
     const ventaCodigo = r['Venta'];
     if (!ventaCodigo || String(ventaCodigo).trim() === '') continue;
-
-    // Filtro 2: folio interno debe existir
     const folio = limpiarFolio(r['Folio']);
     if (!folio || folio === 'null') continue;
-    if (vistos.has(folio)) continue;
-    vistos.add(folio);
+
+    const actual = mejorPorFolio[folio];
+    if (!actual) {
+      mejorPorFolio[folio] = r;
+    } else {
+      // Preferir Entregado sobre cualquier otro estatus
+      if (r['Estatus'] === 'Entregado' && actual['Estatus'] !== 'Entregado') {
+        mejorPorFolio[folio] = r;
+      }
+      // Si actual ya es Entregado, mantenerlo
+    }
+  }
+
+  // PASO 2: construir registros de salida desde mejorPorFolio
+  const out = [];
+  for (const folio in mejorPorFolio) {
+    const r = mejorPorFolio[folio];
 
     // Marca: primera palabra de Equipo, normalizada
     let marca = null;
@@ -446,7 +460,7 @@ function procesarEntregas(rows) {
       total_guia: num(r['Total Guía']),
       estatus_entrega: txt(r['Estatus']),
       fecha_entregado: fechaEntregado,
-      venta_codigo: txt(ventaCodigo),
+      venta_codigo: txt(r['Venta']),
       cliente: txt(r['Cliente']),
       telefono: r['Telefono'] ? String(r['Telefono']).split('.')[0] : null,
     });
