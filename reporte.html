@@ -806,6 +806,7 @@
         <button class="nav-btn" data-target="sec-productividad-equipos">📊 Productividad equipos</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-logistica">📦 Logística</button>
+        <button class="nav-btn" data-target="sec-snapshots">📸 Snapshots</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
         <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
@@ -894,6 +895,20 @@
           <div style="padding:24px; text-align:center;">
             <button onclick="renderLogistica()" id="btn-cargar-logistica" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📦 Cargar análisis de logística</button>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMPARATIVO DE SNAPSHOTS -->
+    <div class="section collapsible" id="sec-snapshots">
+      <div class="section-title">📸 Comparativo de snapshots (evolución día a día)</div>
+      <div class="section-body">
+        <div class="section-subtitle">Compara cualquier día anterior contra hoy (o entre 2 días anteriores). Muestra cómo cambiaron las métricas de cada supervisor: avance, ritmo, equipo, etc. Cada vez que cargas Excels, automáticamente se guarda un snapshot.</div>
+        <div id="snapshots-contenido">
+          <div style="padding:24px; text-align:center;">
+            <button onclick="renderSnapshots()" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📸 Cargar snapshots</button>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Carga las fotos guardadas para comparar evolución.</div>
           </div>
         </div>
       </div>
@@ -11429,6 +11444,287 @@ function _logHTMLTiendas(data) {
   html += `</tbody></table>`;
 
   return html;
+}
+// =====================================================================
+// COMPARATIVO DE SNAPSHOTS — evolución día a día
+// =====================================================================
+let _snapshotsCache = null;
+let _snapshotsCacheLoadedAt = null;
+let _snapFechaA = null;
+let _snapFechaB = null;
+let _snapSupervisor = 'todos';
+
+async function _cargarSnapshots() {
+  if (_snapshotsCache && _snapshotsCacheLoadedAt && (Date.now() - _snapshotsCacheLoadedAt) < 5 * 60 * 1000) {
+    return _snapshotsCache;
+  }
+  const all = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await db
+      .from('snapshots_diarios')
+      .select('*')
+      .order('fecha_snapshot', { ascending: false })
+      .order('supervisor')
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  _snapshotsCache = all;
+  _snapshotsCacheLoadedAt = Date.now();
+  return all;
+}
+
+async function renderSnapshots() {
+  const cont = document.getElementById('snapshots-contenido');
+  if (!cont) return;
+  cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-soft);">Cargando snapshots desde Supabase...</div>';
+
+  try {
+    const data = await _cargarSnapshots();
+    if (!data || data.length === 0) {
+      cont.innerHTML = `
+        <div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">
+          <strong>Aún no hay snapshots guardados.</strong> Cada vez que cargues Excels desde el index, se guardará uno automáticamente. Vuelve mañana después de cargar para ver el primer comparativo.
+        </div>
+      `;
+      return;
+    }
+    _renderSnapshotsUI(cont, data);
+  } catch (e) {
+    console.error('[Snapshots] Error:', e);
+    cont.innerHTML = `
+      <div style="padding:16px; background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px;">
+        <div style="font-weight:700; color:#991B1B;">⚠️ Error cargando snapshots</div>
+        <div style="font-size:12px; color:#7F1D1D; margin-top:6px;">${e.message || e}</div>
+      </div>
+    `;
+  }
+}
+
+function _renderSnapshotsUI(cont, data) {
+  // Fechas únicas disponibles
+  const fechasUnicas = [...new Set(data.map(d => d.fecha_snapshot))].sort().reverse();
+  const supsUnicos = [...new Set(data.map(d => d.supervisor))].sort();
+
+  // Inicializar fechas: A = más reciente, B = la anterior (si existe) o la misma
+  if (!_snapFechaA || !fechasUnicas.includes(_snapFechaA)) {
+    _snapFechaA = fechasUnicas[0];
+  }
+  if (!_snapFechaB || !fechasUnicas.includes(_snapFechaB)) {
+    _snapFechaB = fechasUnicas[1] || fechasUnicas[0];
+  }
+
+  const fmt = (f) => {
+    const d = new Date(f + 'T12:00:00');
+    return d.toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' });
+  };
+
+  let html = `
+    <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin-bottom:16px; padding:14px; background:var(--bg); border-radius:8px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Comparar (referencia)</span>
+        <select id="snap-fecha-a" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:180px;">
+          ${fechasUnicas.map(f => `<option value="${f}" ${_snapFechaA === f ? 'selected' : ''}>${fmt(f)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="font-size:18px; padding-bottom:6px; color:var(--text-soft);">vs</div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Contra</span>
+        <select id="snap-fecha-b" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:180px;">
+          ${fechasUnicas.map(f => `<option value="${f}" ${_snapFechaB === f ? 'selected' : ''}>${fmt(f)}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Supervisor</span>
+        <select id="snap-sup" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:140px;">
+          <option value="todos" ${_snapSupervisor === 'todos' ? 'selected' : ''}>Todos (resumen)</option>
+          ${supsUnicos.map(s => `<option value="${s}" ${_snapSupervisor === s ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1; text-align:right; font-size:11px; color:var(--text-soft); padding-bottom:6px;">
+        ${data.length} snapshots disponibles · ${fechasUnicas.length} días · ${supsUnicos.length} supervisores
+      </div>
+    </div>
+    <div id="snap-tabla"></div>
+  `;
+  cont.innerHTML = html;
+
+  document.getElementById('snap-fecha-a').addEventListener('change', e => {
+    _snapFechaA = e.target.value;
+    _renderSnapshotsUI(cont, data);
+  });
+  document.getElementById('snap-fecha-b').addEventListener('change', e => {
+    _snapFechaB = e.target.value;
+    _renderSnapshotsUI(cont, data);
+  });
+  document.getElementById('snap-sup').addEventListener('change', e => {
+    _snapSupervisor = e.target.value;
+    _renderSnapshotsUI(cont, data);
+  });
+
+  _renderSnapTabla(data, fmt);
+}
+
+function _renderSnapTabla(data, fmt) {
+  const cont = document.getElementById('snap-tabla');
+  if (!cont) return;
+
+  // Filtrar por supervisor si aplica
+  let snapsA = data.filter(d => d.fecha_snapshot === _snapFechaA);
+  let snapsB = data.filter(d => d.fecha_snapshot === _snapFechaB);
+
+  if (_snapSupervisor !== 'todos') {
+    snapsA = snapsA.filter(d => d.supervisor === _snapSupervisor);
+    snapsB = snapsB.filter(d => d.supervisor === _snapSupervisor);
+  }
+
+  // Las métricas que vamos a mostrar
+  const metricas = [
+    { key: 'avance', label: 'Avance del mes', fmt: 'int', mejorMayor: true },
+    { key: 'pct_cumplimiento', label: '% Cumplimiento', fmt: 'pct', mejorMayor: true },
+    { key: 'programadas', label: 'Programadas', fmt: 'int', mejorMayor: true },
+    { key: 'canceladas', label: 'Canceladas', fmt: 'int', mejorMayor: false },
+    { key: 'en_transito', label: 'En tránsito', fmt: 'int', mejorMayor: null },
+    { key: 'ritmo_actual', label: 'Ritmo / día', fmt: 'dec', mejorMayor: true },
+    { key: 'proyeccion_mes', label: 'Proyección al cierre', fmt: 'int', mejorMayor: true },
+    { key: 'agentes_activos', label: 'Agentes activos', fmt: 'int', mejorMayor: null },
+    { key: 'agentes_sin_venta', label: 'Sin venta', fmt: 'int', mejorMayor: false },
+    { key: 'agentes_sin_act_3d', label: 'Sin activar 3d+', fmt: 'int', mejorMayor: false },
+    { key: 'agentes_sin_prog_3d', label: 'Sin programar 3d+', fmt: 'int', mejorMayor: false },
+    { key: 'v_agente_mes', label: 'V/agente/mes', fmt: 'dec', mejorMayor: true },
+  ];
+
+  function valFmt(v, tipo) {
+    if (v === null || v === undefined) return '—';
+    if (tipo === 'int') return Number(v).toLocaleString();
+    if (tipo === 'pct') return Number(v).toFixed(1) + '%';
+    if (tipo === 'dec') return Number(v).toFixed(2);
+    return v;
+  }
+
+  if (_snapSupervisor === 'todos') {
+    // Vista resumen: agregar los snapshots por supervisor (suma para totales, prom para tasas)
+    function agregar(snaps) {
+      const agg = {};
+      const tasas = ['pct_cumplimiento', 'ritmo_actual', 'ritmo_objetivo', 'v_agente_mes'];
+      metricas.forEach(m => {
+        if (tasas.includes(m.key)) {
+          // Promedio
+          const vals = snaps.map(s => Number(s[m.key]) || 0).filter(v => !isNaN(v));
+          agg[m.key] = vals.length > 0 ? vals.reduce((a, v) => a + v, 0) / vals.length : 0;
+        } else {
+          agg[m.key] = snaps.reduce((a, s) => a + (Number(s[m.key]) || 0), 0);
+        }
+      });
+      return agg;
+    }
+    const aggA = agregar(snapsA);
+    const aggB = agregar(snapsB);
+
+    let html = `
+      <div style="margin-bottom:8px; font-size:13px; color:var(--text-soft);">
+        Comparando <strong style="color:var(--att-navy);">${fmt(_snapFechaA)}</strong> contra <strong style="color:var(--att-navy);">${fmt(_snapFechaB)}</strong> · vista global
+      </div>
+      <table style="width:100%; font-size:13px; border-collapse:collapse;">
+        <thead><tr style="background:var(--bg);">
+          <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
+        </tr></thead><tbody>
+    `;
+
+    metricas.forEach(m => {
+      const valA = aggA[m.key];
+      const valB = aggB[m.key];
+      const delta = valA - valB;
+      let icono = '—';
+      let color = 'var(--text-soft)';
+      if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
+        const mejora = m.mejorMayor ? delta > 0 : delta < 0;
+        icono = delta > 0 ? '↑' : '↓';
+        color = mejora ? 'var(--green)' : 'var(--red)';
+      } else if (Math.abs(delta) > 0.001) {
+        icono = delta > 0 ? '↑' : '↓';
+        color = 'var(--text-soft)';
+      }
+      const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt) : valFmt(delta, m.fmt);
+
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px; font-weight:600;">${m.label}</td>
+        <td style="padding:10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
+        <td style="padding:10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
+        <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>`;
+    cont.innerHTML = html;
+  } else {
+    // Vista por supervisor específico
+    const snapA = snapsA[0];
+    const snapB = snapsB[0];
+
+    if (!snapA || !snapB) {
+      cont.innerHTML = `<div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">
+        Falta snapshot de <strong>${_snapSupervisor}</strong> en alguno de los días seleccionados.
+      </div>`;
+      return;
+    }
+
+    let html = `
+      <div style="margin-bottom:8px; font-size:13px; color:var(--text-soft);">
+        Comparando <strong style="color:var(--att-navy);">${_snapSupervisor}</strong> · <strong>${fmt(_snapFechaA)}</strong> vs <strong>${fmt(_snapFechaB)}</strong>
+      </div>
+      <table style="width:100%; font-size:13px; border-collapse:collapse;">
+        <thead><tr style="background:var(--bg);">
+          <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
+        </tr></thead><tbody>
+    `;
+
+    let mejoradas = 0, empeoradas = 0;
+    metricas.forEach(m => {
+      const valA = Number(snapA[m.key]) || 0;
+      const valB = Number(snapB[m.key]) || 0;
+      const delta = valA - valB;
+      let icono = '—';
+      let color = 'var(--text-soft)';
+      let bg = '';
+      if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
+        const mejora = m.mejorMayor ? delta > 0 : delta < 0;
+        icono = delta > 0 ? '↑' : '↓';
+        color = mejora ? 'var(--green)' : 'var(--red)';
+        bg = mejora ? 'background:#F0FDF4;' : 'background:#FEF2F2;';
+        if (mejora) mejoradas++; else empeoradas++;
+      } else if (Math.abs(delta) > 0.001) {
+        icono = delta > 0 ? '↑' : '↓';
+      }
+      const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt) : valFmt(delta, m.fmt);
+
+      html += `<tr style="border-bottom:1px solid var(--border); ${bg}">
+        <td style="padding:10px; font-weight:600;">${m.label}</td>
+        <td style="padding:10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
+        <td style="padding:10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
+        <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
+      </tr>`;
+    });
+
+    html += `</tbody></table>
+      <div style="margin-top:14px; display:flex; gap:14px; justify-content:center; font-size:13px;">
+        <span style="color:var(--green); font-weight:700;">↑ ${mejoradas} métricas mejoraron</span>
+        <span style="color:var(--red); font-weight:700;">↓ ${empeoradas} métricas empeoraron</span>
+      </div>
+    `;
+    cont.innerHTML = html;
+  }
 }
 </script>
 </body>
