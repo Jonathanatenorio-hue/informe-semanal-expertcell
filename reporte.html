@@ -10813,6 +10813,8 @@ async function _cargarEntregasData() {
 
 let _logisticaTab = 'overview';
 let _logisticaMesSel = null; // 'YYYY-MM' o 'todos'
+let _logisticaCentroSel = 'todos'; // 'todos', 'CC2', 'JV'
+let _logisticaSupSel = 'todos'; // nombre del supervisor o 'todos'
 
 async function renderLogistica() {
   const cont = document.getElementById('logistica-contenido');
@@ -10853,11 +10855,20 @@ async function renderLogistica() {
 function _renderLogisticaUI(cont, data) {
   // Calcular meses disponibles
   const mesesUnicos = [...new Set(data.filter(d => d.fecha_venta).map(d => String(d.fecha_venta).substring(0, 7)))].sort().reverse();
+  // Centros y supervisores únicos en los datos
+  const centrosUnicos = [...new Set(data.filter(d => d.centro).map(d => d.centro))].sort();
+  const supsUnicos = [...new Set(data.filter(d => d.supervisor).map(d => d.supervisor))].sort();
 
-  // Filtrar por mes seleccionado
+  // Filtrar por mes, centro y supervisor
   let filtrado = data;
   if (_logisticaMesSel !== 'todos') {
-    filtrado = data.filter(d => d.fecha_venta && String(d.fecha_venta).startsWith(_logisticaMesSel));
+    filtrado = filtrado.filter(d => d.fecha_venta && String(d.fecha_venta).startsWith(_logisticaMesSel));
+  }
+  if (_logisticaCentroSel !== 'todos') {
+    filtrado = filtrado.filter(d => d.centro === _logisticaCentroSel);
+  }
+  if (_logisticaSupSel !== 'todos') {
+    filtrado = filtrado.filter(d => d.supervisor === _logisticaSupSel);
   }
 
   // Construir UI
@@ -10865,6 +10876,10 @@ function _renderLogisticaUI(cont, data) {
     const [y, m] = _logisticaMesSel.split('-');
     return `${MESES_NOMBRE[parseInt(m) - 1]} ${y}`;
   })();
+  const labelFiltros = [];
+  if (_logisticaCentroSel !== 'todos') labelFiltros.push(_logisticaCentroSel);
+  if (_logisticaSupSel !== 'todos') labelFiltros.push(_logisticaSupSel);
+  const sufijoFiltro = labelFiltros.length > 0 ? ` · ${labelFiltros.join(' · ')}` : '';
 
   const tabs = [
     { id: 'overview', label: '📊 Resumen' },
@@ -10877,10 +10892,10 @@ function _renderLogisticaUI(cont, data) {
   ];
 
   let html = `
-    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:16px; padding:12px; background:var(--bg); border-radius:8px;">
-      <div>
-        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Mes:</span>
-        <select id="logistica-mes-sel" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; margin-left:6px;">
+    <div style="display:flex; flex-wrap:wrap; gap:14px; align-items:end; margin-bottom:16px; padding:14px; background:var(--bg); border-radius:8px;">
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Mes</span>
+        <select id="logistica-mes-sel" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:170px;">
           <option value="todos" ${_logisticaMesSel === 'todos' ? 'selected' : ''}>Todo el histórico</option>
           ${mesesUnicos.map(m => {
             const [y, mm] = m.split('-');
@@ -10889,8 +10904,23 @@ function _renderLogisticaUI(cont, data) {
           }).join('')}
         </select>
       </div>
-      <div style="flex:1; text-align:right; font-size:12px; color:var(--text-soft);">
-        <strong style="color:var(--att-navy);">${filtrado.filter(d => d.estatus_entrega === 'Entregado').length.toLocaleString()}</strong> entregas exitosas <span style="opacity:0.7;">de ${filtrado.length.toLocaleString()} totales</span> en ${labelMes}
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Centro</span>
+        <select id="logistica-centro-sel" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:120px;">
+          <option value="todos" ${_logisticaCentroSel === 'todos' ? 'selected' : ''}>Todos</option>
+          ${centrosUnicos.map(c => `<option value="${c}" ${_logisticaCentroSel === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:4px;">
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Supervisor</span>
+        <select id="logistica-sup-sel" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; min-width:140px;">
+          <option value="todos" ${_logisticaSupSel === 'todos' ? 'selected' : ''}>Todos</option>
+          ${supsUnicos.map(s => `<option value="${s}" ${_logisticaSupSel === s ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div style="flex:1; text-align:right; font-size:12px; color:var(--text-soft); padding-bottom:6px;">
+        <strong style="color:var(--att-navy);">${filtrado.filter(d => d.estatus_entrega === 'Entregado').length.toLocaleString()}</strong> entregas exitosas <span style="opacity:0.7;">de ${filtrado.length.toLocaleString()} totales</span><br>
+        <span style="font-size:11px;">${labelMes}${sufijoFiltro}</span>
       </div>
     </div>
 
@@ -10905,9 +10935,17 @@ function _renderLogisticaUI(cont, data) {
 
   cont.innerHTML = html;
 
-  // Cablear selector de mes
+  // Cablear selectores de filtros
   document.getElementById('logistica-mes-sel').addEventListener('change', (e) => {
     _logisticaMesSel = e.target.value;
+    _renderLogisticaUI(cont, data);
+  });
+  document.getElementById('logistica-centro-sel').addEventListener('change', (e) => {
+    _logisticaCentroSel = e.target.value;
+    _renderLogisticaUI(cont, data);
+  });
+  document.getElementById('logistica-sup-sel').addEventListener('change', (e) => {
+    _logisticaSupSel = e.target.value;
     _renderLogisticaUI(cont, data);
   });
 
