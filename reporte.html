@@ -805,6 +805,7 @@
         <button class="nav-btn" data-target="avance-mensual-section">📊 Avance mensual</button>
         <button class="nav-btn" data-target="sec-productividad-equipos">📊 Productividad equipos</button>
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
+        <button class="nav-btn" data-target="sec-logistica">📦 Logística</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
         <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
@@ -881,6 +882,20 @@
       <div class="section-body">
         <div class="section-subtitle">Ranking de supervisores por productividad real de su equipo. Mide ventas por agente activo, normalizado para que el tamaño del equipo no distorsione la comparación. Incluye evolución histórica de los últimos 6 meses.</div>
         <div id="productividad-equipos-contenido"></div>
+      </div>
+    </div>
+
+    <!-- LOGÍSTICA Y ENTREGAS -->
+    <div class="section collapsible" id="sec-logistica">
+      <div class="section-title">📦 Logística y entregas</div>
+      <div class="section-body">
+        <div class="section-subtitle">Análisis sobre entregas exitosas: tipo de entrega, geografía, marcas, pago inicial y costos logísticos. Solo cuenta ventas con folio AT&T (entregadas y activadas).</div>
+        <div id="logistica-contenido">
+          <div style="padding:24px; text-align:center;">
+            <button onclick="renderLogistica()" id="btn-cargar-logistica" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📦 Cargar análisis de logística</button>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -10727,6 +10742,583 @@ function exportarPDF() {
   setTimeout(() => {
     window.print();
   }, 300);
+}
+
+// =====================================================================
+// LOGÍSTICA Y ENTREGAS — análisis de tabla `entregas_detalle`
+// Carga bajo demanda, con caché y try/catch para no romper el render principal.
+// =====================================================================
+let _entregasCache = null;
+let _entregasCacheLoadedAt = null;
+
+async function _cargarEntregasData() {
+  // Cache de 5 minutos para no recargar en cada switch de pestaña
+  if (_entregasCache && _entregasCacheLoadedAt && (Date.now() - _entregasCacheLoadedAt) < 5 * 60 * 1000) {
+    return _entregasCache;
+  }
+  // Paginar para evitar el límite de 1000 filas de Supabase
+  const all = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await db
+      .from('entregas_detalle')
+      .select('*')
+      .order('fecha_venta', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  _entregasCache = all;
+  _entregasCacheLoadedAt = Date.now();
+  return all;
+}
+
+let _logisticaTab = 'overview';
+let _logisticaMesSel = null; // 'YYYY-MM' o 'todos'
+
+async function renderLogistica() {
+  const cont = document.getElementById('logistica-contenido');
+  if (!cont) return;
+
+  cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-soft);">Cargando entregas desde Supabase...</div>';
+
+  try {
+    const data = await _cargarEntregasData();
+
+    if (!data || data.length === 0) {
+      cont.innerHTML = `
+        <div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">
+          <strong>Sin datos de entregas.</strong> Sube el Excel "Detalle de programación" desde el cargador (4to drop zone).
+        </div>
+      `;
+      return;
+    }
+
+    // Inicializar mes seleccionado al más reciente con datos
+    if (!_logisticaMesSel) {
+      const mesesUnicos = [...new Set(data.filter(d => d.fecha_venta).map(d => String(d.fecha_venta).substring(0, 7)))].sort().reverse();
+      _logisticaMesSel = mesesUnicos[0] || 'todos';
+    }
+
+    _renderLogisticaUI(cont, data);
+  } catch (e) {
+    console.error('[Logística] Error:', e);
+    cont.innerHTML = `
+      <div style="padding:16px; background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px;">
+        <div style="font-weight:700; color:#991B1B;">⚠️ Error cargando logística</div>
+        <div style="font-size:12px; color:#7F1D1D; margin-top:6px;">${e.message || e}</div>
+      </div>
+    `;
+  }
+}
+
+function _renderLogisticaUI(cont, data) {
+  // Calcular meses disponibles
+  const mesesUnicos = [...new Set(data.filter(d => d.fecha_venta).map(d => String(d.fecha_venta).substring(0, 7)))].sort().reverse();
+
+  // Filtrar por mes seleccionado
+  let filtrado = data;
+  if (_logisticaMesSel !== 'todos') {
+    filtrado = data.filter(d => d.fecha_venta && String(d.fecha_venta).startsWith(_logisticaMesSel));
+  }
+
+  // Construir UI
+  const labelMes = _logisticaMesSel === 'todos' ? 'Todo el histórico' : (() => {
+    const [y, m] = _logisticaMesSel.split('-');
+    return `${MESES_NOMBRE[parseInt(m) - 1]} ${y}`;
+  })();
+
+  const tabs = [
+    { id: 'overview', label: '📊 Resumen' },
+    { id: 'entrega', label: '📦 Tipo de entrega' },
+    { id: 'geo', label: '🌎 Geografía' },
+    { id: 'marca', label: '📱 Marcas y modelos' },
+    { id: 'pago', label: '💵 Pago inicial' },
+    { id: 'costo', label: '💰 Costos logísticos' },
+    { id: 'tiendas', label: '🏪 Tiendas y HUBs' },
+  ];
+
+  let html = `
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-bottom:16px; padding:12px; background:var(--bg); border-radius:8px;">
+      <div>
+        <span style="font-size:11px; color:var(--text-soft); font-weight:700; text-transform:uppercase;">Mes:</span>
+        <select id="logistica-mes-sel" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer; margin-left:6px;">
+          <option value="todos" ${_logisticaMesSel === 'todos' ? 'selected' : ''}>Todo el histórico</option>
+          ${mesesUnicos.map(m => {
+            const [y, mm] = m.split('-');
+            const lab = `${MESES_NOMBRE[parseInt(mm) - 1]} ${y}`;
+            return `<option value="${m}" ${_logisticaMesSel === m ? 'selected' : ''}>${lab}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div style="flex:1; text-align:right; font-size:12px; color:var(--text-soft);">
+        <strong style="color:var(--att-navy);">${filtrado.length.toLocaleString()}</strong> entregas en ${labelMes}
+      </div>
+    </div>
+
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; border-bottom:2px solid var(--border); padding-bottom:8px;">
+      ${tabs.map(t => `
+        <button data-logtab="${t.id}" style="background:${_logisticaTab === t.id ? 'var(--att-blue)' : 'white'}; color:${_logisticaTab === t.id ? 'white' : 'var(--text-soft)'}; border:1.5px solid ${_logisticaTab === t.id ? 'var(--att-blue)' : 'var(--border)'}; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">${t.label}</button>
+      `).join('')}
+    </div>
+
+    <div id="logistica-tab-content"></div>
+  `;
+
+  cont.innerHTML = html;
+
+  // Cablear selector de mes
+  document.getElementById('logistica-mes-sel').addEventListener('change', (e) => {
+    _logisticaMesSel = e.target.value;
+    _renderLogisticaUI(cont, data);
+  });
+
+  // Cablear tabs
+  cont.querySelectorAll('[data-logtab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _logisticaTab = btn.dataset.logtab;
+      _renderLogisticaUI(cont, data);
+    });
+  });
+
+  _renderLogisticaTabContent(filtrado);
+}
+
+function _renderLogisticaTabContent(data) {
+  const cont = document.getElementById('logistica-tab-content');
+  if (!cont) return;
+
+  if (data.length === 0) {
+    cont.innerHTML = '<div style="padding:20px; color:var(--text-soft); text-align:center;">Sin datos para este periodo.</div>';
+    return;
+  }
+
+  switch (_logisticaTab) {
+    case 'overview': cont.innerHTML = _logHTMLOverview(data); break;
+    case 'entrega': cont.innerHTML = _logHTMLEntrega(data); break;
+    case 'geo': cont.innerHTML = _logHTMLGeo(data); break;
+    case 'marca': cont.innerHTML = _logHTMLMarca(data); break;
+    case 'pago': cont.innerHTML = _logHTMLPago(data); break;
+    case 'costo': cont.innerHTML = _logHTMLCosto(data); break;
+    case 'tiendas': cont.innerHTML = _logHTMLTiendas(data); break;
+  }
+}
+
+// === Helpers de agregación ===
+function _logCountBy(data, campo, topN = 0) {
+  const m = {};
+  data.forEach(d => {
+    const k = d[campo] || '(sin dato)';
+    m[k] = (m[k] || 0) + 1;
+  });
+  let arr = Object.entries(m).map(([k, v]) => ({ k, v })).sort((a, b) => b.v - a.v);
+  if (topN > 0) arr = arr.slice(0, topN);
+  return arr;
+}
+function _logSumBy(data, campoGroup, campoSum) {
+  const m = {};
+  data.forEach(d => {
+    const k = d[campoGroup] || '(sin dato)';
+    if (!m[k]) m[k] = { count: 0, sum: 0 };
+    m[k].count++;
+    m[k].sum += parseFloat(d[campoSum]) || 0;
+  });
+  return Object.entries(m).map(([k, v]) => ({ k, count: v.count, sum: v.sum, avg: v.count > 0 ? v.sum / v.count : 0 }));
+}
+function _logBarra(porcentaje, color) {
+  return `<div style="background:#E5E7EB; height:6px; border-radius:3px; overflow:hidden; margin-top:4px;">
+    <div style="width:${Math.min(100, porcentaje)}%; background:${color}; height:100%;"></div>
+  </div>`;
+}
+function _money(n) {
+  return '$' + Math.round(n || 0).toLocaleString();
+}
+
+// === Tab: OVERVIEW ===
+function _logHTMLOverview(data) {
+  const total = data.length;
+  const conPago = data.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
+  const totalPago = data.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
+  const promPago = conPago > 0 ? totalPago / conPago : 0;
+  const totalGuia = data.reduce((a, d) => a + (parseFloat(d.total_guia) || 0), 0);
+  const conDom = data.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
+  const conTienda = data.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
+  const conHub = data.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
+  const estados = new Set(data.filter(d => d.estado).map(d => d.estado)).size;
+  const marcas = _logCountBy(data, 'marca', 3);
+
+  return `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div class="stat-card" style="border-left-color:var(--att-blue);">
+        <div class="stat-label">Total entregas</div>
+        <div class="stat-value" style="color:var(--att-blue);">${total.toLocaleString()}</div>
+        <div class="stat-sub">en ${estados} estados</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#16A34A;">
+        <div class="stat-label">A domicilio</div>
+        <div class="stat-value" style="color:#16A34A;">${conDom.toLocaleString()}</div>
+        <div class="stat-sub">${total > 0 ? (conDom / total * 100).toFixed(1) : 0}% del total</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#D97706;">
+        <div class="stat-label">En tienda</div>
+        <div class="stat-value" style="color:#D97706;">${conTienda.toLocaleString()}</div>
+        <div class="stat-sub">${total > 0 ? (conTienda / total * 100).toFixed(1) : 0}% del total</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#7C3AED;">
+        <div class="stat-label">En HUB</div>
+        <div class="stat-value" style="color:#7C3AED;">${conHub.toLocaleString()}</div>
+        <div class="stat-sub">${total > 0 ? (conHub / total * 100).toFixed(1) : 0}% del total</div>
+      </div>
+      <div class="stat-card" style="border-left-color:var(--att-orange);">
+        <div class="stat-label">Pago inicial</div>
+        <div class="stat-value" style="color:var(--att-orange);">${conPago.toLocaleString()}</div>
+        <div class="stat-sub">${total > 0 ? (conPago / total * 100).toFixed(1) : 0}% (prom ${_money(promPago)})</div>
+      </div>
+      <div class="stat-card" style="border-left-color:#DC2626;">
+        <div class="stat-label">Costo logístico</div>
+        <div class="stat-value" style="color:#DC2626;">${_money(totalGuia)}</div>
+        <div class="stat-sub">total guías</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg); padding:14px; border-radius:8px;">
+      <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:8px;">🏆 Top 3 marcas del periodo</div>
+      ${marcas.map((m, i) => {
+        const medal = ['🥇', '🥈', '🥉'][i];
+        const pct = total > 0 ? (m.v / total * 100) : 0;
+        return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:${i < marcas.length - 1 ? '1px solid var(--border)' : 'none'};">
+          <span><strong>${medal} ${m.k}</strong></span>
+          <span><strong>${m.v.toLocaleString()}</strong> entregas <span style="color:var(--text-soft); font-size:11px;">(${pct.toFixed(1)}%)</span></span>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+// === Tab: TIPO ENTREGA ===
+function _logHTMLEntrega(data) {
+  const tipos = _logCountBy(data, 'tipo_entrega');
+  const total = data.length;
+
+  let html = `
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">Distribución por tipo de entrega</div>
+    <table style="width:100%; font-size:13px; border-collapse:collapse; margin-bottom:20px;">
+      <thead>
+        <tr style="background:var(--bg);">
+          <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Tipo</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">% del total</th>
+          <th style="padding:10px; min-width:200px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Distribución</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+  const colors = { 'ENTREGA EN DOMICILIO': '#16A34A', 'ENTREGA EN TIENDA': '#D97706', 'ENTREGA EN HUB': '#7C3AED' };
+  tipos.forEach(t => {
+    const pct = total > 0 ? (t.v / total * 100) : 0;
+    const color = colors[t.k] || 'var(--att-blue)';
+    html += `
+      <tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:10px; font-weight:600;">${t.k}</td>
+        <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${t.v.toLocaleString()}</td>
+        <td style="padding:10px; text-align:right;">${pct.toFixed(1)}%</td>
+        <td style="padding:10px;">${_logBarra(pct, color)}</td>
+      </tr>
+    `;
+  });
+  html += `</tbody></table>`;
+
+  // Por centro y tipo
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">Tipo de entrega por centro</div>`;
+  const porCentro = {};
+  data.forEach(d => {
+    const c = d.centro || '(sin centro)';
+    const t = d.tipo_entrega || '(sin tipo)';
+    if (!porCentro[c]) porCentro[c] = {};
+    porCentro[c][t] = (porCentro[c][t] || 0) + 1;
+  });
+
+  html += `<table style="width:100%; font-size:12px; border-collapse:collapse;">
+    <thead>
+      <tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Centro</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Domicilio</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Tienda</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">HUB</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Total</th>
+      </tr>
+    </thead><tbody>`;
+  Object.keys(porCentro).sort().forEach(c => {
+    const pc = porCentro[c];
+    const tot = (pc['ENTREGA EN DOMICILIO'] || 0) + (pc['ENTREGA EN TIENDA'] || 0) + (pc['ENTREGA EN HUB'] || 0);
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px; font-weight:700;">${c}</td>
+      <td style="padding:8px; text-align:right; color:#16A34A; font-weight:600;">${(pc['ENTREGA EN DOMICILIO'] || 0).toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; color:#D97706; font-weight:600;">${(pc['ENTREGA EN TIENDA'] || 0).toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; color:#7C3AED; font-weight:600;">${(pc['ENTREGA EN HUB'] || 0).toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; font-weight:800;">${tot.toLocaleString()}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  return html;
+}
+
+// === Tab: GEOGRAFÍA ===
+function _logHTMLGeo(data) {
+  const estados = _logCountBy(data, 'estado', 15);
+  const munis = _logCountBy(data.filter(d => d.estado), 'municipio', 15);
+  const total = data.length;
+
+  let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:20px;">`;
+
+  // Top estados
+  html += `<div>
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🌎 Top 15 estados</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Estado</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">%</th>
+      </tr></thead><tbody>`;
+  const maxEst = Math.max(...estados.map(e => e.v), 1);
+  estados.forEach(e => {
+    const pct = total > 0 ? (e.v / total * 100) : 0;
+    const intensidad = e.v / maxEst;
+    const bg = `rgba(0, 168, 224, ${0.05 + intensidad * 0.25})`;
+    html += `<tr style="border-bottom:1px solid var(--border); background:${bg};">
+      <td style="padding:8px; font-weight:600;">${e.k}</td>
+      <td style="padding:8px; text-align:right; font-weight:700;">${e.v.toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; color:var(--text-soft);">${pct.toFixed(1)}%</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+
+  // Top municipios
+  html += `<div>
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏘️ Top 15 municipios</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Municipio</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+      </tr></thead><tbody>`;
+  munis.forEach(m => {
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px; font-weight:600;">${m.k}</td>
+      <td style="padding:8px; text-align:right; font-weight:700;">${m.v.toLocaleString()}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div></div>`;
+
+  return html;
+}
+
+// === Tab: MARCAS Y MODELOS ===
+function _logHTMLMarca(data) {
+  const marcas = _logCountBy(data, 'marca');
+  const modelos = _logCountBy(data, 'equipo', 20);
+  const total = data.length;
+
+  let html = `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">📱 Marcas más vendidas</div>
+    <table style="width:100%; font-size:13px; border-collapse:collapse; margin-bottom:24px;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">#</th>
+        <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Marca</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">%</th>
+        <th style="padding:10px; min-width:200px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Distribución</th>
+      </tr></thead><tbody>`;
+  const colorsMarca = ['#16A34A', '#0077A8', '#D97706', '#DC2626', '#7C3AED', '#0EA5E9'];
+  marcas.forEach((m, i) => {
+    const pct = total > 0 ? (m.v / total * 100) : 0;
+    const color = colorsMarca[i % colorsMarca.length];
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px; font-weight:700;">${medal}</td>
+      <td style="padding:10px; font-weight:700;">${m.k}</td>
+      <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${m.v.toLocaleString()}</td>
+      <td style="padding:10px; text-align:right;">${pct.toFixed(1)}%</td>
+      <td style="padding:10px;">${_logBarra(pct, color)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🔝 Top 20 modelos específicos</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Modelo</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">%</th>
+      </tr></thead><tbody>`;
+  modelos.forEach(m => {
+    const pct = total > 0 ? (m.v / total * 100) : 0;
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px;">${m.k}</td>
+      <td style="padding:8px; text-align:right; font-weight:600;">${m.v.toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; color:var(--text-soft);">${pct.toFixed(1)}%</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  return html;
+}
+
+// === Tab: PAGO INICIAL ===
+function _logHTMLPago(data) {
+  const total = data.length;
+  const conPago = data.filter(d => (parseFloat(d.pago_inicial) || 0) > 0);
+  const sinPago = data.filter(d => !(parseFloat(d.pago_inicial) || 0) > 0);
+  const totalPago = conPago.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
+  const promPago = conPago.length > 0 ? totalPago / conPago.length : 0;
+
+  // Por supervisor
+  const porSup = {};
+  data.forEach(d => {
+    const s = d.supervisor || '(sin sup)';
+    if (!porSup[s]) porSup[s] = { total: 0, conPago: 0, sumPago: 0 };
+    porSup[s].total++;
+    const p = parseFloat(d.pago_inicial) || 0;
+    if (p > 0) {
+      porSup[s].conPago++;
+      porSup[s].sumPago += p;
+    }
+  });
+
+  let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
+    <div class="stat-card" style="border-left-color:#16A34A;">
+      <div class="stat-label">Con pago inicial</div>
+      <div class="stat-value" style="color:#16A34A;">${conPago.length.toLocaleString()}</div>
+      <div class="stat-sub">${total > 0 ? (conPago.length / total * 100).toFixed(1) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color:#9CA3AF;">
+      <div class="stat-label">Sin pago inicial</div>
+      <div class="stat-value" style="color:#9CA3AF;">${sinPago.length.toLocaleString()}</div>
+      <div class="stat-sub">${total > 0 ? (sinPago.length / total * 100).toFixed(1) : 0}% del total</div>
+    </div>
+    <div class="stat-card" style="border-left-color:var(--att-orange);">
+      <div class="stat-label">Total recaudado</div>
+      <div class="stat-value" style="color:var(--att-orange);">${_money(totalPago)}</div>
+      <div class="stat-sub">en pagos iniciales</div>
+    </div>
+    <div class="stat-card" style="border-left-color:var(--att-blue);">
+      <div class="stat-label">Promedio</div>
+      <div class="stat-value" style="color:var(--att-blue);">${_money(promPago)}</div>
+      <div class="stat-sub">por venta con pago</div>
+    </div>
+  </div>`;
+
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">💵 Pago inicial por supervisor</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Supervisor</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Con pago</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">% con pago</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Total recaudado</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Prom. pago</th>
+      </tr></thead><tbody>`;
+  Object.entries(porSup)
+    .sort((a, b) => b[1].total - a[1].total)
+    .forEach(([sup, v]) => {
+      const pctCon = v.total > 0 ? (v.conPago / v.total * 100) : 0;
+      const promSup = v.conPago > 0 ? v.sumPago / v.conPago : 0;
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:8px; font-weight:700;">${sup}</td>
+        <td style="padding:8px; text-align:right;">${v.total.toLocaleString()}</td>
+        <td style="padding:8px; text-align:right; font-weight:600; color:#16A34A;">${v.conPago.toLocaleString()}</td>
+        <td style="padding:8px; text-align:right;">${pctCon.toFixed(1)}%</td>
+        <td style="padding:8px; text-align:right; font-weight:700;">${_money(v.sumPago)}</td>
+        <td style="padding:8px; text-align:right;">${_money(promSup)}</td>
+      </tr>`;
+    });
+  html += `</tbody></table>`;
+
+  return html;
+}
+
+// === Tab: COSTOS LOGÍSTICOS ===
+function _logHTMLCosto(data) {
+  // Solo entregas a domicilio para análisis de costo
+  const dom = data.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO');
+  const totalGuia = dom.reduce((a, d) => a + (parseFloat(d.total_guia) || 0), 0);
+  const totalCostoGuia = dom.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const promTotal = dom.length > 0 ? totalGuia / dom.length : 0;
+
+  // Por región
+  const porRegion = _logSumBy(dom, 'region', 'total_guia').sort((a, b) => b.count - a.count);
+
+  let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
+    <div class="stat-card" style="border-left-color:#DC2626;">
+      <div class="stat-label">Total invertido en logística</div>
+      <div class="stat-value" style="color:#DC2626;">${_money(totalGuia)}</div>
+      <div class="stat-sub">${dom.length.toLocaleString()} envíos a domicilio</div>
+    </div>
+    <div class="stat-card" style="border-left-color:var(--att-blue);">
+      <div class="stat-label">Costo promedio por envío</div>
+      <div class="stat-value" style="color:var(--att-blue);">${_money(promTotal)}</div>
+      <div class="stat-sub">total guía completa</div>
+    </div>
+    <div class="stat-card" style="border-left-color:var(--att-orange);">
+      <div class="stat-label">Solo costo guía base</div>
+      <div class="stat-value" style="color:var(--att-orange);">${_money(totalCostoGuia)}</div>
+      <div class="stat-sub">sin extras</div>
+    </div>
+  </div>`;
+
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏭 Costo por región (almacén)</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Región</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Envíos</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Costo total</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Prom/envío</th>
+      </tr></thead><tbody>`;
+  porRegion.forEach(r => {
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px; font-weight:700;">${r.k}</td>
+      <td style="padding:8px; text-align:right;">${r.count.toLocaleString()}</td>
+      <td style="padding:8px; text-align:right; font-weight:700; color:#DC2626;">${_money(r.sum)}</td>
+      <td style="padding:8px; text-align:right;">${_money(r.avg)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  return html;
+}
+
+// === Tab: TIENDAS Y HUBs ===
+function _logHTMLTiendas(data) {
+  // Solo entregas en tienda o HUB
+  const enFisico = data.filter(d => d.tienda_entrega && (d.tipo_entrega === 'ENTREGA EN TIENDA' || d.tipo_entrega === 'ENTREGA EN HUB'));
+  const tiendas = _logCountBy(enFisico, 'tienda_entrega', 30);
+
+  let html = `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏪 Top 30 tiendas y HUBs más usados</div>
+    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+      <thead><tr style="background:var(--bg);">
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Tienda / HUB</th>
+        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Entregas</th>
+        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Tipo</th>
+      </tr></thead><tbody>`;
+  tiendas.forEach(t => {
+    // Determinar el tipo más común para esta tienda
+    const tipos = enFisico.filter(d => d.tienda_entrega === t.k);
+    const tipoMasComun = tipos.length > 0 ? tipos[0].tipo_entrega : '';
+    const esHub = t.k.toUpperCase().includes('HUB') || tipoMasComun === 'ENTREGA EN HUB';
+    const color = esHub ? '#7C3AED' : '#D97706';
+    const tipoLbl = esHub ? '🏭 HUB' : '🏪 Tienda';
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px; font-weight:600;">${t.k}</td>
+      <td style="padding:8px; text-align:right; font-weight:700; color:${color};">${t.v.toLocaleString()}</td>
+      <td style="padding:8px;">${tipoLbl}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  return html;
 }
 </script>
 </body>
