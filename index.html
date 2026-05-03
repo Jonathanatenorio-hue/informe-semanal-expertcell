@@ -679,17 +679,6 @@ async function procesar() {
       // Supervisor por fecha_bo (programadas y default)
       const supervisor = resolverSupervisorPorFecha(ejecutivo, fechaBO, asignaciones);
 
-      // Supervisor por fecha_activacion (regla: quien atiende al cierre se la lleva)
-      const fechaActStr = actInfo ? actInfo.fecha : null;
-      const supervisorAct = fechaActStr
-        ? resolverSupervisorPorFecha(ejecutivo, fechaActStr, asignaciones)
-        : null;
-
-      // Supervisor por fecha_cancelacion (consistencia: quien tiene al agente al cancelar)
-      const supervisorCan = fechaCan
-        ? resolverSupervisorPorFecha(ejecutivo, fechaCan, asignaciones)
-        : null;
-
       let centroDetectado = null;
       const centroTxt = String(row.Centro || '').toUpperCase();
       if (centroTxt.includes('C CENTER 2') || centroTxt.includes('CCENTER 2')) {
@@ -711,6 +700,17 @@ async function procesar() {
       const ventaBO = row['Venta'];
       const tieneVentaBO = ventaBO !== null && ventaBO !== undefined && String(ventaBO).trim() !== '';
       const estatusBO = row['Estatus'];
+
+      // Supervisor por fecha_activacion (regla: quien atiende al cierre se la lleva)
+      const fechaActStr = actInfo ? actInfo.fecha : null;
+      const supervisorAct = fechaActStr
+        ? resolverSupervisorPorFecha(ejecutivo, fechaActStr, asignaciones)
+        : null;
+
+      // Supervisor por fecha_cancelacion (quien tiene al agente al cancelar)
+      const supervisorCan = fechaCan
+        ? resolverSupervisorPorFecha(ejecutivo, fechaCan, asignaciones)
+        : null;
 
       // Si hay activación Y cancelación, comparar timestamps. Una activación posterior
       // a la cancelación significa que la venta se reactivó (fue recuperada con el mismo folio).
