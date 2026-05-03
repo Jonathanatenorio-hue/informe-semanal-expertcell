@@ -213,6 +213,12 @@
         <div class="drop-zone-filename" id="name-can"></div>
         <input type="file" accept=".xlsx,.xls" id="file-can">
       </div>
+      <div class="drop-zone" id="zone-ent" data-tipo="ent" style="border-color:#0077A8;">
+        <div class="drop-zone-label">📦 Detalle programación <span style="font-size:10px; color:var(--text-soft); font-weight:400;">(opcional)</span></div>
+        <div class="drop-zone-hint">Arrastra el Excel de detalle (logística, equipos, geo)</div>
+        <div class="drop-zone-filename" id="name-ent"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-ent">
+      </div>
     </div>
     <div class="actions">
       <button id="btn-procesar" disabled>Procesar y validar</button>
@@ -287,10 +293,13 @@ const state = {
   bo: null,
   act: null,
   can: null,
+  ent: null,            // 4to archivo opcional: detalle de programación
   bo_data: null,
   act_data: null,
   can_data: null,
+  ent_data: null,
   registros: null,
+  registrosEntregas: null,  // procesados del Excel de programación
   asignaciones: null,
 };
 
@@ -345,9 +354,10 @@ function checkAllFilesLoaded() {
 }
 
 function limpiarTodo() {
-  state.bo = state.act = state.can = null;
-  state.bo_data = state.act_data = state.can_data = null;
+  state.bo = state.act = state.can = state.ent = null;
+  state.bo_data = state.act_data = state.can_data = state.ent_data = null;
   state.registros = null;
+  state.registrosEntregas = null;
   document.querySelectorAll('.drop-zone').forEach(z => z.classList.remove('loaded'));
   document.querySelectorAll('.drop-zone-filename').forEach(n => n.textContent = '');
   document.querySelectorAll('input[type="file"]').forEach(i => i.value = '');
@@ -363,6 +373,86 @@ async function leerExcel(file) {
   const wb = XLSX.read(buf, { cellDates: true, cellNF: false, cellText: false });
   const ws = wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws, { defval: null, raw: true });
+}
+
+// =====================================================================
+// Procesa el Excel "detalle de programación" (4to archivo opcional).
+// Filtra SOLO entregas exitosas (con folio en columna Venta) según pidió Jonathan.
+// Devuelve registros listos para insertar en tabla `entregas_detalle`.
+// =====================================================================
+function procesarEntregas(rows) {
+  if (!Array.isArray(rows)) return [];
+  const out = [];
+  const vistos = new Set();
+
+  for (const r of rows) {
+    if (!r) continue;
+
+    // Filtro 1: debe tener folio en la columna Venta (folio de AT&T = entregada)
+    const ventaCodigo = r['Venta'];
+    if (!ventaCodigo || String(ventaCodigo).trim() === '') continue;
+
+    // Filtro 2: folio interno debe existir
+    const folio = limpiarFolio(r['Folio']);
+    if (!folio || folio === 'null') continue;
+    if (vistos.has(folio)) continue;
+    vistos.add(folio);
+
+    // Marca: primera palabra de Equipo, normalizada
+    let marca = null;
+    let equipo = r['Equipo'] ? String(r['Equipo']).trim() : null;
+    if (equipo) {
+      const primera = equipo.split(/\s+/)[0].toUpperCase();
+      // Normalizaciones comunes
+      if (primera === 'IPHONE') marca = 'APPLE';
+      else if (primera.startsWith('MOTOROLA')) marca = 'MOTOROLA';
+      else marca = primera;
+    }
+
+    // Fecha venta = la principal del archivo (columna Fecha)
+    const fechaVenta = normalizarFecha(r['Fecha']);
+    const fechaEntregado = normalizarFecha(r['Entregado']);
+
+    // Helpers de número seguros
+    const num = (v) => {
+      if (v === null || v === undefined || v === '') return null;
+      const n = parseFloat(v);
+      return isNaN(n) ? null : n;
+    };
+    const txt = (v) => {
+      if (v === null || v === undefined) return null;
+      const s = String(v).trim();
+      return s === '' ? null : s;
+    };
+
+    out.push({
+      folio,
+      fecha_venta: fechaVenta,
+      vendedor: txt(r['Vendedor']),
+      supervisor: txt(r['Jefe directo']),
+      centro: txt(r['Centro']),
+      region: txt(r['Region']),
+      tipo_entrega: txt(r['Entrega']),
+      tienda_solicita: txt(r['Tienda solicita']),
+      tienda_entrega: txt(r['Tienda entrega']),
+      estado: txt(r['Estado']),
+      municipio: txt(r['Municipio']),
+      cp: r['CP'] ? String(r['CP']).split('.')[0] : null,
+      pago_inicial: num(r['Pago inicial']),
+      equipo,
+      marca,
+      plan: txt(r['Plan']),
+      costo_guia: num(r['Costo guia']),
+      total_guia: num(r['Total Guía']),
+      estatus_entrega: txt(r['Estatus']),
+      fecha_entregado: fechaEntregado,
+      venta_codigo: txt(ventaCodigo),
+      cliente: txt(r['Cliente']),
+      telefono: r['Telefono'] ? String(r['Telefono']).split('.')[0] : null,
+    });
+  }
+
+  return out;
 }
 
 function normalizarFecha(val) {
@@ -678,6 +768,26 @@ async function procesar() {
       log(`Ejecutivos sin resolver: ${[...ejecutivosSinResolver].slice(0, 5).join(', ')}${ejecutivosSinResolver.size > 5 ? '...' : ''}`, 'warn');
     }
 
+    // ===== Procesar Excel de detalle de programación (opcional) =====
+    if (state.ent) {
+      try {
+        log('Leyendo Excel de detalle de programación...', 'info');
+        state.ent_data = await leerExcel(state.ent);
+        log(`${state.ent_data.length} filas en detalle programación`, 'ok');
+
+        // Filtrar SOLO entregadas con folio de Venta (como pidió Jonathan)
+        const entRegs = procesarEntregas(state.ent_data);
+        state.registrosEntregas = entRegs;
+        log(`${entRegs.length} entregas válidas generadas (con folio Venta y entregadas)`, 'ok');
+      } catch (entErr) {
+        log(`Error procesando entregas (no crítico, se omiten): ${entErr.message}`, 'warn');
+        state.registrosEntregas = null;
+      }
+    } else {
+      log('Sin Excel de detalle de programación (opcional, se omite)', 'info');
+      state.registrosEntregas = null;
+    }
+
     mostrarValidacion(registros, sinSupervisor, ejecutivosSinResolver, canceladasPreBO.length);
     document.getElementById('section-validacion').classList.remove('hidden');
     document.getElementById('section-carga').classList.remove('hidden');
@@ -835,6 +945,37 @@ async function cargarASupabase() {
       .select('*', { count: 'exact', head: true });
     log(`Verificación: ${verifyCount} registros en Supabase`, verifyCount === total ? 'ok' : 'warn');
 
+    // ===== Cargar entregas (si hay datos del 4to Excel) =====
+    if (state.registrosEntregas && state.registrosEntregas.length > 0) {
+      log('Borrando registros anteriores de entregas_detalle...', 'info');
+      const { error: delEntErr } = await db
+        .from('entregas_detalle')
+        .delete()
+        .neq('folio', '___imposible___');
+      if (delEntErr) {
+        log('⚠️ Error borrando entregas (la tabla puede no existir aún): ' + delEntErr.message, 'warn');
+      } else {
+        log('Entregas anteriores borradas', 'ok');
+
+        log(`Insertando ${state.registrosEntregas.length} entregas...`, 'info');
+        const totalEnt = state.registrosEntregas.length;
+        let entInsertadas = 0;
+        for (let i = 0; i < totalEnt; i += batchSize) {
+          const batch = state.registrosEntregas.slice(i, i + batchSize);
+          const { error: e } = await db
+            .from('entregas_detalle')
+            .insert(batch);
+          if (e) {
+            log(`⚠️ Error insertando lote de entregas: ${e.message}`, 'warn');
+            break;
+          }
+          entInsertadas += batch.length;
+          log(`Entregas: ${entInsertadas}/${totalEnt}`, 'info');
+        }
+        log(`Entregas cargadas: ${entInsertadas}`, 'ok');
+      }
+    }
+
     btn.textContent = '✓ Carga completada';
     btn.classList.remove('success');
     btn.style.background = '#15803D';
@@ -853,6 +994,7 @@ async function cargarASupabase() {
 setupDropZone('zone-bo', 'file-bo', 'bo');
 setupDropZone('zone-act', 'file-act', 'act');
 setupDropZone('zone-can', 'file-can', 'can');
+setupDropZone('zone-ent', 'file-ent', 'ent');
 
 document.getElementById('btn-procesar').addEventListener('click', procesar);
 document.getElementById('btn-limpiar').addEventListener('click', limpiarTodo);
