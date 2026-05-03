@@ -2050,7 +2050,9 @@ function renderReporte(wActual, wCurrent) {
   const rangoActual = fechasDeSemana(wActual);
   const rangoAnterior = fechasDeSemana(wAnterior);
 
-  const fechaRefConsulta = rangoActual.fin.toISOString().split('T')[0];
+  // Usar HOY como fecha de consulta para supervisores vigentes (no la semana del comparativo).
+  // De lo contrario, al ver semanas de abril no aparecen los supervisores nuevos de mayo.
+  const fechaRefConsulta = new Date().toISOString().split('T')[0];
   aplicarFiltroCoordinador(fechaRefConsulta);
   const infoEl = document.getElementById('coord-info');
   if (infoEl) {
