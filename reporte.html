@@ -10890,7 +10890,7 @@ function _renderLogisticaUI(cont, data) {
         </select>
       </div>
       <div style="flex:1; text-align:right; font-size:12px; color:var(--text-soft);">
-        <strong style="color:var(--att-navy);">${filtrado.length.toLocaleString()}</strong> entregas en ${labelMes}
+        <strong style="color:var(--att-navy);">${filtrado.filter(d => d.estatus_entrega === 'Entregado').length.toLocaleString()}</strong> entregas exitosas <span style="opacity:0.7;">de ${filtrado.length.toLocaleString()} totales</span> en ${labelMes}
       </div>
     </div>
 
@@ -10931,14 +10931,18 @@ function _renderLogisticaTabContent(data) {
     return;
   }
 
+  // Casi todos los tabs analizan solo entregas exitosas (no canceladas con folio Venta).
+  // Overview y Costos hacen su propio filtro interno (separan entregadas/merma/tránsito).
+  const dataEntregadas = data.filter(d => d.estatus_entrega === 'Entregado');
+
   switch (_logisticaTab) {
     case 'overview': cont.innerHTML = _logHTMLOverview(data); break;
-    case 'entrega': cont.innerHTML = _logHTMLEntrega(data); break;
-    case 'geo': cont.innerHTML = _logHTMLGeo(data); break;
-    case 'marca': cont.innerHTML = _logHTMLMarca(data); break;
-    case 'pago': cont.innerHTML = _logHTMLPago(data); break;
+    case 'entrega': cont.innerHTML = _logHTMLEntrega(dataEntregadas); break;
+    case 'geo': cont.innerHTML = _logHTMLGeo(dataEntregadas); break;
+    case 'marca': cont.innerHTML = _logHTMLMarca(dataEntregadas); break;
+    case 'pago': cont.innerHTML = _logHTMLPago(dataEntregadas); break;
     case 'costo': cont.innerHTML = _logHTMLCosto(data); break;
-    case 'tiendas': cont.innerHTML = _logHTMLTiendas(data); break;
+    case 'tiendas': cont.innerHTML = _logHTMLTiendas(dataEntregadas); break;
   }
 }
 
@@ -10974,23 +10978,30 @@ function _money(n) {
 
 // === Tab: OVERVIEW ===
 function _logHTMLOverview(data) {
-  const total = data.length;
-  const conPago = data.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
-  const totalPago = data.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
+  // Solo entregadas exitosas (no canceladas con folio Venta)
+  const entregadas = data.filter(d => d.estatus_entrega === 'Entregado');
+  const canceladas = data.filter(d => d.estatus_entrega === 'Canc Error' || d.estatus_entrega === 'Cancelado');
+  const enTransito = data.filter(d => !['Entregado', 'Canc Error', 'Cancelado'].includes(d.estatus_entrega));
+
+  const total = entregadas.length;
+  const conPago = entregadas.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
+  const totalPago = entregadas.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
   const promPago = conPago > 0 ? totalPago / conPago : 0;
-  const totalGuia = data.reduce((a, d) => a + (parseFloat(d.total_guia) || 0), 0);
-  const conDom = data.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
-  const conTienda = data.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
-  const conHub = data.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
-  const estados = new Set(data.filter(d => d.estado).map(d => d.estado)).size;
-  const marcas = _logCountBy(data, 'marca', 3);
+  // Costo guía base (no total_guia que incluye combustible/protección/etc)
+  const costoEntregadas = entregadas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const costoMerma = canceladas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const conDom = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
+  const conTienda = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
+  const conHub = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
+  const estados = new Set(entregadas.filter(d => d.estado).map(d => d.estado)).size;
+  const marcas = _logCountBy(entregadas, 'marca', 3);
 
   return `
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
       <div class="stat-card" style="border-left-color:var(--att-blue);">
         <div class="stat-label">Total entregas</div>
         <div class="stat-value" style="color:var(--att-blue);">${total.toLocaleString()}</div>
-        <div class="stat-sub">en ${estados} estados</div>
+        <div class="stat-sub">en ${estados} estados${canceladas.length > 0 ? ` · ${canceladas.length} canc` : ''}${enTransito.length > 0 ? ` · ${enTransito.length} en tránsito` : ''}</div>
       </div>
       <div class="stat-card" style="border-left-color:#16A34A;">
         <div class="stat-label">A domicilio</div>
@@ -11014,8 +11025,8 @@ function _logHTMLOverview(data) {
       </div>
       <div class="stat-card" style="border-left-color:#DC2626;">
         <div class="stat-label">Costo logístico</div>
-        <div class="stat-value" style="color:#DC2626;">${_money(totalGuia)}</div>
-        <div class="stat-sub">total guías</div>
+        <div class="stat-value" style="color:#DC2626;">${_money(costoEntregadas)}</div>
+        <div class="stat-sub">${costoMerma > 0 ? `+ ${_money(costoMerma)} merma cancelados` : 'solo entregados'}</div>
       </div>
     </div>
 
@@ -11278,32 +11289,52 @@ function _logHTMLPago(data) {
 function _logHTMLCosto(data) {
   // Solo entregas a domicilio para análisis de costo
   const dom = data.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO');
-  const totalGuia = dom.reduce((a, d) => a + (parseFloat(d.total_guia) || 0), 0);
-  const totalCostoGuia = dom.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
-  const promTotal = dom.length > 0 ? totalGuia / dom.length : 0;
+  const domEntregadas = dom.filter(d => d.estatus_entrega === 'Entregado');
+  const domCanceladas = dom.filter(d => d.estatus_entrega === 'Canc Error' || d.estatus_entrega === 'Cancelado');
+  const domTransito = dom.filter(d => !['Entregado', 'Canc Error', 'Cancelado'].includes(d.estatus_entrega));
 
-  // Por región
-  const porRegion = _logSumBy(dom, 'region', 'total_guia').sort((a, b) => b.count - a.count);
+  // Usamos costo_guia (base) que es lo que Jonathan validó como correcto
+  const costoEntregadas = domEntregadas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const costoMerma = domCanceladas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const costoTransito = domTransito.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
+  const costoTotal = costoEntregadas + costoMerma; // tránsito NO es pérdida (aún puede entregarse)
+  const promEntregadas = domEntregadas.length > 0 ? costoEntregadas / domEntregadas.length : 0;
+  const pctMerma = costoTotal > 0 ? (costoMerma / costoTotal * 100) : 0;
+
+  // Por región (solo entregadas, base limpia)
+  const porRegion = _logSumBy(domEntregadas, 'region', 'costo_guia').sort((a, b) => b.count - a.count);
 
   let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
+    <div class="stat-card" style="border-left-color:#16A34A;">
+      <div class="stat-label">Costo entregadas</div>
+      <div class="stat-value" style="color:#16A34A;">${_money(costoEntregadas)}</div>
+      <div class="stat-sub">${domEntregadas.length.toLocaleString()} envíos a domicilio entregados</div>
+    </div>
     <div class="stat-card" style="border-left-color:#DC2626;">
-      <div class="stat-label">Total invertido en logística</div>
-      <div class="stat-value" style="color:#DC2626;">${_money(totalGuia)}</div>
-      <div class="stat-sub">${dom.length.toLocaleString()} envíos a domicilio</div>
+      <div class="stat-label">Merma (cancelados)</div>
+      <div class="stat-value" style="color:#DC2626;">${_money(costoMerma)}</div>
+      <div class="stat-sub">${domCanceladas.length.toLocaleString()} cancelados · ${pctMerma.toFixed(1)}% del costo total</div>
+    </div>
+    <div class="stat-card" style="border-left-color:var(--att-navy);">
+      <div class="stat-label">Costo total invertido</div>
+      <div class="stat-value" style="color:var(--att-navy);">${_money(costoTotal)}</div>
+      <div class="stat-sub">entregados + merma (sin tránsito)</div>
     </div>
     <div class="stat-card" style="border-left-color:var(--att-blue);">
       <div class="stat-label">Costo promedio por envío</div>
-      <div class="stat-value" style="color:var(--att-blue);">${_money(promTotal)}</div>
-      <div class="stat-sub">total guía completa</div>
+      <div class="stat-value" style="color:var(--att-blue);">${_money(promEntregadas)}</div>
+      <div class="stat-sub">solo entregados</div>
     </div>
-    <div class="stat-card" style="border-left-color:var(--att-orange);">
-      <div class="stat-label">Solo costo guía base</div>
-      <div class="stat-value" style="color:var(--att-orange);">${_money(totalCostoGuia)}</div>
-      <div class="stat-sub">sin extras</div>
-    </div>
+    ${domTransito.length > 0 ? `
+      <div class="stat-card" style="border-left-color:#9CA3AF;">
+        <div class="stat-label">En tránsito</div>
+        <div class="stat-value" style="color:#9CA3AF;">${_money(costoTransito)}</div>
+        <div class="stat-sub">${domTransito.length.toLocaleString()} en proceso (no se cuenta como pérdida)</div>
+      </div>
+    ` : ''}
   </div>`;
 
-  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏭 Costo por región (almacén)</div>
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏭 Costo por región / almacén <span style="font-weight:400; color:var(--text-soft); font-size:11px;">(solo entregados)</span></div>
     <table style="width:100%; font-size:12px; border-collapse:collapse;">
       <thead><tr style="background:var(--bg);">
         <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Región</th>
