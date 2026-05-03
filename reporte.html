@@ -10887,7 +10887,7 @@ function _renderLogisticaUI(cont, data) {
     { id: 'geo', label: '🌎 Geografía' },
     { id: 'marca', label: '📱 Marcas y modelos' },
     { id: 'pago', label: '💵 Pago inicial' },
-    { id: 'costo', label: '💰 Costos logísticos' },
+    { id: 'region', label: '🏭 Por región' },
     { id: 'tiendas', label: '🏪 Tiendas y HUBs' },
   ];
 
@@ -10979,7 +10979,7 @@ function _renderLogisticaTabContent(data) {
     case 'geo': cont.innerHTML = _logHTMLGeo(dataEntregadas); break;
     case 'marca': cont.innerHTML = _logHTMLMarca(dataEntregadas); break;
     case 'pago': cont.innerHTML = _logHTMLPago(dataEntregadas); break;
-    case 'costo': cont.innerHTML = _logHTMLCosto(data); break;
+    case 'region': cont.innerHTML = _logHTMLRegion(dataEntregadas); break;
     case 'tiendas': cont.innerHTML = _logHTMLTiendas(dataEntregadas); break;
   }
 }
@@ -11025,13 +11025,11 @@ function _logHTMLOverview(data) {
   const conPago = entregadas.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
   const totalPago = entregadas.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
   const promPago = conPago > 0 ? totalPago / conPago : 0;
-  // Costo guía base (no total_guia que incluye combustible/protección/etc)
-  const costoEntregadas = entregadas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
-  const costoMerma = canceladas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
   const conDom = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
   const conTienda = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
   const conHub = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
   const estados = new Set(entregadas.filter(d => d.estado).map(d => d.estado)).size;
+  const regiones = new Set(entregadas.filter(d => d.region).map(d => d.region)).size;
   const marcas = _logCountBy(entregadas, 'marca', 3);
 
   return `
@@ -11061,10 +11059,10 @@ function _logHTMLOverview(data) {
         <div class="stat-value" style="color:var(--att-orange);">${conPago.toLocaleString()}</div>
         <div class="stat-sub">${total > 0 ? (conPago / total * 100).toFixed(1) : 0}% (prom ${_money(promPago)})</div>
       </div>
-      <div class="stat-card" style="border-left-color:#DC2626;">
-        <div class="stat-label">Costo logístico</div>
-        <div class="stat-value" style="color:#DC2626;">${_money(costoEntregadas)}</div>
-        <div class="stat-sub">${costoMerma > 0 ? `+ ${_money(costoMerma)} merma cancelados` : 'solo entregados'}</div>
+      <div class="stat-card" style="border-left-color:#0077A8;">
+        <div class="stat-label">Regiones (almacenes)</div>
+        <div class="stat-value" style="color:#0077A8;">${regiones}</div>
+        <div class="stat-sub">despachan envíos</div>
       </div>
     </div>
 
@@ -11323,69 +11321,78 @@ function _logHTMLPago(data) {
   return html;
 }
 
-// === Tab: COSTOS LOGÍSTICOS ===
-function _logHTMLCosto(data) {
-  // Solo entregas a domicilio para análisis de costo
-  const dom = data.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO');
-  const domEntregadas = dom.filter(d => d.estatus_entrega === 'Entregado');
-  const domCanceladas = dom.filter(d => d.estatus_entrega === 'Canc Error' || d.estatus_entrega === 'Cancelado');
-  const domTransito = dom.filter(d => !['Entregado', 'Canc Error', 'Cancelado'].includes(d.estatus_entrega));
+// === Tab: POR REGIÓN (almacén que despacha) ===
+function _logHTMLRegion(data) {
+  // Recibe ya solo las entregas exitosas (filtrado en el dispatcher).
+  // Cuenta entregas por región (almacén) y desglosa por tipo de entrega.
 
-  // Usamos costo_guia (base) que es lo que Jonathan validó como correcto
-  const costoEntregadas = domEntregadas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
-  const costoMerma = domCanceladas.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
-  const costoTransito = domTransito.reduce((a, d) => a + (parseFloat(d.costo_guia) || 0), 0);
-  const costoTotal = costoEntregadas + costoMerma; // tránsito NO es pérdida (aún puede entregarse)
-  const promEntregadas = domEntregadas.length > 0 ? costoEntregadas / domEntregadas.length : 0;
-  const pctMerma = costoTotal > 0 ? (costoMerma / costoTotal * 100) : 0;
+  const total = data.length;
+  const regionesUnicas = [...new Set(data.filter(d => d.region).map(d => d.region))];
+  const totalRegiones = regionesUnicas.length;
 
-  // Por región (solo entregadas, base limpia)
-  const porRegion = _logSumBy(domEntregadas, 'region', 'costo_guia').sort((a, b) => b.count - a.count);
+  // Datos por región: total + tipos
+  const porReg = {};
+  data.forEach(d => {
+    const r = d.region || '(sin región)';
+    if (!porReg[r]) porReg[r] = { total: 0, dom: 0, tienda: 0, hub: 0 };
+    porReg[r].total++;
+    if (d.tipo_entrega === 'ENTREGA EN DOMICILIO') porReg[r].dom++;
+    else if (d.tipo_entrega === 'ENTREGA EN TIENDA') porReg[r].tienda++;
+    else if (d.tipo_entrega === 'ENTREGA EN HUB') porReg[r].hub++;
+  });
 
-  let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
-    <div class="stat-card" style="border-left-color:#16A34A;">
-      <div class="stat-label">Costo entregadas</div>
-      <div class="stat-value" style="color:#16A34A;">${_money(costoEntregadas)}</div>
-      <div class="stat-sub">${domEntregadas.length.toLocaleString()} envíos a domicilio entregados</div>
-    </div>
-    <div class="stat-card" style="border-left-color:#DC2626;">
-      <div class="stat-label">Merma (cancelados)</div>
-      <div class="stat-value" style="color:#DC2626;">${_money(costoMerma)}</div>
-      <div class="stat-sub">${domCanceladas.length.toLocaleString()} cancelados · ${pctMerma.toFixed(1)}% del costo total</div>
-    </div>
-    <div class="stat-card" style="border-left-color:var(--att-navy);">
-      <div class="stat-label">Costo total invertido</div>
-      <div class="stat-value" style="color:var(--att-navy);">${_money(costoTotal)}</div>
-      <div class="stat-sub">entregados + merma (sin tránsito)</div>
-    </div>
+  const filas = Object.entries(porReg)
+    .map(([r, v]) => ({ region: r, ...v, pct: total > 0 ? (v.total / total * 100) : 0 }))
+    .sort((a, b) => b.total - a.total);
+
+  // KPIs
+  let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
     <div class="stat-card" style="border-left-color:var(--att-blue);">
-      <div class="stat-label">Costo promedio por envío</div>
-      <div class="stat-value" style="color:var(--att-blue);">${_money(promEntregadas)}</div>
-      <div class="stat-sub">solo entregados</div>
+      <div class="stat-label">Total entregas exitosas</div>
+      <div class="stat-value" style="color:var(--att-blue);">${total.toLocaleString()}</div>
+      <div class="stat-sub">en ${totalRegiones} regiones</div>
     </div>
-    ${domTransito.length > 0 ? `
-      <div class="stat-card" style="border-left-color:#9CA3AF;">
-        <div class="stat-label">En tránsito</div>
-        <div class="stat-value" style="color:#9CA3AF;">${_money(costoTransito)}</div>
-        <div class="stat-sub">${domTransito.length.toLocaleString()} en proceso (no se cuenta como pérdida)</div>
-      </div>
-    ` : ''}
+    ${filas.slice(0, 3).map((f, i) => {
+      const colors = ['#16A34A', '#0077A8', '#D97706'];
+      const medals = ['🥇', '🥈', '🥉'];
+      return `
+        <div class="stat-card" style="border-left-color:${colors[i]};">
+          <div class="stat-label">${medals[i]} ${f.region}</div>
+          <div class="stat-value" style="color:${colors[i]};">${f.total.toLocaleString()}</div>
+          <div class="stat-sub">${f.pct.toFixed(1)}% del total</div>
+        </div>
+      `;
+    }).join('')}
   </div>`;
 
-  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏭 Costo por región / almacén <span style="font-weight:400; color:var(--text-soft); font-size:11px;">(solo entregados)</span></div>
-    <table style="width:100%; font-size:12px; border-collapse:collapse;">
+  // Tabla detalle
+  html += `<div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:10px;">🏭 Entregas exitosas por región / almacén</div>
+    <table style="width:100%; font-size:13px; border-collapse:collapse;">
       <thead><tr style="background:var(--bg);">
-        <th style="text-align:left; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Región</th>
-        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Envíos</th>
-        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Costo total</th>
-        <th style="text-align:right; padding:8px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Prom/envío</th>
+        <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">#</th>
+        <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Región</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Total</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Domicilio</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Tienda</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">HUB</th>
+        <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">% del total</th>
+        <th style="padding:10px; min-width:160px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Distribución</th>
       </tr></thead><tbody>`;
-  porRegion.forEach(r => {
-    html += `<tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:8px; font-weight:700;">${r.k}</td>
-      <td style="padding:8px; text-align:right;">${r.count.toLocaleString()}</td>
-      <td style="padding:8px; text-align:right; font-weight:700; color:#DC2626;">${_money(r.sum)}</td>
-      <td style="padding:8px; text-align:right;">${_money(r.avg)}</td>
+
+  const maxTotal = filas.length > 0 ? filas[0].total : 1;
+  filas.forEach((f, i) => {
+    const medal = ['🥇', '🥈', '🥉'][i] || `${i + 1}.`;
+    const intensidad = f.total / maxTotal;
+    const bg = `rgba(0, 168, 224, ${0.05 + intensidad * 0.20})`;
+    html += `<tr style="border-bottom:1px solid var(--border); background:${bg};">
+      <td style="padding:10px; font-weight:700;">${medal}</td>
+      <td style="padding:10px; font-weight:700;">${f.region}</td>
+      <td style="padding:10px; text-align:right; font-weight:800; color:var(--att-navy);">${f.total.toLocaleString()}</td>
+      <td style="padding:10px; text-align:right; color:#16A34A;">${f.dom.toLocaleString()}</td>
+      <td style="padding:10px; text-align:right; color:#D97706;">${f.tienda.toLocaleString()}</td>
+      <td style="padding:10px; text-align:right; color:#7C3AED;">${f.hub.toLocaleString()}</td>
+      <td style="padding:10px; text-align:right; color:var(--text-soft);">${f.pct.toFixed(1)}%</td>
+      <td style="padding:10px;">${_logBarra(f.pct, 'var(--att-blue)')}</td>
     </tr>`;
   });
   html += `</tbody></table>`;
