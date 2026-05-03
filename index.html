@@ -1004,6 +1004,15 @@ async function cargarASupabase() {
       }
     }
 
+    // ===== Generar snapshot diario =====
+    try {
+      log('Generando snapshot del día...', 'info');
+      await generarSnapshotDelDia();
+      log('Snapshot guardado correctamente.', 'ok');
+    } catch (snapErr) {
+      log(`⚠️ Error generando snapshot (no crítico): ${snapErr.message}`, 'warn');
+    }
+
     btn.textContent = '✓ Carga completada';
     btn.classList.remove('success');
     btn.style.background = '#15803D';
@@ -1017,6 +1026,202 @@ async function cargarASupabase() {
     btn.disabled = false;
     btn.textContent = 'Reintentar carga';
   }
+}
+
+// =====================================================================
+// SNAPSHOT DIARIO: captura el estado actual de cada supervisor para poder
+// comparar evolución día a día. Se ejecuta automáticamente al final de
+// cargarASupabase. UNIQUE constraint hace que recargas del mismo día se
+// actualicen (no duplican).
+// =====================================================================
+async function generarSnapshotDelDia() {
+  const hoy = new Date().toISOString().split('T')[0];
+
+  // 1. Determinar mes "vivo" (el más reciente con datos)
+  const { data: maxFecha } = await db
+    .from('ventas_detalle')
+    .select('fecha_activacion')
+    .not('fecha_activacion', 'is', null)
+    .order('fecha_activacion', { ascending: false })
+    .limit(1);
+  if (!maxFecha || maxFecha.length === 0) return;
+  const ultimaFecha = maxFecha[0].fecha_activacion;
+  const [anio, mes] = ultimaFecha.split('-').map(Number);
+  const mesStr = `${anio}-${String(mes).padStart(2, '0')}`;
+  const iniMes = `${mesStr}-01`;
+  const ultDia = new Date(anio, mes, 0).getDate();
+  const finMes = `${mesStr}-${String(ultDia).padStart(2, '0')}`;
+
+  // 2. Cargar supervisores vigentes
+  const { data: supsConfig } = await db
+    .from('supervisores_config')
+    .select('supervisor, fecha_inicio, fecha_fin');
+  const supsVigentes = (supsConfig || [])
+    .filter(s => {
+      const desde = s.fecha_inicio || '0000-01-01';
+      const hasta = s.fecha_fin || '9999-12-31';
+      return desde <= hoy && hasta >= hoy;
+    })
+    .map(s => s.supervisor);
+
+  if (supsVigentes.length === 0) return;
+
+  // 3. Cargar metas del mes
+  const { data: metas } = await db
+    .from('metas_supervisor')
+    .select('supervisor, meta_activadas')
+    .eq('anio', anio)
+    .eq('mes', mes);
+  const metaPorSup = {};
+  (metas || []).forEach(m => { metaPorSup[m.supervisor] = m.meta_activadas; });
+
+  // 4. Cargar ventas del mes
+  let ventasMes = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await db
+      .from('ventas_detalle')
+      .select('folio, supervisor, supervisor_act, supervisor_can, ejecutivo, fecha_bo, fecha_activacion, fecha_cancelacion, estatus')
+      .or(`fecha_bo.gte.${iniMes},fecha_activacion.gte.${iniMes},fecha_cancelacion.gte.${iniMes}`)
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    ventasMes = ventasMes.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  // 5. Cargar plantilla
+  const { data: plantilla } = await db
+    .from('plantilla')
+    .select('nombre, supervisor, fecha_ingreso, fecha_baja');
+  const agentesPorSup = {};
+  (plantilla || []).forEach(p => {
+    if (!p.supervisor) return;
+    if (p.fecha_ingreso && p.fecha_ingreso > hoy) return;
+    if (p.fecha_baja && p.fecha_baja <= hoy) return;
+    if (!agentesPorSup[p.supervisor]) agentesPorSup[p.supervisor] = [];
+    agentesPorSup[p.supervisor].push(p);
+  });
+
+  // 6. Cargar calendario para días hábiles
+  const { data: cal } = await db
+    .from('calendario_dias')
+    .select('fecha, factor_dia')
+    .gte('fecha', iniMes)
+    .lte('fecha', finMes);
+  let diasHabilesTotales = 0;
+  let diasHabilesTranscurridos = 0;
+  (cal || []).forEach(d => {
+    const f = parseFloat(d.factor_dia) || 0;
+    diasHabilesTotales += f;
+    if (d.fecha < hoy) diasHabilesTranscurridos += f;
+  });
+
+  // 7. Calcular ventas activadas con fecha real para detectar inactividad por agente
+  // Ult fecha activacion por ejecutivo
+  const ultActPorEjec = {};
+  ventasMes.forEach(r => {
+    if (r.estatus === 'activada' && r.fecha_activacion) {
+      if (!ultActPorEjec[r.ejecutivo] || r.fecha_activacion > ultActPorEjec[r.ejecutivo]) {
+        ultActPorEjec[r.ejecutivo] = r.fecha_activacion;
+      }
+    }
+  });
+  const ultBoPorEjec = {};
+  ventasMes.forEach(r => {
+    if (r.fecha_bo) {
+      if (!ultBoPorEjec[r.ejecutivo] || r.fecha_bo > ultBoPorEjec[r.ejecutivo]) {
+        ultBoPorEjec[r.ejecutivo] = r.fecha_bo;
+      }
+    }
+  });
+
+  function diasEntre(d1Str, d2Str) {
+    if (!d1Str || !d2Str) return 999;
+    const d1 = new Date(d1Str + 'T12:00:00');
+    const d2 = new Date(d2Str + 'T12:00:00');
+    return Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
+  }
+
+  // 8. Generar snapshot por supervisor
+  const snapshots = supsVigentes.map(sup => {
+    // Para activadas y canceladas: usar supervisor_act y supervisor_can
+    const activadas = ventasMes.filter(r =>
+      r.estatus === 'activada' &&
+      r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes &&
+      (r.supervisor_act || r.supervisor) === sup
+    ).length;
+    const canceladas = ventasMes.filter(r =>
+      r.estatus === 'cancelada' &&
+      r.fecha_cancelacion >= iniMes && r.fecha_cancelacion <= finMes &&
+      (r.supervisor_can || r.supervisor) === sup
+    ).length;
+    const programadas = ventasMes.filter(r =>
+      r.fecha_bo >= iniMes && r.fecha_bo <= finMes &&
+      r.supervisor === sup
+    ).length;
+    const enTransito = ventasMes.filter(r =>
+      r.estatus === 'en_transito' && r.supervisor === sup
+    ).length;
+
+    const meta = metaPorSup[sup] || 0;
+    const pct = meta > 0 ? (activadas / meta * 100) : 0;
+    const ritmoActual = diasHabilesTranscurridos > 0 ? (activadas / diasHabilesTranscurridos) : 0;
+    const ritmoObjetivo = diasHabilesTotales > 0 ? (meta / diasHabilesTotales) : 0;
+    const proyeccion = Math.round(ritmoActual * diasHabilesTotales);
+
+    // Equipo
+    const agentes = agentesPorSup[sup] || [];
+    const activos = agentes.length;
+    let cumplidos = 0, sinVenta = 0, criticos = 0;
+    let sinAct3d = 0, sinProg3d = 0;
+    agentes.forEach(a => {
+      const ventasAg = ventasMes.filter(r =>
+        r.estatus === 'activada' && r.ejecutivo === a.nombre &&
+        r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes
+      ).length;
+      if (ventasAg === 0) sinVenta++;
+      // Días sin actividad
+      const diasSinAct = ultActPorEjec[a.nombre] ? diasEntre(ultActPorEjec[a.nombre], hoy) : 999;
+      const diasSinProg = ultBoPorEjec[a.nombre] ? diasEntre(ultBoPorEjec[a.nombre], hoy) : 999;
+      if (diasSinAct >= 3.5 && ultActPorEjec[a.nombre]) sinAct3d++;
+      if (diasSinProg >= 3.5 && ultBoPorEjec[a.nombre]) sinProg3d++;
+    });
+    const vAgenteMes = activos > 0 ? activadas / activos : 0;
+
+    return {
+      fecha_snapshot: hoy,
+      supervisor: sup,
+      avance: activadas,
+      meta: meta,
+      pct_cumplimiento: Number(pct.toFixed(2)),
+      programadas: programadas,
+      canceladas: canceladas,
+      en_transito: enTransito,
+      agentes_activos: activos,
+      agentes_sin_venta: sinVenta,
+      agentes_sin_act_3d: sinAct3d,
+      agentes_sin_prog_3d: sinProg3d,
+      agentes_criticos: criticos,
+      agentes_cumplidos: cumplidos,
+      ritmo_actual: Number(ritmoActual.toFixed(2)),
+      ritmo_objetivo: Number(ritmoObjetivo.toFixed(2)),
+      proyeccion_mes: proyeccion,
+      v_agente_mes: Number(vAgenteMes.toFixed(2)),
+      mes_reporte: mes,
+      anio_reporte: anio,
+      dias_habiles_transcurridos: Number(diasHabilesTranscurridos.toFixed(1)),
+      dias_habiles_totales: Number(diasHabilesTotales.toFixed(1)),
+    };
+  });
+
+  // 9. Upsert (insert si no existe, update si sí)
+  const { error: upsertErr } = await db
+    .from('snapshots_diarios')
+    .upsert(snapshots, { onConflict: 'fecha_snapshot,supervisor,mes_reporte,anio_reporte' });
+  if (upsertErr) throw upsertErr;
 }
 
 setupDropZone('zone-bo', 'file-bo', 'bo');
