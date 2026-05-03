@@ -1850,6 +1850,7 @@ function renderAsigTabla() {
           ${asigState.supervisoresDisponibles.map(s =>
             `<option value="${s}" ${nuevoSup === s ? 'selected' : ''}>${s}</option>`
           ).join('')}
+          <option value="__CERRAR__" ${nuevoSup === '__CERRAR__' ? 'selected' : ''} style="color:#DC2626; font-weight:700;">⛔ Cerrar (sale del equipo)</option>
         </select>
       </td>
     </tr>`;
@@ -1915,7 +1916,8 @@ function actualizarResumenCambios() {
 
   const movimientos = {};
   cambios.forEach(c => {
-    const key = `${c.supervisorAnterior} → ${c.nuevoSupervisor}`;
+    const dest = c.nuevoSupervisor === '__CERRAR__' ? '⛔ Cierre (sale del equipo)' : c.nuevoSupervisor;
+    const key = `${c.supervisorAnterior} → ${dest}`;
     movimientos[key] = (movimientos[key] || 0) + 1;
   });
 
@@ -1949,23 +1951,30 @@ async function guardarAsignaciones() {
     logAsig(`Aplicando ${cambios.length} cambios con fecha ${fechaCambio}...`, 'info');
 
     for (const c of cambios) {
+      const esCierre = c.nuevoSupervisor === '__CERRAR__';
+
       const { error: e1 } = await db
         .from('asignaciones_supervisor')
         .update({ fecha_fin: fechaFinAnterior })
         .eq('id', c.asignacionAnteriorId);
       if (e1) throw e1;
 
-      const { error: e2 } = await db
-        .from('asignaciones_supervisor')
-        .insert({
-          ejecutivo: c.ejecutivo,
-          supervisor: c.nuevoSupervisor,
-          fecha_inicio: fechaCambio,
-          fecha_fin: null
-        });
-      if (e2) throw e2;
+      // Si es cierre (agente sale del equipo), NO se crea nueva asignación
+      if (!esCierre) {
+        const { error: e2 } = await db
+          .from('asignaciones_supervisor')
+          .insert({
+            ejecutivo: c.ejecutivo,
+            supervisor: c.nuevoSupervisor,
+            fecha_inicio: fechaCambio,
+            fecha_fin: null
+          });
+        if (e2) throw e2;
 
-      logAsig(`✓ ${c.ejecutivo}: ${c.supervisorAnterior} → ${c.nuevoSupervisor}`, 'ok');
+        logAsig(`✓ ${c.ejecutivo}: ${c.supervisorAnterior} → ${c.nuevoSupervisor}`, 'ok');
+      } else {
+        logAsig(`⛔ ${c.ejecutivo}: cerrado de ${c.supervisorAnterior} (sin nueva asignación)`, 'ok');
+      }
     }
 
     logAsig(`Cambios guardados. ${cambios.length} asignaciones actualizadas.`, 'ok');
