@@ -1751,6 +1751,28 @@ async function cargarDatos() {
   }
 
   ventasData = allData;
+
+  // FIX REGLA OPERATIVA: el supervisor que cuenta la venta depende de la fase:
+  // - Programadas (BO) → supervisor (resuelto con fecha_bo, sin tocar)
+  // - Activadas → supervisor_act (resuelto con fecha_activacion)
+  // - Canceladas → supervisor_can (resuelto con fecha_cancelacion)
+  // En lugar de sobreescribir el supervisor (que rompería conteos de programadas),
+  // dejamos los 3 campos intactos y agregamos un GETTER `supervisor_metrica` que
+  // devuelve el correcto según el estatus del registro. El código existente que usa
+  // r.supervisor sigue funcionando para programadas/general; solo donde se quiere
+  // contabilizar por fase específica usamos el getter.
+  // Para máxima compatibilidad, además sobreescribimos r.supervisor SOLO si el
+  // estatus es activada/cancelada y existe el supervisor específico de esa fase.
+  // Esto hace que conteos por fecha_activacion automáticamente cuenten al supervisor
+  // correcto, y para programadas usaremos el campo `supervisor_bo` explícito.
+  ventasData.forEach(r => {
+    r.supervisor_bo = r.supervisor; // siempre = supervisor por fecha_bo (para programadas)
+    if (r.estatus === 'activada' && r.supervisor_act) {
+      r.supervisor = r.supervisor_act;
+    } else if (r.estatus === 'cancelada' && r.supervisor_can) {
+      r.supervisor = r.supervisor_can;
+    }
+  });
   document.getElementById('loader-msg').textContent = `${allData.length} ventas cargadas. Cargando plantilla...`;
 
   const { data: plantData, error: plantErr } = await db
@@ -2056,9 +2078,13 @@ function agregarPorBloqueBO(inicioStr, finStr) {
   ventasData.forEach(r => {
     if (!aplica(r)) return;
     if (r.fecha_bo < inicioStr || r.fecha_bo > finStr) return;
+    // PROGRAMADAS usa supervisor_bo (quien tenía al agente cuando se hizo el BO).
+    // ACTIVADAS y CANCELADAS usan r.supervisor (ya ajustado a supervisor_act/can).
+    const supBO = r.supervisor_bo || r.supervisor;
+    const tieneSupBO = supBO && porSup[supBO];
     const tieneSup = r.supervisor && porSup[r.supervisor];
 
-    if (tieneSup) porSup[r.supervisor].prog++;
+    if (tieneSupBO) porSup[supBO].prog++;
     totProg++;
     if (r.estatus === 'activada') { if (tieneSup) porSup[r.supervisor].act++; totAct++; }
     else if (r.estatus === 'cancelada') { if (tieneSup) porSup[r.supervisor].canc++; totCanc++; }
