@@ -1637,12 +1637,20 @@ function calcularSupervisoresVigentes(fechaConsultaStr) {
     return [...SUPERVISORES_ALL];
   }
 
+  // Calcular rango: incluir supervisores vigentes en los últimos 90 días Y los próximos 30 días.
+  // Esto evita que al cambiar de mes en el reporte (ej. abril) desaparezcan supervisores que
+  // estaban vigentes ese mes (Luisa) o que aparezcan los nuevos del mes siguiente (Carmen, Emilio).
+  const fechaRef = new Date(fechaConsultaStr + 'T12:00:00');
+  const desde = new Date(fechaRef); desde.setDate(desde.getDate() - 90);
+  const hasta = new Date(fechaRef); hasta.setDate(hasta.getDate() + 30);
+  const desdeStr = desde.toISOString().split('T')[0];
+  const hastaStr = hasta.toISOString().split('T')[0];
+
   const vigentes = supConfigData.filter(s => {
     const ini = s.fecha_inicio || '2020-01-01';
-    const fin = s.fecha_fin;
-    if (ini > fechaConsultaStr) return false;
-    if (fin && fin < fechaConsultaStr) return false;
-    return true;
+    const fin = s.fecha_fin || '9999-12-31';
+    // Vigente si su rango se solapa con [desde, hasta]
+    return ini <= hastaStr && fin >= desdeStr;
   }).map(s => s.supervisor);
 
   return vigentes.length > 0 ? vigentes : [...SUPERVISORES_ALL];
