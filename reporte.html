@@ -6437,7 +6437,11 @@ function renderEstructura() {
     plantPorSup[p.supervisor] = (plantPorSup[p.supervisor] || 0) + 1;
   });
 
-  const datos = supConfigData.map(c => {
+  // Excluir supervisores archivados (fecha_fin pasada). Luisa, etc. ya no son posiciones
+  // a ocupar, su rol terminó. No deben sumar a Tope/Capacidad ni aparecer como pendientes.
+  const supConfigVigentes = supConfigData.filter(c => !c.fecha_fin || c.fecha_fin >= hoy);
+
+  const datos = supConfigVigentes.map(c => {
     const actuales = plantPorSup[c.supervisor] || 0;
     const vacantes = c.tope_agentes - actuales;
     let estatus, color;
