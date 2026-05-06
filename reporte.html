@@ -1686,13 +1686,35 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     return;
   }
 
-  const supsDelCoord = coordSupData
+  // 1) Supervisores con asignación explícita en coordinador_supervisor para esta fecha
+  const supsAsignados = coordSupData
     .filter(cs =>
       cs.coordinador_id === coord.id &&
       cs.fecha_inicio <= hoy &&
       (!cs.fecha_fin || cs.fecha_fin >= hoy)
     )
     .map(cs => cs.supervisor);
+
+  // 2) FALLBACK: supervisores vigentes cuyo `centro` (de supervisores_config)
+  //    coincide con el centro del coordinador y que NO tengan ninguna asignación
+  //    explícita en coordinador_supervisor (ni para este coord ni para otro).
+  //    Esto asegura que supervisores nuevos (Carmen, Emilio, Ana Paola) aparezcan
+  //    aunque no se haya registrado aún su fila en coordinador_supervisor.
+  const supsConAsignacionCualquiera = new Set(
+    coordSupData
+      .filter(cs => cs.fecha_inicio <= hoy && (!cs.fecha_fin || cs.fecha_fin >= hoy))
+      .map(cs => cs.supervisor)
+  );
+
+  const supsPorCentroFallback = (supConfigData || [])
+    .filter(s =>
+      s.centro === coord.centro &&
+      vigentes.includes(s.supervisor) &&
+      !supsConAsignacionCualquiera.has(s.supervisor)
+    )
+    .map(s => s.supervisor);
+
+  const supsDelCoord = [...new Set([...supsAsignados, ...supsPorCentroFallback])];
 
   SUPERVISORES = supsDelCoord.filter(s => vigentes.includes(s));
 }
