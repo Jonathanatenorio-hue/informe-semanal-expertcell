@@ -4239,6 +4239,14 @@ function renderDetalleAgentesConMes(mesKey) {
   const hoyStrInac = new Date().toISOString().split('T')[0];
   const finRefStr = esMesActual ? hoyStrInac : finMesStr;
 
+  // Días hábiles transcurridos del mes hasta la fecha de corte.
+  // Si llevamos pocos días hábiles (< 5), no tiene sentido evaluar inactividad
+  // todavía: cualquier agente "sin venta" sería un falso positivo.
+  const diasHabilesTranscurridos = calendarioData
+    .filter(d => d.fecha >= iniMesStr && d.fecha <= finRefStr)
+    .reduce((a, d) => a + parseFloat(d.factor_dia), 0);
+  const haySuficientesDiasParaEvaluar = diasHabilesTranscurridos >= 5;
+
   plantillaData.forEach(p => {
     if (!p.fecha_ingreso) return;
     if (p.fecha_ingreso > finRefStr) return;
@@ -4269,7 +4277,7 @@ function renderDetalleAgentesConMes(mesKey) {
     }
   });
 
-  window.__inactivosData = { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey };
+  window.__inactivosData = { inactivosPorSup, totalInactivos, totalActivosEvaluados, mesKey, haySuficientesDiasParaEvaluar };
 
   const banner = document.getElementById('agentes-inactivos-banner');
   // Guardar todos los agentes (no-baja) para recalcular alertas según umbral dinámico
@@ -4342,7 +4350,14 @@ function renderDetalleAgentesConMes(mesKey) {
     const bannerHtml = renderBannerInactividad();
     // Si totalInactivos > 0, hay un alert warn debajo; si no, hay alert success
     let restoBanner = '';
-    if (totalInactivos === 0) {
+    if (!haySuficientesDiasParaEvaluar) {
+      restoBanner = `
+        <div class="alert" style="margin-bottom: 16px; background: #EFF6FF; border-left: 4px solid var(--att-blue); display: flex; align-items: center; gap: 10px;">
+          <div>ℹ️</div>
+          <div><strong>Aún no se evalúa inactividad:</strong> el mes apenas lleva ${diasHabilesTranscurridos.toFixed(1)} días hábiles. Se necesitan al menos 5 días hábiles para que el indicador sea confiable. Revisa la tabla por agente más abajo para ver el avance individual.</div>
+        </div>
+      `;
+    } else if (totalInactivos === 0) {
       restoBanner = `
         <div class="alert success" style="margin-bottom: 16px;">
           <div>✅</div>
@@ -4395,7 +4410,14 @@ function renderDetalleAgentesConMes(mesKey) {
     });
   }
 
-  if (totalInactivos === 0) {
+  if (!haySuficientesDiasParaEvaluar) {
+    banner.innerHTML = renderBannerInactividad() + `
+      <div class="alert" style="margin-bottom: 16px; background: #EFF6FF; border-left: 4px solid var(--att-blue); display: flex; align-items: center; gap: 10px;">
+        <div>ℹ️</div>
+        <div><strong>Aún no se evalúa inactividad:</strong> el mes apenas lleva ${diasHabilesTranscurridos.toFixed(1)} días hábiles. Se necesitan al menos 5 días hábiles para que el indicador sea confiable. Revisa la tabla por agente más abajo para ver el avance individual.</div>
+      </div>
+    `;
+  } else if (totalInactivos === 0) {
     banner.innerHTML = renderBannerInactividad() + `
       <div class="alert success" style="margin-bottom: 16px;">
         <div>✅</div>
