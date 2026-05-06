@@ -1119,19 +1119,37 @@ async function generarSnapshotDelDia() {
     if (d.fecha < hoy) diasHabilesTranscurridos += f;
   });
 
-  // 7. Calcular ventas activadas con fecha real para detectar inactividad por agente
-  // Ult fecha activacion por ejecutivo
+  // 7. Calcular ventas activadas con fecha real para detectar inactividad por agente.
+  // FIX: necesitamos consultar TODO el histórico (no solo del mes), porque un agente
+  // pudo haber activado por última vez en un mes anterior. Si miramos solo `ventasMes`,
+  // a esos agentes les sale `undefined` y no se cuentan en "sin activar 3d+".
   const ultActPorEjec = {};
-  ventasMes.forEach(r => {
-    if (r.estatus === 'activada' && r.fecha_activacion) {
+  const ultBoPorEjec = {};
+
+  // Cargar la última fecha de activación/BO por cada ejecutivo desde TODO el histórico.
+  // Usamos paginación porque puede ser un dataset grande.
+  let allActHist = [];
+  let fromHist = 0;
+  while (true) {
+    const { data, error } = await db
+      .from('ventas_detalle')
+      .select('ejecutivo, fecha_activacion, fecha_bo, estatus')
+      .order('ejecutivo')
+      .range(fromHist, fromHist + 999);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allActHist = allActHist.concat(data);
+    if (data.length < 1000) break;
+    fromHist += 1000;
+  }
+
+  allActHist.forEach(r => {
+    if (r.estatus === 'activada' && r.fecha_activacion && r.ejecutivo) {
       if (!ultActPorEjec[r.ejecutivo] || r.fecha_activacion > ultActPorEjec[r.ejecutivo]) {
         ultActPorEjec[r.ejecutivo] = r.fecha_activacion;
       }
     }
-  });
-  const ultBoPorEjec = {};
-  ventasMes.forEach(r => {
-    if (r.fecha_bo) {
+    if (r.fecha_bo && r.ejecutivo) {
       if (!ultBoPorEjec[r.ejecutivo] || r.fecha_bo > ultBoPorEjec[r.ejecutivo]) {
         ultBoPorEjec[r.ejecutivo] = r.fecha_bo;
       }
@@ -1183,11 +1201,16 @@ async function generarSnapshotDelDia() {
         r.fecha_activacion >= iniMes && r.fecha_activacion <= finMes
       ).length;
       if (ventasAg === 0) sinVenta++;
-      // Días sin actividad
+      // Días sin actividad. Para agentes que nunca han activado/programado,
+      // ultActPorEjec/ultBoPorEjec será undefined → diasSinAct = 999, lo cual ES "sin activar 3d+"
+      // (especialmente si llevan más de 3.5 días en el equipo).
       const diasSinAct = ultActPorEjec[a.nombre] ? diasEntre(ultActPorEjec[a.nombre], hoy) : 999;
       const diasSinProg = ultBoPorEjec[a.nombre] ? diasEntre(ultBoPorEjec[a.nombre], hoy) : 999;
-      if (diasSinAct >= 3.5 && ultActPorEjec[a.nombre]) sinAct3d++;
-      if (diasSinProg >= 3.5 && ultBoPorEjec[a.nombre]) sinProg3d++;
+      // Solo contar si el agente lleva al menos 3.5 días desde su ingreso
+      // (para no contar como "frío" a un agente que entró ayer)
+      const diasDesdeIngreso = a.fecha_ingreso ? diasEntre(a.fecha_ingreso, hoy) : 999;
+      if (diasDesdeIngreso >= 3.5 && diasSinAct >= 3.5) sinAct3d++;
+      if (diasDesdeIngreso >= 3.5 && diasSinProg >= 3.5) sinProg3d++;
     });
     const vAgenteMes = activos > 0 ? activadas / activos : 0;
 
