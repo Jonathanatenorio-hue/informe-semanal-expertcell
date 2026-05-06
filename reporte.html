@@ -5638,34 +5638,548 @@ function descargarEquipoExcel(supervisor) {
   const agentes = agentesPorSup[supervisor] || [];
   if (agentes.length === 0) { alert('Sin datos para este supervisor'); return; }
 
-  const ordenados = [...agentes].sort((a, b) => b.pct - a.pct);
-  const filas = ordenados.map((a, idx) => ({
-    'Ranking': idx + 1,
-    'Agente': a.ejecutivo,
-    'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
-    'Dias activos': a.diasActivos,
-    'Dias sin programar': a.diasSinProg !== null ? Number(a.diasSinProg.toFixed(1)) : null,
-    'Dias sin activar': a.diasSinAct !== null ? Number(a.diasSinAct.toFixed(1)) : null,
-    'Ultima programada': a.ultProg || '—',
-    'Ultima activada': a.ultAct || '—',
-    'Programadas': a.programadas,
-    'Activadas': a.avance,
-    'Canceladas': a.canceladas,
-    'ARPU': a.arpu > 0 ? Math.round(a.arpu) : null,
-    'Meta': a.meta,
-    '% Mes': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
-    'Ritmo actual (/dia)': Number(a.ritmoActual.toFixed(2)),
-    'Ritmo necesario (/dia)': a.meta > 0 ? Number(a.ritmoNecesario.toFixed(2)) : null,
-    'Proyeccion cierre': a.proyeccion,
-    'Estatus': a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico'
-  }));
-
-  const ws = XLSX.utils.json_to_sheet(filas);
-  ws['!cols'] = [{wch:8},{wch:35},{wch:14},{wch:10},{wch:14},{wch:13},{wch:12},{wch:12},{wch:12},{wch:10},{wch:11},{wch:8},{wch:7},{wch:8},{wch:15},{wch:17},{wch:12},{wch:12}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, supervisor);
-
   const mesLabel = MESES_NOMBRE[mes - 1];
+  const fechaCorte = new Date().toISOString().split('T')[0];
+  const ordenados = [...agentes].sort((a, b) => b.pct - a.pct);
+
+  // Stats agregados del equipo
+  const activosArr = ordenados.filter(a => !a.esBaja);
+  const bajasArr = ordenados.filter(a => a.esBaja);
+  const totalActivos = activosArr.length;
+  const totalAvance = activosArr.reduce((s, a) => s + (a.avance || 0), 0);
+  const totalMeta = activosArr.reduce((s, a) => s + (a.meta || 0), 0);
+  const totalProg = activosArr.reduce((s, a) => s + (a.programadas || 0), 0);
+  const totalCanc = activosArr.reduce((s, a) => s + (a.canceladas || 0), 0);
+  const totalEsperado = activosArr.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+  const gapTotal = totalAvance - totalEsperado;
+  const pctMesEquipo = totalMeta > 0 ? (totalAvance / totalMeta * 100) : 0;
+  const cumplidos = activosArr.filter(a => a.meta > 0 && a.pct >= 100).length;
+  const enRiesgo = activosArr.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
+  const criticos = activosArr.filter(a => a.meta > 0 && a.pct < 50).length;
+  const sinVenta = activosArr.filter(a => a.avance === 0).length;
+  const sinActAlerta = activosArr.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad).length;
+  const sinProgAlerta = activosArr.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad).length;
+
+  // ============ Helpers (locales) ============
+  function barraVisualLoc(valor, max, longitud = 10) {
+    if (!max || max === 0) return '░'.repeat(longitud);
+    const ratio = Math.min(1, Math.max(0, valor / max));
+    const llenos = Math.round(ratio * longitud);
+    return '█'.repeat(llenos) + '░'.repeat(longitud - llenos);
+  }
+  function barraPctLoc(pct, longitud = 10) {
+    const ratio = Math.min(1, Math.max(0, pct / 100));
+    const llenos = Math.floor(ratio * longitud);
+    const medio = (ratio * longitud - llenos) >= 0.5 ? '▌' : '';
+    const vacios = longitud - llenos - (medio ? 1 : 0);
+    return '█'.repeat(llenos) + medio + '░'.repeat(Math.max(0, vacios));
+  }
+  function colorSemDias(dias) {
+    if (dias >= 7) return { bg: 'B91C1C', fg: 'FFFFFF' };
+    if (dias >= 5) return { bg: 'DC2626', fg: 'FFFFFF' };
+    if (dias >= 3.5) return { bg: 'F59E0B', fg: 'FFFFFF' };
+    if (dias >= 2.5) return { bg: 'FCD34D', fg: '000000' };
+    return { bg: 'FACC15', fg: '000000' };
+  }
+  function colorPct(pct) {
+    if (pct >= 100) return '16A34A';
+    if (pct >= 85) return 'F59E0B';
+    if (pct >= 50) return 'F97316';
+    return 'DC2626';
+  }
+  function colorEstatusBg(est) {
+    if (est === 'Cumplido') return { bg: '16A34A', fg: 'FFFFFF' };
+    if (est === 'En riesgo') return { bg: 'F59E0B', fg: 'FFFFFF' };
+    if (est === 'Atrasado') return { bg: 'F97316', fg: 'FFFFFF' };
+    if (est === 'Crítico') return { bg: 'DC2626', fg: 'FFFFFF' };
+    if (est === 'Baja') return { bg: '6B7280', fg: 'FFFFFF' };
+    return { bg: 'E5E7EB', fg: '000000' };
+  }
+  const baseCellLoc = (extra = {}) => ({
+    font: { name: 'Calibri', sz: 10 },
+    alignment: { vertical: 'center' },
+    border: {
+      top: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      bottom: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      left: { style: 'thin', color: { rgb: 'D0D7DE' } },
+      right: { style: 'thin', color: { rgb: 'D0D7DE' } }
+    },
+    ...extra
+  });
+  const stripeCellLoc = (extra = {}) => baseCellLoc({
+    fill: { fgColor: { rgb: 'F5F8FB' } },
+    ...extra
+  });
+
+  const wb = XLSX.utils.book_new();
+
+  // ============================================================
+  // HOJA 1: DASHBOARD del supervisor
+  // ============================================================
+  {
+    // Top 3 agentes por % (con avance > 0)
+    const top3 = activosArr.filter(a => a.avance > 0).sort((a, b) => b.pct - a.pct).slice(0, 3);
+    // Bottom 3 agentes por gap (más críticos en mes en curso)
+    const bottom3 = activosArr.filter(a => a.meta > 0).sort((a, b) => (a.gap || 0) - (b.gap || 0)).slice(0, 3);
+
+    const aoa = [];
+    const merges = [];
+
+    // Banner principal
+    aoa.push([`📊 DASHBOARD · EQUIPO ${supervisor.toUpperCase()}`, '', '', '', '', '']);
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+
+    aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte}`, '', '', '', '', '']);
+    merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } });
+
+    aoa.push(['', '', '', '', '', '']);
+
+    // KPIs principales: Avance / Meta / % / Gap
+    aoa.push(['AVANCE', '', 'META', '', 'GAP', '']);
+    merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
+    merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
+    merges.push({ s: { r: 3, c: 4 }, e: { r: 3, c: 5 } });
+
+    aoa.push([totalAvance, '', totalMeta, '', (gapTotal >= 0 ? '+' : '') + gapTotal, '']);
+    merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
+    merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
+    merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
+
+    // Subtítulo % cumplimiento + barra
+    aoa.push([`${pctMesEquipo.toFixed(1)}% cumplimiento`, '', barraPctLoc(pctMesEquipo, 30), '', '', '']);
+    merges.push({ s: { r: 5, c: 0 }, e: { r: 5, c: 1 } });
+    merges.push({ s: { r: 5, c: 2 }, e: { r: 5, c: 5 } });
+
+    aoa.push(['', '', '', '', '', '']);
+
+    // Salud del equipo
+    aoa.push(['🩺 SALUD DEL EQUIPO', '', '', '', '', '']);
+    merges.push({ s: { r: 7, c: 0 }, e: { r: 7, c: 5 } });
+
+    aoa.push(['Métrica', 'Cantidad', '% del equipo', 'Visual', '', '']);
+    merges.push({ s: { r: 8, c: 3 }, e: { r: 8, c: 5 } });
+
+    const saludRows = [
+      { label: '🟢 Cumplidos (≥100%)', n: cumplidos, color: '16A34A' },
+      { label: '🟡 En riesgo (50-85%)', n: enRiesgo, color: 'F59E0B' },
+      { label: '🚨 Críticos (<50%)', n: criticos, color: 'DC2626' },
+      { label: '⛔ Sin venta', n: sinVenta, color: '991B1B' },
+      { label: '❄️ Sin activar 3.5d+', n: sinActAlerta, color: 'DC2626' },
+      { label: '📋 Sin programar 3.5d+', n: sinProgAlerta, color: '7C3AED' },
+    ];
+    const saludStartRow = aoa.length;
+    saludRows.forEach(r => {
+      const pct = totalActivos > 0 ? (r.n / totalActivos * 100) : 0;
+      const visual = barraPctLoc(pct, 24);
+      aoa.push([r.label, r.n, pct.toFixed(0) + '%', visual, '', '']);
+      merges.push({ s: { r: aoa.length - 1, c: 3 }, e: { r: aoa.length - 1, c: 5 } });
+    });
+
+    aoa.push(['', '', '', '', '', '']);
+
+    // Top 3 mejores
+    const topStart = aoa.length;
+    aoa.push(['🏆 TOP 3 AGENTES', '', '', '', '', '']);
+    merges.push({ s: { r: topStart, c: 0 }, e: { r: topStart, c: 5 } });
+
+    aoa.push(['#', 'Agente', 'Avance', 'Meta', '%', 'Visual']);
+    top3.forEach((a, i) => {
+      aoa.push([i + 1, a.ejecutivo, a.avance, a.meta, a.meta > 0 ? a.pct.toFixed(0) + '%' : '—', barraPctLoc(a.meta > 0 ? a.pct : 0, 18)]);
+    });
+
+    aoa.push(['', '', '', '', '', '']);
+
+    // Bottom 3 (los que más arrastran al equipo)
+    const botStart = aoa.length;
+    aoa.push(['🚨 TOP 3 CRÍTICOS (mayor déficit)', '', '', '', '', '']);
+    merges.push({ s: { r: botStart, c: 0 }, e: { r: botStart, c: 5 } });
+
+    aoa.push(['#', 'Agente', 'Avance', 'Esperado', 'Gap', 'Visual gap']);
+    bottom3.forEach((a, i) => {
+      const gap = a.gap || 0;
+      aoa.push([i + 1, a.ejecutivo, a.avance, a.esperadoHoy || 0, (gap >= 0 ? '+' : '') + gap, barraPctLoc(a.meta > 0 ? a.pct : 0, 18)]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = merges;
+    ws['!cols'] = [{ wch: 26 }, { wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 22 }];
+
+    // Alturas
+    const rows = [
+      { hpt: 32 }, // banner
+      { hpt: 20 }, // subtítulo
+      { hpt: 8 },
+      { hpt: 22 }, // labels KPI
+      { hpt: 50 }, // valores KPI
+      { hpt: 28 }, // % cumplimiento + barra
+      { hpt: 8 },
+      { hpt: 24 }, // sección salud
+      { hpt: 22 }, // headers
+    ];
+    for (let i = 0; i < saludRows.length; i++) rows.push({ hpt: 22 });
+    rows.push({ hpt: 8 });
+    rows.push({ hpt: 24 }); // sección top
+    rows.push({ hpt: 22 }); // headers top
+    for (let i = 0; i < top3.length; i++) rows.push({ hpt: 22 });
+    rows.push({ hpt: 8 });
+    rows.push({ hpt: 24 }); // sección bottom
+    rows.push({ hpt: 22 }); // headers bottom
+    for (let i = 0; i < bottom3.length; i++) rows.push({ hpt: 22 });
+    ws['!rows'] = rows;
+
+    // Aplicar estilos
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+        if (R === 0) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 1) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '0077A8' } },
+            font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 3) {
+          // KPI labels
+          let bg = '00A8E0';
+          if (C === 2 || C === 3) bg = '0077A8';
+          else if (C === 4 || C === 5) bg = gapTotal >= 0 ? '16A34A' : 'DC2626';
+          ws[ref].s = {
+            fill: { fgColor: { rgb: bg } },
+            font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 4) {
+          // KPI valores
+          let bg = 'EFF6FF', fg = '00A8E0';
+          if (C === 2 || C === 3) { bg = 'F0F9FF'; fg = '0077A8'; }
+          else if (C === 4 || C === 5) {
+            if (gapTotal >= 0) { bg = 'F0FDF4'; fg = '16A34A'; }
+            else { bg = 'FEF2F2'; fg = 'DC2626'; }
+          }
+          ws[ref].s = {
+            fill: { fgColor: { rgb: bg } },
+            font: { name: 'Calibri', sz: 32, bold: true, color: { rgb: fg } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'medium', color: { rgb: fg } },
+              bottom: { style: 'medium', color: { rgb: fg } },
+              left: { style: 'medium', color: { rgb: fg } },
+              right: { style: 'medium', color: { rgb: fg } }
+            }
+          };
+        } else if (R === 5) {
+          // % cumplimiento label + barra
+          if (C === 0 || C === 1) {
+            ws[ref].s = {
+              font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            };
+          } else {
+            ws[ref].s = {
+              font: { name: 'Consolas', sz: 14, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            };
+          }
+        } else if (R === 7 || R === topStart || R === botStart) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+          };
+        } else if (R === 8 || R === topStart + 1 || R === botStart + 1) {
+          // Headers de tablas
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '0077A8' } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: '000000' } },
+              bottom: { style: 'thin', color: { rgb: '000000' } },
+              left: { style: 'thin', color: { rgb: '000000' } },
+              right: { style: 'thin', color: { rgb: '000000' } }
+            }
+          };
+        } else if (R >= saludStartRow && R < saludStartRow + saludRows.length) {
+          // Filas salud
+          const idx = R - saludStartRow;
+          const fila = saludRows[idx];
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          if (C === 0) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: fila.color } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (C === 1 || C === 2) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11, bold: true },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: fila.color } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          }
+        } else if (R >= topStart + 2 && R < topStart + 2 + top3.length) {
+          // Top 3
+          const idx = R - (topStart + 2);
+          const a = top3[idx];
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          if (C === 5) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorPct(a.meta > 0 ? a.pct : 0) } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (C === 1) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11, bold: true },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11 },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          }
+        } else if (R >= botStart + 2 && R < botStart + 2 + bottom3.length) {
+          const idx = R - (botStart + 2);
+          const a = bottom3[idx];
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          if (C === 4) {
+            // Gap
+            const gap = a.gap || 0;
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: gap >= 0 ? '16A34A' : 'DC2626' } },
+              font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (C === 5) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorPct(a.meta > 0 ? a.pct : 0) } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (C === 1) {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11, bold: true },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else {
+            ws[ref].s = baseCellLoc({
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11 },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          }
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
+  }
+
+  // ============================================================
+  // HOJA 2: Detalle por agente (con barras visuales)
+  // ============================================================
+  {
+    const cols = ['#','Agente','Tipo','Días act.','Sin prog.','Sin act.','Última prog.','Última act.','Prog','Act','Canc','ARPU','Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección','Estatus'];
+    const filas = ordenados.map((a, idx) => {
+      const estatus = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+      return {
+        '#': idx + 1,
+        'Agente': a.ejecutivo,
+        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+        'Días act.': a.diasActivos,
+        'Sin prog.': a.diasSinProg !== null ? Number(a.diasSinProg.toFixed(1)) : null,
+        'Sin act.': a.diasSinAct !== null ? Number(a.diasSinAct.toFixed(1)) : null,
+        'Última prog.': a.ultProg || '—',
+        'Última act.': a.ultAct || '—',
+        'Prog': a.programadas,
+        'Act': a.avance,
+        'Canc': a.canceladas,
+        'ARPU': a.arpu > 0 ? Math.round(a.arpu) : null,
+        'Meta': a.meta,
+        'Esperado hoy': a.meta > 0 ? a.esperadoHoy : null,
+        'Gap': a.meta > 0 ? a.gap : null,
+        '% Mes': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
+        'Avance visual': barraPctLoc(a.meta > 0 ? a.pct : 0, 10),
+        'Ritmo actual': Number(a.ritmoActual.toFixed(2)),
+        'Ritmo nec.': a.meta > 0 ? Number(a.ritmoNecesario.toFixed(2)) : null,
+        'Proyección': a.proyeccion,
+        'Estatus': estatus
+      };
+    });
+
+    const aoa = [];
+    aoa.push([`👥 DETALLE POR AGENTE · ${supervisor.toUpperCase()}`, ...new Array(cols.length - 1).fill('')]);
+    aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · Total agentes: ${agentes.length} (${activosArr.length} activos · ${bajasArr.length} bajas)`, ...new Array(cols.length - 1).fill('')]);
+    aoa.push(cols);
+    filas.forEach(f => aoa.push(cols.map(c => f[c] !== undefined && f[c] !== null ? f[c] : '')));
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
+    ];
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 32 }, { wch: 14 }, { wch: 9 }, { wch: 9 }, { wch: 9 },
+      { wch: 12 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 9 },
+      { wch: 7 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 },
+      { wch: 11 }, { wch: 11 }, { wch: 11 }
+    ];
+    const rowsHeights = [{ hpt: 28 }, { hpt: 18 }, { hpt: 30 }];
+    for (let i = 0; i < filas.length; i++) rowsHeights.push({ hpt: 20 });
+    ws['!rows'] = rowsHeights;
+    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+
+    // Estilos
+    const r2 = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r2.s.r; R <= r2.e.r; R++) {
+      for (let C = r2.s.c; C <= r2.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+        if (R === 0) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+          };
+        } else if (R === 1) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '0077A8' } },
+            font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+          };
+        } else if (R === 2) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            border: {
+              top: { style: 'thin', color: { rgb: '000000' } },
+              bottom: { style: 'thin', color: { rgb: '000000' } },
+              left: { style: 'thin', color: { rgb: '000000' } },
+              right: { style: 'thin', color: { rgb: '000000' } }
+            }
+          };
+        } else {
+          const idx = R - 3;
+          const fila = filas[idx];
+          if (!fila) continue;
+          const colName = cols[C];
+          const isStripe = idx % 2 === 1;
+          const bgStripe = isStripe ? 'F5F8FB' : 'FFFFFF';
+          let cellStyle = baseCellLoc({ fill: { fgColor: { rgb: bgStripe } } });
+
+          // Tipo
+          if (colName === 'Tipo') {
+            const tipoBg = fila.Tipo === 'Nuevo' ? 'DBEAFE' : fila.Tipo === 'Experimentado' ? 'D1FAE5' : 'F3F4F6';
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: tipoBg } },
+              font: { name: 'Calibri', sz: 10, bold: true },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Sin prog.' || colName === 'Sin act.') {
+            const dias = parseFloat(fila[colName]) || 0;
+            if (fila[colName] !== null && fila[colName] !== '') {
+              const c = colorSemDias(dias);
+              cellStyle = baseCellLoc({
+                fill: { fgColor: { rgb: c.bg } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: c.fg } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+            } else {
+              cellStyle = baseCellLoc({
+                fill: { fgColor: { rgb: bgStripe } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+            }
+          } else if (colName === 'Gap') {
+            const g = parseFloat(fila.Gap) || 0;
+            if (fila.Gap !== null && fila.Gap !== '') {
+              cellStyle = baseCellLoc({
+                fill: { fgColor: { rgb: g >= 0 ? '16A34A' : 'DC2626' } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+            } else {
+              cellStyle = baseCellLoc({ fill: { fgColor: { rgb: bgStripe } }, alignment: { horizontal: 'center', vertical: 'center' } });
+            }
+          } else if (colName === '% Mes') {
+            const pct = parseFloat(fila['% Mes']) || 0;
+            if (fila['% Mes'] !== null && fila['% Mes'] !== '') {
+              cellStyle = baseCellLoc({
+                fill: { fgColor: { rgb: bgStripe } },
+                font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorPct(pct) } },
+                alignment: { horizontal: 'center', vertical: 'center' }
+              });
+            } else {
+              cellStyle = baseCellLoc({ fill: { fgColor: { rgb: bgStripe } }, alignment: { horizontal: 'center', vertical: 'center' } });
+            }
+          } else if (colName === 'Avance visual') {
+            const pct = parseFloat(fila['% Mes']) || 0;
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorPct(pct) } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (colName === 'Estatus') {
+            const c = colorEstatusBg(fila.Estatus);
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: c.bg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: c.fg } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Agente') {
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Calibri', sz: 10, bold: true },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (colName === 'Ritmo nec.') {
+            // si ritmo necesario es muy alto vs ritmo actual, marcar
+            const rn = parseFloat(fila['Ritmo nec.']) || 0;
+            const ra = parseFloat(fila['Ritmo actual']) || 0;
+            const peligro = ra > 0 ? rn > ra * 1.5 : rn > 0;
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Calibri', sz: 11, bold: peligro, color: { rgb: peligro ? 'DC2626' : '000000' } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else {
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Calibri', sz: 10 },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          }
+          ws[ref].s = cellStyle;
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+  }
+
   XLSX.writeFile(wb, `equipo_${supervisor}_${mesLabel}_${anio}.xlsx`);
 }
 
