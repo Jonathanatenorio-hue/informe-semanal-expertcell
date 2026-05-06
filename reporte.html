@@ -1686,35 +1686,13 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     return;
   }
 
-  // 1) Supervisores con asignación explícita en coordinador_supervisor para esta fecha
-  const supsAsignados = coordSupData
+  const supsDelCoord = coordSupData
     .filter(cs =>
       cs.coordinador_id === coord.id &&
       cs.fecha_inicio <= hoy &&
       (!cs.fecha_fin || cs.fecha_fin >= hoy)
     )
     .map(cs => cs.supervisor);
-
-  // 2) FALLBACK: supervisores vigentes cuyo `centro` (de supervisores_config)
-  //    coincide con el centro del coordinador y que NO tengan ninguna asignación
-  //    explícita en coordinador_supervisor (ni para este coord ni para otro).
-  //    Esto asegura que supervisores nuevos (Carmen, Emilio, Ana Paola) aparezcan
-  //    aunque no se haya registrado aún su fila en coordinador_supervisor.
-  const supsConAsignacionCualquiera = new Set(
-    coordSupData
-      .filter(cs => cs.fecha_inicio <= hoy && (!cs.fecha_fin || cs.fecha_fin >= hoy))
-      .map(cs => cs.supervisor)
-  );
-
-  const supsPorCentroFallback = (supConfigData || [])
-    .filter(s =>
-      s.centro === coord.centro &&
-      vigentes.includes(s.supervisor) &&
-      !supsConAsignacionCualquiera.has(s.supervisor)
-    )
-    .map(s => s.supervisor);
-
-  const supsDelCoord = [...new Set([...supsAsignados, ...supsPorCentroFallback])];
 
   SUPERVISORES = supsDelCoord.filter(s => vigentes.includes(s));
 }
@@ -1732,6 +1710,7 @@ let coordSupData = [];
 let supConfigData = [];
 let foliosIgnoradosData = [];
 let capacitadoresData = [];
+let asignacionesData = []; // Historial real supervisor↔agente (para cálculos históricos correctos)
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
 let coordinadorFiltro = 'todos';
@@ -1877,6 +1856,15 @@ async function cargarDatos() {
 
   const { data: capData } = await db.from('capacitadores').select('*').eq('activo', true);
   capacitadoresData = capData || [];
+
+  // Historial real de supervisor por agente — fundamental para cálculos históricos correctos.
+  // Sin esto, los meses pasados se calculan con el supervisor ACTUAL del agente,
+  // lo que distorsiona la productividad histórica cuando hay reasignaciones.
+  const { data: asigData } = await db
+    .from('asignaciones_supervisor')
+    .select('ejecutivo, supervisor, fecha_inicio, fecha_fin')
+    .order('fecha_inicio', { ascending: true });
+  asignacionesData = asigData || [];
 
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
@@ -2346,12 +2334,46 @@ function renderProductividadEquipos() {
       const datosSup = (idxVentas[mesStr] && idxVentas[mesStr][supervisor]) || { ventas: 0, ejecutivos: new Set() };
       const ventas = datosSup.ventas;
 
-      // Activos: si hay plantilla, usar agentes con asignación vigente. Si no, usar ejecutivos únicos que vendieron
+      // Activos: usar el HISTORIAL REAL de asignaciones (asignaciones_supervisor) para
+      // saber qué agentes pertenecían a este supervisor durante ESE mes específico.
+      // Esto evita que las reasignaciones recientes distorsionen meses pasados
+      // (ej: que Carmen/Emilio/Ana Paola aparezcan con agentes en abril cuando recién
+      // empezaron en mayo, o que Reyna pierda agentes históricos que ya rotaron).
       let activos = 0;
-      if (Array.isArray(plantillaData) && plantillaData.length > 0) {
+      // Punto medio del mes para resolver vigencia (más representativo que día 1 o último)
+      const mediaMes = `${mesStr}-15`;
+
+      if (Array.isArray(asignacionesData) && asignacionesData.length > 0
+          && Array.isArray(plantillaData) && plantillaData.length > 0) {
+        // Para cada agente de la plantilla, ver si:
+        //   1) estaba activo (no dado de baja) durante el mes
+        //   2) su supervisor vigente a mediados del mes era este supervisor
+        plantillaData.forEach(p => {
+          if (!p || !p.nombre) return;
+          const ingreso = (p.fecha_ingreso && typeof p.fecha_ingreso === 'string') ? p.fecha_ingreso : iniMes;
+          const baja = (p.fecha_baja && typeof p.fecha_baja === 'string') ? p.fecha_baja : '9999-12-31';
+          // Filtro de actividad: el agente debe haber estado activo en algún momento del mes
+          if (ingreso > finMes || baja < iniMes) return;
+
+          // Resolver supervisor vigente a mitad del mes (o al ingreso si entró después de mitad)
+          const fechaResolver = ingreso > mediaMes ? ingreso : mediaMes;
+          const historial = asignacionesData.filter(a => a.ejecutivo === p.nombre);
+          let supVigente = null;
+          for (const asig of historial) {
+            if (asig.fecha_inicio <= fechaResolver && (!asig.fecha_fin || asig.fecha_fin >= fechaResolver)) {
+              supVigente = asig.supervisor;
+              break;
+            }
+          }
+          // Si no hay registro en asignaciones_supervisor, caer al supervisor actual de plantilla
+          if (!supVigente) supVigente = p.supervisor;
+
+          if (supVigente === supervisor) activos++;
+        });
+      } else if (Array.isArray(plantillaData) && plantillaData.length > 0) {
+        // Fallback (sin tabla de asignaciones): comportamiento anterior basado en plantilla actual
         plantillaData.forEach(p => {
           if (!p) return;
-          // Comparación segura de fechas como strings
           const ingreso = (p.fecha_ingreso && typeof p.fecha_ingreso === 'string') ? p.fecha_ingreso : iniMes;
           const baja = (p.fecha_baja && typeof p.fecha_baja === 'string') ? p.fecha_baja : '9999-12-31';
           if (p.supervisor === supervisor && ingreso <= finMes && baja >= iniMes) {
