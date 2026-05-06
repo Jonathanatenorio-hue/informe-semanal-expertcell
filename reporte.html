@@ -11948,92 +11948,192 @@ function _renderSnapTabla(data, fmt) {
     snapsB = snapsB.filter(d => d.supervisor === _snapSupervisor);
   }
 
-  // Las métricas que vamos a mostrar
-  const metricas = [
-    { key: 'avance', label: 'Avance del mes', fmt: 'int', mejorMayor: true },
-    { key: 'pct_cumplimiento', label: '% Cumplimiento', fmt: 'pct', mejorMayor: true },
-    { key: 'programadas', label: 'Programadas', fmt: 'int', mejorMayor: true },
-    { key: 'canceladas', label: 'Canceladas', fmt: 'int', mejorMayor: false },
-    { key: 'en_transito', label: 'En tránsito', fmt: 'int', mejorMayor: null },
-    { key: 'ritmo_actual', label: 'Ritmo / día', fmt: 'dec', mejorMayor: true },
-    { key: 'proyeccion_mes', label: 'Proyección al cierre', fmt: 'int', mejorMayor: true },
-    { key: 'agentes_activos', label: 'Agentes activos', fmt: 'int', mejorMayor: null },
-    { key: 'agentes_sin_venta', label: 'Sin venta', fmt: 'int', mejorMayor: false },
-    { key: 'agentes_sin_act_3d', label: 'Sin activar 3d+', fmt: 'int', mejorMayor: false },
-    { key: 'agentes_sin_prog_3d', label: 'Sin programar 3d+', fmt: 'int', mejorMayor: false },
-    { key: 'v_agente_mes', label: 'V/agente/mes', fmt: 'dec', mejorMayor: true },
+  // ==========================================================
+  // Helper: enriquecer snapshot con métricas DERIVADAS de salud
+  // ==========================================================
+  function enriquecer(snap) {
+    if (!snap) return snap;
+    const s = { ...snap };
+    const meta = Number(s.meta) || 0;
+    const avance = Number(s.avance) || 0;
+    const diasT = Number(s.dias_habiles_transcurridos) || 0;
+    const diasH = Number(s.dias_habiles_totales) || 0;
+    const diasR = Math.max(0, diasH - diasT);
+
+    // Esperado al día del snapshot
+    s._esperado_hoy = (meta > 0 && diasH > 0) ? Math.round(meta * diasT / diasH) : 0;
+    // Gap: positivo = superávit, negativo = déficit
+    s._gap = avance - s._esperado_hoy;
+    // % esperado: avance vs lo que debería llevar a la fecha
+    s._pct_esperado = s._esperado_hoy > 0 ? (avance / s._esperado_hoy * 100) : (avance > 0 ? 100 : 0);
+    // Ritmo necesario para cerrar la meta
+    s._ritmo_necesario = diasR > 0 ? Math.max(0, meta - avance) / diasR : 0;
+    // Proyección vs meta (delta)
+    s._proy_vs_meta = (Number(s.proyeccion_mes) || 0) - meta;
+    // % de proyección
+    s._pct_proyeccion = meta > 0 ? ((Number(s.proyeccion_mes) || 0) / meta * 100) : 0;
+    return s;
+  }
+
+  // ==========================================================
+  // Definición de métricas en GRUPOS
+  // ==========================================================
+  const grupos = [
+    {
+      titulo: '🩺 Salud del mes (lo importante)',
+      color: '#0EA5E9',
+      metricas: [
+        { key: '_gap', label: 'Gap vs esperado', fmt: 'int_signo', mejorMayor: true,
+          tip: 'Avance real menos lo que debería llevar al día del snapshot. Positivo = superávit, negativo = déficit.' },
+        { key: '_pct_esperado', label: '% Esperado', fmt: 'pct', mejorMayor: true,
+          tip: 'Avance ÷ esperado al día del snapshot. Mide qué tan "al día" va el equipo respecto a su meta.' },
+        { key: '_ritmo_necesario', label: 'Ritmo necesario para cierre', fmt: 'dec', mejorMayor: false,
+          tip: 'Ventas/día que necesita lograr de aquí al cierre. Si SUBE significa que se quedó atrás y necesita acelerar más.' },
+        { key: '_proy_vs_meta', label: 'Proyección vs Meta', fmt: 'int_signo', mejorMayor: true,
+          tip: 'Proyección al cierre menos la meta. Positivo = proyecta superar la meta, negativo = no llegará.' },
+        { key: '_pct_proyeccion', label: '% Proyección sobre meta', fmt: 'pct', mejorMayor: true,
+          tip: '(Proyección al cierre ÷ meta) × 100. 100% = exactamente la meta.' },
+      ],
+    },
+    {
+      titulo: '📈 Avance bruto',
+      color: '#16A34A',
+      metricas: [
+        { key: 'avance', label: 'Avance del mes', fmt: 'int', mejorMayor: true },
+        { key: 'pct_cumplimiento', label: '% Cumplimiento mensual', fmt: 'pct', mejorMayor: true },
+        { key: 'ritmo_actual', label: 'Ritmo / día actual', fmt: 'dec', mejorMayor: true },
+        { key: 'proyeccion_mes', label: 'Proyección al cierre', fmt: 'int', mejorMayor: true },
+        { key: 'programadas', label: 'Programadas', fmt: 'int', mejorMayor: true },
+      ],
+    },
+    {
+      titulo: '⚠️ Calidad y riesgo',
+      color: '#DC2626',
+      metricas: [
+        { key: 'canceladas', label: 'Canceladas', fmt: 'int', mejorMayor: false },
+        { key: 'en_transito', label: 'En tránsito', fmt: 'int', mejorMayor: null },
+        { key: 'agentes_sin_venta', label: 'Agentes sin venta', fmt: 'int', mejorMayor: false },
+        { key: 'agentes_sin_act_3d', label: 'Sin activar 3d+', fmt: 'int', mejorMayor: false },
+        { key: 'agentes_sin_prog_3d', label: 'Sin programar 3d+', fmt: 'int', mejorMayor: false },
+      ],
+    },
+    {
+      titulo: '👥 Equipo',
+      color: '#7C3AED',
+      metricas: [
+        { key: 'agentes_activos', label: 'Agentes activos', fmt: 'int', mejorMayor: null },
+        { key: 'v_agente_mes', label: 'Ventas / agente / mes', fmt: 'dec', mejorMayor: true },
+      ],
+    },
   ];
 
   function valFmt(v, tipo) {
-    if (v === null || v === undefined) return '—';
+    if (v === null || v === undefined || isNaN(v)) return '—';
     if (tipo === 'int') return Number(v).toLocaleString();
+    if (tipo === 'int_signo') {
+      const n = Number(v);
+      return (n > 0 ? '+' : '') + n.toLocaleString();
+    }
     if (tipo === 'pct') return Number(v).toFixed(1) + '%';
     if (tipo === 'dec') return Number(v).toFixed(2);
     return v;
   }
 
+  // ==========================================================
+  // VISTA RESUMEN (todos los supervisores agregados)
+  // ==========================================================
   if (_snapSupervisor === 'todos') {
-    // Vista resumen: agregar los snapshots por supervisor (suma para totales, prom para tasas)
     function agregar(snaps) {
+      // Primero enriquecer cada snap individual
+      const enriq = snaps.map(enriquecer);
       const agg = {};
-      const tasas = ['pct_cumplimiento', 'ritmo_actual', 'ritmo_objetivo', 'v_agente_mes'];
-      metricas.forEach(m => {
-        if (tasas.includes(m.key)) {
-          // Promedio
-          const vals = snaps.map(s => Number(s[m.key]) || 0).filter(v => !isNaN(v));
-          agg[m.key] = vals.length > 0 ? vals.reduce((a, v) => a + v, 0) / vals.length : 0;
-        } else {
-          agg[m.key] = snaps.reduce((a, s) => a + (Number(s[m.key]) || 0), 0);
-        }
+      // Sumas para totales (avance, programadas, canceladas, etc.)
+      const sumas = ['avance', 'meta', 'programadas', 'canceladas', 'en_transito',
+                     'agentes_activos', 'agentes_sin_venta', 'agentes_sin_act_3d',
+                     'agentes_sin_prog_3d', 'proyeccion_mes', '_esperado_hoy'];
+      sumas.forEach(k => {
+        agg[k] = enriq.reduce((a, s) => a + (Number(s[k]) || 0), 0);
       });
+      // Recalcular las derivadas globales con los totales (más correcto que promediar)
+      agg._gap = agg.avance - agg._esperado_hoy;
+      agg._pct_esperado = agg._esperado_hoy > 0 ? (agg.avance / agg._esperado_hoy * 100) : 0;
+      agg.pct_cumplimiento = agg.meta > 0 ? (agg.avance / agg.meta * 100) : 0;
+      agg._proy_vs_meta = agg.proyeccion_mes - agg.meta;
+      agg._pct_proyeccion = agg.meta > 0 ? (agg.proyeccion_mes / agg.meta * 100) : 0;
+
+      // Días hábiles: tomar los del primer snapshot (todos los del día deben tener los mismos)
+      const diasH = enriq[0] ? Number(enriq[0].dias_habiles_totales) || 0 : 0;
+      const diasT = enriq[0] ? Number(enriq[0].dias_habiles_transcurridos) || 0 : 0;
+      const diasR = Math.max(0, diasH - diasT);
+      agg._ritmo_necesario = diasR > 0 ? Math.max(0, agg.meta - agg.avance) / diasR : 0;
+      agg.ritmo_actual = diasT > 0 ? agg.avance / diasT : 0;
+
+      // Promedio para v_agente_mes
+      agg.v_agente_mes = agg.agentes_activos > 0 ? agg.avance / agg.agentes_activos : 0;
+
+      // Guardar días para mostrar contexto
+      agg._dias_t = diasT;
+      agg._dias_h = diasH;
       return agg;
     }
     const aggA = agregar(snapsA);
     const aggB = agregar(snapsB);
 
     let html = `
-      <div style="margin-bottom:8px; font-size:13px; color:var(--text-soft);">
+      <div style="margin-bottom:12px; padding:10px 14px; background:#EFF6FF; border-left:4px solid var(--att-blue); border-radius:6px; font-size:12px;">
         Comparando <strong style="color:var(--att-navy);">${fmt(_snapFechaA)}</strong> contra <strong style="color:var(--att-navy);">${fmt(_snapFechaB)}</strong> · vista global
+        ${aggA._dias_t > 0 ? `<br>Día hábil <strong>${aggA._dias_t.toFixed(1)}</strong> de <strong>${aggA._dias_h.toFixed(1)}</strong> en ${fmt(_snapFechaA)} · <strong>${aggB._dias_t.toFixed(1)}</strong> en ${fmt(_snapFechaB)}` : ''}
       </div>
-      <table style="width:100%; font-size:13px; border-collapse:collapse;">
-        <thead><tr style="background:var(--bg);">
-          <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
-        </tr></thead><tbody>
     `;
 
-    metricas.forEach(m => {
-      const valA = aggA[m.key];
-      const valB = aggB[m.key];
-      const delta = valA - valB;
-      let icono = '—';
-      let color = 'var(--text-soft)';
-      if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
-        const mejora = m.mejorMayor ? delta > 0 : delta < 0;
-        icono = delta > 0 ? '↑' : '↓';
-        color = mejora ? 'var(--green)' : 'var(--red)';
-      } else if (Math.abs(delta) > 0.001) {
-        icono = delta > 0 ? '↑' : '↓';
-        color = 'var(--text-soft)';
-      }
-      const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt) : valFmt(delta, m.fmt);
+    grupos.forEach(g => {
+      html += `
+        <div style="margin-top:18px; margin-bottom:6px; padding-left:8px; border-left:4px solid ${g.color}; font-weight:700; font-size:13px; color:var(--att-navy);">${g.titulo}</div>
+        <table style="width:100%; font-size:13px; border-collapse:collapse; margin-bottom:8px;">
+          <thead><tr style="background:var(--bg);">
+            <th style="text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
+          </tr></thead><tbody>
+      `;
 
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:10px; font-weight:600;">${m.label}</td>
-        <td style="padding:10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
-        <td style="padding:10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
-        <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
-      </tr>`;
+      g.metricas.forEach(m => {
+        const valA = aggA[m.key];
+        const valB = aggB[m.key];
+        const delta = (Number(valA) || 0) - (Number(valB) || 0);
+        let icono = '—';
+        let color = 'var(--text-soft)';
+        if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
+          const mejora = m.mejorMayor ? delta > 0 : delta < 0;
+          icono = delta > 0 ? '↑' : '↓';
+          color = mejora ? 'var(--green)' : 'var(--red)';
+        } else if (Math.abs(delta) > 0.001) {
+          icono = delta > 0 ? '↑' : '↓';
+          color = 'var(--text-soft)';
+        }
+        const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt === 'int_signo' ? 'int' : m.fmt) : valFmt(delta, m.fmt === 'int_signo' ? 'int' : m.fmt);
+        const tipAttr = m.tip ? `title="${m.tip.replace(/"/g, '&quot;')}"` : '';
+
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:8px 10px; font-weight:600;" ${tipAttr}>${m.label}${m.tip ? ' <span style="color:var(--text-soft); font-size:10px;">ⓘ</span>' : ''}</td>
+          <td style="padding:8px 10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
+          <td style="padding:8px 10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
+          <td style="padding:8px 10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
     });
 
-    html += `</tbody></table>`;
     cont.innerHTML = html;
+
+  // ==========================================================
+  // VISTA POR SUPERVISOR (1 supervisor específico)
+  // ==========================================================
   } else {
-    // Vista por supervisor específico
-    const snapA = snapsA[0];
-    const snapB = snapsB[0];
+    const snapA = enriquecer(snapsA[0]);
+    const snapB = enriquecer(snapsB[0]);
 
     if (!snapA || !snapB) {
       cont.innerHTML = `<div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">
@@ -12042,48 +12142,62 @@ function _renderSnapTabla(data, fmt) {
       return;
     }
 
+    const diasA_t = Number(snapA.dias_habiles_transcurridos) || 0;
+    const diasA_h = Number(snapA.dias_habiles_totales) || 0;
+    const diasB_t = Number(snapB.dias_habiles_transcurridos) || 0;
+
     let html = `
-      <div style="margin-bottom:8px; font-size:13px; color:var(--text-soft);">
+      <div style="margin-bottom:12px; padding:10px 14px; background:#EFF6FF; border-left:4px solid var(--att-blue); border-radius:6px; font-size:12px;">
         Comparando <strong style="color:var(--att-navy);">${_snapSupervisor}</strong> · <strong>${fmt(_snapFechaA)}</strong> vs <strong>${fmt(_snapFechaB)}</strong>
+        ${diasA_t > 0 ? `<br>Día hábil <strong>${diasA_t.toFixed(1)}</strong> de <strong>${diasA_h.toFixed(1)}</strong> en ${fmt(_snapFechaA)} · <strong>${diasB_t.toFixed(1)}</strong> en ${fmt(_snapFechaB)}` : ''}
       </div>
-      <table style="width:100%; font-size:13px; border-collapse:collapse;">
-        <thead><tr style="background:var(--bg);">
-          <th style="text-align:left; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
-          <th style="text-align:right; padding:10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
-        </tr></thead><tbody>
     `;
 
     let mejoradas = 0, empeoradas = 0;
-    metricas.forEach(m => {
-      const valA = Number(snapA[m.key]) || 0;
-      const valB = Number(snapB[m.key]) || 0;
-      const delta = valA - valB;
-      let icono = '—';
-      let color = 'var(--text-soft)';
-      let bg = '';
-      if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
-        const mejora = m.mejorMayor ? delta > 0 : delta < 0;
-        icono = delta > 0 ? '↑' : '↓';
-        color = mejora ? 'var(--green)' : 'var(--red)';
-        bg = mejora ? 'background:#F0FDF4;' : 'background:#FEF2F2;';
-        if (mejora) mejoradas++; else empeoradas++;
-      } else if (Math.abs(delta) > 0.001) {
-        icono = delta > 0 ? '↑' : '↓';
-      }
-      const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt) : valFmt(delta, m.fmt);
+    grupos.forEach(g => {
+      html += `
+        <div style="margin-top:18px; margin-bottom:6px; padding-left:8px; border-left:4px solid ${g.color}; font-weight:700; font-size:13px; color:var(--att-navy);">${g.titulo}</div>
+        <table style="width:100%; font-size:13px; border-collapse:collapse; margin-bottom:8px;">
+          <thead><tr style="background:var(--bg);">
+            <th style="text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Métrica</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaA)}</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">${fmt(_snapFechaB)}</th>
+            <th style="text-align:right; padding:8px 10px; font-size:11px; text-transform:uppercase; color:var(--text-soft);">Δ</th>
+          </tr></thead><tbody>
+      `;
 
-      html += `<tr style="border-bottom:1px solid var(--border); ${bg}">
-        <td style="padding:10px; font-weight:600;">${m.label}</td>
-        <td style="padding:10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
-        <td style="padding:10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
-        <td style="padding:10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
-      </tr>`;
+      g.metricas.forEach(m => {
+        const valA = Number(snapA[m.key]) || 0;
+        const valB = Number(snapB[m.key]) || 0;
+        const delta = valA - valB;
+        let icono = '—';
+        let color = 'var(--text-soft)';
+        let bg = '';
+        if (Math.abs(delta) > 0.001 && m.mejorMayor !== null) {
+          const mejora = m.mejorMayor ? delta > 0 : delta < 0;
+          icono = delta > 0 ? '↑' : '↓';
+          color = mejora ? 'var(--green)' : 'var(--red)';
+          bg = mejora ? 'background:#F0FDF4;' : 'background:#FEF2F2;';
+          if (mejora) mejoradas++; else empeoradas++;
+        } else if (Math.abs(delta) > 0.001) {
+          icono = delta > 0 ? '↑' : '↓';
+        }
+        const deltaStr = delta > 0 ? '+' + valFmt(delta, m.fmt === 'int_signo' ? 'int' : m.fmt) : valFmt(delta, m.fmt === 'int_signo' ? 'int' : m.fmt);
+        const tipAttr = m.tip ? `title="${m.tip.replace(/"/g, '&quot;')}"` : '';
+
+        html += `<tr style="border-bottom:1px solid var(--border); ${bg}">
+          <td style="padding:8px 10px; font-weight:600;" ${tipAttr}>${m.label}${m.tip ? ' <span style="color:var(--text-soft); font-size:10px;">ⓘ</span>' : ''}</td>
+          <td style="padding:8px 10px; text-align:right; font-weight:700;">${valFmt(valA, m.fmt)}</td>
+          <td style="padding:8px 10px; text-align:right; color:var(--text-soft);">${valFmt(valB, m.fmt)}</td>
+          <td style="padding:8px 10px; text-align:right; font-weight:700; color:${color};">${icono} ${deltaStr}</td>
+        </tr>`;
+      });
+
+      html += `</tbody></table>`;
     });
 
-    html += `</tbody></table>
-      <div style="margin-top:14px; display:flex; gap:14px; justify-content:center; font-size:13px;">
+    html += `
+      <div style="margin-top:16px; display:flex; gap:14px; justify-content:center; font-size:13px; padding:12px; background:var(--bg); border-radius:8px;">
         <span style="color:var(--green); font-weight:700;">↑ ${mejoradas} métricas mejoraron</span>
         <span style="color:var(--red); font-weight:700;">↓ ${empeoradas} métricas empeoraron</span>
       </div>
