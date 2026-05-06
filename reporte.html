@@ -958,9 +958,6 @@
       <div id="avance-detalle-agentes"></div>
     </div>
 
-    <!-- EMBUDO PRINCIPAL -->
-    <div id="embudo-section"></div>
-
     <!-- PRODUCTIVIDAD DE EQUIPOS -->
     <div class="section collapsible" id="sec-productividad-equipos">
       <div class="section-title">📊 Productividad de equipos</div>
@@ -997,6 +994,9 @@
         </div>
       </div>
     </div>
+
+    <!-- EMBUDO PRINCIPAL (arriba de Comparativo por supervisor) -->
+    <div id="embudo-section"></div>
 
     <!-- COMPARATIVO POR SUPERVISOR -->
     <div class="section" id="sec-comparativo">
@@ -4184,6 +4184,14 @@ function renderDetalleAgentesConMes(mesKey) {
     const faltan = Math.max(0, m.meta_activadas - avance);
     const ritmoNecesario = diasRestantes > 0 ? faltan / diasRestantes : 0;
 
+    // Esperado al día de hoy = meta × (días transcurridos / días totales del mes)
+    // Gap (signo: positivo = superávit, negativo = déficit)
+    const esperadoHoy = m.meta_activadas > 0 && diasHabilesTotales > 0
+      ? Math.round(m.meta_activadas * diasTranscurridos / diasHabilesTotales)
+      : 0;
+    const gap = avance - esperadoHoy;
+    const pctEsperado = esperadoHoy > 0 ? (avance / esperadoHoy * 100) : (avance > 0 ? 100 : 0);
+
     const fechaIng = plant ? plant.fecha_ingreso : null;
 
     const ultAct = ultActPorAgente[m.ejecutivo] || null;
@@ -4212,6 +4220,7 @@ function renderDetalleAgentesConMes(mesKey) {
       transito: transitoPorAgente[m.ejecutivo] || 0,
       arpu,
       pct, ritmoActual, proyeccion, ritmoNecesario,
+      esperadoHoy, gap, pctEsperado,
       tipo: tipoFinal,
       tipoMetaOriginal: m.tipo_meta,
       esBaja: estaDeBaja,
@@ -4490,6 +4499,8 @@ function renderDetalleAgentesConMes(mesKey) {
                   <th class="num" style="text-align:center;">Canc</th>
                   <th class="num" style="text-align:center;" title="Precio promedio de sus planes vendidos (ARPU)">ARPU</th>
                   <th class="num" style="text-align:center;">Meta</th>
+                  <th class="num" style="text-align:center;" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado hoy</th>
+                  <th class="num" style="text-align:center;" title="Diferencia entre avance real y esperado hoy. Verde = superávit · Rojo = gap por cubrir">Gap / Sup.</th>
                   <th class="num" style="text-align:center;">% Mes</th>
                   <th class="num" style="text-align:center;">Ritmo</th>
                   <th class="num" style="text-align:center;">Ritmo nec.</th>
@@ -4500,16 +4511,19 @@ function renderDetalleAgentesConMes(mesKey) {
               <tbody>
                 ${agentes.map((a, idx) => {
                   let emoji, colorFila = '';
+                  // Semáforo: si es el mes en curso, evaluar contra el ESPERADO HOY (gap).
+                  // Si es un mes pasado o futuro, evaluar contra el % de cumplimiento total.
+                  const pctEval = esMesActual ? a.pctEsperado : a.pct;
                   if (a.esBaja) {
                     emoji = '🔻';
                     colorFila = 'background: #F3F4F6; color: #6B7280;';
                   } else if (a.meta === 0) {
                     emoji = '➖';
-                  } else if (a.pct >= 100) {
+                  } else if (pctEval >= 100) {
                     emoji = '🟢';
-                  } else if (a.pct >= 85) {
+                  } else if (pctEval >= 85) {
                     emoji = '🟡';
-                  } else if (a.pct >= 50) {
+                  } else if (pctEval >= 50) {
                     emoji = '🟠';
                   } else {
                     emoji = '🚨';
@@ -4531,7 +4545,10 @@ function renderDetalleAgentesConMes(mesKey) {
                     tipoBadge = 'background:#DCFCE7;color:#15803D;';
                   }
 
-                  const colorPct = a.esBaja ? '#6B7280' : (a.pct >= 100 ? 'var(--green)' : a.pct >= 85 ? 'var(--amber)' : a.pct >= 50 ? 'var(--amber)' : 'var(--red)');
+                  // Color del % Mes: en mes en curso usar el % Esperado (justo respecto al avance del mes).
+                  // En meses pasados/cerrados usar el % directo de cumplimiento.
+                  const pctParaColor = esMesActual ? a.pctEsperado : a.pct;
+                  const colorPct = a.esBaja ? '#6B7280' : (pctParaColor >= 100 ? 'var(--green)' : pctParaColor >= 85 ? 'var(--amber)' : pctParaColor >= 50 ? 'var(--amber)' : 'var(--red)');
 
                   function formatDias(dias, nunca) {
                     if (dias === null) return '—';
@@ -4559,6 +4576,10 @@ function renderDetalleAgentesConMes(mesKey) {
                     <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
                     <td class="num" style="text-align:center; font-weight: 600;">${a.arpu > 0 ? '$' + Math.round(a.arpu) : '—'}</td>
                     <td class="num" style="text-align:center;">${a.meta}</td>
+                    <td class="num" style="text-align:center; color:var(--text-soft);">${a.meta > 0 ? a.esperadoHoy : '—'}</td>
+                    <td class="num" style="text-align:center; font-weight:700; color:${a.meta === 0 ? 'var(--text-soft)' : (a.gap >= 0 ? 'var(--green)' : 'var(--red)')};">
+                      ${a.meta > 0 ? (a.gap >= 0 ? `+${a.gap}` : `${a.gap}`) : '—'}
+                    </td>
                     <td class="num" style="text-align:center; color:${colorPct}; font-weight:700;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
                     <td class="num" style="text-align:center;">${a.ritmoActual.toFixed(1)}</td>
                     <td class="num" style="text-align:center; ${a.meta > 0 && a.ritmoNecesario > a.ritmoActual * 1.5 ? 'color:var(--red);font-weight:700;' : ''}">${a.meta > 0 ? a.ritmoNecesario.toFixed(1) : '—'}</td>
