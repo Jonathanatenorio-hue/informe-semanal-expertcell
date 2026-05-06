@@ -11126,12 +11126,16 @@ async function renderLogistica() {
   cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-soft);">Cargando entregas desde Supabase...</div>';
 
   try {
-    const data = await _cargarEntregasData();
+    const entregasRaw = await _cargarEntregasData();
+
+    // CRUCE: arrancamos del universo de ACTIVADAS (ventasData) y enriquecemos
+    // con datos de entregas_detalle por folio. Así el conteo cuadra con el avance del mes.
+    const data = _construirDatosLogistica(entregasRaw);
 
     if (!data || data.length === 0) {
       cont.innerHTML = `
         <div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">
-          <strong>Sin datos de entregas.</strong> Sube el Excel "Detalle de programación" desde el cargador (4to drop zone).
+          <strong>Sin datos.</strong> Necesitas tener ventas activadas en el sistema. Si esperabas ver datos de entregas, sube también el Excel "Detalle de programación" desde el cargador (4to drop zone).
         </div>
       `;
       return;
@@ -11139,7 +11143,7 @@ async function renderLogistica() {
 
     // Inicializar mes seleccionado al más reciente con datos
     if (!_logisticaMesSel) {
-      const mesesUnicos = [...new Set(data.filter(d => d.fecha_venta).map(d => String(d.fecha_venta).substring(0, 7)))].sort().reverse();
+      const mesesUnicos = [...new Set(data.filter(d => d.fecha_activacion).map(d => String(d.fecha_activacion).substring(0, 7)))].sort().reverse();
       _logisticaMesSel = mesesUnicos[0] || 'todos';
     }
 
@@ -11155,17 +11159,79 @@ async function renderLogistica() {
   }
 }
 
+// =====================================================================
+// Cruza activadas (ventasData) con detalle de programación (entregas_detalle)
+// por folio. Devuelve un array donde cada fila representa una ACTIVADA y trae:
+//   - los datos del flujo principal (folio, fecha_activacion, supervisor, centro, ejecutivo, etc.)
+//   - los datos logísticos del detalle si hay match (estatus_entrega, equipo, marca,
+//     pago_inicial, direccion, estado, municipio, etc.)
+//   - flag _sin_detalle = true cuando no hay match
+// =====================================================================
+function _construirDatosLogistica(entregasRaw) {
+  if (!Array.isArray(ventasData) || ventasData.length === 0) return [];
+
+  // Indexar entregas por folio (string) para lookup rápido
+  const entregasPorFolio = {};
+  (entregasRaw || []).forEach(e => {
+    if (!e || !e.folio) return;
+    entregasPorFolio[String(e.folio)] = e;
+  });
+
+  // Solo trabajamos con ACTIVADAS (lo que cuenta como venta del mes)
+  const activadas = ventasData.filter(r => r && r.estatus === 'activada' && r.fecha_activacion);
+
+  return activadas.map(v => {
+    const folioStr = String(v.folio);
+    const det = entregasPorFolio[folioStr] || null;
+
+    // Construir fila enriquecida. Los campos del detalle solo existen si hay match.
+    return {
+      // ---- desde ventas_detalle (siempre presentes) ----
+      folio: folioStr,
+      fecha_activacion: v.fecha_activacion,
+      supervisor: v.supervisor,         // ya resuelto al supervisor histórico de activación
+      centro: v.centro,
+      ejecutivo: v.ejecutivo,
+      precio: v.precio,
+      plan: v.plan,
+      renta_sin_impuestos: v.renta_sin_impuestos,
+
+      // ---- desde entregas_detalle (pueden ser null) ----
+      // Mantenemos los nombres de campos que el resto del código ya espera.
+      fecha_venta: det ? det.fecha_venta : null,
+      estatus_entrega: det ? det.estatus_entrega : null,
+      tipo_entrega: det ? det.tipo_entrega : null,
+      tienda_solicita: det ? det.tienda_solicita : null,
+      tienda_entrega: det ? det.tienda_entrega : null,
+      direccion: det ? det.direccion : null,
+      colonia: det ? det.colonia : null,
+      estado: det ? det.estado : null,
+      municipio: det ? det.municipio : null,
+      cp: det ? det.cp : null,
+      pago_inicial: det ? det.pago_inicial : null,
+      equipo: det ? det.equipo : null,
+      marca: det ? det.marca : null,
+      modelo: det ? det.modelo : null,
+      subregion: det ? det.subregion : null,
+      region: det ? det.region : null,
+
+      // Indicador de si la activada tiene info de logística cargada
+      _sin_detalle: !det,
+    };
+  });
+}
+
 function _renderLogisticaUI(cont, data) {
-  // Calcular meses disponibles
-  const mesesUnicos = [...new Set(data.filter(d => d.fecha_venta).map(d => String(d.fecha_venta).substring(0, 7)))].sort().reverse();
+  // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
+  const mesesUnicos = [...new Set(data.filter(d => d.fecha_activacion).map(d => String(d.fecha_activacion).substring(0, 7)))].sort().reverse();
   // Centros y supervisores únicos en los datos
   const centrosUnicos = [...new Set(data.filter(d => d.centro).map(d => d.centro))].sort();
   const supsUnicos = [...new Set(data.filter(d => d.supervisor).map(d => d.supervisor))].sort();
 
-  // Filtrar por mes, centro y supervisor
+  // Filtrar por mes (por fecha_activacion), centro y supervisor
   let filtrado = data;
   if (_logisticaMesSel !== 'todos') {
-    filtrado = filtrado.filter(d => d.fecha_venta && String(d.fecha_venta).startsWith(_logisticaMesSel));
+    filtrado = filtrado.filter(d => d.fecha_activacion && String(d.fecha_activacion).startsWith(_logisticaMesSel));
   }
   if (_logisticaCentroSel !== 'todos') {
     filtrado = filtrado.filter(d => d.centro === _logisticaCentroSel);
@@ -11222,7 +11288,10 @@ function _renderLogisticaUI(cont, data) {
         </select>
       </div>
       <div style="flex:1; text-align:right; font-size:12px; color:var(--text-soft); padding-bottom:6px;">
-        <strong style="color:var(--att-navy);">${filtrado.filter(d => d.estatus_entrega === 'Entregado').length.toLocaleString()}</strong> entregas exitosas <span style="opacity:0.7;">de ${filtrado.length.toLocaleString()} totales</span><br>
+        <strong style="color:var(--att-navy);">${filtrado.length.toLocaleString()}</strong> activadas
+        · <span style="color:var(--green); font-weight:700;">${filtrado.filter(d => !d._sin_detalle).length.toLocaleString()} con info de entrega</span>
+        ${filtrado.filter(d => d._sin_detalle).length > 0 ? `· <span style="color:#D97706; font-weight:700;" title="Activadas que no tienen registro en el detalle de programación AT&T cargado">${filtrado.filter(d => d._sin_detalle).length} sin info</span>` : ''}
+        <br>
         <span style="font-size:11px;">${labelMes}${sufijoFiltro}</span>
       </div>
     </div>
@@ -11272,18 +11341,19 @@ function _renderLogisticaTabContent(data) {
     return;
   }
 
-  // Casi todos los tabs analizan solo entregas exitosas (no canceladas con folio Venta).
-  // Overview y Costos hacen su propio filtro interno (separan entregadas/merma/tránsito).
-  const dataEntregadas = data.filter(d => d.estatus_entrega === 'Entregado');
+  // Como el dataset ya parte de ACTIVADAS, todas son ventas que efectivamente se activaron.
+  // Para los tabs analíticos (geo, marca, pago, etc.) necesitamos las que tienen info logística,
+  // sin importar el estatus_entrega original del detalle (que reflejaba el momento de la captura).
+  const dataConDetalle = data.filter(d => !d._sin_detalle);
 
   switch (_logisticaTab) {
     case 'overview': cont.innerHTML = _logHTMLOverview(data); break;
-    case 'entrega': cont.innerHTML = _logHTMLEntrega(dataEntregadas); break;
-    case 'geo': cont.innerHTML = _logHTMLGeo(dataEntregadas); break;
-    case 'marca': cont.innerHTML = _logHTMLMarca(dataEntregadas); break;
-    case 'pago': cont.innerHTML = _logHTMLPago(dataEntregadas); break;
-    case 'region': cont.innerHTML = _logHTMLRegion(dataEntregadas); break;
-    case 'tiendas': cont.innerHTML = _logHTMLTiendas(dataEntregadas); break;
+    case 'entrega': cont.innerHTML = _logHTMLEntrega(dataConDetalle); break;
+    case 'geo': cont.innerHTML = _logHTMLGeo(dataConDetalle); break;
+    case 'marca': cont.innerHTML = _logHTMLMarca(dataConDetalle); break;
+    case 'pago': cont.innerHTML = _logHTMLPago(dataConDetalle); break;
+    case 'region': cont.innerHTML = _logHTMLRegion(dataConDetalle); break;
+    case 'tiendas': cont.innerHTML = _logHTMLTiendas(dataConDetalle); break;
   }
 }
 
@@ -11319,43 +11389,50 @@ function _money(n) {
 
 // === Tab: OVERVIEW ===
 function _logHTMLOverview(data) {
-  // Solo entregadas exitosas (no canceladas con folio Venta)
-  const entregadas = data.filter(d => d.estatus_entrega === 'Entregado');
-  const canceladas = data.filter(d => d.estatus_entrega === 'Canc Error' || d.estatus_entrega === 'Cancelado');
-  const enTransito = data.filter(d => !['Entregado', 'Canc Error', 'Cancelado'].includes(d.estatus_entrega));
+  // El dataset ya parte de ACTIVADAS (todas son ventas reales del periodo).
+  // Para análisis logístico solo podemos usar las que tienen info de detalle cargada.
+  const conInfo = data.filter(d => !d._sin_detalle);
+  const sinInfo = data.filter(d => d._sin_detalle);
 
-  const total = entregadas.length;
-  const conPago = entregadas.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
-  const totalPago = entregadas.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
+  const totalActivadas = data.length;
+  const total = conInfo.length; // base para % de tipo de entrega, etc.
+  const conPago = conInfo.filter(d => (parseFloat(d.pago_inicial) || 0) > 0).length;
+  const totalPago = conInfo.reduce((a, d) => a + (parseFloat(d.pago_inicial) || 0), 0);
   const promPago = conPago > 0 ? totalPago / conPago : 0;
-  const conDom = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
-  const conTienda = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
-  const conHub = entregadas.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
-  const estados = new Set(entregadas.filter(d => d.estado).map(d => d.estado)).size;
-  const regiones = new Set(entregadas.filter(d => d.region).map(d => d.region)).size;
-  const marcas = _logCountBy(entregadas, 'marca', 3);
+  const conDom = conInfo.filter(d => d.tipo_entrega === 'ENTREGA EN DOMICILIO').length;
+  const conTienda = conInfo.filter(d => d.tipo_entrega === 'ENTREGA EN TIENDA').length;
+  const conHub = conInfo.filter(d => d.tipo_entrega === 'ENTREGA EN HUB').length;
+  const estados = new Set(conInfo.filter(d => d.estado).map(d => d.estado)).size;
+  const regiones = new Set(conInfo.filter(d => d.region).map(d => d.region)).size;
+  const marcas = _logCountBy(conInfo, 'marca', 3);
 
   return `
+    ${sinInfo.length > 0 ? `
+      <div style="background:#FEF3C7; border-left:4px solid #D97706; padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:12px;">
+        ⚠️ <strong>${sinInfo.length} activada${sinInfo.length > 1 ? 's' : ''} sin info de entrega</strong> en este periodo.
+        Probablemente esas ventas se programaron en un mes distinto (la activación cayó en este mes pero el BO se hizo antes) o aún no se ha cargado el último Excel "Detalle de programación" en el cargador.
+      </div>
+    ` : ''}
     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
       <div class="stat-card" style="border-left-color:var(--att-blue);">
-        <div class="stat-label">Total entregas</div>
-        <div class="stat-value" style="color:var(--att-blue);">${total.toLocaleString()}</div>
-        <div class="stat-sub">en ${estados} estados${canceladas.length > 0 ? ` · ${canceladas.length} canc` : ''}${enTransito.length > 0 ? ` · ${enTransito.length} en tránsito` : ''}</div>
+        <div class="stat-label">Activadas del periodo</div>
+        <div class="stat-value" style="color:var(--att-blue);">${totalActivadas.toLocaleString()}</div>
+        <div class="stat-sub">${total} con info logística${sinInfo.length > 0 ? ` · ${sinInfo.length} sin info` : ''}</div>
       </div>
       <div class="stat-card" style="border-left-color:#16A34A;">
         <div class="stat-label">A domicilio</div>
         <div class="stat-value" style="color:#16A34A;">${conDom.toLocaleString()}</div>
-        <div class="stat-sub">${total > 0 ? (conDom / total * 100).toFixed(1) : 0}% del total</div>
+        <div class="stat-sub">${total > 0 ? (conDom / total * 100).toFixed(1) : 0}% de las que tienen info</div>
       </div>
       <div class="stat-card" style="border-left-color:#D97706;">
         <div class="stat-label">En tienda</div>
         <div class="stat-value" style="color:#D97706;">${conTienda.toLocaleString()}</div>
-        <div class="stat-sub">${total > 0 ? (conTienda / total * 100).toFixed(1) : 0}% del total</div>
+        <div class="stat-sub">${total > 0 ? (conTienda / total * 100).toFixed(1) : 0}% de las que tienen info</div>
       </div>
       <div class="stat-card" style="border-left-color:#7C3AED;">
         <div class="stat-label">En HUB</div>
         <div class="stat-value" style="color:#7C3AED;">${conHub.toLocaleString()}</div>
-        <div class="stat-sub">${total > 0 ? (conHub / total * 100).toFixed(1) : 0}% del total</div>
+        <div class="stat-sub">${total > 0 ? (conHub / total * 100).toFixed(1) : 0}% de las que tienen info</div>
       </div>
       <div class="stat-card" style="border-left-color:var(--att-orange);">
         <div class="stat-label">Pago inicial</div>
@@ -11363,15 +11440,15 @@ function _logHTMLOverview(data) {
         <div class="stat-sub">${total > 0 ? (conPago / total * 100).toFixed(1) : 0}% (prom ${_money(promPago)})</div>
       </div>
       <div class="stat-card" style="border-left-color:#0077A8;">
-        <div class="stat-label">Regiones (almacenes)</div>
-        <div class="stat-value" style="color:#0077A8;">${regiones}</div>
-        <div class="stat-sub">despachan envíos</div>
+        <div class="stat-label">Estados / Regiones</div>
+        <div class="stat-value" style="color:#0077A8;">${estados} <span style="font-size:13px; color:var(--text-soft);">/ ${regiones}</span></div>
+        <div class="stat-sub">cobertura geográfica</div>
       </div>
     </div>
 
     <div style="background:var(--bg); padding:14px; border-radius:8px;">
       <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:8px;">🏆 Top 3 marcas del periodo</div>
-      ${marcas.map((m, i) => {
+      ${marcas.length === 0 ? '<div style="color:var(--text-soft); font-size:12px;">Sin datos de marca disponibles.</div>' : marcas.map((m, i) => {
         const medal = ['🥇', '🥈', '🥉'][i];
         const pct = total > 0 ? (m.v / total * 100) : 0;
         return `<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:${i < marcas.length - 1 ? '1px solid var(--border)' : 'none'};">
@@ -11651,7 +11728,7 @@ function _logHTMLRegion(data) {
   // KPIs
   let html = `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:20px;">
     <div class="stat-card" style="border-left-color:var(--att-blue);">
-      <div class="stat-label">Total entregas exitosas</div>
+      <div class="stat-label">Activadas con info logística</div>
       <div class="stat-value" style="color:var(--att-blue);">${total.toLocaleString()}</div>
       <div class="stat-sub">en ${totalRegiones} regiones</div>
     </div>
