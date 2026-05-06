@@ -11961,7 +11961,9 @@ function _renderSnapTabla(data, fmt) {
     const diasR = Math.max(0, diasH - diasT);
 
     // Esperado al día del snapshot
-    s._esperado_hoy = (meta > 0 && diasH > 0) ? Math.round(meta * diasT / diasH) : 0;
+    // No redondear aquí — guardamos el valor exacto para que las sumas sean precisas.
+    // El redondeo solo se aplica al MOSTRAR (en valFmt).
+    s._esperado_hoy = (meta > 0 && diasH > 0) ? (meta * diasT / diasH) : 0;
     // Gap: positivo = superávit, negativo = déficit
     s._gap = avance - s._esperado_hoy;
     // % esperado: avance vs lo que debería llevar a la fecha
@@ -12050,21 +12052,24 @@ function _renderSnapTabla(data, fmt) {
       // Sumas para totales (avance, programadas, canceladas, etc.)
       const sumas = ['avance', 'meta', 'programadas', 'canceladas', 'en_transito',
                      'agentes_activos', 'agentes_sin_venta', 'agentes_sin_act_3d',
-                     'agentes_sin_prog_3d', 'proyeccion_mes', '_esperado_hoy'];
+                     'agentes_sin_prog_3d', 'proyeccion_mes'];
       sumas.forEach(k => {
         agg[k] = enriq.reduce((a, s) => a + (Number(s[k]) || 0), 0);
       });
-      // Recalcular las derivadas globales con los totales (más correcto que promediar)
-      agg._gap = agg.avance - agg._esperado_hoy;
-      agg._pct_esperado = agg._esperado_hoy > 0 ? (agg.avance / agg._esperado_hoy * 100) : 0;
-      agg.pct_cumplimiento = agg.meta > 0 ? (agg.avance / agg.meta * 100) : 0;
-      agg._proy_vs_meta = agg.proyeccion_mes - agg.meta;
-      agg._pct_proyeccion = agg.meta > 0 ? (agg.proyeccion_mes / agg.meta * 100) : 0;
 
       // Días hábiles: tomar los del primer snapshot (todos los del día deben tener los mismos)
       const diasH = enriq[0] ? Number(enriq[0].dias_habiles_totales) || 0 : 0;
       const diasT = enriq[0] ? Number(enriq[0].dias_habiles_transcurridos) || 0 : 0;
       const diasR = Math.max(0, diasH - diasT);
+
+      // Recalcular las derivadas globales DIRECTAMENTE con totales (evita errores de redondeo).
+      // Esto es matemáticamente más preciso que sumar los esperados individuales.
+      agg._esperado_hoy = (agg.meta > 0 && diasH > 0) ? (agg.meta * diasT / diasH) : 0;
+      agg._gap = agg.avance - agg._esperado_hoy;
+      agg._pct_esperado = agg._esperado_hoy > 0 ? (agg.avance / agg._esperado_hoy * 100) : 0;
+      agg.pct_cumplimiento = agg.meta > 0 ? (agg.avance / agg.meta * 100) : 0;
+      agg._proy_vs_meta = agg.proyeccion_mes - agg.meta;
+      agg._pct_proyeccion = agg.meta > 0 ? (agg.proyeccion_mes / agg.meta * 100) : 0;
       agg._ritmo_necesario = diasR > 0 ? Math.max(0, agg.meta - agg.avance) / diasR : 0;
       agg.ritmo_actual = diasT > 0 ? agg.avance / diasT : 0;
 
