@@ -1711,10 +1711,59 @@ let supConfigData = [];
 let foliosIgnoradosData = [];
 let capacitadoresData = [];
 let asignacionesData = []; // Historial real supervisor↔agente (para cálculos históricos correctos)
+
+// =====================================================================
+// HELPER GLOBAL: cuenta agentes activos de un supervisor en un mes específico
+// usando el HISTORIAL REAL de asignaciones_supervisor (no la plantilla actual).
+// Esto evita distorsiones cuando hay reasignaciones recientes.
+// Devuelve { count, agentes: [nombres] }
+// =====================================================================
+function agentesActivosPorSupEnMes(supervisor, anio, mes) {
+  const mesStr = `${anio}-${String(mes).padStart(2, '0')}`;
+  const ultDia = new Date(anio, mes, 0).getDate();
+  const iniMes = `${mesStr}-01`;
+  const finMes = `${mesStr}-${String(ultDia).padStart(2, '0')}`;
+  const mediaMes = `${mesStr}-15`;
+  const agentes = [];
+
+  if (!Array.isArray(plantillaData) || plantillaData.length === 0) {
+    return { count: 0, agentes: [] };
+  }
+
+  const usarHistorial = Array.isArray(asignacionesData) && asignacionesData.length > 0;
+
+  plantillaData.forEach(p => {
+    if (!p || !p.nombre) return;
+    const ingreso = (p.fecha_ingreso && typeof p.fecha_ingreso === 'string') ? p.fecha_ingreso : iniMes;
+    const baja = (p.fecha_baja && typeof p.fecha_baja === 'string') ? p.fecha_baja : '9999-12-31';
+    // El agente debe haber estado activo en algún momento del mes
+    if (ingreso > finMes || baja < iniMes) return;
+
+    let supVigente = null;
+    if (usarHistorial) {
+      // Resolver supervisor a mediados del mes (o al ingreso si entró después)
+      const fechaResolver = ingreso > mediaMes ? ingreso : mediaMes;
+      const historial = asignacionesData.filter(a => a.ejecutivo === p.nombre);
+      for (const asig of historial) {
+        if (asig.fecha_inicio <= fechaResolver && (!asig.fecha_fin || asig.fecha_fin >= fechaResolver)) {
+          supVigente = asig.supervisor;
+          break;
+        }
+      }
+    }
+    // Fallback: supervisor actual de plantilla
+    if (!supVigente) supVigente = p.supervisor;
+
+    if (supVigente === supervisor) agentes.push(p.nombre);
+  });
+
+  return { count: agentes.length, agentes };
+}
 let semanaSeleccionada = null;
 let proyeccionModo = 'mes';
 let coordinadorFiltro = 'todos';
 let umbralInactividad = 3.5;
+let prodEquiposMesSel = null; // 'YYYY-MM' del mes seleccionado en Productividad equipos (null = mes actual)
 
 function semanaDeFecha(fechaStr) {
   const f = new Date(fechaStr + 'T12:00:00');
@@ -2295,7 +2344,15 @@ function renderProductividadEquipos() {
       return;
     }
 
-    const { mesNombre, anio, mes } = window.__avanceData;
+    let { mesNombre, anio, mes } = window.__avanceData;
+
+    // Si hay selector de mes activo, usar ese mes en lugar del mes actual
+    if (prodEquiposMesSel) {
+      const [yStr, mStr] = prodEquiposMesSel.split('-');
+      anio = parseInt(yStr);
+      mes = parseInt(mStr);
+      mesNombre = MESES_NOMBRE[mes - 1];
+    }
 
     // Pre-indexar ventas por (mes, supervisor) en una sola pasada
     const idxVentas = {};
@@ -2334,53 +2391,9 @@ function renderProductividadEquipos() {
       const datosSup = (idxVentas[mesStr] && idxVentas[mesStr][supervisor]) || { ventas: 0, ejecutivos: new Set() };
       const ventas = datosSup.ventas;
 
-      // Activos: usar el HISTORIAL REAL de asignaciones (asignaciones_supervisor) para
-      // saber qué agentes pertenecían a este supervisor durante ESE mes específico.
-      // Esto evita que las reasignaciones recientes distorsionen meses pasados
-      // (ej: que Carmen/Emilio/Ana Paola aparezcan con agentes en abril cuando recién
-      // empezaron en mayo, o que Reyna pierda agentes históricos que ya rotaron).
-      let activos = 0;
-      // Punto medio del mes para resolver vigencia (más representativo que día 1 o último)
-      const mediaMes = `${mesStr}-15`;
-
-      if (Array.isArray(asignacionesData) && asignacionesData.length > 0
-          && Array.isArray(plantillaData) && plantillaData.length > 0) {
-        // Para cada agente de la plantilla, ver si:
-        //   1) estaba activo (no dado de baja) durante el mes
-        //   2) su supervisor vigente a mediados del mes era este supervisor
-        plantillaData.forEach(p => {
-          if (!p || !p.nombre) return;
-          const ingreso = (p.fecha_ingreso && typeof p.fecha_ingreso === 'string') ? p.fecha_ingreso : iniMes;
-          const baja = (p.fecha_baja && typeof p.fecha_baja === 'string') ? p.fecha_baja : '9999-12-31';
-          // Filtro de actividad: el agente debe haber estado activo en algún momento del mes
-          if (ingreso > finMes || baja < iniMes) return;
-
-          // Resolver supervisor vigente a mitad del mes (o al ingreso si entró después de mitad)
-          const fechaResolver = ingreso > mediaMes ? ingreso : mediaMes;
-          const historial = asignacionesData.filter(a => a.ejecutivo === p.nombre);
-          let supVigente = null;
-          for (const asig of historial) {
-            if (asig.fecha_inicio <= fechaResolver && (!asig.fecha_fin || asig.fecha_fin >= fechaResolver)) {
-              supVigente = asig.supervisor;
-              break;
-            }
-          }
-          // Si no hay registro en asignaciones_supervisor, caer al supervisor actual de plantilla
-          if (!supVigente) supVigente = p.supervisor;
-
-          if (supVigente === supervisor) activos++;
-        });
-      } else if (Array.isArray(plantillaData) && plantillaData.length > 0) {
-        // Fallback (sin tabla de asignaciones): comportamiento anterior basado en plantilla actual
-        plantillaData.forEach(p => {
-          if (!p) return;
-          const ingreso = (p.fecha_ingreso && typeof p.fecha_ingreso === 'string') ? p.fecha_ingreso : iniMes;
-          const baja = (p.fecha_baja && typeof p.fecha_baja === 'string') ? p.fecha_baja : '9999-12-31';
-          if (p.supervisor === supervisor && ingreso <= finMes && baja >= iniMes) {
-            activos++;
-          }
-        });
-      }
+      // Activos: usar el helper global que considera el historial real de asignaciones
+      let activos = agentesActivosPorSupEnMes(supervisor, anioM, mesM).count;
+      // Fallback: si no hay agentes pero hubo ventas, usar ejecutivos únicos del numerador
       if (activos === 0) activos = datosSup.ejecutivos.size;
 
       const diasHabilesMes = idxCal[mesStr] || 0;
@@ -2426,10 +2439,36 @@ function renderProductividadEquipos() {
     // ============= Construcción HTML =============
     let html = '';
 
+    // Construir lista de meses disponibles para el selector (todos los meses que tienen ventas)
+    const mesesDisp = new Set();
+    if (Array.isArray(ventasData)) {
+      ventasData.forEach(r => {
+        if (r.fecha_activacion) mesesDisp.add(String(r.fecha_activacion).substring(0, 7));
+      });
+    }
+    const mesesDispArr = [...mesesDisp].sort().reverse();
+    const mesActualStr = `${anio}-${String(mes).padStart(2, '0')}`;
+    if (!mesesDispArr.includes(mesActualStr)) mesesDispArr.unshift(mesActualStr);
+
+    const opcionesMes = mesesDispArr.map(ms => {
+      const [y, mm] = ms.split('-');
+      const nombre = `${MESES_NOMBRE[parseInt(mm) - 1]} ${y}`;
+      const sel = ms === mesActualStr ? 'selected' : '';
+      return `<option value="${ms}" ${sel}>${nombre}</option>`;
+    }).join('');
+
     // Vista 1: Ranking actual del mes
     html += `
       <div style="margin-bottom:16px;">
-        <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:8px;">📅 ${mesNombre} ${anio} · Ranking actual</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+          <div style="font-weight:700; color:var(--att-navy); font-size:13px;">📅 ${mesNombre} ${anio} · Ranking del mes</div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <label style="font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600;">Mes:</label>
+            <select id="prod-equipos-mes-select" style="padding:5px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+              ${opcionesMes}
+            </select>
+          </div>
+        </div>
         <div style="overflow-x:auto;">
           <table style="width:100%; font-size:12px; border-collapse:collapse;">
             <thead>
@@ -2561,6 +2600,15 @@ function renderProductividadEquipos() {
     `;
 
     cont.innerHTML = html;
+
+    // Wire up del selector de mes
+    const mesSelect = document.getElementById('prod-equipos-mes-select');
+    if (mesSelect) {
+      mesSelect.onchange = () => {
+        prodEquiposMesSel = mesSelect.value;
+        renderProductividadEquipos();
+      };
+    }
   } catch (e) {
     // Si algo falla, mostrar el error en la sección pero NO romper el render principal
     console.error('[renderProductividadEquipos] Error:', e);
