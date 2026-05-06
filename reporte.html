@@ -4985,6 +4985,23 @@ function descargarInactividadExcel() {
     ...extra
   });
 
+  // ===== HELPERS DE BARRAS VISUALES =====
+  // Genera una barra tipo "█████░░░░░" según un porcentaje o relación valor/máx
+  function barraVisual(valor, max, longitud = 10) {
+    if (!max || max === 0) return '░'.repeat(longitud);
+    const ratio = Math.min(1, Math.max(0, valor / max));
+    const llenos = Math.round(ratio * longitud);
+    return '█'.repeat(llenos) + '░'.repeat(longitud - llenos);
+  }
+  // Variante más densa para % (con medio bloque)
+  function barraPct(pct, longitud = 10) {
+    const ratio = Math.min(1, Math.max(0, pct / 100));
+    const llenos = Math.floor(ratio * longitud);
+    const medio = (ratio * longitud - llenos) >= 0.5 ? '▌' : '';
+    const vacios = longitud - llenos - (medio ? 1 : 0);
+    return '█'.repeat(llenos) + medio + '░'.repeat(Math.max(0, vacios));
+  }
+
   // Color del semáforo según días sin actividad
   function colorSemaforo(dias) {
     if (dias >= 7) return { bg: 'B91C1C', fg: 'FFFFFF', emoji: '🔴' };
@@ -5079,6 +5096,24 @@ function descargarInactividadExcel() {
               font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: c.fg } },
               alignment: { horizontal: 'center', vertical: 'center' }
             });
+          } else if (colName === 'Visual días') {
+            // Color de la barra según días: rojo si llena, ámbar medio, verde si poca
+            const diasCol = colName === 'Visual días' ? (columnas.includes('Días sin activar') ? 'Días sin activar' : 'Días sin programar') : null;
+            const dias = parseFloat(fila[diasCol]) || 0;
+            const c = colorSemaforo(dias);
+            cellStyle = baseCell({
+              ...((isStripe) ? { fill: { fgColor: { rgb: 'F5F8FB' } } } : {}),
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: c.bg } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
+          } else if (colName === 'Avance visual') {
+            const pct = parseFloat(fila['% Cumplimiento']) || 0;
+            const colorBarra = pct >= 100 ? '16A34A' : pct >= 85 ? 'F59E0B' : pct >= 50 ? 'F97316' : 'DC2626';
+            cellStyle = baseCell({
+              ...((isStripe) ? { fill: { fgColor: { rgb: 'F5F8FB' } } } : {}),
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorBarra } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+            });
           } else if (colName === 'Estatus') {
             const c = colorEstatus(fila[colName]);
             cellStyle = baseCell({
@@ -5128,6 +5163,9 @@ function descargarInactividadExcel() {
         const dias = Number((a.diasSinAct || 0).toFixed(1));
         const sem = colorSemaforo(dias);
         const estatus = a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+        // Barra visual de severidad: 0 días = vacía, 10+ días = llena
+        const visual = barraVisual(dias, 10, 10);
+        const cumplVisual = barraPct(a.meta > 0 ? a.pct : 0, 8);
         return {
           '#': idx + 1,
           'Severidad': sem.emoji,
@@ -5136,16 +5174,18 @@ function descargarInactividadExcel() {
           'Centro': centroPorAgente[a.ejecutivo] || '',
           'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
           'Días sin activar': dias,
+          'Visual días': visual,
           'Última activada': a.ultAct || '— Nunca —',
           'Activadas mes': a.avance,
           'Programadas mes': a.programadas,
           'Meta': a.meta,
           '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : 0,
+          'Avance visual': cumplVisual,
           'Estatus': estatus
         };
       });
-    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin activar','Última activada','Activadas mes','Programadas mes','Meta','% Cumplimiento','Estatus'];
-    const anchos = [4,11,14,32,8,14,16,14,14,16,7,14,12];
+    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin activar','Visual días','Última activada','Activadas mes','Programadas mes','Meta','% Cumplimiento','Avance visual','Estatus'];
+    const anchos = [4,11,14,32,8,14,14,12,14,14,16,7,14,11,12];
     const ws = construirHoja(filasAct, cols, '❄️ AGENTES SIN ACTIVAR', anchos, 'act');
     XLSX.utils.book_append_sheet(wb, ws, 'Sin activar');
   }
@@ -5161,6 +5201,8 @@ function descargarInactividadExcel() {
         const dias = Number((a.diasSinProg || 0).toFixed(1));
         const sem = colorSemaforo(dias);
         const estatus = a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+        const visual = barraVisual(dias, 10, 10);
+        const cumplVisual = barraPct(a.meta > 0 ? a.pct : 0, 8);
         return {
           '#': idx + 1,
           'Severidad': sem.emoji,
@@ -5169,16 +5211,18 @@ function descargarInactividadExcel() {
           'Centro': centroPorAgente[a.ejecutivo] || '',
           'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
           'Días sin programar': dias,
+          'Visual días': visual,
           'Última programada': a.ultProg || '— Nunca —',
           'Programadas mes': a.programadas,
           'Activadas mes': a.avance,
           'Meta': a.meta,
           '% Cumplimiento': a.meta > 0 ? Number(a.pct.toFixed(1)) : 0,
+          'Avance visual': cumplVisual,
           'Estatus': estatus
         };
       });
-    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin programar','Última programada','Programadas mes','Activadas mes','Meta','% Cumplimiento','Estatus'];
-    const anchos = [4,11,14,32,8,14,18,16,16,14,7,14,12];
+    const cols = ['#','Severidad','Supervisor','Agente','Centro','Tipo','Días sin programar','Visual días','Última programada','Programadas mes','Activadas mes','Meta','% Cumplimiento','Avance visual','Estatus'];
+    const anchos = [4,11,14,32,8,14,16,12,16,16,14,7,14,11,12];
     const ws = construirHoja(filasProg, cols, '📋 AGENTES SIN PROGRAMAR', anchos, 'prog');
     XLSX.utils.book_append_sheet(wb, ws, 'Sin programar');
   }
@@ -5207,19 +5251,26 @@ function descargarInactividadExcel() {
       'Total acciones': sinActAlerta.length + sinProgAlerta.length
     });
 
+    // Calcular máximo (excluyendo TOTAL) para escalar barras
+    const maxTotal = Math.max(...filasResumen.filter(f => f.Supervisor !== 'TOTAL').map(f => f['Total acciones']), 1);
+
     // Construcción manual para resumen con estilos especiales
     const aoa = [
-      ['📊 RESUMEN POR SUPERVISOR', '', '', ''],
-      [`Mes: ${nombreMes} ${anio}  ·  Corte: ${fecha}  ·  Umbral: ${umbral} días hábiles`, '', '', ''],
-      ['Supervisor', 'Sin activar', 'Sin programar', 'Total acciones'],
-      ...filasResumen.map(f => [f['Supervisor'], f['Sin activar'], f['Sin programar'], f['Total acciones']])
+      ['📊 RESUMEN POR SUPERVISOR', '', '', '', ''],
+      [`Mes: ${nombreMes} ${anio}  ·  Corte: ${fecha}  ·  Umbral: ${umbral} días hábiles`, '', '', '', ''],
+      ['Supervisor', 'Sin activar', 'Sin programar', 'Total acciones', 'Visual']
     ];
+    filasResumen.forEach(f => {
+      const esTotal = f.Supervisor === 'TOTAL';
+      const visual = esTotal ? '' : barraVisual(f['Total acciones'], maxTotal, 18);
+      aoa.push([f['Supervisor'], f['Sin activar'], f['Sin programar'], f['Total acciones'], visual]);
+    });
     const ws3 = XLSX.utils.aoa_to_sheet(aoa);
     ws3['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } }
     ];
-    ws3['!cols'] = [{wch:18},{wch:14},{wch:16},{wch:16}];
+    ws3['!cols'] = [{wch:22},{wch:14},{wch:16},{wch:16},{wch:22}];
     ws3['!rows'] = [{hpt:28},{hpt:18},{hpt:30}];
     for (let i = 0; i < filasResumen.length; i++) ws3['!rows'].push({ hpt: 22 });
 
@@ -5278,12 +5329,304 @@ function descargarInactividadExcel() {
                 alignment: { horizontal: 'center', vertical: 'center' }
               });
             }
+            // Columna 4: barra visual
+            if (C === 4) {
+              const total = fila['Total acciones'];
+              const ratio = maxTotal > 0 ? total / maxTotal : 0;
+              const colorBarra = ratio >= 0.7 ? 'DC2626' : ratio >= 0.4 ? 'F59E0B' : '0077A8';
+              cellStyle = baseCell({
+                ...((isStripe) ? { fill: { fgColor: { rgb: 'F5F8FB' } } } : {}),
+                font: { name: 'Consolas', sz: 12, bold: true, color: { rgb: colorBarra } },
+                alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+              });
+            }
           }
           ws3[ref].s = cellStyle;
         }
       }
     }
     XLSX.utils.book_append_sheet(wb, ws3, 'Resumen');
+  }
+
+  // ===== HOJA DASHBOARD (al inicio) =====
+  // KPIs grandes, ranking visual de supervisores, alertas top
+  {
+    const totalSinAct = sinActAlerta.length;
+    const totalSinProg = sinProgAlerta.length;
+    const totalAlertas = totalSinAct + totalSinProg;
+
+    // Combinar resúmenes para ranking
+    const rankSup = {};
+    sinActAlerta.forEach(a => {
+      if (!rankSup[a.supervisor]) rankSup[a.supervisor] = { sinAct: 0, sinProg: 0 };
+      rankSup[a.supervisor].sinAct++;
+    });
+    sinProgAlerta.forEach(a => {
+      if (!rankSup[a.supervisor]) rankSup[a.supervisor] = { sinAct: 0, sinProg: 0 };
+      rankSup[a.supervisor].sinProg++;
+    });
+    const supsRank = Object.entries(rankSup)
+      .map(([sup, v]) => ({ sup, sinAct: v.sinAct, sinProg: v.sinProg, total: v.sinAct + v.sinProg }))
+      .sort((a, b) => b.total - a.total);
+    const maxTotal = Math.max(...supsRank.map(s => s.total), 1);
+
+    // Top 5 críticos por días sin actividad (de ambas listas)
+    const todosCriticos = [
+      ...sinActAlerta.map(a => ({
+        nombre: a.ejecutivo,
+        sup: a.supervisor,
+        tipo: 'Sin activar',
+        dias: Number((a.diasSinAct || 0).toFixed(1)),
+        avance: a.avance,
+        meta: a.meta
+      })),
+      ...sinProgAlerta.map(a => ({
+        nombre: a.ejecutivo,
+        sup: a.supervisor,
+        tipo: 'Sin programar',
+        dias: Number((a.diasSinProg || 0).toFixed(1)),
+        avance: a.avance,
+        meta: a.meta
+      }))
+    ].sort((a, b) => b.dias - a.dias).slice(0, 10);
+
+    // Construir AOA del dashboard
+    const aoa = [];
+    const merges = [];
+
+    // Fila 0: Banner principal
+    aoa.push(['📊 DASHBOARD DE INACTIVIDAD', '', '', '', '', '']);
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
+
+    // Fila 1: Subtítulo
+    aoa.push([`${nombreMes} ${anio} · Corte: ${fecha} · Umbral: ${umbral} días hábiles`, '', '', '', '', '']);
+    merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } });
+
+    // Fila 2: Espacio
+    aoa.push(['', '', '', '', '', '']);
+
+    // Filas 3-4: Tarjetas KPI (2 filas: label + valor)
+    aoa.push(['TOTAL ALERTAS', '', 'SIN ACTIVAR 3.5d+', '', 'SIN PROGRAMAR 3.5d+', '']);
+    merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
+    merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
+    merges.push({ s: { r: 3, c: 4 }, e: { r: 3, c: 5 } });
+
+    aoa.push([totalAlertas, '', totalSinAct, '', totalSinProg, '']);
+    merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
+    merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
+    merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
+
+    // Fila 5: Espacio
+    aoa.push(['', '', '', '', '', '']);
+
+    // Fila 6: Sección "Ranking por supervisor"
+    aoa.push(['🏆 RANKING POR SUPERVISOR (más alertas arriba)', '', '', '', '', '']);
+    merges.push({ s: { r: 6, c: 0 }, e: { r: 6, c: 5 } });
+
+    // Fila 7: Headers ranking
+    aoa.push(['Supervisor', 'Sin activar', 'Sin programar', 'Total', 'Severidad visual', '']);
+    merges.push({ s: { r: 7, c: 4 }, e: { r: 7, c: 5 } });
+
+    // Filas 8+: ranking
+    const rankingStartRow = 8;
+    supsRank.forEach(s => {
+      const barra = barraVisual(s.total, maxTotal, 18);
+      aoa.push([s.sup, s.sinAct, s.sinProg, s.total, barra, '']);
+      merges.push({ s: { r: aoa.length - 1, c: 4 }, e: { r: aoa.length - 1, c: 5 } });
+    });
+
+    // Espacio
+    aoa.push(['', '', '', '', '', '']);
+
+    // Sección Top críticos
+    const topStartRow = aoa.length;
+    aoa.push(['🚨 TOP 10 AGENTES MÁS CRÍTICOS (por días sin actividad)', '', '', '', '', '']);
+    merges.push({ s: { r: topStartRow, c: 0 }, e: { r: topStartRow, c: 5 } });
+
+    aoa.push(['#', 'Agente', 'Supervisor', 'Tipo', 'Días', 'Visual']);
+    todosCriticos.forEach((c, i) => {
+      aoa.push([i + 1, c.nombre, c.sup, c.tipo, c.dias, barraVisual(c.dias, 10, 14)]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = merges;
+    ws['!cols'] = [
+      { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 12 }
+    ];
+
+    // Alturas
+    ws['!rows'] = [
+      { hpt: 32 }, // banner
+      { hpt: 20 }, // subtítulo
+      { hpt: 8 },  // espacio
+      { hpt: 22 }, // KPI labels
+      { hpt: 50 }, // KPI valores (grandes)
+      { hpt: 8 },  // espacio
+      { hpt: 24 }, // sección ranking
+      { hpt: 24 }, // headers ranking
+    ];
+    for (let i = 0; i < supsRank.length; i++) ws['!rows'].push({ hpt: 22 });
+    ws['!rows'].push({ hpt: 8 }); // espacio
+    ws['!rows'].push({ hpt: 24 }); // sección top críticos
+    ws['!rows'].push({ hpt: 24 }); // headers top
+    for (let i = 0; i < todosCriticos.length; i++) ws['!rows'].push({ hpt: 22 });
+
+    // Aplicar estilos celda por celda
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+        if (R === 0) {
+          // Banner principal
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 1) {
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '0077A8' } },
+            font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 3) {
+          // KPI labels
+          let bg = '00A8E0';
+          if (C === 2 || C === 3) bg = 'DC2626';
+          else if (C === 4 || C === 5) bg = '7C3AED';
+          ws[ref].s = {
+            fill: { fgColor: { rgb: bg } },
+            font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' }
+          };
+        } else if (R === 4) {
+          // KPI valores
+          let bg = 'EFF6FF';
+          let fg = '00A8E0';
+          if (C === 2 || C === 3) { bg = 'FEF2F2'; fg = 'DC2626'; }
+          else if (C === 4 || C === 5) { bg = 'F5F3FF'; fg = '7C3AED'; }
+          ws[ref].s = {
+            fill: { fgColor: { rgb: bg } },
+            font: { name: 'Calibri', sz: 32, bold: true, color: { rgb: fg } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'medium', color: { rgb: fg } },
+              bottom: { style: 'medium', color: { rgb: fg } },
+              left: { style: 'medium', color: { rgb: fg } },
+              right: { style: 'medium', color: { rgb: fg } }
+            }
+          };
+        } else if (R === 6 || R === topStartRow) {
+          // Sección headers
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '002B5C' } },
+            font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+          };
+        } else if (R === 7 || R === topStartRow + 1) {
+          // Headers de tablas
+          ws[ref].s = {
+            fill: { fgColor: { rgb: '0077A8' } },
+            font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+              top: { style: 'thin', color: { rgb: '000000' } },
+              bottom: { style: 'thin', color: { rgb: '000000' } },
+              left: { style: 'thin', color: { rgb: '000000' } },
+              right: { style: 'thin', color: { rgb: '000000' } }
+            }
+          };
+        } else if (R >= rankingStartRow && R < rankingStartRow + supsRank.length) {
+          // Filas del ranking
+          const idx = R - rankingStartRow;
+          const fila = supsRank[idx];
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+
+          if (C === 0) {
+            ws[ref].s = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 11, bold: true },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === 4) {
+            // Visual: color según severidad relativa
+            const ratio = fila.total / maxTotal;
+            const colorBarra = ratio >= 0.7 ? 'DC2626' : ratio >= 0.4 ? 'F59E0B' : '0077A8';
+            ws[ref].s = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Consolas', sz: 12, bold: true, color: { rgb: colorBarra } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === 5) {
+            ws[ref].s = { fill: { fgColor: { rgb: bg } }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+          } else {
+            // Columnas numéricas
+            let cellBg = bg;
+            let cellColor = '000000';
+            if (C === 3) {
+              // Total: color
+              if (fila.total >= 5) { cellBg = 'DC2626'; cellColor = 'FFFFFF'; }
+              else if (fila.total >= 3) { cellBg = 'F59E0B'; cellColor = 'FFFFFF'; }
+              else if (fila.total > 0) { cellBg = 'FCD34D'; cellColor = '000000'; }
+            }
+            ws[ref].s = {
+              fill: { fgColor: { rgb: cellBg } },
+              font: { name: 'Calibri', sz: 11, bold: C === 3, color: { rgb: cellColor } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          }
+        } else if (R >= topStartRow + 2) {
+          // Top críticos
+          const idx = R - (topStartRow + 2);
+          const fila = todosCriticos[idx];
+          if (!fila) continue;
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          const sem = colorSemaforo(fila.dias);
+
+          if (C === 4) {
+            ws[ref].s = {
+              fill: { fgColor: { rgb: sem.bg } },
+              font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: sem.fg } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === 5) {
+            ws[ref].s = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: sem.bg } },
+              alignment: { horizontal: 'left', vertical: 'center', indent: 1 },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else {
+            const align = (C === 1 || C === 2) ? 'left' : 'center';
+            const bold = C === 1;
+            ws[ref].s = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 10, bold },
+              alignment: { horizontal: align, vertical: 'center', indent: align === 'left' ? 1 : 0 },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          }
+        }
+      }
+    }
+
+    // Agregar al workbook y MOVER al inicio
+    XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
+    // Reordenar para que Dashboard sea la primera
+    const sheets = wb.SheetNames;
+    const idx = sheets.indexOf('Dashboard');
+    if (idx > 0) {
+      sheets.splice(idx, 1);
+      sheets.unshift('Dashboard');
+    }
   }
 
   XLSX.writeFile(wb, `inactividad_${nombreMes}_${anio}_umbral${umbral}d_${fecha}.xlsx`);
