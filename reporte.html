@@ -889,6 +889,7 @@
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-logistica">📦 Logística</button>
         <button class="nav-btn" data-target="sec-snapshots">📸 Snapshots</button>
+        <button class="nav-btn" data-target="sec-comisiones">💰 Comisiones</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
         <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
@@ -990,6 +991,20 @@
           <div style="padding:24px; text-align:center;">
             <button onclick="renderSnapshots()" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📸 Cargar snapshots</button>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Carga las fotos guardadas para comparar evolución.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COMISIONES SIMULADOR -->
+    <div class="section collapsible" id="sec-comisiones">
+      <div class="section-title">💰 Comisiones simulador</div>
+      <div class="section-body">
+        <div class="section-subtitle">Cálculo retroactivo de comisiones de toda la plantilla (activos + bajas) según el esquema comercial 2026. Base $9,400 + comisión por planes vendidos según nivel alcanzado (6-9 / 10-15 / 16+) + aceleradores ($100 al llegar a 20, $150 al llegar a 25). Agentes nuevos en su primer mes calendario completo comisionan desde la venta 1.</div>
+        <div id="comisiones-contenido">
+          <div style="padding:24px; text-align:center;">
+            <button onclick="renderComisiones()" style="background:#16A34A; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">💰 Calcular comisiones</button>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa toda la plantilla y todas las activadas del año.</div>
           </div>
         </div>
       </div>
@@ -13079,6 +13094,707 @@ function _renderSnapTabla(data, fmt) {
     `;
     cont.innerHTML = html;
   }
+}
+
+// =====================================================================
+// MÓDULO COMISIONES SIMULADOR — Esquema Comercial 2026
+// =====================================================================
+
+// Esquema OFICIAL de comisiones 2026
+// - cuota: cuánto suma este plan al objetivo del mes (Azul/Azul1/Lite1 = 0.5; resto = 1)
+// - comisiona: si paga comisión cuando se alcanza algún nivel
+// - nivel1/2/3: tarifa pagada por plan según el nivel alcanzado (6-9 / 10-15 / 16+)
+const COMISION_ESQUEMA_2026 = {
+  // ===== Cuotas 0.5 (cuentan 2 a 1) — todos pagan $50 fijos en cualquier bracket =====
+  'ATT AZUL':           { cuota: 0.5, comisiona: true, nivel1: 50,  nivel2: 50,  nivel3: 50  },
+  'ATT AZUL 1':         { cuota: 0.5, comisiona: true, nivel1: 50,  nivel2: 50,  nivel3: 50  },
+  'ATT LITE 1':         { cuota: 0.5, comisiona: true, nivel1: 50,  nivel2: 50,  nivel3: 50  },
+  // ===== Planes Premium (cuota = 1) =====
+  'ATT AZUL 2':         { cuota: 1,   comisiona: true, nivel1: 75,  nivel2: 75,  nivel3: 100 },
+  'ATT AZUL 3':         { cuota: 1,   comisiona: true, nivel1: 125, nivel2: 250, nivel3: 350 },
+  'ATT PLATA':          { cuota: 1,   comisiona: true, nivel1: 150, nivel2: 300, nivel3: 400 },
+  'ATT ORO':            { cuota: 1,   comisiona: true, nivel1: 175, nivel2: 350, nivel3: 475 },
+  'ATT BLACK':          { cuota: 1,   comisiona: true, nivel1: 225, nivel2: 450, nivel3: 650 },
+  'ATT DIAMANTE':       { cuota: 1,   comisiona: true, nivel1: 250, nivel2: 500, nivel3: 700 },
+  'ATT PLATINO':        { cuota: 1,   comisiona: true, nivel1: 250, nivel2: 500, nivel3: 700 },
+  'ATT TITANIO':        { cuota: 1,   comisiona: true, nivel1: 100, nivel2: 200, nivel3: 250 },
+  // ===== Planes LITE (cuota = 1, tarifas oficiales) =====
+  'ATT LITE 2':         { cuota: 1,   comisiona: true, nivel1: 75,  nivel2: 75,  nivel3: 100 },
+  'ATT LITE 3':         { cuota: 1,   comisiona: true, nivel1: 125, nivel2: 250, nivel3: 350 },
+  'ATT LITE 4':         { cuota: 1,   comisiona: true, nivel1: 150, nivel2: 300, nivel3: 400 },
+  'ATT LITE 5':         { cuota: 1,   comisiona: true, nivel1: 180, nivel2: 355, nivel3: 490 },
+  'ATT LITE 6':         { cuota: 1,   comisiona: true, nivel1: 190, nivel2: 380, nivel3: 520 },
+  'ATT LITE 7':         { cuota: 1,   comisiona: true, nivel1: 200, nivel2: 400, nivel3: 580 },
+  'ATT LITE ILIMITADO': { cuota: 1,   comisiona: true, nivel1: 250, nivel2: 500, nivel3: 700 },
+};
+const BASE_NETO_MENSUAL = 9400;
+const ACELERADOR_20 = 100; // por cada plan vendido al llegar a 20
+const ACELERADOR_25 = 150; // por cada plan vendido al llegar a 25 (reemplaza al de 20)
+
+// Devuelve el plan normalizado (uppercase, sin espacios extras)
+function _comNormalizarPlan(plan) {
+  if (!plan) return '';
+  return String(plan).trim().toUpperCase();
+}
+
+// Determina si un agente es "nuevo" en un mes específico
+// Regla: solo en su PRIMER mes calendario completo desde su ingreso
+// Ejemplo: ingreso 25-dic-2025 → enero 2026 es su primer mes completo → NUEVO
+//          febrero 2026 → ya no es nuevo
+function _comEsAgenteNuevo(fechaIngreso, anioMes, mesMes) {
+  if (!fechaIngreso) return false;
+  const ing = new Date(fechaIngreso + 'T12:00:00');
+  // Primer mes calendario COMPLETO = mes siguiente al de ingreso
+  // (a menos que haya entrado el día 1 exacto)
+  let mesCompleto, anioCompleto;
+  if (ing.getDate() === 1) {
+    // Entró el día 1 → ese mismo mes es su primer mes completo
+    mesCompleto = ing.getMonth() + 1;
+    anioCompleto = ing.getFullYear();
+  } else {
+    // Entró después del día 1 → su primer mes completo es el siguiente
+    let m = ing.getMonth() + 2; // +1 porque getMonth es 0-indexado, +1 más para mes siguiente
+    let a = ing.getFullYear();
+    if (m > 12) { m -= 12; a += 1; }
+    mesCompleto = m;
+    anioCompleto = a;
+  }
+  return (anioMes === anioCompleto && mesMes === mesCompleto);
+}
+
+// Calcula la comisión de un agente en un mes específico
+// Devuelve un objeto con todo el desglose
+function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, mesMes, ventasDelMes) {
+  const mesStr = `${anioMes}-${String(mesMes).padStart(2, '0')}`;
+  const ventasAgente = ventasDelMes.filter(v => v.ejecutivo === agenteNombre);
+  const esNuevo = _comEsAgenteNuevo(fechaIngreso, anioMes, mesMes);
+
+  // Estaba activo durante este mes? (al menos parte)
+  const ultDiaMes = new Date(anioMes, mesMes, 0).getDate();
+  const ini = `${mesStr}-01`;
+  const fin = `${mesStr}-${String(ultDiaMes).padStart(2, '0')}`;
+  const ingreso = fechaIngreso || '1900-01-01';
+  const baja = fechaBaja || '9999-12-31';
+  const estuvoActivo = ingreso <= fin && baja >= ini;
+
+  // Cuenta por plan
+  const cuentaPorPlan = {};
+  let cuotasTotales = 0;          // suma ponderada (Azul1=0.5, resto=1)
+  let totalCuotaMedia = 0;        // # planes que pesan 0.5 (Azul, Azul1, Lite1)
+  let totalCuotaCompleta = 0;     // # planes que pesan 1
+  let totalOtros = 0;             // planes desconocidos (no en esquema)
+
+  ventasAgente.forEach(v => {
+    const planN = _comNormalizarPlan(v.plan);
+    const esquema = COMISION_ESQUEMA_2026[planN];
+    cuentaPorPlan[planN] = (cuentaPorPlan[planN] || 0) + 1;
+    if (!esquema) {
+      totalOtros++;
+      return;
+    }
+    cuotasTotales += esquema.cuota;
+    if (esquema.cuota === 0.5) totalCuotaMedia++;
+    else totalCuotaCompleta++;
+  });
+
+  // Determinar nivel alcanzado por CUOTAS (no por conteo de planes)
+  // Las cuotas NO se redondean: 15.5 cuotas → todavía Nivel 2
+  let nivelAlcanzado = 0;
+  let etiquetaNivel = 'Sin nivel';
+  let aplicaAcel20 = false;
+  let aplicaAcel25 = false;
+  if (esNuevo && cuotasTotales > 0) {
+    // Agente nuevo (primer mes calendario completo): comisiona desde la cuota 1
+    if (cuotasTotales >= 16) { nivelAlcanzado = 3; etiquetaNivel = 'Nuevo · Nivel 3'; }
+    else if (cuotasTotales >= 10) { nivelAlcanzado = 2; etiquetaNivel = 'Nuevo · Nivel 2'; }
+    else { nivelAlcanzado = 1; etiquetaNivel = 'Nuevo · Nivel 1'; }
+  } else {
+    if (cuotasTotales >= 16) { nivelAlcanzado = 3; etiquetaNivel = 'Nivel 3'; }
+    else if (cuotasTotales >= 10) { nivelAlcanzado = 2; etiquetaNivel = 'Nivel 2'; }
+    else if (cuotasTotales >= 6) { nivelAlcanzado = 1; etiquetaNivel = 'Nivel 1'; }
+  }
+
+  // Aceleradores: por CUOTAS (Azul/Azul1/Lite1 = 0.5 también para acelerador)
+  if (cuotasTotales >= 25) { aplicaAcel25 = true; etiquetaNivel += ' + Acel 25'; }
+  else if (cuotasTotales >= 20) { aplicaAcel20 = true; etiquetaNivel += ' + Acel 20'; }
+
+  // Calcular comisión por plan según nivel
+  let comisionPlanes = 0;
+  let detalleComision = []; // [{plan, count, tarifa, subtotal}]
+  if (nivelAlcanzado > 0) {
+    const tarifaKey = nivelAlcanzado === 1 ? 'nivel1' : nivelAlcanzado === 2 ? 'nivel2' : 'nivel3';
+    Object.entries(cuentaPorPlan).forEach(([planN, count]) => {
+      const esquema = COMISION_ESQUEMA_2026[planN];
+      if (!esquema || !esquema.comisiona) return;
+      const tarifa = esquema[tarifaKey];
+      const subtotal = tarifa * count;
+      comisionPlanes += subtotal;
+      detalleComision.push({ plan: planN, count, tarifa, subtotal, cuota: esquema.cuota });
+    });
+  }
+
+  // Calcular bono acelerador (sobre el TOTAL de cuotas, no sobre conteo bruto)
+  // Ejemplo: 22 cuotas (de las cuales 4 son medias) → bono = 22 × $100
+  let bonoAcelerador = 0;
+  if (aplicaAcel25) bonoAcelerador = cuotasTotales * ACELERADOR_25;
+  else if (aplicaAcel20) bonoAcelerador = cuotasTotales * ACELERADOR_20;
+
+  // Base neto: solo si estuvo activo en el mes
+  const baseNeto = estuvoActivo ? BASE_NETO_MENSUAL : 0;
+
+  return {
+    agente: agenteNombre,
+    anioMes, mesMes, mesStr,
+    estuvoActivo,
+    esNuevo,
+    cuentaPorPlan,
+    cuotasTotales,                  // suma ponderada
+    totalCuotaMedia,                // # planes 0.5 (Azul/Azul1/Lite1)
+    totalCuotaCompleta,             // # planes que pesan 1
+    totalPlanesQueComisionan: totalCuotaCompleta + totalCuotaMedia, // mantiene compat
+    totalAzul1: totalCuotaMedia,    // alias para retrocompatibilidad UI
+    totalLite: 0,                   // ya no usado igual; LITE están repartidos
+    totalVentasMes: ventasAgente.length,
+    nivelAlcanzado,
+    etiquetaNivel,
+    aplicaAcel20,
+    aplicaAcel25,
+    detalleComision,
+    comisionPlanes,
+    bonoAcelerador,
+    baseNeto,
+    totalCobrado: baseNeto + comisionPlanes + bonoAcelerador,
+  };
+}
+
+// Construir el dataset completo: agentes × meses
+function _comConstruirDataset() {
+  if (!Array.isArray(plantillaData) || plantillaData.length === 0) return null;
+  if (!Array.isArray(ventasData)) return null;
+
+  // Determinar rango de meses con ventas en 2026
+  const mesesSet = new Set();
+  ventasData.forEach(v => {
+    if (v.estatus === 'activada' && v.fecha_activacion) {
+      const ms = String(v.fecha_activacion).substring(0, 7);
+      if (ms >= '2026-01') mesesSet.add(ms);
+    }
+  });
+  const meses = [...mesesSet].sort();
+  if (meses.length === 0) return { meses: [], agentes: [] };
+
+  // Pre-indexar ventas por mes para no iterar todo cada vez
+  const ventasPorMes = {};
+  meses.forEach(ms => ventasPorMes[ms] = []);
+  ventasData.forEach(v => {
+    if (v.estatus !== 'activada' || !v.fecha_activacion) return;
+    const ms = String(v.fecha_activacion).substring(0, 7);
+    if (ventasPorMes[ms]) ventasPorMes[ms].push(v);
+  });
+
+  // Para cada agente, calcular cada mes
+  const agentes = plantillaData.map(p => {
+    if (!p || !p.nombre) return null;
+    const filaMeses = {};
+    let totalAnioCobrado = 0;
+    let totalAnioComision = 0;
+    let totalAnioBase = 0;
+    let totalAnioVentas = 0;
+    meses.forEach(ms => {
+      const [yStr, mStr] = ms.split('-');
+      const calc = _comCalcularAgenteMes(
+        p.nombre, p.fecha_ingreso, p.fecha_baja,
+        parseInt(yStr), parseInt(mStr),
+        ventasPorMes[ms] || []
+      );
+      filaMeses[ms] = calc;
+      totalAnioCobrado += calc.totalCobrado;
+      totalAnioComision += calc.comisionPlanes + calc.bonoAcelerador;
+      totalAnioBase += calc.baseNeto;
+      totalAnioVentas += calc.totalVentasMes;
+    });
+    return {
+      nombre: p.nombre,
+      supervisor: p.supervisor || '—',
+      centro: p.centro || '—',
+      fecha_ingreso: p.fecha_ingreso,
+      fecha_baja: p.fecha_baja,
+      esBaja: !!p.fecha_baja,
+      meses: filaMeses,
+      totalAnioCobrado,
+      totalAnioComision,
+      totalAnioBase,
+      totalAnioVentas,
+    };
+  }).filter(a => a !== null);
+
+  return { meses, agentes };
+}
+
+// Estado de filtros
+let _comFiltroSupervisor = 'todos';
+let _comFiltroCentro = 'todos';
+let _comMostrarBajas = true;
+
+function renderComisiones() {
+  const cont = document.getElementById('comisiones-contenido');
+  if (!cont) return;
+  cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-soft);">Calculando comisiones...</div>';
+
+  setTimeout(() => {
+    try {
+      const data = _comConstruirDataset();
+      if (!data || data.meses.length === 0) {
+        cont.innerHTML = '<div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">Sin ventas en 2026 para calcular.</div>';
+        return;
+      }
+      window.__comisionesData = data;
+      _comRenderUI(cont, data);
+    } catch (e) {
+      console.error('[Comisiones] Error:', e);
+      cont.innerHTML = `<div style="padding:16px; background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px;">
+        <strong>Error:</strong> ${e.message || e}
+      </div>`;
+    }
+  }, 50);
+}
+
+function _comRenderUI(cont, data) {
+  const { meses, agentes } = data;
+
+  // Filtros disponibles
+  const supsUnicos = [...new Set(agentes.map(a => a.supervisor))].sort();
+  const centrosUnicos = [...new Set(agentes.map(a => a.centro))].sort();
+
+  // Aplicar filtros
+  let agFiltrados = agentes.slice();
+  if (_comFiltroSupervisor !== 'todos') agFiltrados = agFiltrados.filter(a => a.supervisor === _comFiltroSupervisor);
+  if (_comFiltroCentro !== 'todos') agFiltrados = agFiltrados.filter(a => a.centro === _comFiltroCentro);
+  if (!_comMostrarBajas) agFiltrados = agFiltrados.filter(a => !a.esBaja);
+
+  // Ordenar por total año descendente
+  agFiltrados.sort((a, b) => b.totalAnioCobrado - a.totalAnioCobrado);
+
+  // Totales por mes
+  const totalesPorMes = {};
+  const cuentaNivelPorMes = {};
+  meses.forEach(ms => {
+    totalesPorMes[ms] = { base: 0, comision: 0, acel: 0, total: 0 };
+    cuentaNivelPorMes[ms] = { sinNivel: 0, n1: 0, n2: 0, n3: 0 };
+  });
+  agFiltrados.forEach(a => {
+    meses.forEach(ms => {
+      const c = a.meses[ms];
+      totalesPorMes[ms].base += c.baseNeto;
+      totalesPorMes[ms].comision += c.comisionPlanes;
+      totalesPorMes[ms].acel += c.bonoAcelerador;
+      totalesPorMes[ms].total += c.totalCobrado;
+      if (c.nivelAlcanzado === 0) cuentaNivelPorMes[ms].sinNivel++;
+      else if (c.nivelAlcanzado === 1) cuentaNivelPorMes[ms].n1++;
+      else if (c.nivelAlcanzado === 2) cuentaNivelPorMes[ms].n2++;
+      else if (c.nivelAlcanzado === 3) cuentaNivelPorMes[ms].n3++;
+    });
+  });
+
+  const totalAnioGeneral = agFiltrados.reduce((s, a) => s + a.totalAnioCobrado, 0);
+  const totalAnioComision = agFiltrados.reduce((s, a) => s + a.totalAnioComision, 0);
+  const totalAnioBase = agFiltrados.reduce((s, a) => s + a.totalAnioBase, 0);
+
+  const fmtMoney = (n) => '$' + Math.round(n).toLocaleString('es-MX');
+  const mesLbl = (ms) => {
+    const [y, m] = ms.split('-');
+    return `${MESES_NOMBRE[parseInt(m) - 1].substring(0, 3)} ${y.substring(2)}`;
+  };
+
+  // Construir HTML
+  let html = `
+    <!-- Filtros + descarga -->
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; padding:12px 14px; background:var(--bg); border-radius:8px; margin-bottom:14px;">
+      <div>
+        <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Supervisor</label>
+        <select id="com-filtro-sup" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+          <option value="todos">Todos</option>
+          ${supsUnicos.map(s => `<option value="${s}" ${s === _comFiltroSupervisor ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Centro</label>
+        <select id="com-filtro-centro" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+          <option value="todos">Todos</option>
+          ${centrosUnicos.map(c => `<option value="${c}" ${c === _comFiltroCentro ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Bajas</label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; padding:6px 0;">
+          <input type="checkbox" id="com-mostrar-bajas" ${_comMostrarBajas ? 'checked' : ''}> Mostrar bajas
+        </label>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <button id="com-btn-descargar" style="background:#16A34A; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;">📥 Descargar Excel detallado</button>
+      </div>
+    </div>
+
+    <!-- Disclaimer esquema oficial -->
+    <div style="background:#EFF6FF; border-left:4px solid var(--att-blue); padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:12px;">
+      ℹ️ <strong>Esquema oficial 2026:</strong> Cuotas → Azul/Azul 1/LITE 1 = <strong>0.5</strong>; resto = <strong>1</strong>. Brackets se calculan por cuotas (no se redondean). Tarifas LITE: 2-4 igual a su Premium; LITE 5/6/7 con tarifas propias. Aceleradores: <strong>+$100 por cuota</strong> al llegar a 20 cuotas, <strong>+$150 por cuota</strong> al llegar a 25 (reemplaza al de 20).
+    </div>
+
+    <!-- KPIs -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div class="stat-card" style="border-left-color:#16A34A;">
+        <div class="stat-label">Total cobrado año</div>
+        <div class="stat-value" style="color:#16A34A;">${fmtMoney(totalAnioGeneral)}</div>
+        <div class="stat-sub">${agFiltrados.length} agentes · ${meses.length} meses</div>
+      </div>
+      <div class="stat-card" style="border-left-color:var(--att-blue);">
+        <div class="stat-label">Base neto año</div>
+        <div class="stat-value" style="color:var(--att-blue);">${fmtMoney(totalAnioBase)}</div>
+        <div class="stat-sub">${(totalAnioGeneral > 0 ? totalAnioBase / totalAnioGeneral * 100 : 0).toFixed(0)}% del total</div>
+      </div>
+      <div class="stat-card" style="border-left-color:var(--att-orange);">
+        <div class="stat-label">Comisión + aceleradores</div>
+        <div class="stat-value" style="color:var(--att-orange);">${fmtMoney(totalAnioComision)}</div>
+        <div class="stat-sub">${(totalAnioGeneral > 0 ? totalAnioComision / totalAnioGeneral * 100 : 0).toFixed(0)}% del total</div>
+      </div>
+    </div>
+
+    <!-- Tabla pivot -->
+    <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead>
+          <tr style="background:var(--att-navy); color:white;">
+            <th style="padding:10px; text-align:left; position:sticky; left:0; background:var(--att-navy); z-index:2;">Agente</th>
+            <th style="padding:10px; text-align:left;">Supervisor</th>
+            ${meses.map(ms => `<th style="padding:10px; text-align:right; min-width:130px;">${mesLbl(ms)}</th>`).join('')}
+            <th style="padding:10px; text-align:right; background:#0077A8;">Total año</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  agFiltrados.forEach((a, idx) => {
+    const isStripe = idx % 2 === 1;
+    const bg = isStripe ? '#F5F8FB' : 'white';
+    const opacityBaja = a.esBaja ? 'opacity:0.6;' : '';
+    html += `<tr style="border-bottom:1px solid var(--border); background:${bg}; ${opacityBaja}">
+      <td style="padding:8px 10px; font-weight:600; position:sticky; left:0; background:${bg}; z-index:1;">
+        ${a.nombre}${a.esBaja ? ' <span style="font-size:10px; color:#6B7280;">(baja)</span>' : ''}
+      </td>
+      <td style="padding:8px 10px; color:var(--text-soft);">${a.supervisor}</td>`;
+    meses.forEach(ms => {
+      const c = a.meses[ms];
+      let chipColor = '#6B7280', chipBg = '#F3F4F6';
+      if (c.nivelAlcanzado === 1) { chipColor = '#1D4ED8'; chipBg = '#DBEAFE'; }
+      else if (c.nivelAlcanzado === 2) { chipColor = '#7C2D12'; chipBg = '#FED7AA'; }
+      else if (c.nivelAlcanzado === 3) { chipColor = '#14532D'; chipBg = '#BBF7D0'; }
+      const nuevoFlag = c.esNuevo ? ' 🌱' : '';
+      const acelFlag = c.aplicaAcel25 ? ' 🔥25' : (c.aplicaAcel20 ? ' 🚀20' : '');
+      html += `<td style="padding:6px 10px; text-align:right;">
+        <div style="font-weight:700; color:${c.totalCobrado === BASE_NETO_MENSUAL ? 'var(--text-soft)' : '#111'};">${c.estuvoActivo ? fmtMoney(c.totalCobrado) : '—'}</div>
+        ${c.estuvoActivo ? `<div style="font-size:10px; margin-top:2px;"><span style="background:${chipBg}; color:${chipColor}; padding:1px 6px; border-radius:4px; font-weight:600;">${c.totalVentasMes}v · ${c.cuotasTotales.toFixed(1)}c · L${c.nivelAlcanzado}${nuevoFlag}${acelFlag}</span></div>` : ''}
+      </td>`;
+    });
+    html += `<td style="padding:8px 10px; text-align:right; font-weight:800; color:#16A34A; background:${isStripe ? '#ECFDF5' : '#F0FDF4'};">${fmtMoney(a.totalAnioCobrado)}</td>
+    </tr>`;
+  });
+
+  // Fila de totales
+  html += `<tr style="background:var(--att-navy); color:white; font-weight:700; border-top:2px solid #000;">
+    <td style="padding:10px; position:sticky; left:0; background:var(--att-navy);">TOTAL (${agFiltrados.length} agentes)</td>
+    <td></td>`;
+  meses.forEach(ms => {
+    const t = totalesPorMes[ms];
+    const cn = cuentaNivelPorMes[ms];
+    html += `<td style="padding:6px 10px; text-align:right;">
+      <div>${fmtMoney(t.total)}</div>
+      <div style="font-size:10px; opacity:0.85; margin-top:2px;">L1:${cn.n1} L2:${cn.n2} L3:${cn.n3}</div>
+    </td>`;
+  });
+  html += `<td style="padding:10px; text-align:right; background:#0077A8;">${fmtMoney(totalAnioGeneral)}</td>
+  </tr>`;
+
+  html += `</tbody></table></div>
+    <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">
+      <strong>Lectura:</strong> Xv = ventas totales · Yc = cuotas (Azul/Azul1/Lite1 = 0.5; resto = 1) · L1/L2/L3 = nivel alcanzado ·
+      🌱 = primer mes calendario completo (comisiona desde la 1) ·
+      🚀20 = +$100 por cuota ·
+      🔥25 = +$150 por cuota
+    </div>`;
+
+  cont.innerHTML = html;
+
+  // Wire de filtros
+  document.getElementById('com-filtro-sup').onchange = (e) => { _comFiltroSupervisor = e.target.value; _comRenderUI(cont, data); };
+  document.getElementById('com-filtro-centro').onchange = (e) => { _comFiltroCentro = e.target.value; _comRenderUI(cont, data); };
+  document.getElementById('com-mostrar-bajas').onchange = (e) => { _comMostrarBajas = e.target.checked; _comRenderUI(cont, data); };
+  document.getElementById('com-btn-descargar').onclick = () => _comDescargarExcel(data, agFiltrados, meses, totalesPorMes);
+}
+
+// =====================================================================
+// Excel detallado de comisiones
+// =====================================================================
+function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
+  const wb = XLSX.utils.book_new();
+  const fmtMoney = (n) => Math.round(n);
+  const mesLbl = (ms) => {
+    const [y, m] = ms.split('-');
+    return `${MESES_NOMBRE[parseInt(m) - 1]} ${y}`;
+  };
+
+  // ============ Hoja Dashboard ============
+  {
+    const totalAnio = agFiltrados.reduce((s, a) => s + a.totalAnioCobrado, 0);
+    const totalBase = agFiltrados.reduce((s, a) => s + a.totalAnioBase, 0);
+    const totalCom = agFiltrados.reduce((s, a) => s + a.totalAnioComision, 0);
+    const top10 = [...agFiltrados].sort((a, b) => b.totalAnioCobrado - a.totalAnioCobrado).slice(0, 10);
+    const maxTotal = Math.max(...meses.map(ms => totalesPorMes[ms].total), 1);
+
+    const aoa = [];
+    const merges = [];
+
+    aoa.push(['💰 DASHBOARD COMISIONES 2026', '', '', '', '']);
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 4 } });
+
+    aoa.push([`Plantilla: ${agFiltrados.length} agentes · ${meses.length} meses (${mesLbl(meses[0])} a ${mesLbl(meses[meses.length - 1])})`, '', '', '', '']);
+    merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 4 } });
+
+    aoa.push(['', '', '', '', '']);
+
+    aoa.push(['TOTAL AÑO', '', 'BASE NETO', '', 'COMISIÓN + ACEL.']);
+    merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
+    merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
+
+    aoa.push([fmtMoney(totalAnio), '', fmtMoney(totalBase), '', fmtMoney(totalCom)]);
+    merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
+    merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
+
+    aoa.push(['', '', '', '', '']);
+
+    // Por mes
+    aoa.push(['📅 TOTAL POR MES', '', '', '', '']);
+    merges.push({ s: { r: 6, c: 0 }, e: { r: 6, c: 4 } });
+
+    aoa.push(['Mes', 'Base', 'Comisión', 'Aceleradores', 'Total']);
+    const mesStartRow = aoa.length;
+    meses.forEach(ms => {
+      const t = totalesPorMes[ms];
+      aoa.push([mesLbl(ms), fmtMoney(t.base), fmtMoney(t.comision), fmtMoney(t.acel), fmtMoney(t.total)]);
+    });
+
+    aoa.push(['', '', '', '', '']);
+
+    // Top 10
+    const topStart = aoa.length;
+    aoa.push(['🏆 TOP 10 AGENTES POR COMISIÓN ANUAL', '', '', '', '']);
+    merges.push({ s: { r: topStart, c: 0 }, e: { r: topStart, c: 4 } });
+
+    aoa.push(['#', 'Agente', 'Supervisor', 'Ventas año', 'Total cobrado']);
+    top10.forEach((a, i) => {
+      aoa.push([i + 1, a.nombre, a.supervisor, a.totalAnioVentas, fmtMoney(a.totalAnioCobrado)]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = merges;
+    ws['!cols'] = [{ wch: 8 }, { wch: 32 }, { wch: 18 }, { wch: 14 }, { wch: 16 }];
+
+    const rows = [{ hpt: 32 }, { hpt: 20 }, { hpt: 8 }, { hpt: 22 }, { hpt: 50 }, { hpt: 8 }, { hpt: 24 }, { hpt: 22 }];
+    for (let i = 0; i < meses.length; i++) rows.push({ hpt: 22 });
+    rows.push({ hpt: 8 });
+    rows.push({ hpt: 24 });
+    rows.push({ hpt: 22 });
+    for (let i = 0; i < top10.length; i++) rows.push({ hpt: 22 });
+    ws['!rows'] = rows;
+
+    // Aplicar estilos
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+        if (R === 0) ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+        else if (R === 1) ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+        else if (R === 3) {
+          let bg = '16A34A';
+          if (C === 2 || C === 3) bg = '0077A8';
+          else if (C === 4) bg = 'EA580C';
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+        } else if (R === 4) {
+          let bg = 'F0FDF4', fg = '16A34A';
+          if (C === 2 || C === 3) { bg = 'EFF6FF'; fg = '0077A8'; }
+          else if (C === 4) { bg = 'FFF7ED'; fg = 'EA580C'; }
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 24, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
+        } else if (R === 6 || R === topStart) {
+          ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        } else if (R === 7 || R === topStart + 1) {
+          ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+        } else if (R >= mesStartRow && R < mesStartRow + meses.length) {
+          const idx = R - mesStartRow;
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: C === 4 }, alignment: { horizontal: C === 0 ? 'left' : 'right', vertical: 'center', indent: 1 }, numFmt: C >= 1 ? '"$"#,##0' : 'General', border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        } else if (R >= topStart + 2 && R < topStart + 2 + top10.length) {
+          const idx = R - (topStart + 2);
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 10, bold: C === 1 || C === 4 }, alignment: { horizontal: C === 1 || C === 2 ? 'left' : C === 4 ? 'right' : 'center', vertical: 'center', indent: C === 1 || C === 2 ? 1 : 0 }, numFmt: C === 4 ? '"$"#,##0' : 'General', border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        }
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
+  }
+
+  // ============ Hoja Resumen año ============
+  {
+    const cols = ['#', 'Agente', 'Supervisor', 'Centro', 'Estatus', 'Ventas año', 'Base anual', 'Comisión + Acel.', 'Total año'];
+    const aoa = [['📊 RESUMEN ANUAL POR AGENTE', ...new Array(cols.length - 1).fill('')]];
+    aoa.push([`Total: ${agFiltrados.length} agentes · ${meses.length} meses`, ...new Array(cols.length - 1).fill('')]);
+    aoa.push(cols);
+    [...agFiltrados].sort((a, b) => b.totalAnioCobrado - a.totalAnioCobrado).forEach((a, i) => {
+      aoa.push([
+        i + 1, a.nombre, a.supervisor, a.centro,
+        a.esBaja ? 'Baja' : 'Activo',
+        a.totalAnioVentas,
+        fmtMoney(a.totalAnioBase),
+        fmtMoney(a.totalAnioComision),
+        fmtMoney(a.totalAnioCobrado)
+      ]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
+    ];
+    ws['!cols'] = [{ wch: 5 }, { wch: 32 }, { wch: 18 }, { wch: 8 }, { wch: 9 }, { wch: 12 }, { wch: 14 }, { wch: 17 }, { wch: 14 }];
+    const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 28 }];
+    for (let i = 0; i < agFiltrados.length; i++) rows.push({ hpt: 20 });
+    ws['!rows'] = rows;
+    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+        if (R === 0) ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        else if (R === 1) ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        else if (R === 2) ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+        else {
+          const idx = R - 3;
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          const isMonto = C === 6 || C === 7 || C === 8;
+          const a = [...agFiltrados].sort((x, y) => y.totalAnioCobrado - x.totalAnioCobrado)[idx];
+          ws[ref].s = {
+            fill: { fgColor: { rgb: a && a.esBaja ? 'F3F4F6' : bg } },
+            font: { name: 'Calibri', sz: 10, bold: C === 1 || C === 8, color: { rgb: a && a.esBaja ? '6B7280' : '000' } },
+            alignment: { horizontal: C === 1 || C === 2 ? 'left' : 'center', vertical: 'center', indent: C === 1 || C === 2 ? 1 : 0 },
+            numFmt: isMonto ? '"$"#,##0' : 'General',
+            border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+          };
+        }
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumen año');
+  }
+
+  // ============ Hoja por mes ============
+  meses.forEach(ms => {
+    const cols = ['#', 'Agente', 'Supervisor', 'Centro', 'Ingreso', 'Baja', 'Nuevo', 'Ventas totales', 'Cuotas 0.5', 'Cuotas 1.0', 'Cuotas TOTAL', 'Nivel', 'Acelerador', 'Comisión planes', 'Bono acelerador', 'Base neto', 'Total cobrado'];
+    const aoa = [
+      [`📅 ${mesLbl(ms).toUpperCase()}`, ...new Array(cols.length - 1).fill('')],
+      [`Detalle de comisiones por agente`, ...new Array(cols.length - 1).fill('')],
+      cols,
+    ];
+    // Filas
+    const ordenadosMes = [...agFiltrados]
+      .map(a => ({ ...a, _calc: a.meses[ms] }))
+      .sort((a, b) => b._calc.totalCobrado - a._calc.totalCobrado);
+
+    ordenadosMes.forEach((a, i) => {
+      const c = a._calc;
+      const acel = c.aplicaAcel25 ? '+$150/cuota (≥25)' : c.aplicaAcel20 ? '+$100/cuota (≥20)' : '—';
+      aoa.push([
+        i + 1,
+        a.nombre,
+        a.supervisor,
+        a.centro,
+        a.fecha_ingreso || '—',
+        a.fecha_baja || '—',
+        c.esNuevo ? '🌱 Sí' : '—',
+        c.totalVentasMes,
+        c.totalCuotaMedia,
+        c.totalCuotaCompleta,
+        Number(c.cuotasTotales.toFixed(1)),
+        c.etiquetaNivel,
+        acel,
+        fmtMoney(c.comisionPlanes),
+        fmtMoney(c.bonoAcelerador),
+        fmtMoney(c.baseNeto),
+        fmtMoney(c.totalCobrado)
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
+    ];
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+      { wch: 9 }, { wch: 7 }, { wch: 7 }, { wch: 10 }, { wch: 10 }, { wch: 18 },
+      { wch: 16 }, { wch: 13 }, { wch: 13 }, { wch: 11 }, { wch: 14 }
+    ];
+    const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 30 }];
+    for (let i = 0; i < ordenadosMes.length; i++) rows.push({ hpt: 20 });
+    ws['!rows'] = rows;
+    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+        if (R === 0) ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        else if (R === 1) ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        else if (R === 2) ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+        else {
+          const idx = R - 3;
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+          const a = ordenadosMes[idx];
+          if (!a) continue;
+          const c = a._calc;
+          const isMonto = C === 13 || C === 14 || C === 15 || C === 16;
+          // Color del nivel
+          let nivelBg = bg;
+          if (C === 11) {
+            if (c.nivelAlcanzado === 1) nivelBg = 'DBEAFE';
+            else if (c.nivelAlcanzado === 2) nivelBg = 'FED7AA';
+            else if (c.nivelAlcanzado === 3) nivelBg = 'BBF7D0';
+          }
+          ws[ref].s = {
+            fill: { fgColor: { rgb: nivelBg } },
+            font: { name: 'Calibri', sz: 10, bold: C === 1 || C === 16, color: { rgb: a.esBaja ? '6B7280' : '000' } },
+            alignment: { horizontal: C === 1 || C === 2 || C === 11 || C === 12 ? 'left' : 'center', vertical: 'center', indent: C === 1 || C === 2 ? 1 : 0 },
+            numFmt: isMonto ? '"$"#,##0' : 'General',
+            border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+          };
+        }
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, ws, mesLbl(ms).substring(0, 31));
+  });
+
+  // Ordenar hojas: Dashboard al inicio
+  const idx = wb.SheetNames.indexOf('Dashboard');
+  if (idx > 0) {
+    wb.SheetNames.splice(idx, 1);
+    wb.SheetNames.unshift('Dashboard');
+  }
+
+  const fechaActual = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `comisiones_2026_${fechaActual}.xlsx`);
 }
 </script>
 </body>
