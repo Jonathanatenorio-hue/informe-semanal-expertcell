@@ -13918,7 +13918,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     const colsBase = ['#', 'Agente', 'Supervisor', 'Centro', 'Ingreso', 'Días antig.', 'Segmento', 'Madurez',
                       'Días en ventana', 'Meses activos', 'Meses completos'];
     const colsVentasMes = meses.map(ms => `Ventas ${mesLblCorto(ms)}`);
-    const colsResto = ['Ventas año', 'Prom. ventas/mes equiv.', 'Cuotas año',
+    const colsResto = ['Ventas año', 'Prom. ventas/mes equiv.', 'Prom. ventas meses completos', 'Tendencia', 'Cuotas año',
                       'Comisión total año', 'Prom. mes equivalente', 'Prom. meses completos',
                       'Recomendación'];
     const cols = [...colsBase, ...colsVentasMes, ...colsResto];
@@ -13940,6 +13940,60 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         const c = a.meses[ms];
         return c.estuvoActivo ? c.totalVentasMes : '';
       });
+
+      // Promedio ventas SOLO de meses COMPLETOS (donde estuvo todo el mes)
+      let ventasMesesCompletos = 0;
+      let countMesesCompletosVtas = 0;
+      meses.forEach(ms => {
+        const c = a.meses[ms];
+        if (!c.estuvoActivo) return;
+        const [yStr, mStr] = ms.split('-');
+        const ultDia = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
+        const iniM = `${ms}-01`;
+        const finM = `${ms}-${String(ultDia).padStart(2, '0')}`;
+        const ingresoOK = !a.fecha_ingreso || a.fecha_ingreso <= iniM;
+        const bajaOK = !a.fecha_baja || a.fecha_baja >= finM;
+        if (ingresoOK && bajaOK) {
+          ventasMesesCompletos += c.totalVentasMes;
+          countMesesCompletosVtas++;
+        }
+      });
+      const promVentasMesesCompletos = countMesesCompletosVtas > 0
+        ? ventasMesesCompletos / countMesesCompletosVtas
+        : 0;
+
+      // Tendencia: comparar primera mitad vs segunda mitad de los meses CON ACTIVIDAD
+      // Ej: si activo en Ene, Feb, Mar, Abr, May → primera mitad = Ene+Feb, segunda = Abr+May (Mar es pivote)
+      const mesesConActividad = meses.filter(ms => a.meses[ms].estuvoActivo);
+      let tendenciaTexto = '—';
+      let tendenciaPct = null;
+      let tendenciaColor = '6B7280';
+      if (mesesConActividad.length >= 2) {
+        const half = Math.floor(mesesConActividad.length / 2);
+        // Si es impar, el del medio se queda con la segunda mitad para favorecer "lo más reciente"
+        const primera = mesesConActividad.slice(0, half);
+        const segunda = mesesConActividad.slice(mesesConActividad.length - half);
+        const sumPrim = primera.reduce((s, ms) => s + a.meses[ms].totalVentasMes, 0);
+        const sumSeg = segunda.reduce((s, ms) => s + a.meses[ms].totalVentasMes, 0);
+        const promPrim = sumPrim / primera.length;
+        const promSeg = sumSeg / segunda.length;
+        if (promPrim === 0 && promSeg === 0) {
+          tendenciaTexto = '— Sin ventas';
+        } else if (promPrim === 0) {
+          tendenciaTexto = '↑ Empezó a vender';
+          tendenciaColor = '16A34A';
+        } else {
+          tendenciaPct = ((promSeg - promPrim) / promPrim) * 100;
+          if (tendenciaPct >= 20) { tendenciaTexto = `↑↑ Subiendo fuerte (${tendenciaPct >= 0 ? '+' : ''}${tendenciaPct.toFixed(0)}%)`; tendenciaColor = '14532D'; }
+          else if (tendenciaPct >= 5) { tendenciaTexto = `↑ Subiendo (+${tendenciaPct.toFixed(0)}%)`; tendenciaColor = '15803D'; }
+          else if (tendenciaPct >= -5) { tendenciaTexto = `→ Estable (${tendenciaPct >= 0 ? '+' : ''}${tendenciaPct.toFixed(0)}%)`; tendenciaColor = '6B7280'; }
+          else if (tendenciaPct >= -20) { tendenciaTexto = `↓ Bajando (${tendenciaPct.toFixed(0)}%)`; tendenciaColor = 'D97706'; }
+          else { tendenciaTexto = `↓↓ Cayendo (${tendenciaPct.toFixed(0)}%)`; tendenciaColor = 'DC2626'; }
+        }
+      } else if (mesesConActividad.length === 1) {
+        tendenciaTexto = '— 1 mes solo';
+      }
+
       aoa.push([
         i + 1,
         a.nombre,
@@ -13955,6 +14009,8 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         ...ventasPorMesArr,
         a.totalAnioVentas,
         Number(promVentasEquiv.toFixed(1)),
+        Number(promVentasMesesCompletos.toFixed(1)),
+        tendenciaTexto,
         Number(a.totalCuotasAnio.toFixed(1)),
         fmtMoney(a.totalAnioComision),
         fmtMoney(a.promJustoEquivalente),
@@ -13975,7 +14031,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     ];
     const anchosMes = meses.map(() => ({ wch: 11 }));
     const anchosResto = [
-      { wch: 11 }, { wch: 18 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 }, { wch: 18 }
+      { wch: 11 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 }, { wch: 18 }
     ];
     ws['!cols'] = [...anchosBase, ...anchosMes, ...anchosResto];
 
@@ -13992,11 +14048,33 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     const idxLastMes = 11 + N - 1;
     const idxVentasAnio = 11 + N;
     const idxPromVentas = 12 + N;
-    const idxCuotasAnio = 13 + N;
-    const idxComisionTotal = 14 + N;
-    const idxPromEquiv = 15 + N;
-    const idxPromCompletos = 16 + N;
-    const idxRecom = 17 + N;
+    const idxPromVentasCompletos = 13 + N;
+    const idxTendencia = 14 + N;
+    const idxCuotasAnio = 15 + N;
+    const idxComisionTotal = 16 + N;
+    const idxPromEquiv = 17 + N;
+    const idxPromCompletos = 18 + N;
+    const idxRecom = 19 + N;
+
+    // Mapa rápido para colores de tendencia (recalcular por agente al pintar)
+    function colorTendencia(txt) {
+      if (!txt || txt === '—') return '6B7280';
+      if (txt.startsWith('↑↑')) return '14532D';
+      if (txt.startsWith('↑')) return '15803D';
+      if (txt.startsWith('→')) return '6B7280';
+      if (txt.startsWith('↓↓')) return 'DC2626';
+      if (txt.startsWith('↓')) return 'D97706';
+      return '6B7280';
+    }
+    function bgTendencia(txt) {
+      if (!txt || txt === '—') return 'F9FAFB';
+      if (txt.startsWith('↑↑')) return 'D1FAE5';
+      if (txt.startsWith('↑')) return 'DCFCE7';
+      if (txt.startsWith('→')) return 'F3F4F6';
+      if (txt.startsWith('↓↓')) return 'FEE2E2';
+      if (txt.startsWith('↓')) return 'FEF3C7';
+      return 'F9FAFB';
+    }
 
     // Estilos
     const r = XLSX.utils.decode_range(ws['!ref']);
@@ -14010,7 +14088,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         } else if (R === 1) {
           ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
         } else if (R === 2) {
-          // Header: distinguir las columnas de meses con un color diferente
+          // Header: distinguir columnas de meses con color diferente
           const esColMes = (C >= idxFirstMes && C <= idxLastMes);
           const headerBg = esColMes ? '0077A8' : '14532D';
           ws[ref].s = { fill: { fgColor: { rgb: headerBg } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
@@ -14048,11 +14126,19 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
           } else if (C >= idxFirstMes && C <= idxLastMes) {
-            // Celda de ventas mensuales: fondo azul muy suave para distinguir el bloque
             const mesBg = isStripe ? 'EFF6FF' : 'F0F9FF';
             cellStyle = {
               fill: { fgColor: { rgb: mesBg } },
               font: { name: 'Calibri', sz: 10, bold: false },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === idxTendencia) {
+            const tendVal = ws[ref].v;
+            const tendStr = String(tendVal || '');
+            cellStyle = {
+              fill: { fgColor: { rgb: bgTendencia(tendStr) } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: colorTendencia(tendStr) } },
               alignment: { horizontal: 'center', vertical: 'center' },
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
@@ -14065,7 +14151,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
             };
           } else {
             const isMonto = C === idxComisionTotal || C === idxPromEquiv || C === idxPromCompletos;
-            const isResaltado = C === idxComisionTotal || C === idxPromEquiv || C === idxPromCompletos || C === idxVentasAnio || C === idxPromVentas;
+            const isResaltado = C === idxComisionTotal || C === idxPromEquiv || C === idxPromCompletos || C === idxVentasAnio || C === idxPromVentas || C === idxPromVentasCompletos;
             cellStyle = {
               fill: { fgColor: { rgb: bg } },
               font: { name: 'Calibri', sz: 10, bold: C === 1 || isResaltado },
