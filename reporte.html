@@ -13300,6 +13300,9 @@ function _comConstruirDataset() {
     let totalAnioComision = 0;
     let totalAnioBase = 0;
     let totalAnioVentas = 0;
+    let totalCuotasAnio = 0;
+    let mesesActivos = 0;          // # meses donde estuvo activo (al menos parte)
+    let mesesCompletos = 0;         // # meses donde estuvo TODO el mes
     meses.forEach(ms => {
       const [yStr, mStr] = ms.split('-');
       const calc = _comCalcularAgenteMes(
@@ -13312,7 +13315,77 @@ function _comConstruirDataset() {
       totalAnioComision += calc.comisionPlanes + calc.bonoAcelerador;
       totalAnioBase += calc.baseNeto;
       totalAnioVentas += calc.totalVentasMes;
+      totalCuotasAnio += calc.cuotasTotales;
+
+      if (calc.estuvoActivo) {
+        mesesActivos++;
+        // ¿Mes completo? Ingresó ≤ día 1 y baja >= último día (o sin baja)
+        const ultDiaMes = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
+        const iniM = `${ms}-01`;
+        const finM = `${ms}-${String(ultDiaMes).padStart(2, '0')}`;
+        const ingresoOK = !p.fecha_ingreso || p.fecha_ingreso <= iniM;
+        const bajaOK = !p.fecha_baja || p.fecha_baja >= finM;
+        if (ingresoOK && bajaOK) mesesCompletos++;
+      }
     });
+
+    // Antigüedad: días entre fecha_ingreso y fecha de corte (hoy o fecha_baja)
+    const hoyStr = new Date().toISOString().split('T')[0];
+    const fechaCorte = p.fecha_baja && p.fecha_baja < hoyStr ? p.fecha_baja : hoyStr;
+    let diasAntiguedad = 0;
+    if (p.fecha_ingreso) {
+      const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+      const corte = new Date(fechaCorte + 'T12:00:00');
+      diasAntiguedad = Math.max(0, Math.floor((corte - ing) / 86400000));
+    }
+
+    // Días trabajados dentro del rango de meses analizados (para que el promedio sea
+    // proporcional a la ventana del análisis, no a toda la vida del agente).
+    // El primer día = max(fecha_ingreso, primer día del primer mes)
+    // El último día = min(fecha_baja || hoy, último día del último mes con datos)
+    let diasEnVentana = 0;
+    if (meses.length > 0 && p.fecha_ingreso) {
+      const primerMesIni = `${meses[0]}-01`;
+      const [uy, um] = meses[meses.length - 1].split('-');
+      const ultDiaUltMes = new Date(parseInt(uy), parseInt(um), 0).getDate();
+      const ultimoMesFin = `${meses[meses.length - 1]}-${String(ultDiaUltMes).padStart(2, '0')}`;
+      // Acotar por hoy también (no contar días futuros)
+      const finReal = ultimoMesFin > hoyStr ? hoyStr : ultimoMesFin;
+      const iniVentana = p.fecha_ingreso > primerMesIni ? p.fecha_ingreso : primerMesIni;
+      const finVentana = p.fecha_baja && p.fecha_baja < finReal ? p.fecha_baja : finReal;
+      if (iniVentana <= finVentana) {
+        const a = new Date(iniVentana + 'T12:00:00');
+        const b = new Date(finVentana + 'T12:00:00');
+        diasEnVentana = Math.max(0, Math.floor((b - a) / 86400000) + 1);
+      }
+    }
+
+    // Promedios JUSTOS — solo sobre la COMISIÓN (sin sueldo base, como pediste)
+    // 1) Promedio mes equivalente: prorratea por días reales trabajados en la ventana
+    const promJustoEquivalente = diasEnVentana >= 1
+      ? (totalAnioComision / diasEnVentana) * 30
+      : 0;
+    // 2) Promedio meses COMPLETOS: solo divide entre meses donde estuvo todo el mes
+    const promJustoMesesCompletos = mesesCompletos > 0
+      ? (totalAnioComision / mesesCompletos)
+      : 0;
+
+    // Madurez (basado en días de antigüedad)
+    let madurez, madurezEmoji, madurezColor;
+    if (diasAntiguedad < 60) { madurez = 'En curva'; madurezEmoji = '⏳'; madurezColor = '#6B7280'; }
+    else if (diasAntiguedad < 90) { madurez = 'En desarrollo'; madurezEmoji = '🌱'; madurezColor = '#0EA5E9'; }
+    else { madurez = 'Maduro'; madurezEmoji = '💼'; madurezColor = '#16A34A'; }
+
+    // Segmento por meses completos (1, 2, 3, 4, 5+)
+    let segmentoMeses, segmentoColor;
+    const mesesCalc = Math.floor(diasAntiguedad / 30);
+    if (mesesCalc < 1) { segmentoMeses = '<1 mes'; segmentoColor = '#9CA3AF'; }
+    else if (mesesCalc === 1) { segmentoMeses = '1 mes'; segmentoColor = '#DBEAFE'; }
+    else if (mesesCalc === 2) { segmentoMeses = '2 meses'; segmentoColor = '#BFDBFE'; }
+    else if (mesesCalc === 3) { segmentoMeses = '3 meses'; segmentoColor = '#A7F3D0'; }
+    else if (mesesCalc === 4) { segmentoMeses = '4 meses'; segmentoColor = '#6EE7B7'; }
+    else { segmentoMeses = `${mesesCalc}+ meses`; segmentoColor = '#34D399'; }
+
     return {
       nombre: p.nombre,
       supervisor: p.supervisor || '—',
@@ -13325,6 +13398,18 @@ function _comConstruirDataset() {
       totalAnioComision,
       totalAnioBase,
       totalAnioVentas,
+      totalCuotasAnio,
+      diasAntiguedad,
+      diasEnVentana,
+      mesesActivos,
+      mesesCompletos,
+      promJustoEquivalente,
+      promJustoMesesCompletos,
+      madurez,
+      madurezEmoji,
+      madurezColor,
+      segmentoMeses,
+      segmentoColor,
     };
   }).filter(a => a !== null);
 
@@ -13466,6 +13551,8 @@ function _comRenderUI(cont, data) {
           <tr style="background:var(--att-navy); color:white;">
             <th style="padding:10px; text-align:left; position:sticky; left:0; background:var(--att-navy); z-index:2;">Agente</th>
             <th style="padding:10px; text-align:left;">Supervisor</th>
+            <th style="padding:10px; text-align:center;" title="Días desde fecha de ingreso">Antig.</th>
+            <th style="padding:10px; text-align:center;" title="⏳ En curva (<60d) · 🌱 En desarrollo (60-90d) · 💼 Maduro (90+d)">Madurez</th>
             ${meses.map(ms => `<th style="padding:10px; text-align:right; min-width:130px;">${mesLbl(ms)}</th>`).join('')}
             <th style="padding:10px; text-align:right; background:#0077A8;">Total año</th>
           </tr>
@@ -13481,7 +13568,13 @@ function _comRenderUI(cont, data) {
       <td style="padding:8px 10px; font-weight:600; position:sticky; left:0; background:${bg}; z-index:1;">
         ${a.nombre}${a.esBaja ? ' <span style="font-size:10px; color:#6B7280;">(baja)</span>' : ''}
       </td>
-      <td style="padding:8px 10px; color:var(--text-soft);">${a.supervisor}</td>`;
+      <td style="padding:8px 10px; color:var(--text-soft);">${a.supervisor}</td>
+      <td style="padding:8px 10px; text-align:center;">
+        <span style="background:${a.segmentoColor}; color:#1a1a1a; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700;">${a.diasAntiguedad}d</span>
+      </td>
+      <td style="padding:8px 10px; text-align:center;">
+        <span title="${a.madurez}" style="font-size:14px;">${a.madurezEmoji}</span>
+      </td>`;
     meses.forEach(ms => {
       const c = a.meses[ms];
       let chipColor = '#6B7280', chipBg = '#F3F4F6';
@@ -13502,7 +13595,9 @@ function _comRenderUI(cont, data) {
   // Fila de totales
   html += `<tr style="background:var(--att-navy); color:white; font-weight:700; border-top:2px solid #000;">
     <td style="padding:10px; position:sticky; left:0; background:var(--att-navy);">TOTAL (${agFiltrados.length} agentes)</td>
-    <td></td>`;
+    <td></td>
+    <td style="text-align:center;">—</td>
+    <td style="text-align:center;">—</td>`;
   meses.forEach(ms => {
     const t = totalesPorMes[ms];
     const cn = cuentaNivelPorMes[ms];
@@ -13786,12 +13881,167 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     XLSX.utils.book_append_sheet(wb, ws, mesLbl(ms).substring(0, 31));
   });
 
-  // Ordenar hojas: Dashboard al inicio
-  const idx = wb.SheetNames.indexOf('Dashboard');
-  if (idx > 0) {
-    wb.SheetNames.splice(idx, 1);
-    wb.SheetNames.unshift('Dashboard');
+  // ============ HOJA: 🎯 Análisis Plantilla =============
+  // Solo plantilla activa (no bajas), ordenada por antigüedad descendente.
+  // Muestra promedios JUSTOS de comisión (sin sueldo base) para identificar quién conviene.
+  {
+    const activos = agFiltrados.filter(a => !a.esBaja);
+    const ordenados = [...activos].sort((a, b) => b.diasAntiguedad - a.diasAntiguedad);
+
+    // Calcular benchmarks para semáforo (mediana de promedio justo equivalente)
+    const promsValidos = ordenados
+      .filter(a => a.diasAntiguedad >= 60 && a.promJustoEquivalente > 0)
+      .map(a => a.promJustoEquivalente)
+      .sort((x, y) => x - y);
+    const mediana = promsValidos.length > 0
+      ? promsValidos[Math.floor(promsValidos.length / 2)]
+      : 0;
+    const umbralBajo = mediana * 0.5;
+    const umbralAlto = mediana * 1.5;
+
+    function recomendar(a) {
+      if (a.diasAntiguedad < 60) return { txt: '⏳ Dar tiempo', color: '6B7280', bg: 'F3F4F6' };
+      if (a.promJustoEquivalente >= umbralAlto) return { txt: '🟢 Top performer', color: '14532D', bg: 'D1FAE5' };
+      if (a.promJustoEquivalente >= mediana) return { txt: '🟢 Mantener', color: '15803D', bg: 'DCFCE7' };
+      if (a.promJustoEquivalente >= umbralBajo) return { txt: '🟡 Vigilar', color: '92400E', bg: 'FEF3C7' };
+      return { txt: '🔴 Revisar', color: '991B1B', bg: 'FEE2E2' };
+    }
+
+    const cols = ['#', 'Agente', 'Supervisor', 'Centro', 'Ingreso', 'Días antig.', 'Segmento', 'Madurez',
+                  'Días en ventana', 'Meses activos', 'Meses completos',
+                  'Ventas año', 'Cuotas año', 'Comisión total año',
+                  'Prom. mes equivalente', 'Prom. meses completos', 'Recomendación'];
+
+    const aoa = [
+      [`🎯 ANÁLISIS DE PLANTILLA ACTIVA`, ...new Array(cols.length - 1).fill('')],
+      [`${ordenados.length} agentes activos · Mediana comisión justa: $${Math.round(mediana).toLocaleString('es-MX')}/mes equivalente · Top: ≥$${Math.round(umbralAlto).toLocaleString('es-MX')} · Revisar: <$${Math.round(umbralBajo).toLocaleString('es-MX')}`, ...new Array(cols.length - 1).fill('')],
+      cols
+    ];
+
+    ordenados.forEach((a, i) => {
+      const rec = recomendar(a);
+      aoa.push([
+        i + 1,
+        a.nombre,
+        a.supervisor,
+        a.centro,
+        a.fecha_ingreso || '—',
+        a.diasAntiguedad,
+        a.segmentoMeses,
+        `${a.madurezEmoji} ${a.madurez}`,
+        a.diasEnVentana,
+        a.mesesActivos,
+        a.mesesCompletos,
+        a.totalAnioVentas,
+        Number(a.totalCuotasAnio.toFixed(1)),
+        fmtMoney(a.totalAnioComision),
+        fmtMoney(a.promJustoEquivalente),
+        fmtMoney(a.promJustoMesesCompletos),
+        rec.txt
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
+    ];
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 11 },
+      { wch: 11 }, { wch: 16 }, { wch: 12 }, { wch: 11 }, { wch: 12 },
+      { wch: 11 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 }, { wch: 18 }
+    ];
+    const rowsHeights = [{ hpt: 32 }, { hpt: 22 }, { hpt: 32 }];
+    for (let i = 0; i < ordenados.length; i++) rowsHeights.push({ hpt: 22 });
+    ws['!rows'] = rowsHeights;
+    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+
+    // Estilos
+    const r = XLSX.utils.decode_range(ws['!ref']);
+    for (let R = r.s.r; R <= r.e.r; R++) {
+      for (let C = r.s.c; C <= r.e.c; C++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+        if (R === 0) {
+          ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        } else if (R === 1) {
+          ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        } else if (R === 2) {
+          ws[ref].s = { fill: { fgColor: { rgb: '14532D' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+        } else {
+          const idx = R - 3;
+          const a = ordenados[idx];
+          if (!a) continue;
+          const rec = recomendar(a);
+          const isStripe = idx % 2 === 1;
+          const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+
+          // Color del segmento (col 6: 'Segmento')
+          let segColor = bg;
+          const segMap = {
+            '<1 mes': '9CA3AF', '1 mes': 'DBEAFE', '2 meses': 'BFDBFE',
+            '3 meses': 'A7F3D0', '4 meses': '6EE7B7'
+          };
+          if (segMap[a.segmentoMeses]) segColor = segMap[a.segmentoMeses];
+          else if (a.segmentoMeses.endsWith('+ meses')) segColor = '34D399';
+
+          let cellStyle;
+          if (C === 6) {
+            cellStyle = {
+              fill: { fgColor: { rgb: segColor } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1A1A1A' } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === 7) {
+            // Madurez
+            const madBg = a.madurez === 'Maduro' ? 'D1FAE5' : a.madurez === 'En desarrollo' ? 'DBEAFE' : 'F3F4F6';
+            cellStyle = {
+              fill: { fgColor: { rgb: madBg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '1A1A1A' } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === 16) {
+            // Recomendación
+            cellStyle = {
+              fill: { fgColor: { rgb: rec.bg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: rec.color } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else {
+            const isMonto = C === 13 || C === 14 || C === 15;
+            cellStyle = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 10, bold: C === 1 || C === 14 || C === 15 },
+              alignment: { horizontal: C === 1 || C === 2 ? 'left' : 'center', vertical: 'center', indent: C === 1 || C === 2 ? 1 : 0 },
+              numFmt: isMonto ? '"$"#,##0' : 'General',
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          }
+          ws[ref].s = cellStyle;
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Análisis Plantilla');
   }
+
+  // Ordenar hojas: Dashboard primero, Análisis Plantilla segundo
+  const sheetsOrder = wb.SheetNames.slice();
+  const dashIdx = sheetsOrder.indexOf('Dashboard');
+  if (dashIdx > 0) {
+    sheetsOrder.splice(dashIdx, 1);
+    sheetsOrder.unshift('Dashboard');
+  }
+  const analIdx = sheetsOrder.indexOf('Análisis Plantilla');
+  if (analIdx > 1) {
+    sheetsOrder.splice(analIdx, 1);
+    sheetsOrder.splice(1, 0, 'Análisis Plantilla');
+  }
+  wb.SheetNames = sheetsOrder;
 
   const fechaActual = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `comisiones_2026_${fechaActual}.xlsx`);
