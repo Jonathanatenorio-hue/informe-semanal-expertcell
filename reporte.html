@@ -13320,9 +13320,12 @@ function _comConstruirDataset() {
       if (calc.estuvoActivo) {
         mesesActivos++;
         // ¿Mes completo? Ingresó ≤ día 1 y baja >= último día (o sin baja)
+        // Y EL MES YA TERMINÓ (fin <= hoy). Mayo en curso NO es mes completo.
         const ultDiaMes = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
         const iniM = `${ms}-01`;
         const finM = `${ms}-${String(ultDiaMes).padStart(2, '0')}`;
+        const hoyStrLocal = new Date().toISOString().split('T')[0];
+        if (finM > hoyStrLocal) return; // mes aún no termina
         const ingresoOK = !p.fecha_ingreso || p.fecha_ingreso <= iniM;
         const bajaOK = !p.fecha_baja || p.fecha_baja >= finM;
         if (ingresoOK && bajaOK) mesesCompletos++;
@@ -13944,6 +13947,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       // Promedio ventas SOLO de meses COMPLETOS (donde estuvo todo el mes)
       let ventasMesesCompletos = 0;
       let countMesesCompletosVtas = 0;
+      const hoyStrCalc = new Date().toISOString().split('T')[0];
       meses.forEach(ms => {
         const c = a.meses[ms];
         if (!c.estuvoActivo) return;
@@ -13951,6 +13955,8 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         const ultDia = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
         const iniM = `${ms}-01`;
         const finM = `${ms}-${String(ultDia).padStart(2, '0')}`;
+        // Mes en curso (no terminado): NO cuenta como mes completo
+        if (finM > hoyStrCalc) return;
         const ingresoOK = !a.fecha_ingreso || a.fecha_ingreso <= iniM;
         const bajaOK = !a.fecha_baja || a.fecha_baja >= finM;
         if (ingresoOK && bajaOK) {
