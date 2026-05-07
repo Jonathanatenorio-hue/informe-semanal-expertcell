@@ -4468,9 +4468,13 @@ function renderDetalleAgentesConMes(mesKey) {
 
     const activos = agentes.filter(a => !a.esBaja);
     const bajas = agentes.filter(a => a.esBaja).length;
-    const criticos = activos.filter(a => a.meta > 0 && a.pct < 50).length;
-    const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100).length;
-    const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
+    // En mes en curso evaluamos contra pctEsperado (ritmo real al día de hoy);
+    // en meses pasados/cerrados contra el % total. Esto evita que TODOS salgan
+    // como "críticos" al inicio del mes solo porque el % global es bajo.
+    const evalPct = (a) => esMesActual ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
+    const criticos = activos.filter(a => a.meta > 0 && evalPct(a) < 50).length;
+    const cumplidos = activos.filter(a => a.meta > 0 && evalPct(a) >= 100).length;
+    const enRiesgo = activos.filter(a => a.meta > 0 && evalPct(a) >= 50 && evalPct(a) < 85).length;
     const alertaInactivos = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad).length;
     const alertaSinProg = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad).length;
     const sinVentas = activos.filter(a => a.avance === 0).length;
@@ -5653,9 +5657,13 @@ function descargarEquipoExcel(supervisor) {
   const totalEsperado = activosArr.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
   const gapTotal = totalAvance - totalEsperado;
   const pctMesEquipo = totalMeta > 0 ? (totalAvance / totalMeta * 100) : 0;
-  const cumplidos = activosArr.filter(a => a.meta > 0 && a.pct >= 100).length;
-  const enRiesgo = activosArr.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85).length;
-  const criticos = activosArr.filter(a => a.meta > 0 && a.pct < 50).length;
+  // Detectar si el mes seleccionado es el mes en curso (para usar pctEsperado en evaluación)
+  const esMesActualXlsx = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
+  const evalPctXlsx = (a) => esMesActualXlsx ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
+
+  const cumplidos = activosArr.filter(a => a.meta > 0 && evalPctXlsx(a) >= 100).length;
+  const enRiesgo = activosArr.filter(a => a.meta > 0 && evalPctXlsx(a) >= 50 && evalPctXlsx(a) < 85).length;
+  const criticos = activosArr.filter(a => a.meta > 0 && evalPctXlsx(a) < 50).length;
   const sinVenta = activosArr.filter(a => a.avance === 0).length;
   const sinActAlerta = activosArr.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad).length;
   const sinProgAlerta = activosArr.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad).length;
@@ -6002,7 +6010,8 @@ function descargarEquipoExcel(supervisor) {
   {
     const cols = ['#','Agente','Tipo','Días act.','Sin prog.','Sin act.','Última prog.','Última act.','Prog','Act','Canc','ARPU','Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección','Estatus'];
     const filas = ordenados.map((a, idx) => {
-      const estatus = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : a.pct >= 100 ? 'Cumplido' : a.pct >= 85 ? 'En riesgo' : a.pct >= 50 ? 'Atrasado' : 'Crítico';
+      const pctEval = evalPctXlsx(a);
+      const estatus = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : pctEval >= 100 ? 'Cumplido' : pctEval >= 85 ? 'En riesgo' : pctEval >= 50 ? 'Atrasado' : 'Crítico';
       return {
         '#': idx + 1,
         'Agente': a.ejecutivo,
@@ -6201,9 +6210,13 @@ function _construirDatosResumenSup(supervisor) {
   const activos = agentes.filter(a => !a.esBaja);
   const bajas = agentes.filter(a => a.esBaja);
 
-  const cumplidos = activos.filter(a => a.meta > 0 && a.pct >= 100);
-  const enRiesgo = activos.filter(a => a.meta > 0 && a.pct >= 50 && a.pct < 85);
-  const criticos = activos.filter(a => a.meta > 0 && a.pct < 50 && a.pct > 0);
+  // Esta función siempre opera sobre el MES EN CURSO (window.__avanceData es del mes actual),
+  // así que evaluamos contra pctEsperado (avance vs esperado HOY) en lugar del % total
+  // del mes. Esto evita que TODOS salgan como críticos al inicio del mes.
+  const evalPct = (a) => a.pctEsperado ?? 0;
+  const cumplidos = activos.filter(a => a.meta > 0 && evalPct(a) >= 100);
+  const enRiesgo = activos.filter(a => a.meta > 0 && evalPct(a) >= 50 && evalPct(a) < 85);
+  const criticos = activos.filter(a => a.meta > 0 && evalPct(a) < 50 && a.avance > 0);
   const sinVenta = activos.filter(a => a.avance === 0);
   const sinActAlerta = activos.filter(a => a.diasSinAct !== null && a.diasSinAct >= umbralInactividad);
   const sinProgAlerta = activos.filter(a => a.diasSinProg !== null && a.diasSinProg >= umbralInactividad);
