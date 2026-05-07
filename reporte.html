@@ -3874,6 +3874,8 @@ function renderAvanceUI() {
         <th class="num" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado hoy</th>
         <th class="num" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
         <th class="num" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
+        <th class="num" title="Ventas programadas en BO que aún no se activan (en proceso de activación AT&T)">Tránsito</th>
+        <th class="num" title="Dif + Tránsito · Cómo quedaría si TODAS las ventas en tránsito llegaran a activarse. NO es certeza, es proyección optimista.">Gap potencial<br><span style="font-size:9px; font-weight:400; opacity:0.85;">(si tránsito activa)</span></th>
         <th class="num" title="Activadas por día que necesita lograr de aquí al cierre">Ritmo necesario</th>
         <th class="num" title="Estimación del cierre del mes basada en el ritmo actual">Proyección</th>
         <th>Estatus</th>
@@ -3889,6 +3891,10 @@ function renderAvanceUI() {
         const proyColor = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
         const colorPctDiario = d.pctEsperado >= 100 ? 'var(--green)' : d.pctEsperado >= 85 ? 'var(--amber)' : 'var(--red)';
         const metaDia = estadoTotal.diasHabilesTotales > 0 ? d.meta / estadoTotal.diasHabilesTotales : 0;
+        // Gap potencial: cómo quedaría el déficit/superávit si TODAS las en tránsito activan
+        const gapPot = d.diff + (d.transito || 0);
+        const gapPotSign = gapPot >= 0 ? '+' : '';
+        const gapPotColor = gapPot >= 0 ? 'var(--green)' : gapPot >= -3 ? 'var(--amber)' : 'var(--red)';
         return `<tr>
           <td><strong>${d.sup}</strong></td>
           <td class="num">${d.meta}</td>
@@ -3898,12 +3904,21 @@ function renderAvanceUI() {
           <td class="num">${d.esperado}</td>
           <td class="num" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
           <td class="num ${diffClase}">${diffSign}${d.diff}</td>
+          <td class="num" style="color: var(--text-soft); font-weight: 600;">${d.transito || 0}</td>
+          <td class="num" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${gapPot}</td>
           <td class="num" style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
           <td class="num" style="color: ${proyColor}; font-weight: 700;">${proy} (${pctProy.toFixed(0)}%)</td>
           <td>${emoji} ${d.estado.toUpperCase()}</td>
         </tr>`;
       }).join('')}
       <tr style="background: var(--bg); font-weight: 700;">
+        ${(() => {
+          const transitoTotal = supervisoresData.reduce((s, d) => s + (d.transito || 0), 0);
+          const difTotal = estadoTotal.avance - estadoTotal.esperado;
+          const gapPotTotal = difTotal + transitoTotal;
+          const gapPotTotalSign = gapPotTotal >= 0 ? '+' : '';
+          const gapPotTotalColor = gapPotTotal >= 0 ? 'var(--green)' : gapPotTotal >= -10 ? 'var(--amber)' : 'var(--red)';
+          return `
         <td>TOTAL</td>
         <td class="num">${estadoTotal.meta}</td>
         <td class="num" style="color: var(--att-blue);">${estadoTotal.diasHabilesTotales > 0 ? (estadoTotal.meta / estadoTotal.diasHabilesTotales).toFixed(1) : '—'}</td>
@@ -3911,10 +3926,14 @@ function renderAvanceUI() {
         <td class="num">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
         <td class="num">${estadoTotal.esperado}</td>
         <td class="num" style="font-weight:700;">${estadoTotal.esperado > 0 ? (estadoTotal.avance / estadoTotal.esperado * 100).toFixed(1) : 0}%</td>
-        <td class="num ${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? 'delta-pos' : 'delta-neg'}">${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? '+' : ''}${estadoTotal.avance - estadoTotal.esperado}</td>
+        <td class="num ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${difTotal}</td>
+        <td class="num" style="color: var(--text-soft);">${transitoTotal}</td>
+        <td class="num" style="color: ${gapPotTotalColor}; font-weight: 700;">${gapPotTotalSign}${gapPotTotal}</td>
         <td class="num">${ritmoNecesarioTotal.toFixed(1)}</td>
         <td class="num">${proy} (${pctProy.toFixed(0)}%)</td>
         <td>${estadoProy}</td>
+          `;
+        })()}
       </tr>
     </tbody>
   `;
