@@ -4000,7 +4000,17 @@ function renderAvanceUI() {
         // Gap potencial: cómo quedaría el déficit/superávit si TODAS las en tránsito activan
         const gapPot = d.diff + (d.transito || 0);
         const gapPotSign = gapPot >= 0 ? '+' : '';
-        const gapPotColor = gapPot >= 0 ? 'var(--green)' : gapPot >= -3 ? 'var(--amber)' : 'var(--red)';
+        // Umbrales proporcionales (basados en % de meta del supervisor):
+        // Tránsito: ≥12% → verde · 10-12% → amarillo · <10% → rojo
+        // Gap potencial: ≥+10% → verde · 0 a +10% → amarillo · <0 → rojo
+        const transitoActual = d.transito || 0;
+        const transitoVerde = d.meta * 0.12;
+        const transitoAmbar = d.meta * 0.10;
+        const transitoColor = transitoActual >= transitoVerde ? 'var(--green)'
+          : transitoActual >= transitoAmbar ? 'var(--amber)' : 'var(--red)';
+        const gapPotVerde = d.meta * 0.10;
+        const gapPotColor = gapPot >= gapPotVerde ? 'var(--green)'
+          : gapPot >= 0 ? 'var(--amber)' : 'var(--red)';
         return `<tr>
           <td><strong>${d.sup}</strong></td>
           <td>${d.meta}</td>
@@ -4010,7 +4020,7 @@ function renderAvanceUI() {
           <td class="col-relevante">${d.esperado}</td>
           <td class="col-relevante" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
           <td class="col-relevante ${diffClase}">${diffSign}${d.diff}</td>
-          <td class="col-transito" style="color: var(--text-soft); font-weight: 600;">${d.transito || 0}</td>
+          <td class="col-transito" style="color: ${transitoColor}; font-weight: 700;">${d.transito || 0}</td>
           <td class="col-transito col-relevante" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${gapPot}</td>
           <td style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
           <td class="col-relevante" style="color: ${proyColor}; font-weight: 700;">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
@@ -4023,7 +4033,14 @@ function renderAvanceUI() {
           const difTotal = estadoTotal.avance - estadoTotal.esperado;
           const gapPotTotal = difTotal + transitoTotal;
           const gapPotTotalSign = gapPotTotal >= 0 ? '+' : '';
-          const gapPotTotalColor = gapPotTotal >= 0 ? 'var(--green)' : gapPotTotal >= -10 ? 'var(--amber)' : 'var(--red)';
+          // Mismos umbrales proporcionales que los individuales (12% / 10% sobre meta)
+          const transitoTotalVerde = estadoTotal.meta * 0.12;
+          const transitoTotalAmbar = estadoTotal.meta * 0.10;
+          const transitoTotalColor = transitoTotal >= transitoTotalVerde ? 'var(--green)'
+            : transitoTotal >= transitoTotalAmbar ? 'var(--amber)' : 'var(--red)';
+          const gapPotTotalVerde = estadoTotal.meta * 0.10;
+          const gapPotTotalColor = gapPotTotal >= gapPotTotalVerde ? 'var(--green)'
+            : gapPotTotal >= 0 ? 'var(--amber)' : 'var(--red)';
           const pctEspTotal = estadoTotal.esperado > 0 ? (estadoTotal.avance / estadoTotal.esperado * 100) : 0;
           const colorPctEspTotal = pctEspTotal >= 100 ? 'var(--green)' : pctEspTotal >= 85 ? 'var(--amber)' : 'var(--red)';
           return `
@@ -4035,7 +4052,7 @@ function renderAvanceUI() {
         <td class="col-relevante">${estadoTotal.esperado}</td>
         <td class="col-relevante" style="color: ${colorPctEspTotal};">${pctEspTotal.toFixed(1)}%</td>
         <td class="col-relevante ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${difTotal}</td>
-        <td class="col-transito" style="color: var(--text-soft);">${transitoTotal}</td>
+        <td class="col-transito" style="color: ${transitoTotalColor}; font-weight:700;">${transitoTotal}</td>
         <td class="col-transito col-relevante" style="color: ${gapPotTotalColor};">${gapPotTotalSign}${gapPotTotal}</td>
         <td>${ritmoNecesarioTotal.toFixed(1)}</td>
         <td class="col-relevante">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
@@ -4795,7 +4812,60 @@ function renderDetalleAgentesConMes(mesKey) {
     `;
   }).join('');
 
-  document.getElementById('avance-detalle-agentes').innerHTML = html;
+  // Construir mapa supervisor → coordinador (vigente al día de hoy) si no existe aún
+  if (!window.__coordinadorPorSupervisor) {
+    const hoyStrCS = new Date().toISOString().split('T')[0];
+    const mapa = {};
+    (coordSupData || []).forEach(cs => {
+      if (!cs.supervisor || !cs.coordinador_id) return;
+      const ini = cs.fecha_inicio || '1900-01-01';
+      const fin = cs.fecha_fin || '9999-12-31';
+      if (ini <= hoyStrCS && fin >= hoyStrCS) {
+        const coord = (coordinadoresData || []).find(c => c.id == cs.coordinador_id);
+        if (coord) mapa[cs.supervisor] = coord.nombre || `Coord ${cs.coordinador_id}`;
+      }
+    });
+    window.__coordinadorPorSupervisor = mapa;
+  }
+
+  // Barra de descargas globales (por coordinador y global completo) — encima de los acordeones
+  const coordinadores = (function() {
+    // Determinar qué coordinadores tienen supervisores en el filtro actual
+    const sups = supervisoresData.map(s => s.sup);
+    const coordSet = new Set();
+    sups.forEach(sup => {
+      const c = (window.__coordinadorPorSupervisor && window.__coordinadorPorSupervisor[sup]) || null;
+      if (c) coordSet.add(c);
+    });
+    return [...coordSet];
+  })();
+  let barraDescarga = `
+    <div class="barra-descargas-globales" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:14px; padding:12px 14px; background:linear-gradient(180deg, #F0F9FF 0%, #E0F2FE 100%); border:1px solid #BAE6FD; border-radius:10px; align-items:center;">
+      <div style="font-size:12px; font-weight:700; color:#0C4A6E; margin-right:6px;">📦 Descargas masivas:</div>
+  `;
+  coordinadores.forEach(c => {
+    barraDescarga += `<button class="btn-descarga-coord" data-coord="${c}" title="Descarga un solo Excel con todos los supervisores que reportan a ${c} (Dashboard general + 1 hoja por supervisor)" style="background:#0EA5E9; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;">📂 Excel ${c}</button>`;
+  });
+  barraDescarga += `<button class="btn-descarga-global" title="Descarga un Excel global con TODOS los supervisores (uso gerencial)" style="background:#7C3AED; color:white; border:none; padding:8px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;">🌐 Excel global</button>`;
+  barraDescarga += `<div style="font-size:10.5px; color:#0C4A6E; opacity:0.8; margin-left:auto;">Cada Excel incluye Dashboard + Detalle por supervisor</div>`;
+  barraDescarga += `</div>`;
+
+  document.getElementById('avance-detalle-agentes').innerHTML = barraDescarga + html;
+
+  // Wires de descarga masiva
+  document.querySelectorAll('.btn-descarga-coord').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      descargarCoordinadorExcel(btn.dataset.coord);
+    };
+  });
+  const btnGlobal = document.querySelector('.btn-descarga-global');
+  if (btnGlobal) {
+    btnGlobal.onclick = (e) => {
+      e.stopPropagation();
+      descargarGlobalExcel();
+    };
+  }
 
   document.querySelectorAll('.btn-descarga-equipo').forEach(btn => {
     btn.onclick = (e) => {
@@ -5812,9 +5882,23 @@ function descargarInactividadExcel() {
 
 function descargarEquipoExcel(supervisor) {
   if (!window.__detalleAgentesData) return;
+  const { mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+
+  const wb = XLSX.utils.book_new();
+  const ok = _addSupervisorSheetsToWB(wb, supervisor, '');
+  if (!ok) { alert('Sin datos para este supervisor'); return; }
+  XLSX.writeFile(wb, `equipo_${supervisor}_${mesLabel}_${anio}.xlsx`);
+}
+
+// Agrega 2 hojas (Dashboard + Detalle) de un supervisor a un workbook ya existente.
+// `prefix` se usa para diferenciar nombres de hoja cuando hay múltiples supervisores.
+// Retorna true si se agregaron hojas, false si no había datos.
+function _addSupervisorSheetsToWB(wb, supervisor, prefix) {
+  if (!window.__detalleAgentesData) return false;
   const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
   const agentes = agentesPorSup[supervisor] || [];
-  if (agentes.length === 0) { alert('Sin datos para este supervisor'); return; }
+  if (agentes.length === 0) return false;
 
   const mesLabel = MESES_NOMBRE[mes - 1];
   const fechaCorte = new Date().toISOString().split('T')[0];
@@ -5892,8 +5976,6 @@ function descargarEquipoExcel(supervisor) {
     fill: { fgColor: { rgb: 'F5F8FB' } },
     ...extra
   });
-
-  const wb = XLSX.utils.book_new();
 
   // ============================================================
   // HOJA 1: DASHBOARD del supervisor
@@ -6175,7 +6257,8 @@ function descargarEquipoExcel(supervisor) {
       }
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, 'Dashboard');
+    const dashName = prefix ? `${prefix}-Dashboard ${supervisor}`.substring(0, 31) : 'Dashboard';
+    XLSX.utils.book_append_sheet(wb, ws, dashName);
   }
 
   // ============================================================
@@ -6360,10 +6443,399 @@ function descargarEquipoExcel(supervisor) {
       }
     }
 
-    XLSX.utils.book_append_sheet(wb, ws, 'Detalle');
+    const detName = prefix ? `${prefix}-Detalle ${supervisor}`.substring(0, 31) : 'Detalle';
+    XLSX.utils.book_append_sheet(wb, ws, detName);
   }
 
-  XLSX.writeFile(wb, `equipo_${supervisor}_${mesLabel}_${anio}.xlsx`);
+  return true;
+}
+
+// ============================================================
+// DESCARGA POR COORDINADOR — un solo Excel con todos los supervisores del coordinador
+// ============================================================
+function descargarCoordinadorExcel(nombreCoordinador) {
+  if (!window.__detalleAgentesData) return;
+  const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+
+  // Determinar supervisores que reportan a este coordinador (vigentes hoy)
+  const mapa = window.__coordinadorPorSupervisor || {};
+  const supervisores = Object.entries(mapa)
+    .filter(([sup, c]) => c === nombreCoordinador && (agentesPorSup[sup] || []).length > 0)
+    .map(([sup]) => sup)
+    .sort();
+
+  if (supervisores.length === 0) { alert(`Sin supervisores con datos para ${nombreCoordinador}`); return; }
+
+  const wb = XLSX.utils.book_new();
+  // Dashboard general del coordinador
+  _addCoordinadorDashboard(wb, nombreCoordinador, supervisores, agentesPorSup);
+  // Una hoja Dashboard + Detalle por cada supervisor
+  supervisores.forEach((sup, i) => {
+    _addSupervisorSheetsToWB(wb, sup, String(i + 1).padStart(2, '0'));
+  });
+
+  XLSX.writeFile(wb, `coordinador_${nombreCoordinador}_${mesLabel}_${anio}.xlsx`);
+}
+
+// ============================================================
+// DESCARGA GLOBAL — todos los supervisores en un Excel
+// ============================================================
+function descargarGlobalExcel() {
+  if (!window.__detalleAgentesData) return;
+  const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+
+  const supervisores = Object.keys(agentesPorSup)
+    .filter(sup => (agentesPorSup[sup] || []).length > 0)
+    .sort();
+
+  if (supervisores.length === 0) { alert('Sin supervisores con datos'); return; }
+
+  const wb = XLSX.utils.book_new();
+  _addGlobalDashboard(wb, supervisores, agentesPorSup);
+  supervisores.forEach((sup, i) => {
+    _addSupervisorSheetsToWB(wb, sup, String(i + 1).padStart(2, '0'));
+  });
+
+  const fechaActual = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `global_${mesLabel}_${anio}_${fechaActual}.xlsx`);
+}
+
+// ============================================================
+// DASHBOARD del coordinador — agregado de sus supervisores
+// ============================================================
+function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
+  const { mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+  const fechaCorte = new Date().toISOString().split('T')[0];
+  const esMesActual = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
+  const evalPct = (a) => esMesActual ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
+
+  function barraPctLoc(pct, longitud = 10) {
+    const ratio = Math.min(1, Math.max(0, pct / 100));
+    const llenos = Math.floor(ratio * longitud);
+    const medio = (ratio * longitud - llenos) >= 0.5 ? '▌' : '';
+    const vacios = longitud - llenos - (medio ? 1 : 0);
+    return '█'.repeat(llenos) + medio + '░'.repeat(Math.max(0, vacios));
+  }
+  function colorPct(pct) {
+    if (pct >= 100) return '16A34A';
+    if (pct >= 85) return 'F59E0B';
+    if (pct >= 50) return 'F97316';
+    return 'DC2626';
+  }
+
+  // Calcular stats por supervisor
+  const stats = supervisores.map(sup => {
+    const ags = (agentesPorSup[sup] || []);
+    const activos = ags.filter(a => !a.esBaja);
+    const meta = activos.reduce((s, a) => s + (a.meta || 0), 0);
+    const avance = activos.reduce((s, a) => s + (a.avance || 0), 0);
+    const esperado = activos.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    const programadas = activos.reduce((s, a) => s + (a.programadas || 0), 0);
+    const canceladas = activos.reduce((s, a) => s + (a.canceladas || 0), 0);
+    const cumplidos = activos.filter(a => a.meta > 0 && evalPct(a) >= 100).length;
+    const enRiesgo = activos.filter(a => a.meta > 0 && evalPct(a) >= 50 && evalPct(a) < 85).length;
+    const criticos = activos.filter(a => a.meta > 0 && evalPct(a) < 50).length;
+    const sinVenta = activos.filter(a => a.avance === 0).length;
+    return {
+      sup, totalActivos: activos.length, bajas: ags.length - activos.length,
+      meta, avance, esperado, gap: avance - esperado,
+      pctMes: meta > 0 ? avance / meta * 100 : 0,
+      programadas, canceladas, cumplidos, enRiesgo, criticos, sinVenta
+    };
+  }).sort((a, b) => b.pctMes - a.pctMes);
+
+  const totalMeta = stats.reduce((s, x) => s + x.meta, 0);
+  const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
+  const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
+  const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
+  const totalGap = totalAvance - totalEsperado;
+  const pctMesGlobal = totalMeta > 0 ? totalAvance / totalMeta * 100 : 0;
+
+  const aoa = [];
+  const merges = [];
+
+  // Banner
+  aoa.push([`📊 DASHBOARD COORDINADOR · ${coord.toUpperCase()}`, '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+  aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos`, '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } });
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  // KPIs
+  aoa.push(['AVANCE TOTAL', '', 'META TOTAL', '', 'GAP', '', '% CUMPLIMIENTO', '']);
+  merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
+  merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
+  merges.push({ s: { r: 3, c: 4 }, e: { r: 3, c: 5 } });
+  merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 7 } });
+
+  aoa.push([totalAvance, '', totalMeta, '', (totalGap >= 0 ? '+' : '') + totalGap, '', pctMesGlobal.toFixed(1) + '%', '']);
+  merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
+  merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
+  merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
+  merges.push({ s: { r: 4, c: 6 }, e: { r: 4, c: 7 } });
+
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  // Tabla de supervisores
+  const tablaStartRow = aoa.length;
+  aoa.push(['🏆 RANKING DE SUPERVISORES', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: tablaStartRow, c: 0 }, e: { r: tablaStartRow, c: 7 } });
+
+  aoa.push(['#', 'Supervisor', 'Activos', 'Meta', 'Avance', '% Mes', 'Gap', 'Visual']);
+  stats.forEach((s, i) => {
+    aoa.push([i + 1, s.sup, s.totalActivos, s.meta, s.avance, s.pctMes.toFixed(1) + '%', (s.gap >= 0 ? '+' : '') + s.gap, barraPctLoc(s.pctMes, 18)]);
+  });
+
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  // Salud del equipo
+  const saludStart = aoa.length;
+  aoa.push(['🩺 SALUD POR SUPERVISOR', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: saludStart, c: 0 }, e: { r: saludStart, c: 7 } });
+
+  aoa.push(['Supervisor', 'Activos', '🟢 Cumplidos', '🟡 En riesgo', '🔴 Críticos', '⛔ Sin venta', 'Programadas', 'Canceladas']);
+  stats.forEach(s => {
+    aoa.push([s.sup, s.totalActivos, s.cumplidos, s.enRiesgo, s.criticos, s.sinVenta, s.programadas, s.canceladas]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = [{ wch: 5 }, { wch: 22 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 11 }, { wch: 22 }];
+
+  const rows = [{ hpt: 32 }, { hpt: 22 }, { hpt: 8 }, { hpt: 22 }, { hpt: 50 }, { hpt: 8 }, { hpt: 24 }, { hpt: 22 }];
+  for (let i = 0; i < stats.length; i++) rows.push({ hpt: 22 });
+  rows.push({ hpt: 8 });
+  rows.push({ hpt: 24 });
+  rows.push({ hpt: 22 });
+  for (let i = 0; i < stats.length; i++) rows.push({ hpt: 22 });
+  ws['!rows'] = rows;
+
+  // Estilos
+  const r = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = r.s.r; R <= r.e.r; R++) {
+    for (let C = r.s.c; C <= r.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+      if (R === 0) ws[ref].s = { fill: { fgColor: { rgb: '0C4A6E' } }, font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      else if (R === 1) ws[ref].s = { fill: { fgColor: { rgb: '0EA5E9' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      else if (R === 3) {
+        let bg = '0EA5E9';
+        if (C === 2 || C === 3) bg = '0077A8';
+        else if (C === 4 || C === 5) bg = totalGap >= 0 ? '16A34A' : 'DC2626';
+        else if (C === 6 || C === 7) bg = colorPct(pctMesGlobal);
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      } else if (R === 4) {
+        let bg = 'F0F9FF', fg = '0EA5E9';
+        if (C === 2 || C === 3) { bg = 'EFF6FF'; fg = '0077A8'; }
+        else if (C === 4 || C === 5) {
+          if (totalGap >= 0) { bg = 'F0FDF4'; fg = '16A34A'; }
+          else { bg = 'FEF2F2'; fg = 'DC2626'; }
+        } else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobal); bg = 'FFFFFF'; }
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 28, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
+      } else if (R === tablaStartRow || R === saludStart) {
+        ws[ref].s = { fill: { fgColor: { rgb: '0C4A6E' } }, font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === tablaStartRow + 1 || R === saludStart + 1) {
+        ws[ref].s = { fill: { fgColor: { rgb: '0EA5E9' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+      } else if (R >= tablaStartRow + 2 && R < tablaStartRow + 2 + stats.length) {
+        const idx = R - (tablaStartRow + 2);
+        const isStripe = idx % 2 === 1;
+        const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+        const s = stats[idx];
+        if (C === 7) {
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorPct(s.pctMes) } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        } else if (C === 5) {
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorPct(s.pctMes) } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        } else if (C === 6) {
+          const gapBg = s.gap >= 0 ? '16A34A' : 'DC2626';
+          ws[ref].s = { fill: { fgColor: { rgb: gapBg } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        } else {
+          ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 10, bold: C === 1 }, alignment: { horizontal: C === 1 ? 'left' : 'center', vertical: 'center', indent: C === 1 ? 1 : 0 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        }
+      } else if (R >= saludStart + 2 && R < saludStart + 2 + stats.length) {
+        const idx = R - (saludStart + 2);
+        const isStripe = idx % 2 === 1;
+        const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+        const s = stats[idx];
+        // Color especial para columnas críticas/sin venta si > 0
+        let cellBg = bg;
+        if (C === 4 && s.criticos > 0) cellBg = 'FEE2E2';
+        else if (C === 5 && s.sinVenta > 0) cellBg = 'FEE2E2';
+        else if (C === 2 && s.cumplidos > 0) cellBg = 'D1FAE5';
+        ws[ref].s = { fill: { fgColor: { rgb: cellBg } }, font: { name: 'Calibri', sz: 10, bold: C === 0 }, alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center', indent: C === 0 ? 1 : 0 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, '00-Dashboard general');
+}
+
+// ============================================================
+// DASHBOARD GLOBAL — todos los supervisores con comparativo entre coordinadores
+// ============================================================
+function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
+  const mapa = window.__coordinadorPorSupervisor || {};
+  const coordSet = new Set();
+  supervisores.forEach(sup => { if (mapa[sup]) coordSet.add(mapa[sup]); });
+  const coords = [...coordSet].sort();
+
+  // Para el dashboard global, agrupar supervisores por coordinador
+  const { mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+  const fechaCorte = new Date().toISOString().split('T')[0];
+  const esMesActual = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
+  const evalPct = (a) => esMesActual ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
+
+  function barraPctLoc(pct, longitud = 10) {
+    const ratio = Math.min(1, Math.max(0, pct / 100));
+    const llenos = Math.floor(ratio * longitud);
+    const medio = (ratio * longitud - llenos) >= 0.5 ? '▌' : '';
+    const vacios = longitud - llenos - (medio ? 1 : 0);
+    return '█'.repeat(llenos) + medio + '░'.repeat(Math.max(0, vacios));
+  }
+  function colorPct(pct) {
+    if (pct >= 100) return '16A34A';
+    if (pct >= 85) return 'F59E0B';
+    if (pct >= 50) return 'F97316';
+    return 'DC2626';
+  }
+
+  // Stats por supervisor
+  const stats = supervisores.map(sup => {
+    const ags = (agentesPorSup[sup] || []);
+    const activos = ags.filter(a => !a.esBaja);
+    const meta = activos.reduce((s, a) => s + (a.meta || 0), 0);
+    const avance = activos.reduce((s, a) => s + (a.avance || 0), 0);
+    const esperado = activos.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    return { sup, coord: mapa[sup] || '—', totalActivos: activos.length, meta, avance, esperado, gap: avance - esperado, pctMes: meta > 0 ? avance / meta * 100 : 0 };
+  });
+
+  // Agrupar por coordinador
+  const coordStats = {};
+  stats.forEach(s => {
+    if (!coordStats[s.coord]) coordStats[s.coord] = { coord: s.coord, sups: 0, activos: 0, meta: 0, avance: 0, esperado: 0 };
+    coordStats[s.coord].sups++;
+    coordStats[s.coord].activos += s.totalActivos;
+    coordStats[s.coord].meta += s.meta;
+    coordStats[s.coord].avance += s.avance;
+    coordStats[s.coord].esperado += s.esperado;
+  });
+  const coordArr = Object.values(coordStats).map(c => ({ ...c, gap: c.avance - c.esperado, pctMes: c.meta > 0 ? c.avance / c.meta * 100 : 0 })).sort((a, b) => b.pctMes - a.pctMes);
+
+  const totalMeta = stats.reduce((s, x) => s + x.meta, 0);
+  const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
+  const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
+  const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
+  const totalGap = totalAvance - totalEsperado;
+  const pctMesGlobal = totalMeta > 0 ? totalAvance / totalMeta * 100 : 0;
+
+  const aoa = [];
+  const merges = [];
+
+  aoa.push(['🌐 DASHBOARD GLOBAL · TODOS LOS SUPERVISORES', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+  aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos · ${coordArr.length} coordinadores`, '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } });
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  aoa.push(['AVANCE', '', 'META', '', 'GAP', '', '% CUMPLIMIENTO', '']);
+  merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
+  merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
+  merges.push({ s: { r: 3, c: 4 }, e: { r: 3, c: 5 } });
+  merges.push({ s: { r: 3, c: 6 }, e: { r: 3, c: 7 } });
+
+  aoa.push([totalAvance, '', totalMeta, '', (totalGap >= 0 ? '+' : '') + totalGap, '', pctMesGlobal.toFixed(1) + '%', '']);
+  merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
+  merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
+  merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
+  merges.push({ s: { r: 4, c: 6 }, e: { r: 4, c: 7 } });
+
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  // Comparativo entre coordinadores
+  const coordStart = aoa.length;
+  aoa.push(['📊 COMPARATIVO ENTRE COORDINADORES', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: coordStart, c: 0 }, e: { r: coordStart, c: 7 } });
+
+  aoa.push(['Coordinador', 'Supervisores', 'Agentes', 'Meta', 'Avance', '% Mes', 'Gap', 'Visual']);
+  coordArr.forEach(c => {
+    aoa.push([c.coord, c.sups, c.activos, c.meta, c.avance, c.pctMes.toFixed(1) + '%', (c.gap >= 0 ? '+' : '') + c.gap, barraPctLoc(c.pctMes, 18)]);
+  });
+
+  aoa.push(['', '', '', '', '', '', '', '']);
+
+  // Ranking de supervisores (todos)
+  const rankStart = aoa.length;
+  aoa.push(['🏆 RANKING DE TODOS LOS SUPERVISORES', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: rankStart, c: 0 }, e: { r: rankStart, c: 7 } });
+
+  aoa.push(['#', 'Supervisor', 'Coord.', 'Agentes', 'Meta', 'Avance', '% Mes', 'Visual']);
+  const statsOrdenados = [...stats].sort((a, b) => b.pctMes - a.pctMes);
+  statsOrdenados.forEach((s, i) => {
+    aoa.push([i + 1, s.sup, s.coord, s.totalActivos, s.meta, s.avance, s.pctMes.toFixed(1) + '%', barraPctLoc(s.pctMes, 18)]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = [{ wch: 5 }, { wch: 22 }, { wch: 14 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 13 }, { wch: 22 }];
+
+  const rows = [{ hpt: 32 }, { hpt: 22 }, { hpt: 8 }, { hpt: 22 }, { hpt: 50 }, { hpt: 8 }, { hpt: 24 }, { hpt: 22 }];
+  for (let i = 0; i < coordArr.length; i++) rows.push({ hpt: 22 });
+  rows.push({ hpt: 8 });
+  rows.push({ hpt: 24 });
+  rows.push({ hpt: 22 });
+  for (let i = 0; i < statsOrdenados.length; i++) rows.push({ hpt: 22 });
+  ws['!rows'] = rows;
+
+  // Estilos
+  const r = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = r.s.r; R <= r.e.r; R++) {
+    for (let C = r.s.c; C <= r.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+      if (R === 0) ws[ref].s = { fill: { fgColor: { rgb: '4C1D95' } }, font: { name: 'Calibri', sz: 18, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      else if (R === 1) ws[ref].s = { fill: { fgColor: { rgb: '7C3AED' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      else if (R === 3) {
+        let bg = '7C3AED';
+        if (C === 2 || C === 3) bg = '0077A8';
+        else if (C === 4 || C === 5) bg = totalGap >= 0 ? '16A34A' : 'DC2626';
+        else if (C === 6 || C === 7) bg = colorPct(pctMesGlobal);
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+      } else if (R === 4) {
+        let bg = 'F5F3FF', fg = '7C3AED';
+        if (C === 2 || C === 3) { bg = 'EFF6FF'; fg = '0077A8'; }
+        else if (C === 4 || C === 5) { if (totalGap >= 0) { bg = 'F0FDF4'; fg = '16A34A'; } else { bg = 'FEF2F2'; fg = 'DC2626'; } }
+        else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobal); bg = 'FFFFFF'; }
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 28, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
+      } else if (R === coordStart || R === rankStart) {
+        ws[ref].s = { fill: { fgColor: { rgb: '4C1D95' } }, font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === coordStart + 1 || R === rankStart + 1) {
+        ws[ref].s = { fill: { fgColor: { rgb: '7C3AED' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
+      } else if (R >= coordStart + 2 && R < coordStart + 2 + coordArr.length) {
+        const idx = R - (coordStart + 2);
+        const isStripe = idx % 2 === 1;
+        const bg = isStripe ? 'F5F3FF' : 'FFFFFF';
+        const c = coordArr[idx];
+        if (C === 7) ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Consolas', sz: 11, bold: true, color: { rgb: colorPct(c.pctMes) } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        else if (C === 5) ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorPct(c.pctMes) } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        else if (C === 6) ws[ref].s = { fill: { fgColor: { rgb: c.gap >= 0 ? '16A34A' : 'DC2626' } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        else ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: C === 0 }, alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center', indent: C === 0 ? 1 : 0 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+      } else if (R >= rankStart + 2 && R < rankStart + 2 + statsOrdenados.length) {
+        const idx = R - (rankStart + 2);
+        const isStripe = idx % 2 === 1;
+        const bg = isStripe ? 'F5F8FB' : 'FFFFFF';
+        const s = statsOrdenados[idx];
+        if (C === 7) ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Consolas', sz: 10, bold: true, color: { rgb: colorPct(s.pctMes) } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        else if (C === 6) ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: colorPct(s.pctMes) } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+        else ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 10, bold: C === 1 }, alignment: { horizontal: C === 1 || C === 2 ? 'left' : 'center', vertical: 'center', indent: C === 1 || C === 2 ? 1 : 0 }, border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } } };
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, '00-Dashboard global');
 }
 
 function toggleAgenteAcordeon(sup) {
