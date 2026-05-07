@@ -852,6 +852,102 @@
     .tarjeta-principal .metrica-valor { font-size: 18px; }
     table { font-size: 10px !important; }
   }
+
+  /* ===== TABLA MAESTRA · estilo dedicado ===== */
+  #avance-tabla {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  #avance-tabla thead th {
+    background: linear-gradient(180deg, var(--att-navy) 0%, #001f47 100%);
+    color: #fff;
+    font-weight: 700;
+    font-size: 10.5px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 12px 8px;
+    text-align: center;
+    vertical-align: middle;
+    height: 56px;
+    border: none;
+    position: relative;
+  }
+  #avance-tabla thead th:first-child { padding-left: 16px; text-align: left; }
+  #avance-tabla thead th:last-child { padding-right: 16px; }
+  /* Separadores verticales sutiles entre grupos de columnas */
+  #avance-tabla thead th.col-sep-left::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 14px; bottom: 14px;
+    width: 1px;
+    background: rgba(255,255,255,0.18);
+  }
+  #avance-tabla tbody td {
+    padding: 11px 8px;
+    text-align: center;
+    vertical-align: middle;
+    border-bottom: 1px solid #EAEEF2;
+    font-size: 13px;
+  }
+  #avance-tabla tbody td:first-child { padding-left: 16px; text-align: left; }
+  #avance-tabla tbody td:last-child { padding-right: 16px; }
+  #avance-tabla tbody tr:hover td { background: #F8FAFC; }
+  /* Sombreado tenue en columnas relevantes (Avance, Esperado, Dif, Gap potencial, Proyección) */
+  #avance-tabla tbody tr td.col-relevante,
+  #avance-tabla thead tr th.col-relevante {
+    background-color: rgba(0, 119, 168, 0.05);
+  }
+  #avance-tabla thead tr th.col-relevante {
+    background: linear-gradient(180deg, #003a73 0%, #002a52 100%);
+  }
+  #avance-tabla tbody tr:hover td.col-relevante { background-color: rgba(0, 119, 168, 0.10); }
+  /* Fila TOTAL */
+  #avance-tabla tbody tr.fila-total td {
+    background: linear-gradient(180deg, #F1F5F9 0%, #E2E8F0 100%) !important;
+    font-weight: 800;
+    font-size: 13.5px;
+    border-top: 2px solid var(--att-navy);
+    border-bottom: none;
+    padding-top: 14px;
+    padding-bottom: 14px;
+  }
+  #avance-tabla tbody tr.fila-total td.col-relevante {
+    background: linear-gradient(180deg, #DBEAFE 0%, #BFDBFE 100%) !important;
+  }
+  /* Pequeña etiqueta debajo del header de Gap Potencial */
+  #avance-tabla thead th .header-sub {
+    display: block;
+    font-size: 8.5px;
+    font-weight: 500;
+    opacity: 0.75;
+    margin-top: 2px;
+    text-transform: none;
+    letter-spacing: 0.2px;
+  }
+  /* Chip para estatus */
+  #avance-tabla tbody td .estatus-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  #avance-tabla tbody td .estatus-chip.verde { background: #D1FAE5; color: #065F46; }
+  #avance-tabla tbody td .estatus-chip.amarillo { background: #FEF3C7; color: #92400E; }
+  #avance-tabla tbody td .estatus-chip.rojo { background: #FEE2E2; color: #991B1B; }
+  /* Toggle de columnas Tránsito y Gap potencial */
+  #avance-tabla.hide-transito .col-transito { display: none; }
+  #btn-toggle-transito:hover { background:#F1F5F9; border-color:var(--att-blue); }
+  #btn-toggle-transito.activo { background:#FEF3C7; border-color:#D97706; color:#92400E; }
 </style>
 </head>
 <body>
@@ -937,7 +1033,15 @@
       <div style="font-weight: 600; font-size: 15px; margin: 24px 0 12px; color: var(--att-navy);">Estatus por supervisor</div>
       <div id="avance-semaforo-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;"></div>
 
-      <div style="font-weight: 600; font-size: 15px; margin: 28px 0 12px; color: var(--att-navy);">Tabla maestra</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin: 28px 0 12px; gap:12px; flex-wrap:wrap;">
+        <div style="font-weight: 600; font-size: 15px; color: var(--att-navy);">Tabla maestra</div>
+        <button id="btn-toggle-transito"
+                style="background:#fff; border:1.5px solid var(--border); padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; color:var(--text); display:flex; align-items:center; gap:6px;"
+                title="Las columnas Tránsito y Gap potencial muestran datos no garantizados. Útil ocultarlas al compartir capturas con el equipo.">
+          <span id="btn-toggle-transito-icon">👁️</span>
+          <span id="btn-toggle-transito-label">Ocultar Tránsito y Gap potencial</span>
+        </button>
+      </div>
       <div style="overflow-x: auto;">
         <table id="avance-tabla"></table>
       </div>
@@ -3725,7 +3829,9 @@ function renderAvanceUI() {
 
   const proy = proyeccionModo === 'mes' ? estadoTotal.proyMes : estadoTotal.proySem;
   const pctProy = (proy / estadoTotal.meta * 100);
-  const estadoProy = pctProy >= 100 ? '🟢' : pctProy >= 95 ? '🟡' : '🔴';
+  const estadoProyClase = pctProy >= 100 ? 'verde' : pctProy >= 95 ? 'amarillo' : 'rojo';
+  const estadoProyEmoji = pctProy >= 100 ? '🟢' : pctProy >= 95 ? '🟡' : '🔴';
+  const estadoProy = `<span class="estatus-chip ${estadoProyClase}">${estadoProyEmoji} ${estadoProyClase.toUpperCase()}</span>`;
   const ritmoNecesarioTotal = diasRestantes > 0 ? Math.max(0, estadoTotal.meta - estadoTotal.avance) / diasRestantes : 0;
   const pctAvanceTotal = estadoTotal.pctCumplimiento;
   const pctBarraIdeal = diasTranscurridos / estadoTotal.diasHabilesTotales * 100;
@@ -3787,7 +3893,7 @@ function renderAvanceUI() {
       <div class="proyeccion-box">
         <div>
           <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 2px;">Proyección al cierre</div>
-          <div style="font-size: 22px; font-weight: 800;">${proy.toLocaleString()} ${estadoProy}</div>
+          <div style="font-size: 22px; font-weight: 800;">${proy.toLocaleString()} ${estadoProyEmoji}</div>
         </div>
         <div style="text-align: right;">
           <div style="font-size: 11px; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; margin-bottom: 2px;">vs meta</div>
@@ -3867,17 +3973,17 @@ function renderAvanceUI() {
     <thead>
       <tr>
         <th>Supervisor</th>
-        <th class="num" title="Meta del mes completo">Meta</th>
-        <th class="num" title="Meta diaria que necesita el equipo (Meta total ÷ días hábiles del mes)">Meta/día</th>
-        <th class="num" title="Activadas en el mes hasta el día actual">Avance</th>
-        <th class="num" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mensual</th>
-        <th class="num" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado hoy</th>
-        <th class="num" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
-        <th class="num" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
-        <th class="num" title="Ventas programadas en BO que aún no se activan (en proceso de activación AT&T)">Tránsito</th>
-        <th class="num" title="Dif + Tránsito · Cómo quedaría si TODAS las ventas en tránsito llegaran a activarse. NO es certeza, es proyección optimista.">Gap potencial<br><span style="font-size:9px; font-weight:400; opacity:0.85;">(si tránsito activa)</span></th>
-        <th class="num" title="Activadas por día que necesita lograr de aquí al cierre">Ritmo necesario</th>
-        <th class="num" title="Estimación del cierre del mes basada en el ritmo actual">Proyección</th>
+        <th title="Meta del mes completo">Meta</th>
+        <th title="Meta diaria que necesita el equipo (Meta total ÷ días hábiles del mes)">Meta/día</th>
+        <th class="col-relevante col-sep-left" title="Activadas en el mes hasta el día actual">Avance</th>
+        <th class="col-relevante" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mensual</th>
+        <th class="col-relevante" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado<br><span class="header-sub">hoy</span></th>
+        <th class="col-relevante" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
+        <th class="col-relevante" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
+        <th class="col-transito col-sep-left" title="Ventas programadas en BO que aún no se activan (en proceso de activación AT&T)">Tránsito</th>
+        <th class="col-transito col-relevante" title="Dif + Tránsito · Cómo quedaría si TODAS las ventas en tránsito llegaran a activarse. NO es certeza, es proyección optimista.">Gap potencial<span class="header-sub">si tránsito activa</span></th>
+        <th class="col-sep-left" title="Activadas por día que necesita lograr de aquí al cierre">Ritmo<br><span class="header-sub">necesario</span></th>
+        <th class="col-relevante" title="Estimación del cierre del mes basada en el ritmo actual">Proyección</th>
         <th>Estatus</th>
       </tr>
     </thead>
@@ -3897,46 +4003,80 @@ function renderAvanceUI() {
         const gapPotColor = gapPot >= 0 ? 'var(--green)' : gapPot >= -3 ? 'var(--amber)' : 'var(--red)';
         return `<tr>
           <td><strong>${d.sup}</strong></td>
-          <td class="num">${d.meta}</td>
-          <td class="num" style="color: var(--att-blue); font-weight: 700;">${metaDia.toFixed(1)}</td>
-          <td class="num"><strong>${d.avance}</strong></td>
-          <td class="num">${d.pctCumpl.toFixed(1)}%</td>
-          <td class="num">${d.esperado}</td>
-          <td class="num" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
-          <td class="num ${diffClase}">${diffSign}${d.diff}</td>
-          <td class="num" style="color: var(--text-soft); font-weight: 600;">${d.transito || 0}</td>
-          <td class="num" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${gapPot}</td>
-          <td class="num" style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
-          <td class="num" style="color: ${proyColor}; font-weight: 700;">${proy} (${pctProy.toFixed(0)}%)</td>
-          <td>${emoji} ${d.estado.toUpperCase()}</td>
+          <td>${d.meta}</td>
+          <td style="color: var(--att-blue); font-weight: 700;">${metaDia.toFixed(1)}</td>
+          <td class="col-relevante"><strong style="font-size:14px;">${d.avance}</strong></td>
+          <td class="col-relevante">${d.pctCumpl.toFixed(1)}%</td>
+          <td class="col-relevante">${d.esperado}</td>
+          <td class="col-relevante" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
+          <td class="col-relevante ${diffClase}">${diffSign}${d.diff}</td>
+          <td class="col-transito" style="color: var(--text-soft); font-weight: 600;">${d.transito || 0}</td>
+          <td class="col-transito col-relevante" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${gapPot}</td>
+          <td style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
+          <td class="col-relevante" style="color: ${proyColor}; font-weight: 700;">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
+          <td><span class="estatus-chip ${d.estado}">${emoji} ${d.estado.toUpperCase()}</span></td>
         </tr>`;
       }).join('')}
-      <tr style="background: var(--bg); font-weight: 700;">
+      <tr class="fila-total">
         ${(() => {
           const transitoTotal = supervisoresData.reduce((s, d) => s + (d.transito || 0), 0);
           const difTotal = estadoTotal.avance - estadoTotal.esperado;
           const gapPotTotal = difTotal + transitoTotal;
           const gapPotTotalSign = gapPotTotal >= 0 ? '+' : '';
           const gapPotTotalColor = gapPotTotal >= 0 ? 'var(--green)' : gapPotTotal >= -10 ? 'var(--amber)' : 'var(--red)';
+          const pctEspTotal = estadoTotal.esperado > 0 ? (estadoTotal.avance / estadoTotal.esperado * 100) : 0;
+          const colorPctEspTotal = pctEspTotal >= 100 ? 'var(--green)' : pctEspTotal >= 85 ? 'var(--amber)' : 'var(--red)';
           return `
-        <td>TOTAL</td>
-        <td class="num">${estadoTotal.meta}</td>
-        <td class="num" style="color: var(--att-blue);">${estadoTotal.diasHabilesTotales > 0 ? (estadoTotal.meta / estadoTotal.diasHabilesTotales).toFixed(1) : '—'}</td>
-        <td class="num">${estadoTotal.avance}</td>
-        <td class="num">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
-        <td class="num">${estadoTotal.esperado}</td>
-        <td class="num" style="font-weight:700;">${estadoTotal.esperado > 0 ? (estadoTotal.avance / estadoTotal.esperado * 100).toFixed(1) : 0}%</td>
-        <td class="num ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${difTotal}</td>
-        <td class="num" style="color: var(--text-soft);">${transitoTotal}</td>
-        <td class="num" style="color: ${gapPotTotalColor}; font-weight: 700;">${gapPotTotalSign}${gapPotTotal}</td>
-        <td class="num">${ritmoNecesarioTotal.toFixed(1)}</td>
-        <td class="num">${proy} (${pctProy.toFixed(0)}%)</td>
+        <td><strong>TOTAL</strong></td>
+        <td>${estadoTotal.meta}</td>
+        <td style="color: var(--att-blue);">${estadoTotal.diasHabilesTotales > 0 ? (estadoTotal.meta / estadoTotal.diasHabilesTotales).toFixed(1) : '—'}</td>
+        <td class="col-relevante"><strong style="font-size:14px;">${estadoTotal.avance}</strong></td>
+        <td class="col-relevante">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
+        <td class="col-relevante">${estadoTotal.esperado}</td>
+        <td class="col-relevante" style="color: ${colorPctEspTotal};">${pctEspTotal.toFixed(1)}%</td>
+        <td class="col-relevante ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${difTotal}</td>
+        <td class="col-transito" style="color: var(--text-soft);">${transitoTotal}</td>
+        <td class="col-transito col-relevante" style="color: ${gapPotTotalColor};">${gapPotTotalSign}${gapPotTotal}</td>
+        <td>${ritmoNecesarioTotal.toFixed(1)}</td>
+        <td class="col-relevante">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
         <td>${estadoProy}</td>
           `;
         })()}
       </tr>
     </tbody>
   `;
+
+  // Wire del botón para mostrar/ocultar columnas Tránsito y Gap potencial.
+  // El estado se guarda en localStorage para que persista entre cargas.
+  (function wireToggleTransito() {
+    const btn = document.getElementById('btn-toggle-transito');
+    const tabla = document.getElementById('avance-tabla');
+    const iconEl = document.getElementById('btn-toggle-transito-icon');
+    const labelEl = document.getElementById('btn-toggle-transito-label');
+    if (!btn || !tabla) return;
+    function aplicar(oculto) {
+      if (oculto) {
+        tabla.classList.add('hide-transito');
+        btn.classList.add('activo');
+        if (iconEl) iconEl.textContent = '🚫';
+        if (labelEl) labelEl.textContent = 'Mostrar Tránsito y Gap potencial';
+      } else {
+        tabla.classList.remove('hide-transito');
+        btn.classList.remove('activo');
+        if (iconEl) iconEl.textContent = '👁️';
+        if (labelEl) labelEl.textContent = 'Ocultar Tránsito y Gap potencial';
+      }
+    }
+    // Estado inicial: visible (a menos que el usuario haya guardado otra cosa)
+    let estadoGuardado = false;
+    try { estadoGuardado = localStorage.getItem('hideTransito') === '1'; } catch (e) {}
+    aplicar(estadoGuardado);
+    btn.onclick = () => {
+      const ahoraOculto = !tabla.classList.contains('hide-transito');
+      aplicar(ahoraOculto);
+      try { localStorage.setItem('hideTransito', ahoraOculto ? '1' : '0'); } catch (e) {}
+    };
+  })();
 
   renderTendenciaMes();
   renderDetalleAgentes();
