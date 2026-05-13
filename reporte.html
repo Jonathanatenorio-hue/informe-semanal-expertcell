@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Reporte Semanal · ExpertCell</title>
+<title>Reporte Semanal · ExpertCell · v2026.05.13b</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -12748,6 +12748,11 @@ document.addEventListener('click', (e) => {
     return;
   }
 
+  // No procesar clicks dentro del contenido de comisiones (tiene su propia gestión de filtros)
+  if (e.target.closest && e.target.closest('#comisiones-contenido')) {
+    return;
+  }
+
   const title = e.target.closest('.section.collapsible > .section-title');
   if (title) {
     title.parentElement.classList.toggle('abierto');
@@ -14544,16 +14549,30 @@ function _comRenderUI(cont, data) {
 
   cont.innerHTML = html;
 
-  // Wire de filtros — usar addEventListener con stopPropagation para evitar bugs de bubble
+  // Wire de filtros — usar addEventListener con stopPropagation y stopImmediatePropagation
+  // para evitar que el handler global de section-title interfiera. También preservamos
+  // el scroll de la página para que no parezca que "se recarga el reporte".
+  const reRender = () => {
+    const scrollY = window.scrollY;
+    const scrollX = window.scrollX;
+    _comRenderUI(cont, data);
+    // Restaurar scroll después del re-render
+    window.scrollTo(scrollX, scrollY);
+  };
   const wireSelect = (id, setter) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', (e) => {
       e.stopPropagation();
+      e.stopImmediatePropagation();
       setter(e.target.value);
-      _comRenderUI(cont, data);
-    });
-    el.addEventListener('click', (e) => e.stopPropagation());
+      reRender();
+    }, true); // captura, antes que cualquier otro handler
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    }, true);
+    el.addEventListener('mousedown', (e) => e.stopPropagation(), true);
   };
   wireSelect('com-filtro-sup', (v) => { _comFiltroSupervisor = v; });
   wireSelect('com-filtro-centro', (v) => { _comFiltroCentro = v; });
@@ -14563,10 +14582,11 @@ function _comRenderUI(cont, data) {
   if (chkBajas) {
     chkBajas.addEventListener('change', (e) => {
       e.stopPropagation();
+      e.stopImmediatePropagation();
       _comMostrarBajas = e.target.checked;
-      _comRenderUI(cont, data);
-    });
-    chkBajas.addEventListener('click', (e) => e.stopPropagation());
+      reRender();
+    }, true);
+    chkBajas.addEventListener('click', (e) => e.stopPropagation(), true);
   }
 
   const btnDesc = document.getElementById('com-btn-descargar');
