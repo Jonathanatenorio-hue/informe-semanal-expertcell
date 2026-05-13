@@ -5894,7 +5894,7 @@ function descargarEquipoExcel(supervisor) {
 // Agrega 2 hojas (Dashboard + Detalle) de un supervisor a un workbook ya existente.
 // `prefix` se usa para diferenciar nombres de hoja cuando hay múltiples supervisores.
 // Retorna true si se agregaron hojas, false si no había datos.
-function _addSupervisorSheetsToWB(wb, supervisor, prefix) {
+function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
   if (!window.__detalleAgentesData) return false;
   const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
   const agentes = agentesPorSup[supervisor] || [];
@@ -6264,7 +6264,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix) {
   // ============================================================
   // HOJA 2: Detalle por agente (con barras visuales)
   // ============================================================
-  {
+  if (!soloDashboard) {
     const cols = ['#','Agente','Tipo','Días act.','Sin prog.','Sin act.','Última prog.','Última act.','Prog','Act','Canc','ARPU','Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección','Estatus'];
     const filas = ordenados.map((a, idx) => {
       const pctEval = evalPctXlsx(a);
@@ -6493,13 +6493,211 @@ function descargarGlobalExcel() {
   if (supervisores.length === 0) { alert('Sin supervisores con datos'); return; }
 
   const wb = XLSX.utils.book_new();
+  // 1. Dashboard global
   _addGlobalDashboard(wb, supervisores, agentesPorSup);
+  // 2. Solo Dashboard por supervisor (sin Detalle individual)
   supervisores.forEach((sup, i) => {
-    _addSupervisorSheetsToWB(wb, sup, String(i + 1).padStart(2, '0'));
+    _addSupervisorSheetsToWB(wb, sup, String(i + 1).padStart(2, '0'), true);
   });
+  // 3. Hoja unificada con todos los agentes y autofiltros nativos de Excel
+  _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup);
 
   const fechaActual = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `global_${mesLabel}_${anio}_${fechaActual}.xlsx`);
+}
+
+// ============================================================
+// HOJA "Detalle General" — todos los agentes de todos los supervisores
+// con autofiltros nativos de Excel (los triangulitos en headers)
+// ============================================================
+function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
+  const { mes, anio } = window.__detalleAgentesData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+  const fechaCorte = new Date().toISOString().split('T')[0];
+
+  // Detectar si el mes seleccionado es el mes en curso
+  const esMesActual = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
+  const evalPct = (a) => esMesActual ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
+
+  // Construir filas combinando todos los supervisores
+  const todos = [];
+  supervisores.forEach(sup => {
+    (agentesPorSup[sup] || []).forEach(a => {
+      todos.push({ ...a, _supSorted: sup });
+    });
+  });
+  // Ordenar por supervisor luego por %
+  todos.sort((x, y) => {
+    if (x._supSorted !== y._supSorted) return x._supSorted.localeCompare(y._supSorted);
+    return (y.pct || 0) - (x.pct || 0);
+  });
+
+  const cols = ['#', 'Supervisor', 'Agente', 'Centro', 'Tipo', 'Estatus', 'Días act.',
+                'Sin prog.', 'Sin act.', 'Última prog.', 'Última act.',
+                'Programadas', 'Activadas', 'Canceladas', 'En tránsito', 'ARPU',
+                'Meta', 'Esperado hoy', 'Gap', '% Mes', 'Ritmo actual', 'Ritmo nec.', 'Proyección'];
+
+  const aoa = [
+    [`📋 DETALLE GENERAL · Todos los agentes`, ...new Array(cols.length - 1).fill('')],
+    [`${mesLabel} ${anio} · Corte: ${fechaCorte} · ${todos.length} agentes · ${supervisores.length} supervisores · Usa los filtros del header (▾) para filtrar`, ...new Array(cols.length - 1).fill('')],
+    cols
+  ];
+
+  todos.forEach((a, idx) => {
+    const pctEval = evalPct(a);
+    const estatus = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : pctEval >= 100 ? 'Cumplido' : pctEval >= 85 ? 'En riesgo' : pctEval >= 50 ? 'Atrasado' : 'Crítico';
+    aoa.push([
+      idx + 1,
+      a._supSorted,
+      a.ejecutivo,
+      a.centro || (window.__centroPorAgente && window.__centroPorAgente[a.ejecutivo]) || '',
+      a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+      estatus,
+      a.diasActivos,
+      a.diasSinProg !== null && a.diasSinProg !== undefined ? Number(a.diasSinProg.toFixed(1)) : null,
+      a.diasSinAct !== null && a.diasSinAct !== undefined ? Number(a.diasSinAct.toFixed(1)) : null,
+      a.ultProg || '—',
+      a.ultAct || '—',
+      a.programadas,
+      a.avance,
+      a.canceladas || 0,
+      a.transito || 0,
+      a.arpu && a.arpu > 0 ? Math.round(a.arpu) : null,
+      a.meta,
+      a.meta > 0 ? a.esperadoHoy : null,
+      a.meta > 0 ? a.gap : null,
+      a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
+      Number((a.ritmoActual || 0).toFixed(2)),
+      a.meta > 0 ? Number((a.ritmoNecesario || 0).toFixed(2)) : null,
+      a.proyeccion || 0
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
+  ];
+  ws['!cols'] = [
+    { wch: 5 }, { wch: 14 }, { wch: 32 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, { wch: 9 },
+    { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 9 },
+    { wch: 7 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 12 }, { wch: 11 }, { wch: 11 }
+  ];
+  const rows = [{ hpt: 30 }, { hpt: 20 }, { hpt: 32 }];
+  for (let i = 0; i < todos.length; i++) rows.push({ hpt: 20 });
+  ws['!rows'] = rows;
+
+  // AUTOFILTRO de Excel — esto activa los triangulitos en los headers
+  // El rango debe incluir desde el header (fila 3, índice 2) hasta el final
+  const ultimaFila = todos.length + 2; // index 0-based: header en R=2, datos hasta R=2+todos.length
+  ws['!autofilter'] = {
+    ref: XLSX.utils.encode_range(
+      { r: 2, c: 0 },
+      { r: ultimaFila, c: cols.length - 1 }
+    )
+  };
+
+  // Congelar primeras 3 columnas + 3 filas de header
+  ws['!freeze'] = { xSplit: 3, ySplit: 3 };
+
+  // Helpers para semáforos
+  function colorSemDias(dias) {
+    if (dias >= 7) return { bg: 'B91C1C', fg: 'FFFFFF' };
+    if (dias >= 5) return { bg: 'DC2626', fg: 'FFFFFF' };
+    if (dias >= 3.5) return { bg: 'F59E0B', fg: 'FFFFFF' };
+    if (dias >= 2.5) return { bg: 'FCD34D', fg: '000000' };
+    return { bg: 'FACC15', fg: '000000' };
+  }
+  function colorPct(pct) {
+    if (pct >= 100) return '16A34A';
+    if (pct >= 85) return 'F59E0B';
+    if (pct >= 50) return 'F97316';
+    return 'DC2626';
+  }
+  function colorEstatusBg(est) {
+    if (est === 'Cumplido') return { bg: '16A34A', fg: 'FFFFFF' };
+    if (est === 'En riesgo') return { bg: 'F59E0B', fg: 'FFFFFF' };
+    if (est === 'Atrasado') return { bg: 'F97316', fg: 'FFFFFF' };
+    if (est === 'Crítico') return { bg: 'DC2626', fg: 'FFFFFF' };
+    if (est === 'Baja') return { bg: '6B7280', fg: 'FFFFFF' };
+    return { bg: 'E5E7EB', fg: '000000' };
+  }
+
+  // Estilos
+  const r = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = r.s.r; R <= r.e.r; R++) {
+    for (let C = r.s.c; C <= r.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) ws[ref] = { t: 's', v: '' };
+
+      if (R === 0) {
+        ws[ref].s = {
+          fill: { fgColor: { rgb: '002B5C' } },
+          font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } },
+          alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+        };
+      } else if (R === 1) {
+        ws[ref].s = {
+          fill: { fgColor: { rgb: '0077A8' } },
+          font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } },
+          alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+        };
+      } else if (R === 2) {
+        ws[ref].s = {
+          fill: { fgColor: { rgb: '002B5C' } },
+          font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } }
+        };
+      } else {
+        const idx = R - 3;
+        const a = todos[idx];
+        if (!a) continue;
+        const colName = cols[C];
+        const isStripe = idx % 2 === 1;
+        const bgStripe = isStripe ? 'F5F8FB' : 'FFFFFF';
+        const baseCell = {
+          fill: { fgColor: { rgb: bgStripe } },
+          font: { name: 'Calibri', sz: 10 },
+          alignment: { horizontal: 'center', vertical: 'center' },
+          border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+        };
+
+        let cellStyle = baseCell;
+        if (colName === 'Supervisor' || colName === 'Agente') {
+          cellStyle = { ...baseCell, font: { name: 'Calibri', sz: 10, bold: true }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+        } else if (colName === 'Tipo') {
+          const tipoBg = a.tipo === 'fija_6' ? 'DBEAFE' : a.tipo === 'sin_meta' ? 'F3F4F6' : 'D1FAE5';
+          cellStyle = { ...baseCell, fill: { fgColor: { rgb: tipoBg } }, font: { name: 'Calibri', sz: 10, bold: true } };
+        } else if (colName === 'Estatus') {
+          const pctEval = evalPct(a);
+          const est = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : pctEval >= 100 ? 'Cumplido' : pctEval >= 85 ? 'En riesgo' : pctEval >= 50 ? 'Atrasado' : 'Crítico';
+          const c = colorEstatusBg(est);
+          cellStyle = { ...baseCell, fill: { fgColor: { rgb: c.bg } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: c.fg } } };
+        } else if (colName === 'Sin prog.' || colName === 'Sin act.') {
+          const dias = parseFloat(ws[ref].v) || 0;
+          if (ws[ref].v !== null && ws[ref].v !== '' && ws[ref].v !== undefined) {
+            const c = colorSemDias(dias);
+            cellStyle = { ...baseCell, fill: { fgColor: { rgb: c.bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: c.fg } } };
+          }
+        } else if (colName === 'Gap') {
+          const g = parseFloat(ws[ref].v);
+          if (!isNaN(g)) {
+            cellStyle = { ...baseCell, fill: { fgColor: { rgb: g >= 0 ? '16A34A' : 'DC2626' } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } } };
+          }
+        } else if (colName === '% Mes') {
+          const pct = parseFloat(ws[ref].v);
+          if (!isNaN(pct)) {
+            cellStyle = { ...baseCell, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorPct(pct) } } };
+          }
+        }
+        ws[ref].s = cellStyle;
+      }
+    }
+  }
+
+  XLSX.utils.book_append_sheet(wb, ws, 'Detalle General');
 }
 
 // ============================================================
@@ -7800,21 +7998,40 @@ function actualizarVista() {
     let tarjetaCumplenTarget = '';
     if (targetDiario !== null && targetDiario > 0 && metrica !== 'arpu' && buckets.length > 0) {
       let bucketsCumplen = 0;
+      // En vista diaria, ajustar el objetivo del día según factor_dia del calendario
+      // (sábados = 0.5 × objetivo, festivos parciales también). En vista semanal,
+      // el objetivo se compara contra la semana completa (sin ajuste).
+      const calFactor = {};
+      if (tab === 'diaria' && Array.isArray(calendarioData)) {
+        calendarioData.forEach(d => {
+          if (d && d.fecha) calFactor[d.fecha] = parseFloat(d.factor_dia);
+        });
+      }
       buckets.forEach(b => {
         let s = 0;
         Object.values(agrupacion[b]).forEach(v => s += v);
-        if (s >= targetDiario) bucketsCumplen++;
+        // Calcular objetivo del día (ajustado por factor si es vista diaria)
+        let objetivoDia = targetDiario;
+        if (tab === 'diaria') {
+          const factor = calFactor[b];
+          if (factor !== undefined && !isNaN(factor) && factor > 0 && factor < 1) {
+            objetivoDia = targetDiario * factor;
+          }
+        }
+        if (s >= objetivoDia) bucketsCumplen++;
       });
       const pctCumplen = (bucketsCumplen / buckets.length * 100);
       const colorC = pctCumplen >= 60 ? 'var(--green)' : pctCumplen >= 40 ? 'var(--amber)' : 'var(--red)';
       const iconC = pctCumplen >= 60 ? '🎯' : pctCumplen >= 40 ? '⚠' : '🔻';
       // Ajustar etiqueta según contexto: "días" en vista diaria, "semanas" en semanal
       const labelUnidad = (tab === 'diaria') ? 'días' : 'semanas';
+      // Sufijo para indicar que el objetivo se ajusta a sábados
+      const sufijoAjuste = tab === 'diaria' ? ' (ajustado en sábados)' : '';
       tarjetaCumplenTarget = `
         <div class="stat-card" style="border-left-color: ${colorC};">
           <div class="stat-label">${labelUnidad} cumplen objetivo ${iconC}</div>
           <div class="stat-value" style="color: ${colorC};">${bucketsCumplen} <span style="font-size:14px; color:var(--text-soft); font-weight:500;">de ${buckets.length}</span></div>
-          <div class="stat-sub">${pctCumplen.toFixed(0)}% ≥ ${targetDiario.toFixed(1)} ${(metrica==='act'?'act':metrica==='prog'?'prog':'canc')}/día</div>
+          <div class="stat-sub">${pctCumplen.toFixed(0)}% ≥ ${targetDiario.toFixed(1)} ${(metrica==='act'?'act':metrica==='prog'?'prog':'canc')}/día${sufijoAjuste}</div>
         </div>
       `;
     }
@@ -14053,6 +14270,7 @@ function _comConstruirDataset() {
 // Estado de filtros
 let _comFiltroSupervisor = 'todos';
 let _comFiltroCentro = 'todos';
+let _comFiltroMadurez = 'todos'; // 'todos' | 'curva' | 'desarrollo' | 'maduro'
 let _comMostrarBajas = true;
 
 function renderComisiones() {
@@ -14089,18 +14307,19 @@ function _comRenderUI(cont, data) {
   let agFiltrados = agentes.slice();
   if (_comFiltroSupervisor !== 'todos') agFiltrados = agFiltrados.filter(a => a.supervisor === _comFiltroSupervisor);
   if (_comFiltroCentro !== 'todos') agFiltrados = agFiltrados.filter(a => a.centro === _comFiltroCentro);
+  if (_comFiltroMadurez !== 'todos') {
+    const mapaMad = { curva: 'En curva', desarrollo: 'En desarrollo', maduro: 'Maduro' };
+    const objetivo = mapaMad[_comFiltroMadurez];
+    if (objetivo) agFiltrados = agFiltrados.filter(a => a.madurez === objetivo);
+  }
   if (!_comMostrarBajas) agFiltrados = agFiltrados.filter(a => !a.esBaja);
 
   // Ordenar por total año descendente
   agFiltrados.sort((a, b) => b.totalAnioCobrado - a.totalAnioCobrado);
 
-  // Totales por mes
+  // ============ Cálculos para KPIs y totales ============
   const totalesPorMes = {};
-  const cuentaNivelPorMes = {};
-  meses.forEach(ms => {
-    totalesPorMes[ms] = { base: 0, comision: 0, acel: 0, total: 0 };
-    cuentaNivelPorMes[ms] = { sinNivel: 0, n1: 0, n2: 0, n3: 0 };
-  });
+  meses.forEach(ms => { totalesPorMes[ms] = { base: 0, comision: 0, acel: 0, total: 0 }; });
   agFiltrados.forEach(a => {
     meses.forEach(ms => {
       const c = a.meses[ms];
@@ -14108,10 +14327,6 @@ function _comRenderUI(cont, data) {
       totalesPorMes[ms].comision += c.comisionPlanes;
       totalesPorMes[ms].acel += c.bonoAcelerador;
       totalesPorMes[ms].total += c.totalCobrado;
-      if (c.nivelAlcanzado === 0) cuentaNivelPorMes[ms].sinNivel++;
-      else if (c.nivelAlcanzado === 1) cuentaNivelPorMes[ms].n1++;
-      else if (c.nivelAlcanzado === 2) cuentaNivelPorMes[ms].n2++;
-      else if (c.nivelAlcanzado === 3) cuentaNivelPorMes[ms].n3++;
     });
   });
 
@@ -14119,16 +14334,33 @@ function _comRenderUI(cont, data) {
   const totalAnioComision = agFiltrados.reduce((s, a) => s + a.totalAnioComision, 0);
   const totalAnioBase = agFiltrados.reduce((s, a) => s + a.totalAnioBase, 0);
 
+  // Mediana de comisión justa para benchmark (recomendación dinámica)
+  const promsValidos = agFiltrados
+    .filter(a => !a.esBaja && a.diasAntiguedad >= 60 && a.promJustoEquivalente > 0)
+    .map(a => a.promJustoEquivalente)
+    .sort((x, y) => x - y);
+  const mediana = promsValidos.length > 0 ? promsValidos[Math.floor(promsValidos.length / 2)] : 0;
+  const umbralBajo = mediana * 0.5;
+  const umbralAlto = mediana * 1.5;
+  function recomendar(a) {
+    if (a.esBaja) return { txt: 'Baja', color: '#6B7280', bg: '#F3F4F6' };
+    if (a.diasAntiguedad < 60) return { txt: '⏳ Dar tiempo', color: '#6B7280', bg: '#F3F4F6' };
+    if (a.promJustoEquivalente >= umbralAlto) return { txt: '🟢 Top', color: '#14532D', bg: '#D1FAE5' };
+    if (a.promJustoEquivalente >= mediana) return { txt: '🟢 Mantener', color: '#15803D', bg: '#DCFCE7' };
+    if (a.promJustoEquivalente >= umbralBajo) return { txt: '🟡 Vigilar', color: '#92400E', bg: '#FEF3C7' };
+    return { txt: '🔴 Revisar', color: '#991B1B', bg: '#FEE2E2' };
+  }
+
   const fmtMoney = (n) => '$' + Math.round(n).toLocaleString('es-MX');
   const mesLbl = (ms) => {
     const [y, m] = ms.split('-');
     return `${MESES_NOMBRE[parseInt(m) - 1].substring(0, 3)} ${y.substring(2)}`;
   };
 
-  // Construir HTML
+  // ============ HTML ============
   let html = `
     <!-- Filtros + descarga -->
-    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; padding:12px 14px; background:var(--bg); border-radius:8px; margin-bottom:14px;">
+    <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; padding:12px 14px; background:var(--bg); border-radius:8px; margin-bottom:12px;">
       <div>
         <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Supervisor</label>
         <select id="com-filtro-sup" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
@@ -14144,8 +14376,17 @@ function _comRenderUI(cont, data) {
         </select>
       </div>
       <div>
+        <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Madurez</label>
+        <select id="com-filtro-madurez" style="padding:6px 10px; border:1.5px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+          <option value="todos" ${_comFiltroMadurez === 'todos' ? 'selected' : ''}>Todas</option>
+          <option value="curva" ${_comFiltroMadurez === 'curva' ? 'selected' : ''}>⏳ En curva (&lt;60d)</option>
+          <option value="desarrollo" ${_comFiltroMadurez === 'desarrollo' ? 'selected' : ''}>🌱 En desarrollo</option>
+          <option value="maduro" ${_comFiltroMadurez === 'maduro' ? 'selected' : ''}>💼 Maduro (≥90d)</option>
+        </select>
+      </div>
+      <div>
         <label style="display:block; font-size:11px; color:var(--text-soft); text-transform:uppercase; font-weight:600; margin-bottom:4px;">Bajas</label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:12px; padding:6px 0;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; padding:6px 0; cursor:pointer;">
           <input type="checkbox" id="com-mostrar-bajas" ${_comMostrarBajas ? 'checked' : ''}> Mostrar bajas
         </label>
       </div>
@@ -14154,13 +14395,14 @@ function _comRenderUI(cont, data) {
       </div>
     </div>
 
-    <!-- Disclaimer esquema oficial -->
-    <div style="background:#EFF6FF; border-left:4px solid var(--att-blue); padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:12px;">
-      ℹ️ <strong>Esquema oficial 2026:</strong> Cuotas → Azul/Azul 1/LITE 1 = <strong>0.5</strong>; resto = <strong>1</strong>. Brackets se calculan por cuotas (no se redondean). Tarifas LITE: 2-4 igual a su Premium; LITE 5/6/7 con tarifas propias. Aceleradores: <strong>+$100 por cuota</strong> al llegar a 20 cuotas, <strong>+$150 por cuota</strong> al llegar a 25 (reemplaza al de 20).
+    <!-- Banner sutil informativo -->
+    <div style="font-size:11px; color:var(--text-soft); padding:6px 0; margin-bottom:8px; display:flex; align-items:center; gap:6px;" title="Cuotas: Azul/Azul1/LITE1 = 0.5; resto = 1. Brackets por cuotas: ≥6 = Nivel 1, ≥10 = Nivel 2, ≥16 = Nivel 3. Aceleradores: +$100/cuota al llegar a 20 cuotas, +$150/cuota al llegar a 25 (reemplaza al de 20). Agentes nuevos en primer mes calendario completo comisionan desde la cuota 1.">
+      <span style="color:var(--att-blue);">ⓘ</span>
+      <span><strong>Esquema 2026:</strong> Base $9,400 + comisión por planes según nivel (6-9 / 10-15 / 16+) + aceleradores. Pasa el mouse para detalle.</span>
     </div>
 
     <!-- KPIs -->
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:18px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:14px;">
       <div class="stat-card" style="border-left-color:#16A34A;">
         <div class="stat-label">Total cobrado año</div>
         <div class="stat-value" style="color:#16A34A;">${fmtMoney(totalAnioGeneral)}</div>
@@ -14177,87 +14419,163 @@ function _comRenderUI(cont, data) {
         <div class="stat-sub">${(totalAnioGeneral > 0 ? totalAnioComision / totalAnioGeneral * 100 : 0).toFixed(0)}% del total</div>
       </div>
     </div>
+  `;
 
-    <!-- Tabla pivot -->
-    <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
-      <table style="width:100%; border-collapse:collapse; font-size:12px;">
-        <thead>
+  // ============ Tabla nueva estilo "Análisis Plantilla" ============
+  html += `
+    <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px; max-height:70vh; overflow-y:auto;">
+      <table id="com-tabla-analisis" style="width:100%; border-collapse:separate; border-spacing:0; font-size:12px;">
+        <thead style="position:sticky; top:0; z-index:3;">
           <tr style="background:var(--att-navy); color:white;">
-            <th style="padding:10px; text-align:left; position:sticky; left:0; background:var(--att-navy); z-index:2;">Agente</th>
-            <th style="padding:10px; text-align:left;">Supervisor</th>
-            <th style="padding:10px; text-align:center;" title="Días desde fecha de ingreso">Antig.</th>
-            <th style="padding:10px; text-align:center;" title="⏳ En curva (<60d) · 🌱 En desarrollo (60-90d) · 💼 Maduro (90+d)">Madurez</th>
-            ${meses.map(ms => `<th style="padding:10px; text-align:right; min-width:130px;">${mesLbl(ms)}</th>`).join('')}
-            <th style="padding:10px; text-align:right; background:#0077A8;">Total año</th>
+            <th style="padding:10px 8px; text-align:center; position:sticky; left:0; background:var(--att-navy); z-index:4; min-width:38px;">#</th>
+            <th style="padding:10px 12px; text-align:left; position:sticky; left:38px; background:var(--att-navy); z-index:4; min-width:200px;">Agente</th>
+            <th style="padding:10px 10px; text-align:left;">Supervisor</th>
+            <th style="padding:10px 8px; text-align:center;" title="Días desde fecha de ingreso">Antig.</th>
+            <th style="padding:10px 8px; text-align:center;" title="⏳ En curva (<60d) · 🌱 En desarrollo (60-90d) · 💼 Maduro (90+d)">Madurez</th>
+            ${meses.map(ms => `
+              <th colspan="2" style="padding:8px 8px; text-align:center; background:linear-gradient(180deg, #002B5C 0%, #001f47 100%); border-left:1px solid rgba(255,255,255,0.18);">${mesLbl(ms)}</th>
+            `).join('')}
+            <th colspan="2" style="padding:8px 8px; text-align:center; background:linear-gradient(180deg, #15803D 0%, #14532D 100%); border-left:1px solid rgba(255,255,255,0.25);">Total año</th>
+            <th style="padding:10px 8px; text-align:right; min-width:120px;" title="Promedio mensual JUSTO de comisión (total ÷ días en ventana × 30)">Prom. mes equiv.</th>
+            <th style="padding:10px 8px; text-align:center; min-width:120px;">Recomendación</th>
+          </tr>
+          <tr style="background:#001f47; color:white;">
+            <th style="padding:6px 0; position:sticky; left:0; background:#001f47; z-index:4;"></th>
+            <th style="padding:6px 0; position:sticky; left:38px; background:#001f47; z-index:4;"></th>
+            <th style="padding:6px 0;"></th>
+            <th style="padding:6px 0;"></th>
+            <th style="padding:6px 0;"></th>
+            ${meses.map(() => `
+              <th style="padding:6px 4px; text-align:center; font-size:10px; font-weight:600; background:#0077A8; border-left:1px solid rgba(255,255,255,0.18);">V</th>
+              <th style="padding:6px 4px; text-align:center; font-size:10px; font-weight:600; background:#15803D;">$$</th>
+            `).join('')}
+            <th style="padding:6px 4px; text-align:center; font-size:10px; font-weight:600; background:#0077A8; border-left:1px solid rgba(255,255,255,0.25);">V</th>
+            <th style="padding:6px 4px; text-align:center; font-size:10px; font-weight:600; background:#15803D;">$$</th>
+            <th style="padding:6px 0;"></th>
+            <th style="padding:6px 0;"></th>
           </tr>
         </thead>
         <tbody>
   `;
 
-  agFiltrados.forEach((a, idx) => {
-    const isStripe = idx % 2 === 1;
-    const bg = isStripe ? '#F5F8FB' : 'white';
-    const opacityBaja = a.esBaja ? 'opacity:0.6;' : '';
-    html += `<tr style="border-bottom:1px solid var(--border); background:${bg}; ${opacityBaja}">
-      <td style="padding:8px 10px; font-weight:600; position:sticky; left:0; background:${bg}; z-index:1;">
-        ${a.nombre}${a.esBaja ? ' <span style="font-size:10px; color:#6B7280;">(baja)</span>' : ''}
-      </td>
-      <td style="padding:8px 10px; color:var(--text-soft);">${a.supervisor}</td>
-      <td style="padding:8px 10px; text-align:center;">
-        <span style="background:${a.segmentoColor}; color:#1a1a1a; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700;">${a.diasAntiguedad}d</span>
-      </td>
-      <td style="padding:8px 10px; text-align:center;">
-        <span title="${a.madurez}" style="font-size:14px;">${a.madurezEmoji}</span>
-      </td>`;
-    meses.forEach(ms => {
-      const c = a.meses[ms];
-      let chipColor = '#6B7280', chipBg = '#F3F4F6';
-      if (c.nivelAlcanzado === 1) { chipColor = '#1D4ED8'; chipBg = '#DBEAFE'; }
-      else if (c.nivelAlcanzado === 2) { chipColor = '#7C2D12'; chipBg = '#FED7AA'; }
-      else if (c.nivelAlcanzado === 3) { chipColor = '#14532D'; chipBg = '#BBF7D0'; }
-      const nuevoFlag = c.esNuevo ? ' 🌱' : '';
-      const acelFlag = c.aplicaAcel25 ? ' 🔥25' : (c.aplicaAcel20 ? ' 🚀20' : '');
-      html += `<td style="padding:6px 10px; text-align:right;">
-        <div style="font-weight:700; color:${c.totalCobrado === BASE_NETO_MENSUAL ? 'var(--text-soft)' : '#111'};">${c.estuvoActivo ? fmtMoney(c.totalCobrado) : '—'}</div>
-        ${c.estuvoActivo ? `<div style="font-size:10px; margin-top:2px;"><span style="background:${chipBg}; color:${chipColor}; padding:1px 6px; border-radius:4px; font-weight:600;">${c.totalVentasMes}v · ${c.cuotasTotales.toFixed(1)}c · L${c.nivelAlcanzado}${nuevoFlag}${acelFlag}</span></div>` : ''}
-      </td>`;
-    });
-    html += `<td style="padding:8px 10px; text-align:right; font-weight:800; color:#16A34A; background:${isStripe ? '#ECFDF5' : '#F0FDF4'};">${fmtMoney(a.totalAnioCobrado)}</td>
-    </tr>`;
-  });
+  if (agFiltrados.length === 0) {
+    const colTotal = 5 + meses.length * 2 + 2 + 2;
+    html += `<tr><td colspan="${colTotal}" style="padding:30px; text-align:center; color:var(--text-soft);">Sin agentes que coincidan con los filtros</td></tr>`;
+  } else {
+    agFiltrados.forEach((a, idx) => {
+      const isStripe = idx % 2 === 1;
+      const bg = isStripe ? '#F5F8FB' : 'white';
+      const opacityBaja = a.esBaja ? 'opacity:0.55;' : '';
+      const rec = recomendar(a);
+      html += `<tr style="border-bottom:1px solid var(--border); background:${bg}; ${opacityBaja}">
+        <td style="padding:8px 6px; text-align:center; font-weight:600; color:var(--text-soft); position:sticky; left:0; background:${bg}; z-index:1;">${idx + 1}</td>
+        <td style="padding:8px 12px; font-weight:600; position:sticky; left:38px; background:${bg}; z-index:1; white-space:nowrap;">
+          ${a.nombre}${a.esBaja ? ' <span style="font-size:10px; color:#6B7280;">(baja)</span>' : ''}
+        </td>
+        <td style="padding:8px 10px; color:var(--text-soft); white-space:nowrap;">${a.supervisor}</td>
+        <td style="padding:8px 8px; text-align:center;">
+          <span style="background:${a.segmentoColor}; color:#1a1a1a; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap;">${a.diasAntiguedad}d</span>
+        </td>
+        <td style="padding:8px 8px; text-align:center;">
+          <span title="${a.madurez}" style="font-size:14px;">${a.madurezEmoji}</span>
+        </td>`;
 
-  // Fila de totales
-  html += `<tr style="background:var(--att-navy); color:white; font-weight:700; border-top:2px solid #000;">
-    <td style="padding:10px; position:sticky; left:0; background:var(--att-navy);">TOTAL (${agFiltrados.length} agentes)</td>
+      meses.forEach((ms, mi) => {
+        const c = a.meses[ms];
+        const sepLeft = mi === 0 ? 'border-left:1px solid #DBE3EC;' : '';
+        if (c.estuvoActivo) {
+          const ventasBg = isStripe ? '#EFF6FF' : '#F0F9FF';
+          const comBg = isStripe ? '#DCFCE7' : '#F0FDF4';
+          html += `
+            <td style="padding:8px 6px; text-align:center; background:${ventasBg}; color:#0C4A6E; font-weight:600; ${sepLeft}">${c.totalVentasMes}</td>
+            <td style="padding:8px 6px; text-align:right; background:${comBg}; color:#15803D; font-weight:700; padding-right:10px;">${fmtMoney(c.comisionPlanes + c.bonoAcelerador)}</td>
+          `;
+        } else {
+          const emptyBg = isStripe ? '#F5F8FB' : '#FAFBFC';
+          html += `
+            <td style="padding:8px 6px; text-align:center; background:${emptyBg}; color:#C0C6CC; ${sepLeft}">—</td>
+            <td style="padding:8px 6px; text-align:center; background:${emptyBg}; color:#C0C6CC;">—</td>
+          `;
+        }
+      });
+
+      // Total año (V + $)
+      const totalAnioBg = isStripe ? '#EFF6FF' : '#F0F9FF';
+      const totalComBg = isStripe ? '#DCFCE7' : '#F0FDF4';
+      html += `
+        <td style="padding:8px 8px; text-align:center; background:${totalAnioBg}; color:#0C4A6E; font-weight:800; border-left:1px solid #DBE3EC;">${a.totalAnioVentas}</td>
+        <td style="padding:8px 8px; text-align:right; background:${totalComBg}; color:#15803D; font-weight:800; padding-right:10px;">${fmtMoney(a.totalAnioComision)}</td>
+        <td style="padding:8px 10px; text-align:right; font-weight:700; color:#0C4A6E;">${fmtMoney(a.promJustoEquivalente)}</td>
+        <td style="padding:8px 8px; text-align:center;">
+          <span style="background:${rec.bg}; color:${rec.color}; padding:3px 8px; border-radius:10px; font-size:11px; font-weight:700; white-space:nowrap;">${rec.txt}</span>
+        </td>
+      </tr>`;
+    });
+  }
+
+  // Fila TOTAL
+  html += `<tr style="background:var(--att-navy); color:white; font-weight:700; border-top:2px solid #000; position:sticky; bottom:0; z-index:2;">
+    <td style="padding:10px 6px; position:sticky; left:0; background:var(--att-navy); z-index:2;"></td>
+    <td style="padding:10px 12px; position:sticky; left:38px; background:var(--att-navy); z-index:2;">TOTAL (${agFiltrados.length} agentes)</td>
     <td></td>
     <td style="text-align:center;">—</td>
     <td style="text-align:center;">—</td>`;
   meses.forEach(ms => {
     const t = totalesPorMes[ms];
-    const cn = cuentaNivelPorMes[ms];
-    html += `<td style="padding:6px 10px; text-align:right;">
-      <div>${fmtMoney(t.total)}</div>
-      <div style="font-size:10px; opacity:0.85; margin-top:2px;">L1:${cn.n1} L2:${cn.n2} L3:${cn.n3}</div>
-    </td>`;
+    const ventasTot = agFiltrados.reduce((s, a) => s + a.meses[ms].totalVentasMes, 0);
+    html += `
+      <td style="padding:8px 6px; text-align:center; font-weight:800;">${ventasTot}</td>
+      <td style="padding:8px 6px; text-align:right; font-weight:800; padding-right:10px;">${fmtMoney(t.comision + t.acel)}</td>
+    `;
   });
-  html += `<td style="padding:10px; text-align:right; background:#0077A8;">${fmtMoney(totalAnioGeneral)}</td>
+  const totalVentasAnio = agFiltrados.reduce((s, a) => s + a.totalAnioVentas, 0);
+  html += `
+    <td style="padding:8px 8px; text-align:center; font-weight:800; background:#0077A8;">${totalVentasAnio}</td>
+    <td style="padding:8px 8px; text-align:right; font-weight:800; background:#15803D; padding-right:10px;">${fmtMoney(totalAnioComision)}</td>
+    <td style="text-align:right; padding-right:10px;">—</td>
+    <td></td>
   </tr>`;
 
   html += `</tbody></table></div>
-    <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">
-      <strong>Lectura:</strong> Xv = ventas totales · Yc = cuotas (Azul/Azul1/Lite1 = 0.5; resto = 1) · L1/L2/L3 = nivel alcanzado ·
-      🌱 = primer mes calendario completo (comisiona desde la 1) ·
-      🚀20 = +$100 por cuota ·
-      🔥25 = +$150 por cuota
+    <div style="font-size:11px; color:var(--text-soft); margin-top:8px; line-height:1.6;">
+      <strong>Cómo leer:</strong> Cada mes muestra <span style="color:#0C4A6E;">V</span> (ventas activadas) y <span style="color:#15803D;">$$</span> (comisión del mes, incluye comisión por planes + bonos de acelerador, <strong>SIN sueldo base</strong>).
+      La <strong>recomendación</strong> es dinámica respecto al equipo filtrado: ≥150% de la mediana = Top, ≥100% = Mantener, ≥50% = Vigilar, &lt;50% = Revisar. Menos de 60 días = Dar tiempo (no se evalúa).
     </div>`;
 
   cont.innerHTML = html;
 
-  // Wire de filtros
-  document.getElementById('com-filtro-sup').onchange = (e) => { _comFiltroSupervisor = e.target.value; _comRenderUI(cont, data); };
-  document.getElementById('com-filtro-centro').onchange = (e) => { _comFiltroCentro = e.target.value; _comRenderUI(cont, data); };
-  document.getElementById('com-mostrar-bajas').onchange = (e) => { _comMostrarBajas = e.target.checked; _comRenderUI(cont, data); };
-  document.getElementById('com-btn-descargar').onclick = () => _comDescargarExcel(data, agFiltrados, meses, totalesPorMes);
+  // Wire de filtros — usar addEventListener con stopPropagation para evitar bugs de bubble
+  const wireSelect = (id, setter) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', (e) => {
+      e.stopPropagation();
+      setter(e.target.value);
+      _comRenderUI(cont, data);
+    });
+    el.addEventListener('click', (e) => e.stopPropagation());
+  };
+  wireSelect('com-filtro-sup', (v) => { _comFiltroSupervisor = v; });
+  wireSelect('com-filtro-centro', (v) => { _comFiltroCentro = v; });
+  wireSelect('com-filtro-madurez', (v) => { _comFiltroMadurez = v; });
+
+  const chkBajas = document.getElementById('com-mostrar-bajas');
+  if (chkBajas) {
+    chkBajas.addEventListener('change', (e) => {
+      e.stopPropagation();
+      _comMostrarBajas = e.target.checked;
+      _comRenderUI(cont, data);
+    });
+    chkBajas.addEventListener('click', (e) => e.stopPropagation());
+  }
+
+  const btnDesc = document.getElementById('com-btn-descargar');
+  if (btnDesc) {
+    btnDesc.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _comDescargarExcel(data, agFiltrados, meses, totalesPorMes);
+    });
+  }
 }
 
 // =====================================================================
