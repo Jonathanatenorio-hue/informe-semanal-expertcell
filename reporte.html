@@ -15036,7 +15036,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     const colsResto = ['Ventas año', 'Prom. ventas/mes equiv.', 'Prom. ventas meses completos', 'Tendencia', 'Unidades vendidas',
                       'Comisión total año', 'Prom. mes equivalente', 'Prom. meses completos',
                       'Meses cumplió meta', 'Tasa cumplimiento meta', 'Meses cumplió sanidad', 'Tasa sanidad',
-                      'Viabilidad', 'Recomendación'];
+                      'Acción mes', 'Viabilidad', 'Recomendación'];
     const cols = [...colsBase, ...colsMensuales, ...colsResto];
 
     const aoa = [
@@ -15152,6 +15152,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       let viabilidadColor = '6B7280';
       let viabilidadBg = 'F3F4F6';
       let viabilidadStatus = 'curva'; // curva | sano | ok-mes | riesgo | critico
+      let accionMes = '⏳ En curva'; // valor corto y fijo para autofiltro
 
       const mesesCompletosCount = mesesCompletosArr.length;
       if (mesesCompletosCount >= 3) {
@@ -15181,6 +15182,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
           viabilidadColor = '14532D';
           viabilidadBg = 'D1FAE5';
           viabilidadStatus = 'sano';
+          accionMes = '✅ Sano';
         } else if (cumplioPisoMes) {
           // Promedio bajo pero ya cumplió el mínimo del mes → oportunidad mantenida
           viabilidadTexto = faltanParaSanar > 0
@@ -15189,29 +15191,35 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
           viabilidadColor = '15803D';
           viabilidadBg = 'DCFCE7';
           viabilidadStatus = 'ok-mes';
+          accionMes = '🟢 OK mes';
         } else if (vtasMesActual >= piso * 0.5) {
           // Lleva entre el 50% del piso y el piso → riesgo
           viabilidadTexto = `⚠️ Faltan ${faltanParaPisoMes} (piso ${piso})`;
           viabilidadColor = '92400E';
           viabilidadBg = 'FEF3C7';
           viabilidadStatus = 'riesgo';
+          accionMes = '⚠️ Vigilar';
         } else {
           // Lleva muy poco del piso → crítico
           viabilidadTexto = `🚨 Faltan ${faltanParaPisoMes} (lleva ${vtasMesActual}/${piso})`;
           viabilidadColor = '991B1B';
           viabilidadBg = 'FEE2E2';
           viabilidadStatus = 'critico';
+          accionMes = '🚨 Evaluar';
         }
       } else if (mesesCompletosCount === 0 && a.diasAntiguedad < 30) {
         viabilidadTexto = '⏳ Recién ingresado';
+        accionMes = '⏳ En curva';
       } else {
         viabilidadTexto = `⏳ En curva (${mesesCompletosCount} mes${mesesCompletosCount === 1 ? '' : 'es'})`;
+        accionMes = '⏳ En curva';
       }
 
       // Guardar para acceso al pintar el estilo
       a._viabilidadBg = viabilidadBg;
       a._viabilidadColor = viabilidadColor;
       a._viabilidadStatus = viabilidadStatus;
+      a._accionMes = accionMes;
 
       aoa.push([
         i + 1,
@@ -15239,6 +15247,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         a.mesesConMeta > 0 ? `${(a.mesesCumplieronMeta / a.mesesConMeta * 100).toFixed(0)}%` : '—',
         a.mesesConMeta > 0 ? `${a.mesesCumplieronSanidad}/${a.mesesConMeta}` : '—',
         a.mesesConMeta > 0 ? `${(a.mesesCumplieronSanidad / a.mesesConMeta * 100).toFixed(0)}%` : '—',
+        accionMes,
         viabilidadTexto,
         rec.txt
       ]);
@@ -15264,7 +15273,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     });
     const anchosResto = [
       { wch: 11 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 19 }, { wch: 19 },
-      { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 28 }, { wch: 18 }
+      { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 13 }, { wch: 28 }, { wch: 18 }
     ];
     ws['!cols'] = [...anchosBase, ...anchosMensuales, ...anchosResto];
 
@@ -15292,8 +15301,9 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     const idxTasaCumpMeta = 20 + 4 * N;
     const idxMesesCumpSanidad = 21 + 4 * N;
     const idxTasaCumpSanidad = 22 + 4 * N;
-    const idxViabilidad = 23 + 4 * N;
-    const idxRecom = 24 + 4 * N;
+    const idxAccionMes = 23 + 4 * N;
+    const idxViabilidad = 24 + 4 * N;
+    const idxRecom = 25 + 4 * N;
 
     // Mapa rápido para colores de tendencia (recalcular por agente al pintar)
     function colorTendencia(txt) {
@@ -15454,6 +15464,14 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
             cellStyle = {
               fill: { fgColor: { rgb: tasaBg } },
               font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: tasaFg } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === idxAccionMes) {
+            // Acción mes: colores guardados del agente (igual que viabilidad pero centrado)
+            cellStyle = {
+              fill: { fgColor: { rgb: a._viabilidadBg || 'F3F4F6' } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: a._viabilidadColor || '6B7280' } },
               alignment: { horizontal: 'center', vertical: 'center' },
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
