@@ -6265,14 +6265,20 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
   // HOJA 2: Detalle por agente (con barras visuales)
   // ============================================================
   if (!soloDashboard) {
-    const cols = ['#','Agente','Tipo','Días act.','Sin prog.','Sin act.','Última prog.','Última act.','Prog','Act','Canc','ARPU','Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección','Estatus'];
+    // Columnas igualadas al "Detalle General" del Excel global (sin la columna Supervisor
+    // porque ya es del propio sup), pero conservando Avance visual al final.
+    const cols = ['#','Agente','Centro','Tipo','Estatus','Días act.','Sin prog.','Sin act.',
+                  'Última prog.','Última act.','Prog','Act','Canc','En tránsito','ARPU',
+                  'Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección'];
     const filas = ordenados.map((a, idx) => {
       const pctEval = evalPctXlsx(a);
       const estatus = a.esBaja ? 'Baja' : a.meta === 0 ? 'Sin meta' : pctEval >= 100 ? 'Cumplido' : pctEval >= 85 ? 'En riesgo' : pctEval >= 50 ? 'Atrasado' : 'Crítico';
       return {
         '#': idx + 1,
         'Agente': a.ejecutivo,
+        'Centro': a.centro || (window.__centroPorAgente && window.__centroPorAgente[a.ejecutivo]) || '',
         'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+        'Estatus': estatus,
         'Días act.': a.diasActivos,
         'Sin prog.': a.diasSinProg !== null ? Number(a.diasSinProg.toFixed(1)) : null,
         'Sin act.': a.diasSinAct !== null ? Number(a.diasSinAct.toFixed(1)) : null,
@@ -6281,6 +6287,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
         'Prog': a.programadas,
         'Act': a.avance,
         'Canc': a.canceladas,
+        'En tránsito': a.transito || 0,
         'ARPU': a.arpu > 0 ? Math.round(a.arpu) : null,
         'Meta': a.meta,
         'Esperado hoy': a.meta > 0 ? a.esperadoHoy : null,
@@ -6289,8 +6296,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
         'Avance visual': barraPctLoc(a.meta > 0 ? a.pct : 0, 10),
         'Ritmo actual': Number(a.ritmoActual.toFixed(2)),
         'Ritmo nec.': a.meta > 0 ? Number(a.ritmoNecesario.toFixed(2)) : null,
-        'Proyección': a.proyeccion,
-        'Estatus': estatus
+        'Proyección': a.proyeccion
       };
     });
 
@@ -6306,15 +6312,43 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
       { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
     ];
     ws['!cols'] = [
-      { wch: 4 }, { wch: 32 }, { wch: 14 }, { wch: 9 }, { wch: 9 }, { wch: 9 },
-      { wch: 12 }, { wch: 12 }, { wch: 7 }, { wch: 7 }, { wch: 7 }, { wch: 9 },
-      { wch: 7 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 14 }, { wch: 12 },
-      { wch: 11 }, { wch: 11 }, { wch: 11 }
+      { wch: 4 },   // #
+      { wch: 32 },  // Agente
+      { wch: 9 },   // Centro
+      { wch: 14 },  // Tipo
+      { wch: 11 },  // Estatus
+      { wch: 9 },   // Días act.
+      { wch: 9 },   // Sin prog.
+      { wch: 9 },   // Sin act.
+      { wch: 12 },  // Última prog.
+      { wch: 12 },  // Última act.
+      { wch: 7 },   // Prog
+      { wch: 7 },   // Act
+      { wch: 7 },   // Canc
+      { wch: 11 },  // En tránsito
+      { wch: 9 },   // ARPU
+      { wch: 7 },   // Meta
+      { wch: 12 },  // Esperado hoy
+      { wch: 8 },   // Gap
+      { wch: 9 },   // % Mes
+      { wch: 14 },  // Avance visual
+      { wch: 12 },  // Ritmo actual
+      { wch: 11 },  // Ritmo nec.
+      { wch: 11 }   // Proyección
     ];
     const rowsHeights = [{ hpt: 28 }, { hpt: 18 }, { hpt: 30 }];
     for (let i = 0; i < filas.length; i++) rowsHeights.push({ hpt: 20 });
     ws['!rows'] = rowsHeights;
-    ws['!freeze'] = { xSplit: 0, ySplit: 3 };
+    // Congelar primeras 2 columnas (#, Agente) + 3 filas header
+    ws['!freeze'] = { xSplit: 2, ySplit: 3 };
+    // Autofiltro nativo de Excel en la fila de headers (fila 3, index 2) hasta la última fila de datos
+    const ultFila = filas.length + 2;
+    ws['!autofilter'] = {
+      ref: XLSX.utils.encode_range(
+        { r: 2, c: 0 },
+        { r: ultFila, c: cols.length - 1 }
+      )
+    };
 
     // Estilos
     const r2 = XLSX.utils.decode_range(ws['!ref']);
@@ -6421,6 +6455,20 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
               font: { name: 'Calibri', sz: 10, bold: true },
               alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
             });
+          } else if (colName === 'En tránsito') {
+            const tr = parseFloat(fila['En tránsito']) || 0;
+            // Color naranja siempre (no es semáforo, es pipeline). Resaltar si hay valor.
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Calibri', sz: 10, bold: tr > 0, color: { rgb: tr > 0 ? 'D97706' : '6B7280' } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
+          } else if (colName === 'Centro') {
+            cellStyle = baseCellLoc({
+              fill: { fgColor: { rgb: bgStripe } },
+              font: { name: 'Calibri', sz: 10, color: { rgb: '475569' } },
+              alignment: { horizontal: 'center', vertical: 'center' }
+            });
           } else if (colName === 'Ritmo nec.') {
             // si ritmo necesario es muy alto vs ritmo actual, marcar
             const rn = parseFloat(fila['Ritmo nec.']) || 0;
@@ -6474,6 +6522,9 @@ function descargarCoordinadorExcel(nombreCoordinador) {
   supervisores.forEach((sup, i) => {
     _addSupervisorSheetsToWB(wb, sup, String(i + 1).padStart(2, '0'));
   });
+  // Hoja unificada "Detalle General" con todos los agentes de los supervisores
+  // del coordinador, con autofiltros nativos de Excel
+  _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup);
 
   XLSX.writeFile(wb, `coordinador_${nombreCoordinador}_${mesLabel}_${anio}.xlsx`);
 }
@@ -14134,14 +14185,38 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
       cumplioSanidad = cumplioMeta; // si meta<12, sanidad = misma meta
     }
   }
-  // Status combinado para emoji
+  // Status combinado para emoji + % de cumplimiento
+  // - 🎯✅ = cumplió meta personal Y sanidad (meta≥12 y vendió ≥ meta) — top performer
+  // - 🎯  = cumplió meta personal (cuando meta era <12, sanidad no aplica)
+  // - ✅  = solo cumplió sanidad (meta≥12 y vendió ≥12 pero no su meta)
+  // - ⚠️  = no cumplió pero vendió algo (≥6)
+  // - ❌  = bajo (<6)
+  // - —   = sin meta o inactivo
   let statusEmoji = '—';
-  if (!estuvoActivo) statusEmoji = '—';
-  else if (metaMes === null || metaMes === 0) statusEmoji = '—';
-  else if (cumplioMeta) statusEmoji = '🎯';
-  else if (cumplioSanidad) statusEmoji = '✅';
-  else if (ventasActivadas >= 6) statusEmoji = '⚠️';
-  else statusEmoji = '❌';
+  let pctCumplimiento = null;
+  if (!estuvoActivo) {
+    statusEmoji = '—';
+  } else if (metaMes === null || metaMes === 0) {
+    statusEmoji = '—';
+  } else {
+    pctCumplimiento = (ventasActivadas / metaMes) * 100;
+    if (cumplioMeta && cumplioSanidad && metaMes >= 12) {
+      // Doble: cumplió su meta Y la meta era exigente (≥12) y la pasó
+      statusEmoji = '🎯✅';
+    } else if (cumplioMeta) {
+      statusEmoji = '🎯';
+    } else if (cumplioSanidad) {
+      statusEmoji = '✅';
+    } else if (ventasActivadas >= 6) {
+      statusEmoji = '⚠️';
+    } else {
+      statusEmoji = '❌';
+    }
+  }
+  // Texto compuesto para mostrar en celda: "EMOJI 76%" o solo "—"
+  const statusTexto = (pctCumplimiento !== null)
+    ? `${statusEmoji} ${Math.round(pctCumplimiento)}%`
+    : statusEmoji;
 
   return {
     agente: agenteNombre,
@@ -14162,6 +14237,8 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
     cumplioMeta,
     cumplioSanidad,
     statusEmoji,
+    statusTexto,                    // "EMOJI XX%" listo para mostrar
+    pctCumplimiento,                // ventas/meta * 100 (null si no había meta)
     nivelAlcanzado,
     etiquetaNivel,
     aplicaAcel20,
@@ -14964,7 +15041,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
 
     const aoa = [
       [`🎯 ANÁLISIS DE PLANTILLA ACTIVA`, ...new Array(cols.length - 1).fill('')],
-      [`${ordenados.length} agentes activos · Mediana comisión justa: $${Math.round(mediana).toLocaleString('es-MX')}/mes equivalente · Top: ≥$${Math.round(umbralAlto).toLocaleString('es-MX')} · Revisar: <$${Math.round(umbralBajo).toLocaleString('es-MX')}  ·  Leyenda: 🎯=meta cumplida · ✅=sanidad (≥12) · ⚠️=parcial · ❌=bajo · —=sin meta/inactivo  ·  Fondo verde=mes completo · amarillo=parcial · gris=inactivo`, ...new Array(cols.length - 1).fill('')],
+      [`${ordenados.length} agentes activos · Mediana comisión justa: $${Math.round(mediana).toLocaleString('es-MX')}/mes equivalente · Top: ≥$${Math.round(umbralAlto).toLocaleString('es-MX')} · Revisar: <$${Math.round(umbralBajo).toLocaleString('es-MX')}  ·  Leyenda Estado: 🎯✅=meta+sanidad (top) · 🎯=meta cumplida · ✅=solo sanidad (≥12) · ⚠️=parcial · ❌=bajo · —=sin meta/inactivo  ·  Fondo celdas: verde=mes completo · amarillo=parcial · gris=inactivo`, ...new Array(cols.length - 1).fill('')],
       cols
     ];
 
@@ -14983,7 +15060,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
           valoresMensualesArr.push(c.totalVentasMes);
           valoresMensualesArr.push(c.metaMes !== null && c.metaMes > 0 ? c.metaMes : '—');
           valoresMensualesArr.push(fmtMoney(c.comisionPlanes + c.bonoAcelerador));
-          valoresMensualesArr.push(c.statusEmoji);
+          valoresMensualesArr.push(c.statusTexto);
         } else {
           valoresMensualesArr.push('');
           valoresMensualesArr.push('');
@@ -15094,7 +15171,7 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       anchosMensuales.push({ wch: 8 });    // Ventas (más angosta)
       anchosMensuales.push({ wch: 7 });    // Meta (angosta, número pequeño)
       anchosMensuales.push({ wch: 12 });   // Comisión
-      anchosMensuales.push({ wch: 7 });    // Estado emoji
+      anchosMensuales.push({ wch: 11 });   // Estado emoji + %
     });
     const anchosResto = [
       { wch: 11 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 },
@@ -15242,9 +15319,9 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
               bold = true;
               numFmt = '"$"#,##0';
             } else {
-              // Estado (emoji centrado, más grande)
+              // Estado (emoji + %, centrado)
               fontColor = '1A1A1A';
-              fontSize = 13;
+              fontSize = 10;
               bold = true;
             }
 
