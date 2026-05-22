@@ -14095,19 +14095,73 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
   // Base neto: solo si estuvo activo en el mes
   const baseNeto = estuvoActivo ? BASE_NETO_MENSUAL : 0;
 
+  // ============ NUEVO: meta del mes y cumplimiento ============
+  // Buscar la meta de este agente en este mes en metasAgeData
+  let metaMes = null;
+  if (Array.isArray(metasAgeData)) {
+    const m = metasAgeData.find(x =>
+      x.ejecutivo === agenteNombre && x.anio === anioMes && x.mes === mesMes
+    );
+    if (m) metaMes = Number(m.meta_activadas) || 0;
+  }
+
+  // Determinar estado del mes:
+  //   'completo'  → estuvo activo todo el mes calendario Y el mes ya terminó
+  //   'parcial'   → estuvo activo pero entró/salió a mitad, o es mes en curso
+  //   'inactivo'  → no estuvo activo (no había ingresado o ya estaba de baja)
+  const hoyStrCalc = new Date().toISOString().split('T')[0];
+  let estadoMes = 'inactivo';
+  if (estuvoActivo) {
+    const ingresoOK = !fechaIngreso || fechaIngreso <= ini;
+    const bajaOK = !fechaBaja || fechaBaja >= fin;
+    const mesTerminado = fin <= hoyStrCalc;
+    if (ingresoOK && bajaOK && mesTerminado) estadoMes = 'completo';
+    else estadoMes = 'parcial';
+  }
+
+  // Cumplimiento:
+  //   Si tiene meta:
+  //     - cumplioMeta: ventas >= meta personal
+  //     - cumplioSanidad: si meta >= 12, basta con ventas >= 12; si meta < 12, mismo umbral que meta
+  //   Si NO tiene meta: ambos false (no aplica)
+  const ventasActivadas = ventasAgente.filter(v => v.estatus === 'activada').length;
+  let cumplioMeta = false, cumplioSanidad = false;
+  if (metaMes !== null && metaMes > 0) {
+    cumplioMeta = ventasActivadas >= metaMes;
+    if (metaMes >= 12) {
+      cumplioSanidad = ventasActivadas >= 12;
+    } else {
+      cumplioSanidad = cumplioMeta; // si meta<12, sanidad = misma meta
+    }
+  }
+  // Status combinado para emoji
+  let statusEmoji = '—';
+  if (!estuvoActivo) statusEmoji = '—';
+  else if (metaMes === null || metaMes === 0) statusEmoji = '—';
+  else if (cumplioMeta) statusEmoji = '🎯';
+  else if (cumplioSanidad) statusEmoji = '✅';
+  else if (ventasActivadas >= 6) statusEmoji = '⚠️';
+  else statusEmoji = '❌';
+
   return {
     agente: agenteNombre,
     anioMes, mesMes, mesStr,
     estuvoActivo,
+    estadoMes,                      // 'completo' | 'parcial' | 'inactivo'
     esNuevo,
     cuentaPorPlan,
-    cuotasTotales,                  // suma ponderada
-    totalCuotaMedia,                // # planes 0.5 (Azul/Azul1/Lite1)
-    totalCuotaCompleta,             // # planes que pesan 1
-    totalPlanesQueComisionan: totalCuotaCompleta + totalCuotaMedia, // mantiene compat
-    totalAzul1: totalCuotaMedia,    // alias para retrocompatibilidad UI
-    totalLite: 0,                   // ya no usado igual; LITE están repartidos
+    cuotasTotales,
+    totalCuotaMedia,
+    totalCuotaCompleta,
+    totalPlanesQueComisionan: totalCuotaCompleta + totalCuotaMedia,
+    totalAzul1: totalCuotaMedia,
+    totalLite: 0,
     totalVentasMes: ventasAgente.length,
+    totalVentasActivadas: ventasActivadas,
+    metaMes,                        // meta del agente este mes (puede ser null)
+    cumplioMeta,
+    cumplioSanidad,
+    statusEmoji,
     nivelAlcanzado,
     etiquetaNivel,
     aplicaAcel20,
@@ -14154,8 +14208,11 @@ function _comConstruirDataset() {
     let totalAnioBase = 0;
     let totalAnioVentas = 0;
     let totalCuotasAnio = 0;
-    let mesesActivos = 0;          // # meses donde estuvo activo (al menos parte)
-    let mesesCompletos = 0;         // # meses donde estuvo TODO el mes
+    let mesesActivos = 0;
+    let mesesCompletos = 0;
+    let mesesConMeta = 0;            // meses (completos) donde tenía meta cargada
+    let mesesCumplieronMeta = 0;     // de los anteriores, cuántos cumplieron meta personal
+    let mesesCumplieronSanidad = 0;  // ... cuántos cumplieron sanidad (≥12 o meta si era <12)
     meses.forEach(ms => {
       const [yStr, mStr] = ms.split('-');
       const calc = _comCalcularAgenteMes(
@@ -14172,16 +14229,14 @@ function _comConstruirDataset() {
 
       if (calc.estuvoActivo) {
         mesesActivos++;
-        // ¿Mes completo? Ingresó ≤ día 1 y baja >= último día (o sin baja)
-        // Y EL MES YA TERMINÓ (fin <= hoy). Mayo en curso NO es mes completo.
-        const ultDiaMes = new Date(parseInt(yStr), parseInt(mStr), 0).getDate();
-        const iniM = `${ms}-01`;
-        const finM = `${ms}-${String(ultDiaMes).padStart(2, '0')}`;
-        const hoyStrLocal = new Date().toISOString().split('T')[0];
-        if (finM > hoyStrLocal) return; // mes aún no termina
-        const ingresoOK = !p.fecha_ingreso || p.fecha_ingreso <= iniM;
-        const bajaOK = !p.fecha_baja || p.fecha_baja >= finM;
-        if (ingresoOK && bajaOK) mesesCompletos++;
+        if (calc.estadoMes === 'completo') {
+          mesesCompletos++;
+          if (calc.metaMes !== null && calc.metaMes > 0) {
+            mesesConMeta++;
+            if (calc.cumplioMeta) mesesCumplieronMeta++;
+            if (calc.cumplioSanidad) mesesCumplieronSanidad++;
+          }
+        }
       }
     });
 
@@ -14259,6 +14314,9 @@ function _comConstruirDataset() {
       diasEnVentana,
       mesesActivos,
       mesesCompletos,
+      mesesConMeta,
+      mesesCumplieronMeta,
+      mesesCumplieronSanidad,
       promJustoEquivalente,
       promJustoMesesCompletos,
       madurez,
@@ -14885,24 +14943,28 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       return `${MESES_NOMBRE[parseInt(m) - 1].substring(0, 3)} ${y.substring(2)}`;
     };
 
-    // Columnas: las fijas hasta "Cuotas año", luego DOS columnas por cada mes (Ventas y Comisión)
-    // intercaladas, luego "Prom. ventas/mes" y la sección de totales y promedios
+    // Columnas: las fijas hasta "Cuotas año", luego TRES columnas por cada mes:
+    // - Ventas (con la meta entre paréntesis)
+    // - Comisión del mes (incluye comisión por planes + bono acelerador, sin sueldo base)
+    // - Cumplimiento (emoji 🎯/✅/⚠️/❌/—)
     const colsBase = ['#', 'Agente', 'Supervisor', 'Centro', 'Ingreso', 'Días antig.', 'Segmento', 'Madurez',
                       'Días en ventana', 'Meses activos', 'Meses completos'];
-    // Por cada mes: Ventas + Comisión (incluye comisión por planes + bono acelerador, sin sueldo base)
     const colsMensuales = [];
     meses.forEach(ms => {
       colsMensuales.push(`Ventas ${mesLblCorto(ms)}`);
+      colsMensuales.push(`Meta ${mesLblCorto(ms)}`);
       colsMensuales.push(`Comisión ${mesLblCorto(ms)}`);
+      colsMensuales.push(`Estado ${mesLblCorto(ms)}`);
     });
     const colsResto = ['Ventas año', 'Prom. ventas/mes equiv.', 'Prom. ventas meses completos', 'Tendencia', 'Cuotas año',
                       'Comisión total año', 'Prom. mes equivalente', 'Prom. meses completos',
+                      'Meses cumplió meta', 'Tasa cumplimiento meta', 'Meses cumplió sanidad', 'Tasa sanidad',
                       'Recomendación'];
     const cols = [...colsBase, ...colsMensuales, ...colsResto];
 
     const aoa = [
       [`🎯 ANÁLISIS DE PLANTILLA ACTIVA`, ...new Array(cols.length - 1).fill('')],
-      [`${ordenados.length} agentes activos · Mediana comisión justa: $${Math.round(mediana).toLocaleString('es-MX')}/mes equivalente · Top: ≥$${Math.round(umbralAlto).toLocaleString('es-MX')} · Revisar: <$${Math.round(umbralBajo).toLocaleString('es-MX')}`, ...new Array(cols.length - 1).fill('')],
+      [`${ordenados.length} agentes activos · Mediana comisión justa: $${Math.round(mediana).toLocaleString('es-MX')}/mes equivalente · Top: ≥$${Math.round(umbralAlto).toLocaleString('es-MX')} · Revisar: <$${Math.round(umbralBajo).toLocaleString('es-MX')}  ·  Leyenda: 🎯=meta cumplida · ✅=sanidad (≥12) · ⚠️=parcial · ❌=bajo · —=sin meta/inactivo  ·  Fondo verde=mes completo · amarillo=parcial · gris=inactivo`, ...new Array(cols.length - 1).fill('')],
       cols
     ];
 
@@ -14912,15 +14974,19 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       const promVentasEquiv = a.diasEnVentana >= 1
         ? (a.totalAnioVentas / a.diasEnVentana) * 30
         : 0;
-      // Por cada mes: dos valores intercalados (ventas y comisión = comisionPlanes + bonoAcelerador)
+      // Por cada mes: cuatro valores intercalados:
+      //   ventas, meta, comisión (planes+acel), estado (emoji)
       const valoresMensualesArr = [];
       meses.forEach(ms => {
         const c = a.meses[ms];
         if (c.estuvoActivo) {
           valoresMensualesArr.push(c.totalVentasMes);
-          // Comisión del mes = comisión por planes + bono acelerador (sin sueldo base)
+          valoresMensualesArr.push(c.metaMes !== null && c.metaMes > 0 ? c.metaMes : '—');
           valoresMensualesArr.push(fmtMoney(c.comisionPlanes + c.bonoAcelerador));
+          valoresMensualesArr.push(c.statusEmoji);
         } else {
+          valoresMensualesArr.push('');
+          valoresMensualesArr.push('');
           valoresMensualesArr.push('');
           valoresMensualesArr.push('');
         }
@@ -15003,6 +15069,11 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         fmtMoney(a.totalAnioComision),
         fmtMoney(a.promJustoEquivalente),
         fmtMoney(a.promJustoMesesCompletos),
+        // Cumplimiento (sobre meses completos con meta)
+        a.mesesConMeta > 0 ? `${a.mesesCumplieronMeta}/${a.mesesConMeta}` : '—',
+        a.mesesConMeta > 0 ? `${(a.mesesCumplieronMeta / a.mesesConMeta * 100).toFixed(0)}%` : '—',
+        a.mesesConMeta > 0 ? `${a.mesesCumplieronSanidad}/${a.mesesConMeta}` : '—',
+        a.mesesConMeta > 0 ? `${(a.mesesCumplieronSanidad / a.mesesConMeta * 100).toFixed(0)}%` : '—',
         rec.txt
       ]);
     });
@@ -15012,19 +15083,22 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
       { s: { r: 0, c: 0 }, e: { r: 0, c: cols.length - 1 } },
       { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
     ];
-    // Anchos: fijos antes de meses + mismo ancho por mes + fijos después
+    // Anchos: fijos antes de meses + 4 columnas por mes + fijos después
     const anchosBase = [
       { wch: 4 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 11 },
       { wch: 11 }, { wch: 16 }, { wch: 13 }, { wch: 11 }, { wch: 12 }
     ];
-    // Por cada mes: 2 columnas (ventas más angosta + comisión un poco más ancha por el $)
+    // Por cada mes: 4 columnas: Ventas, Meta, Comisión, Estado(emoji)
     const anchosMensuales = [];
     meses.forEach(() => {
-      anchosMensuales.push({ wch: 10 });   // Ventas
-      anchosMensuales.push({ wch: 13 });   // Comisión
+      anchosMensuales.push({ wch: 8 });    // Ventas (más angosta)
+      anchosMensuales.push({ wch: 7 });    // Meta (angosta, número pequeño)
+      anchosMensuales.push({ wch: 12 });   // Comisión
+      anchosMensuales.push({ wch: 7 });    // Estado emoji
     });
     const anchosResto = [
-      { wch: 11 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 }, { wch: 18 }
+      { wch: 11 }, { wch: 18 }, { wch: 20 }, { wch: 22 }, { wch: 11 }, { wch: 16 }, { wch: 19 }, { wch: 19 },
+      { wch: 16 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 18 }
     ];
     ws['!cols'] = [...anchosBase, ...anchosMensuales, ...anchosResto];
 
@@ -15033,21 +15107,26 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
     ws['!rows'] = rowsHeights;
     ws['!freeze'] = { xSplit: 5, ySplit: 3 }; // congelar primeras 5 columnas + headers
 
-    // Índices dinámicos. Bloque mensual = 2N columnas (Ventas + Comisión por cada mes)
+    // Índices dinámicos. Bloque mensual = 4N columnas (Ventas, Meta, Comisión, Estado por cada mes)
     const N = meses.length;
     const idxSegmento = 6;
     const idxMadurez = 7;
     const idxFirstMes = 11;
-    const idxLastMes = 11 + 2 * N - 1;          // 2 columnas por mes
-    const idxVentasAnio = 11 + 2 * N;
-    const idxPromVentas = 12 + 2 * N;
-    const idxPromVentasCompletos = 13 + 2 * N;
-    const idxTendencia = 14 + 2 * N;
-    const idxCuotasAnio = 15 + 2 * N;
-    const idxComisionTotal = 16 + 2 * N;
-    const idxPromEquiv = 17 + 2 * N;
-    const idxPromCompletos = 18 + 2 * N;
-    const idxRecom = 19 + 2 * N;
+    const idxLastMes = 11 + 4 * N - 1;          // 4 columnas por mes
+    const idxVentasAnio = 11 + 4 * N;
+    const idxPromVentas = 12 + 4 * N;
+    const idxPromVentasCompletos = 13 + 4 * N;
+    const idxTendencia = 14 + 4 * N;
+    const idxCuotasAnio = 15 + 4 * N;
+    const idxComisionTotal = 16 + 4 * N;
+    const idxPromEquiv = 17 + 4 * N;
+    const idxPromCompletos = 18 + 4 * N;
+    // Nuevas columnas de cumplimiento (4 columnas antes de Recomendación)
+    const idxMesesCumpMeta = 19 + 4 * N;
+    const idxTasaCumpMeta = 20 + 4 * N;
+    const idxMesesCumpSanidad = 21 + 4 * N;
+    const idxTasaCumpSanidad = 22 + 4 * N;
+    const idxRecom = 23 + 4 * N;
 
     // Mapa rápido para colores de tendencia (recalcular por agente al pintar)
     function colorTendencia(txt) {
@@ -15081,12 +15160,15 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
         } else if (R === 1) {
           ws[ref].s = { fill: { fgColor: { rgb: '16A34A' } }, font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
         } else if (R === 2) {
-          // Header: las columnas mensuales se intercalan Ventas (azul) y Comisión (verde)
+          // Header: las columnas mensuales se intercalan
+          // Posición 0: Ventas (azul), 1: Meta (azul medio), 2: Comisión (verde), 3: Estado (naranja)
           let headerBg = '14532D'; // verde oscuro por defecto
           if (C >= idxFirstMes && C <= idxLastMes) {
-            // Posición par dentro del bloque = Ventas (azul); impar = Comisión (verde)
-            const offsetBloque = (C - idxFirstMes) % 2;
-            headerBg = offsetBloque === 0 ? '0077A8' : '15803D';
+            const offsetBloque = (C - idxFirstMes) % 4;
+            if (offsetBloque === 0) headerBg = '0077A8';      // Ventas
+            else if (offsetBloque === 1) headerBg = '0EA5E9'; // Meta
+            else if (offsetBloque === 2) headerBg = '15803D'; // Comisión
+            else headerBg = 'D97706';                          // Estado
           }
           ws[ref].s = { fill: { fgColor: { rgb: headerBg } }, font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: { style: 'thin', color: { rgb: '000' } }, bottom: { style: 'thin', color: { rgb: '000' } }, left: { style: 'thin', color: { rgb: '000' } }, right: { style: 'thin', color: { rgb: '000' } } } };
         } else {
@@ -15123,19 +15205,54 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
           } else if (C >= idxFirstMes && C <= idxLastMes) {
-            // Bloque alternado Ventas/Comisión
-            const offsetBloque = (C - idxFirstMes) % 2;
-            const esComision = offsetBloque === 1;
-            // Ventas: azul claro · Comisión: verde claro
-            const mesBg = esComision
-              ? (isStripe ? 'DCFCE7' : 'F0FDF4')
-              : (isStripe ? 'EFF6FF' : 'F0F9FF');
-            const fontColor = esComision ? '15803D' : '0C4A6E';
+            // Bloque mensual de 4 columnas: Ventas, Meta, Comisión, Estado
+            const offsetBloque = (C - idxFirstMes) % 4;
+            const mesIdx = Math.floor((C - idxFirstMes) / 4);
+            const mesKey = meses[mesIdx];
+            const dataMes = a.meses[mesKey];
+
+            // Determinar fondo según estadoMes
+            // completo → verde tenue · parcial → amarillo tenue · inactivo → gris muy claro
+            let bgEstado;
+            if (!dataMes || dataMes.estadoMes === 'inactivo') {
+              bgEstado = isStripe ? 'F3F4F6' : 'FAFAFA';
+            } else if (dataMes.estadoMes === 'completo') {
+              bgEstado = isStripe ? 'D1FAE5' : 'ECFDF5';
+            } else {
+              bgEstado = isStripe ? 'FEF3C7' : 'FFFBEB';
+            }
+
+            let fontColor = '0C4A6E';
+            let bold = false;
+            let numFmt = 'General';
+            let alignment = { horizontal: 'center', vertical: 'center' };
+            let fontSize = 10;
+
+            if (offsetBloque === 0) {
+              // Ventas
+              fontColor = '0C4A6E';
+              bold = true;
+            } else if (offsetBloque === 1) {
+              // Meta (más pequeña, sutil)
+              fontColor = '475569';
+              fontSize = 9;
+            } else if (offsetBloque === 2) {
+              // Comisión
+              fontColor = '15803D';
+              bold = true;
+              numFmt = '"$"#,##0';
+            } else {
+              // Estado (emoji centrado, más grande)
+              fontColor = '1A1A1A';
+              fontSize = 13;
+              bold = true;
+            }
+
             cellStyle = {
-              fill: { fgColor: { rgb: mesBg } },
-              font: { name: 'Calibri', sz: 10, bold: esComision, color: { rgb: fontColor } },
-              alignment: { horizontal: 'center', vertical: 'center' },
-              numFmt: esComision ? '"$"#,##0' : 'General',
+              fill: { fgColor: { rgb: bgEstado } },
+              font: { name: 'Calibri', sz: fontSize, bold: bold, color: { rgb: fontColor } },
+              alignment: alignment,
+              numFmt: numFmt,
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
           } else if (C === idxTendencia) {
@@ -15144,6 +15261,32 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
             cellStyle = {
               fill: { fgColor: { rgb: bgTendencia(tendStr) } },
               font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: colorTendencia(tendStr) } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === idxMesesCumpMeta || C === idxMesesCumpSanidad) {
+            // Conteo de meses cumplidos: solo color de fondo neutro pero negrita
+            cellStyle = {
+              fill: { fgColor: { rgb: bg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: '0C4A6E' } },
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
+            };
+          } else if (C === idxTasaCumpMeta || C === idxTasaCumpSanidad) {
+            // Tasa de cumplimiento: colorear según valor
+            const txt = String(ws[ref].v || '');
+            let tasaBg = bg, tasaFg = '6B7280';
+            if (txt !== '—') {
+              const num = parseFloat(txt);
+              if (!isNaN(num)) {
+                if (num >= 80) { tasaBg = 'D1FAE5'; tasaFg = '14532D'; }
+                else if (num >= 50) { tasaBg = 'FEF3C7'; tasaFg = '92400E'; }
+                else { tasaBg = 'FEE2E2'; tasaFg = '991B1B'; }
+              }
+            }
+            cellStyle = {
+              fill: { fgColor: { rgb: tasaBg } },
+              font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: tasaFg } },
               alignment: { horizontal: 'center', vertical: 'center' },
               border: { top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } }, left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } } }
             };
