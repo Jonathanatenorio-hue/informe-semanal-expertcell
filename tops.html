@@ -676,12 +676,18 @@ async function conectarSupabase() {
     return;
   }
   try {
-    // Cargar supervisores activos
-    const { data, error } = await db.from('supervisores_config').select('nombre').limit(20);
+    // Cargar supervisores vigentes (con fechas activas)
+    const hoyStr = new Date().toISOString().split('T')[0];
+    const { data, error } = await db.from('supervisores_config').select('supervisor, fecha_inicio, fecha_fin').limit(50);
     if (error) throw error;
     setStatus(true, 'Sistema conectado');
+    const vigentes = (data || []).filter(s => {
+      if (s.fecha_inicio && s.fecha_inicio > hoyStr) return false;
+      if (s.fecha_fin && s.fecha_fin < hoyStr) return false;
+      return true;
+    });
     const selSup = document.getElementById('sel-sup');
-    const sups = [...new Set((data || []).map(d => d.nombre))].sort();
+    const sups = [...new Set(vigentes.map(d => d.supervisor))].sort();
     selSup.innerHTML = '<option value="">Todos</option>' + sups.map(s => `<option value="${s}">${s}</option>`).join('');
   } catch(e) {
     console.error(e);
