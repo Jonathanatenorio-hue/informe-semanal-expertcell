@@ -192,6 +192,32 @@
     flex:1; display:flex; align-items:flex-end; justify-content:center;
     gap:18px; padding:0 40px 60px; z-index:2; position:relative;
   }
+  /* Variante para empates: alineación centrada en lugar de flex-end */
+  .podium-empate {
+    align-items:flex-end !important; gap:14px;
+    flex-wrap:wrap;
+  }
+  /* Podio multi-fila (cuando hay muchos empates) */
+  .podium-multi {
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    gap:22px; padding:14px 30px 40px; z-index:2; position:relative;
+  }
+  .podium-fila {
+    display:flex; align-items:flex-end; justify-content:center;
+    gap:14px; flex-wrap:wrap;
+  }
+  /* En fila superior, las barras pueden ser más bajas que en podio clásico para que quepan */
+  .podium-fila-top .spot .bar { height:auto !important; min-height:90px; padding:14px 12px; }
+  .podium-fila-bot .spot .bar { height:auto !important; min-height:70px; padding:12px 10px; }
+  .podium-fila .spot { max-width:200px; }
+  /* Cuando son muchas cards en una fila, achicarlas */
+  .podium-fila .spot .bar { width:108px; }
+  .podium-fila .spot .agent-name { font-size:12px; max-width:120px; }
+  .podium-fila .spot .big-num { font-size:42px !important; }
+  .podium-fila .spot.rank-1 .big-num { font-size:48px !important; }
+  /* Medalla más pequeña en multi-fila */
+  .podium-fila .spot .medal { width:54px; height:54px; font-size:22px; }
+  .podium-fila .spot.rank-1 .medal { width:64px; height:64px; font-size:28px; }
   .spot { display:flex; flex-direction:column; align-items:center; }
   .medal {
     width:64px; height:64px; border-radius:50%;
@@ -345,6 +371,129 @@
     background:linear-gradient(90deg, var(--gold-2), var(--gold-1)); color:#3a2e00;
   }
 
+  /* ============ RESUMEN POR CENTRO ============ */
+  .resumen-wrap {
+    flex:1; display:grid; grid-template-columns:1fr 380px; gap:18px;
+    padding:10px 28px 24px; z-index:2; position:relative; min-height:0;
+  }
+  .resumen-grid {
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;
+    align-content:start; min-height:0;
+  }
+  .mini-card {
+    background:linear-gradient(180deg, rgba(212,175,55,0.08), rgba(0,0,0,0.4));
+    border:1px solid rgba(212,175,55,0.25); border-radius:10px;
+    padding:10px 12px; min-width:0;
+  }
+  .mini-card-header {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:8px; gap:8px; flex-wrap:wrap;
+  }
+  .mini-card-sup {
+    font-family:'Sora'; font-weight:700; font-size:12px; color:var(--gold-1);
+    text-transform:uppercase; letter-spacing:0.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; flex:1;
+  }
+  .mini-card-stats { display:flex; gap:6px; align-items:center; }
+  .mini-stat {
+    font-family:'Anton'; font-size:14px; color:#fff;
+    background:rgba(255,255,255,0.06); padding:2px 8px; border-radius:8px;
+  }
+  .mini-pct {
+    font-family:'Anton'; font-size:13px; padding:2px 8px; border-radius:8px;
+  }
+  .mini-pct.p100 { background:rgba(34,197,94,0.25); color:#86efac; border:1px solid rgba(34,197,94,0.4); }
+  .mini-pct.p90 { background:rgba(212,175,55,0.25); color:var(--gold-1); border:1px solid rgba(212,175,55,0.4); }
+  .mini-pct.p70 { background:rgba(251,191,36,0.18); color:#fde68a; border:1px solid rgba(251,191,36,0.3); }
+  .mini-pct.plow { background:rgba(220,38,38,0.18); color:#fca5a5; border:1px solid rgba(220,38,38,0.3); }
+  .mini-podio {
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;
+  }
+  .mini-spot {
+    text-align:center; padding:8px 4px;
+    background:rgba(212,175,55,0.05); border-radius:6px;
+    border:1px solid rgba(212,175,55,0.1);
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    min-width:0;
+  }
+  .mini-spot.rank-1 {
+    background:linear-gradient(180deg, rgba(212,175,55,0.22), rgba(212,175,55,0.04));
+    border-color:rgba(212,175,55,0.5);
+  }
+  .mini-spot.rank-2 {
+    background:linear-gradient(180deg, rgba(200,200,200,0.15), rgba(200,200,200,0.02));
+    border-color:rgba(200,200,200,0.3);
+  }
+  .mini-spot.rank-3 {
+    background:linear-gradient(180deg, rgba(176,111,58,0.15), rgba(176,111,58,0.02));
+    border-color:rgba(176,111,58,0.3);
+  }
+  .mini-medal {
+    width:22px; height:22px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Anton'; font-size:13px; color:#fff;
+    background:rgba(212,175,55,0.4);
+  }
+  .mini-spot.rank-1 .mini-medal { background:radial-gradient(circle at 30% 30%, var(--gold-1), var(--gold-2)); color:#3a2e00; }
+  .mini-spot.rank-2 .mini-medal { background:radial-gradient(circle at 30% 30%, #f0f0f0, var(--silver)); color:#333; }
+  .mini-spot.rank-3 .mini-medal { background:radial-gradient(circle at 30% 30%, #e0a878, var(--bronze)); color:#3a1e00; }
+  .mini-name {
+    font-family:'Sora'; font-weight:600; font-size:9px;
+    line-height:1.15; color:#fff; max-height:24px; overflow:hidden;
+    text-align:center; word-wrap:break-word; overflow-wrap:break-word; min-width:0;
+  }
+  .mini-val { font-family:'Anton'; font-size:18px; color:var(--gold-1); line-height:1; }
+  .mini-empty { color:#666; font-size:10px; padding:14px 6px; grid-column:1/-1; text-align:center; font-style:italic; }
+
+  .resumen-ranking {
+    background:linear-gradient(180deg, rgba(212,175,55,0.05), rgba(0,0,0,0.3));
+    border:1px solid rgba(212,175,55,0.2); border-radius:12px;
+    padding:14px; display:flex; flex-direction:column; gap:8px; min-width:0;
+  }
+  .ranking-title {
+    font-family:'Sora'; font-weight:700; font-size:12px;
+    color:var(--gold-1); letter-spacing:1.5px; text-align:center;
+    padding-bottom:8px; border-bottom:1px solid rgba(212,175,55,0.2); margin-bottom:4px;
+  }
+  .ranking-row {
+    display:grid; grid-template-columns:24px minmax(0, 1fr) 1.4fr; gap:8px; align-items:center;
+    padding:6px 8px; border-radius:6px;
+    background:rgba(212,175,55,0.04);
+    border-left:2px solid var(--gold-3);
+  }
+  .ranking-row.first {
+    background:linear-gradient(90deg, rgba(212,175,55,0.2), rgba(212,175,55,0.02));
+    border-left-color:var(--gold-1);
+  }
+  .ranking-pos {
+    font-family:'Anton'; font-size:16px; color:var(--gold-2); text-align:center;
+  }
+  .ranking-row.first .ranking-pos { color:var(--gold-1); font-size:18px; }
+  .ranking-name {
+    font-family:'Sora'; font-weight:600; font-size:11px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  }
+  .ranking-bar-wrap {
+    background:rgba(0,0,0,0.4); border-radius:6px; height:20px; overflow:hidden; position:relative;
+  }
+  .ranking-bar {
+    height:100%; background:linear-gradient(90deg, var(--gold-2), var(--gold-1));
+    display:flex; align-items:center; justify-content:flex-end; padding-right:6px;
+    min-width:24px; transition:width .3s;
+  }
+  .ranking-bar-val {
+    font-family:'Anton'; font-size:12px; color:#3a2e00;
+  }
+
+  /* En 9:16 vertical, una columna por mini-card */
+  .ratio-9x16 .resumen-wrap { grid-template-columns:1fr; gap:10px; padding:6px 14px 18px; }
+  .ratio-9x16 .resumen-grid { grid-template-columns:1fr; gap:8px; }
+  .ratio-9x16 .resumen-ranking { padding:10px; }
+  .ratio-9x16 .ranking-title { font-size:11px; }
+
+  /* En 1:1 cuadrado: ranking abajo */
+  .ratio-1x1 .resumen-wrap { grid-template-columns:1fr; }
+
   /* ============ FIX OVERFLOW TOP N grandes ============ */
   /* En 16:9 con 15 agentes, hacemos el header más compacto */
   .canvas-top:has(.team-list.n-10) .top-header,
@@ -364,13 +513,14 @@
   /* SOLO 1 AGENTE (revelación, rey ticket, primero meta, cierre día) */
   .solo {
     flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:18px; padding:0 30px 40px; z-index:2; position:relative;
+    gap:16px; padding:10px 24px 30px; z-index:2; position:relative;
+    width:100%; box-sizing:border-box;
   }
   .solo-trophy {
-    width:120px; height:120px; border-radius:50%;
+    width:104px; height:104px; border-radius:50%;
     background:radial-gradient(circle at 30% 30%, var(--gold-1), var(--gold-2) 70%, var(--gold-3));
     display:flex; align-items:center; justify-content:center;
-    font-size:60px;
+    font-size:52px;
     box-shadow:0 0 50px rgba(212,175,55,0.5), inset 0 -4px 10px rgba(0,0,0,0.3);
     position:relative;
   }
@@ -379,20 +529,33 @@
     border:1px solid rgba(212,175,55,0.35); animation:ringPulse 2s ease-in-out infinite;
   }
   .solo-name {
-    font-family:'Syne'; font-weight:800; font-size:30px; text-align:center;
+    font-family:'Syne'; font-weight:800; font-size:28px; text-align:center;
     background:linear-gradient(180deg, #fff, var(--gold-1));
     -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
-    max-width:600px; line-height:1.1;
+    max-width:90%; line-height:1.1;
+    word-wrap:break-word; overflow-wrap:break-word; hyphens:auto;
+    padding:0 20px;
   }
-  .solo-meta { display:flex; gap:24px; align-items:center; }
+  /* En 9:16 vertical, nombres pueden ser más grandes */
+  .ratio-9x16 .solo-name { font-size:24px; padding:0 14px; }
+  /* Cuando el nombre tiene 3+ palabras, podemos forzar wrap */
+  .solo-meta {
+    display:flex; gap:18px; align-items:center; flex-wrap:wrap; justify-content:center;
+    max-width:90%; padding:0 20px;
+  }
   .solo-stat {
     text-align:center; padding:14px 20px;
     background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:10px;
-    min-width:120px;
+    min-width:120px; max-width:240px;
   }
-  .solo-stat-val { font-family:'Anton'; font-size:38px; color:var(--gold-1); line-height:1; }
+  .solo-stat-val {
+    font-family:'Anton'; font-size:36px; color:var(--gold-1); line-height:1;
+    word-break:break-all; overflow-wrap:break-word;
+  }
+  /* Si el stat val tiene más de 8 chars (e.g. "$12,345"), reducir tamaño */
+  .solo-stat-val:has(> *), .solo-stat-val { font-size:clamp(20px, 4vw, 36px); }
   .solo-stat-lbl { font-size:10px; letter-spacing:2px; color:var(--text-soft); margin-top:6px; text-transform:uppercase; }
-  .solo-team { font-size:13px; color:var(--gold-2); letter-spacing:2.5px; text-transform:uppercase; }
+  .solo-team { font-size:13px; color:var(--gold-2); letter-spacing:2.5px; text-transform:uppercase; text-align:center; padding:0 20px; }
 
   /* TABLA tipo equipo (top por supervisor: hasta 5 agentes) */
   .team-list {
@@ -401,13 +564,14 @@
   }
   .team-list.n-10, .team-list.n-15 { padding:0 80px 30px; gap:5px; }
   .team-row {
-    display:grid; grid-template-columns:50px 1fr 100px; gap:18px; align-items:center;
+    display:grid; grid-template-columns:50px minmax(0, 1fr) 100px; gap:18px; align-items:center;
     padding:12px 20px;
     background:linear-gradient(90deg, rgba(212,175,55,0.05), rgba(212,175,55,0.01));
     border-radius:10px; border:1px solid rgba(212,175,55,0.12);
     border-left:3px solid var(--gold-3);
     transition:all .2s;
   }
+  .team-row > div:nth-child(2) { min-width:0; }
   .team-list.n-10 .team-row, .team-list.n-15 .team-row { padding:7px 16px; gap:14px; }
   .team-row.first {
     background:linear-gradient(90deg, rgba(212,175,55,0.28), rgba(212,175,55,0.04));
@@ -431,9 +595,12 @@
   .team-row.third .team-pos { color:var(--bronze); }
   .team-list.n-10 .team-pos, .team-list.n-15 .team-pos { font-size:22px; }
   .team-list.n-10 .team-row.first .team-pos, .team-list.n-15 .team-row.first .team-pos { font-size:28px; }
-  .team-name { font-family:'Sora'; font-weight:700; font-size:14px; color:#fff; line-height:1.2; }
+  .team-name {
+    font-family:'Sora'; font-weight:700; font-size:14px; color:#fff; line-height:1.2;
+    word-wrap:break-word; overflow-wrap:break-word; min-width:0;
+  }
   .team-row.first .team-name { font-size:16px; }
-  .team-list.n-10 .team-name, .team-list.n-15 .team-name { font-size:12px; }
+  .team-list.n-10 .team-name, .team-list.n-15 .team-name { font-size:12px; line-height:1.15; }
   .team-sub {
     font-size:10px; color:var(--gold-3); letter-spacing:1.5px;
     text-transform:uppercase; margin-top:2px; font-weight:600;
@@ -610,15 +777,18 @@ try {
 // CONFIG: TIPOS DE TOP
 // ====================================================================
 const TOPS = [
-  { id:'global', icon:'🏆', label:'Top 3 Global',     desc:'Los 3 mejores agentes' },
-  { id:'equipo', icon:'👑', label:'Top por Equipo',   desc:'Top de un supervisor' },
-  { id:'centro', icon:'🥇', label:'Mejor Centro',     desc:'CC2 vs JV' },
-  { id:'rev',    icon:'🚀', label:'Revelación',       desc:'Mejor nuevo (≤60d)' },
-  { id:'crec',   icon:'📈', label:'Mayor Crecimiento',desc:'Mayor incremento vs mes anterior' },
-  { id:'racha',  icon:'🔥', label:'Racha Activa',     desc:'Más días consecutivos vendiendo' },
-  { id:'ticket', icon:'💎', label:'Rey del Ticket',   desc:'Mayor ARPU del mes' },
-  { id:'diario', icon:'⚡', label:'Cierre del Día',   desc:'Top del día específico' },
-  { id:'meta',   icon:'🎯', label:'Primero en Meta',  desc:'Quién cumplió meta primero' },
+  { id:'global',    icon:'🏆', label:'Top 3 Global',     desc:'Los 3 mejores agentes' },
+  { id:'equipo',    icon:'👑', label:'Top por Equipo',   desc:'Top de un supervisor' },
+  { id:'centro',    icon:'🥇', label:'Mejor Centro',     desc:'CC2 vs JV' },
+  { id:'resumenc',  icon:'📋', label:'Resumen Centro',   desc:'Top 3 por cada equipo del centro' },
+  { id:'supVtas',   icon:'🎖️', label:'Top Supervisores', desc:'Por ventas totales del equipo' },
+  { id:'supMeta',   icon:'📊', label:'Sup. por % Meta',  desc:'Cumplimiento de meta' },
+  { id:'rev',       icon:'🚀', label:'Revelación',       desc:'Mejor nuevo (≤60d)' },
+  { id:'crec',      icon:'📈', label:'Mayor Crecimiento',desc:'Mayor incremento vs mes anterior' },
+  { id:'racha',     icon:'🔥', label:'Racha Activa',     desc:'Más días consecutivos vendiendo' },
+  { id:'ticket',    icon:'💎', label:'Rey del Ticket',   desc:'Mayor ARPU del mes' },
+  { id:'diario',    icon:'⚡', label:'Cierre del Día',   desc:'Top del día específico' },
+  { id:'meta',      icon:'🎯', label:'Primero en Meta',  desc:'Quién cumplió meta primero' },
 ];
 
 // ====================================================================
@@ -659,7 +829,7 @@ function initUI() {
       el.classList.add('active');
       // Ocultar selector de cantidad si el top es de 1 solo agente o centro
       const soloTops = ['rev','crec','ticket','meta'];
-      const sinCantidad = soloTops.includes(state.topId) || state.topId === 'centro';
+      const sinCantidad = soloTops.includes(state.topId) || ['centro','resumenc','supVtas','supMeta'].includes(state.topId);
       document.getElementById('section-cantidad').style.display = sinCantidad ? 'none' : 'block';
       // Cierre del Día: cambiar automáticamente a modo "día"
       if (state.topId === 'diario' && state.modo !== 'dia') {
@@ -667,7 +837,7 @@ function initUI() {
         document.getElementById('sel-modo').value = 'dia';
         renderModoExtra();
       }
-      render();
+      actualizarYRender();
     };
   });
 
@@ -687,7 +857,7 @@ function initUI() {
       state.cantidad = parseInt(el.dataset.cant);
       document.querySelectorAll('#cant-chips .chip').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
-      render();
+      actualizarYRender();
     };
   });
 
@@ -710,8 +880,8 @@ function initUI() {
   renderModoExtra();
 
   // Filtros
-  document.getElementById('sel-centro').onchange = (e) => { state.centro = e.target.value; };
-  document.getElementById('sel-sup').onchange = (e) => { state.supervisor = e.target.value; };
+  document.getElementById('sel-centro').onchange = (e) => { state.centro = e.target.value; actualizarYRender(); };
+  document.getElementById('sel-sup').onchange = (e) => { state.supervisor = e.target.value; actualizarYRender(); };
 
   // Botones
   document.getElementById('btn-cargar').onclick = cargarDesdeSupabase;
@@ -744,9 +914,8 @@ function renderModoExtra() {
 }
 
 function applyFormat() {
-  const canvas = document.getElementById('canvas');
-  canvas.className = 'canvas-top ratio-' + state.format;
-  render();
+  // render() ya maneja correctamente las clases del canvas según formato y cantidad
+  actualizarYRender();
 }
 
 // ====================================================================
@@ -879,6 +1048,13 @@ async function cargarDesdeSupabase() {
       .select('ejecutivo, supervisor, anio, mes, meta_activadas, tipo_meta')
       .eq('anio', state.anio).eq('mes', state.mes);
 
+    // ============================================================
+    // 7. Cargar METAS_SUPERVISOR para ranking de supervisores por %
+    // ============================================================
+    const { data: metasSup } = await db.from('metas_supervisor')
+      .select('supervisor, anio, mes, meta_activadas')
+      .eq('anio', state.anio).eq('mes', state.mes);
+
     state.rawData = {
       ventas: allVentas,
       plantilla: mapaPlantilla,
@@ -886,6 +1062,7 @@ async function cargarDesdeSupabase() {
       mapaCentroSup,
       mapaSupAgente,
       metas: metas || [],
+      metasSup: metasSup || [],
       fechaIni,
       fechaFin
     };
@@ -904,7 +1081,7 @@ async function cargarDesdeSupabase() {
 
 function procesarDatos() {
   if (!state.rawData) return [];
-  const { ventas, plantilla, supsVigentes, mapaCentroSup, mapaSupAgente, metas, fechaIni, fechaFin } = state.rawData;
+  const { ventas, plantilla, supsVigentes, mapaCentroSup, mapaSupAgente, metas, metasSup, fechaIni, fechaFin } = state.rawData;
 
   // Helper: centro del agente
   const centroAgente = (nombre, supSobrescrito) => {
@@ -914,6 +1091,135 @@ function procesarDatos() {
     if (supSobrescrito && mapaCentroSup[supSobrescrito]) return mapaCentroSup[supSobrescrito];
     return '';
   };
+
+  // ============================================================
+  // CASO ESPECIAL: Top Supervisores POR VENTAS TOTALES
+  // ============================================================
+  if (state.topId === 'supVtas') {
+    // Sumar ventas por supervisor (vigente, ya sobrescrito en r.supervisor)
+    const porSup = {};
+    ventas.forEach(v => {
+      if (!v.ejecutivo) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      // Filtro de centro si aplica
+      if (state.centro) {
+        const c = mapaCentroSup[v.supervisor];
+        if (c !== state.centro) return;
+      }
+      porSup[v.supervisor] = (porSup[v.supervisor] || 0) + 1;
+    });
+    const arr = Object.entries(porSup).map(([sup, vtas]) => ({
+      nombre: sup,
+      ventas: vtas,
+      centro: mapaCentroSup[sup] || '',
+      supervisor: '', // es el propio supervisor
+      esSupervisor: true
+    }));
+    arr.sort((a, b) => b.ventas - a.ventas);
+    asignarRangos(arr, a => a.ventas);
+    return arr;
+  }
+
+  // ============================================================
+  // CASO ESPECIAL: Top Supervisores POR % DE META CUMPLIDA
+  // ============================================================
+  if (state.topId === 'supMeta') {
+    // Sumar ventas por supervisor y dividir por su meta
+    const porSup = {};
+    ventas.forEach(v => {
+      if (!v.ejecutivo) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      if (state.centro) {
+        const c = mapaCentroSup[v.supervisor];
+        if (c !== state.centro) return;
+      }
+      porSup[v.supervisor] = (porSup[v.supervisor] || 0) + 1;
+    });
+    // Mapear metas_supervisor
+    const mapaMetaSup = {};
+    (metasSup || []).forEach(m => { mapaMetaSup[m.supervisor] = m.meta_activadas; });
+    const arr = supsVigentes
+      .filter(sup => !state.centro || mapaCentroSup[sup] === state.centro)
+      .map(sup => {
+        const vtas = porSup[sup] || 0;
+        const meta = mapaMetaSup[sup] || 0;
+        const pct = meta > 0 ? Math.round(vtas / meta * 100) : 0;
+        return {
+          nombre: sup,
+          ventas: vtas,
+          meta: meta,
+          centro: mapaCentroSup[sup] || '',
+          supervisor: '',
+          esSupervisor: true,
+          metric: pct + '%',
+          _pctNum: pct
+        };
+      })
+      .filter(s => s.meta > 0); // solo sup con meta
+    arr.sort((a, b) => b._pctNum - a._pctNum);
+    asignarRangos(arr, a => a._pctNum);
+    return arr;
+  }
+
+  // ============================================================
+  // CASO ESPECIAL: Resumen por Centro
+  //   Devuelve un objeto con estructura:
+  //   { supervisores: [{sup, ventas, top3:[...], meta, pct}], centro, total }
+  // ============================================================
+  if (state.topId === 'resumenc') {
+    const centroFiltro = state.centro || 'CC2'; // default CC2 si no se especifica
+    // Filtrar supervisores del centro
+    const supsDelCentro = supsVigentes.filter(sup => mapaCentroSup[sup] === centroFiltro);
+
+    // Acumuladores
+    const ventasPorAgente = {}; // {ejecutivo: {ventas, supervisor}}
+    const ventasPorSup = {};
+
+    ventas.forEach(v => {
+      if (!v.ejecutivo) return;
+      if (!supsDelCentro.includes(v.supervisor)) return;
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+
+      if (!ventasPorAgente[v.ejecutivo]) {
+        ventasPorAgente[v.ejecutivo] = { nombre: v.ejecutivo, ventas: 0, supervisor: v.supervisor };
+      }
+      ventasPorAgente[v.ejecutivo].ventas++;
+      ventasPorSup[v.supervisor] = (ventasPorSup[v.supervisor] || 0) + 1;
+    });
+
+    // Mapear metas_supervisor
+    const mapaMetaSup = {};
+    (metasSup || []).forEach(m => { mapaMetaSup[m.supervisor] = m.meta_activadas; });
+
+    // Por cada supervisor, calcular su top 3
+    const equipos = supsDelCentro.map(sup => {
+      const agentesSup = Object.values(ventasPorAgente).filter(a => a.supervisor === sup);
+      agentesSup.sort((a, b) => b.ventas - a.ventas);
+      asignarRangos(agentesSup, a => a.ventas);
+      // Top 3 con empates
+      const top3 = agentesSup.filter(a => a.rank && a.rank <= 3);
+      const vtasSup = ventasPorSup[sup] || 0;
+      const metaSup = mapaMetaSup[sup] || 0;
+      const pctSup = metaSup > 0 ? Math.round(vtasSup / metaSup * 100) : 0;
+      return {
+        supervisor: sup,
+        ventas: vtasSup,
+        meta: metaSup,
+        pct: pctSup,
+        top3
+      };
+    });
+    equipos.sort((a, b) => b.ventas - a.ventas);
+
+    // Devuelvo estructura especial (un objeto envuelto en array para no romper la interfaz)
+    return [{
+      _resumen: true,
+      centro: centroFiltro,
+      equipos
+    }];
+  }
 
   // ============================================================
   // CASO ESPECIAL: Mejor Centro — agrupar por centro
@@ -1092,6 +1398,7 @@ function procesarDatos() {
       if (mapaSupAgente[a.nombre]) a.supervisor = mapaSupAgente[a.nombre];
     });
     arr.sort((a, b) => b.ventas - a.ventas);
+    asignarRangos(arr, a => a.ventas);
     return arr;
   }
 
@@ -1120,12 +1427,40 @@ function procesarDatos() {
       a._rachaNum = maxRacha;
     });
     arr.sort((a, b) => b._rachaNum - a._rachaNum);
+    asignarRangos(arr, a => a._rachaNum);
     return arr;
   }
 
   // 'diario' y resto: ordenar por ventas
   arr.sort((a, b) => b.ventas - a.ventas);
+  asignarRangos(arr, a => a.ventas);
   return arr;
+}
+
+// Helper: asigna rangos considerando empates (estilo competición olímpica)
+// Ej: [22, 22, 18, 18, 18, 17] → ranks [1, 1, 3, 3, 3, 6]
+// Devuelve el array original mutado con campo `rank` añadido
+function asignarRangos(arr, getMetric) {
+  let lastVal = null;
+  let lastRank = 0;
+  arr.forEach((a, idx) => {
+    const v = getMetric(a);
+    if (v !== lastVal) {
+      lastRank = idx + 1;
+      lastVal = v;
+    }
+    a.rank = lastRank;
+  });
+  return arr;
+}
+
+// Helper: reprocesa los datos y re-renderiza. Útil cuando cambia
+// el tipo de top, los filtros, etc — sin tener que volver a Supabase.
+function actualizarYRender() {
+  if (state.rawData) {
+    state.agentes = procesarDatos();
+  }
+  render();
 }
 
 // ====================================================================
@@ -1154,7 +1489,8 @@ function aplicarManual() {
 function render() {
   const canvas = document.getElementById('canvas');
   // Determinar si necesitamos lista alta (Top 10 o 15)
-  const tallList = (state.cantidad >= 10) && !['rev','crec','ticket','meta','centro'].includes(state.topId);
+  const tallList = ((state.cantidad >= 10) && !['rev','crec','ticket','meta','centro','resumenc'].includes(state.topId))
+    || state.topId === 'resumenc';
   canvas.className = 'canvas-top ratio-' + state.format + (tallList ? ' tall-list' : '');
 
   if (!state.agentes || state.agentes.length === 0) {
@@ -1178,16 +1514,26 @@ function render() {
 
   // Título DINÁMICO según tipo de top + cantidad
   const soloTopsLista = ['rev','crec','ticket','meta'];
-  const usaCantidad = !soloTopsLista.includes(state.topId) && state.topId !== 'centro';
+  const sinCantidad = soloTopsLista.includes(state.topId) || ['centro','resumenc','supVtas','supMeta'].includes(state.topId);
+  const usaCantidad = !sinCantidad;
   let titleText = top.label.toUpperCase();
   let kickerText = top.desc.toUpperCase();
-  if (usaCantidad) {
-    // Reemplazar "Top 3 Global" → "TOP 5 GLOBAL" según cantidad
-    titleText = `TOP ${state.cantidad} ${state.topId === 'global' ? 'GLOBAL' : state.topId === 'equipo' ? (state.supervisor || 'EQUIPO').toUpperCase() : ''}`;
-    kickerText = `EXPERTCELL · LOS ${state.cantidad} MEJORES`;
-  } else if (state.topId === 'centro') {
+  if (state.topId === 'centro') {
     titleText = 'BATALLA DE CENTROS';
     kickerText = 'CC2 ANTEQUERA vs JUÁREZ TORRE JV';
+  } else if (state.topId === 'resumenc') {
+    const cf = state.centro || 'CC2';
+    titleText = `RESUMEN ${cf === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ TORRE JV'}`;
+    kickerText = 'EXPERTCELL · TOP POR EQUIPO';
+  } else if (state.topId === 'supVtas') {
+    titleText = `TOP SUPERVISORES${state.centro ? ' · ' + state.centro : ''}`;
+    kickerText = 'EXPERTCELL · POR VENTAS TOTALES';
+  } else if (state.topId === 'supMeta') {
+    titleText = `RANKING POR % META${state.centro ? ' · ' + state.centro : ''}`;
+    kickerText = 'EXPERTCELL · CUMPLIMIENTO DE META';
+  } else if (usaCantidad) {
+    titleText = `TOP ${state.cantidad} ${state.topId === 'global' ? 'GLOBAL' : state.topId === 'equipo' ? (state.supervisor || 'EQUIPO').toUpperCase() : ''}`;
+    kickerText = `EXPERTCELL · LOS ${state.cantidad} MEJORES`;
   } else {
     kickerText = `EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}`;
   }
@@ -1204,7 +1550,7 @@ function render() {
 
   // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
   const soloTops = ['rev','crec','ticket','meta'];
-  const listaTops = ['equipo']; // siempre lista vertical
+  const listaTops = ['equipo', 'supVtas', 'supMeta']; // siempre lista vertical
 
   let bodyHTML = '';
 
@@ -1220,6 +1566,83 @@ function render() {
       </div>
     `;
     canvas.innerHTML = headerHTML + bodyHTML;
+    return;
+  }
+
+  // ========== CASO ESPECIAL: Resumen por Centro ==========
+  if (state.topId === 'resumenc') {
+    const data = state.agentes && state.agentes[0];
+    if (!data || !data._resumen || !data.equipos || data.equipos.length === 0) {
+      bodyHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">📋</div>
+          <div class="empty-state-msg" style="color:#fbbf24;">
+            <strong>Sin datos para mostrar</strong><br>
+            <span style="font-size:12px; color:#888;">Selecciona un centro (CC2 o JV) en filtros<br>y carga datos del sistema</span>
+          </div>
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML;
+      return;
+    }
+    const equipos = data.equipos;
+    // Renderizar mini-podios (uno por supervisor)
+    const renderMiniPodio = (eq) => {
+      const t = eq.top3 || [];
+      const cards = t.map(a => {
+        const r = a.rank || 1;
+        return `
+          <div class="mini-spot rank-${r}">
+            <div class="mini-medal">${r}</div>
+            <div class="mini-name">${a.nombre}</div>
+            <div class="mini-val">${a.ventas}</div>
+          </div>
+        `;
+      }).join('');
+      const pctClass = eq.pct >= 100 ? 'p100' : eq.pct >= 90 ? 'p90' : eq.pct >= 70 ? 'p70' : 'plow';
+      return `
+        <div class="mini-card">
+          <div class="mini-card-header">
+            <div class="mini-card-sup">${eq.supervisor}</div>
+            <div class="mini-card-stats">
+              <span class="mini-stat">${eq.ventas} vtas</span>
+              ${eq.meta ? `<span class="mini-pct ${pctClass}">${eq.pct}% meta</span>` : ''}
+            </div>
+          </div>
+          <div class="mini-podio">${cards || '<div class="mini-empty">Sin ventas</div>'}</div>
+        </div>
+      `;
+    };
+
+    // Ranking de supervisores con barras horizontales
+    const maxVtas = Math.max(...equipos.map(e => e.ventas), 1);
+    const rankingHTML = equipos.map((eq, i) => {
+      const pctBarra = (eq.ventas / maxVtas) * 100;
+      return `
+        <div class="ranking-row ${i === 0 ? 'first' : ''}">
+          <div class="ranking-pos">${i + 1}</div>
+          <div class="ranking-name">${eq.supervisor}</div>
+          <div class="ranking-bar-wrap">
+            <div class="ranking-bar" style="width:${pctBarra.toFixed(1)}%;">
+              <span class="ranking-bar-val">${eq.ventas}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    bodyHTML = `
+      <div class="resumen-wrap">
+        <div class="resumen-grid">
+          ${equipos.map(renderMiniPodio).join('')}
+        </div>
+        <div class="resumen-ranking">
+          <div class="ranking-title">🏆 RANKING DE EQUIPOS</div>
+          ${rankingHTML}
+        </div>
+      </div>
+    `;
+    canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
     return;
   }
 
@@ -1319,57 +1742,128 @@ function render() {
       `;
     } else {
       const usaRacha = state.topId === 'racha';
+      const usaMetric = ['racha','supMeta'].includes(state.topId);
+      const subPrefijo = state.topId === 'supVtas' || state.topId === 'supMeta' ? '' : null;
       bodyHTML = `
         <div class="team-list n-${arr.length}">
-          ${arr.map((a, i) => `
-            <div class="team-row ${i === 0 ? 'first' : ''} ${i === 1 ? 'second' : ''} ${i === 2 ? 'third' : ''}">
-              <div class="team-pos">${i + 1}</div>
-              <div>
-                <div class="team-name">${a.nombre}</div>
-                ${(a.centro || a.supervisor) ? `<div class="team-sub">${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}</div>` : ''}
+          ${arr.map((a, i) => {
+            const r = a.rank || (i + 1);
+            const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
+            // Subtítulo: para supervisores, mostrar centro (sin "Supervisor:");
+            // para agentes, centro + supervisor
+            let sub = '';
+            if (a.esSupervisor) {
+              sub = a.centro || '';
+              if (state.topId === 'supMeta' && a.meta) sub += ` · Meta ${a.meta}`;
+              if (state.topId === 'supMeta' && a.ventas) sub += ` · ${a.ventas} vtas`;
+            } else if (a.centro || a.supervisor) {
+              sub = `${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}`;
+            }
+            return `
+              <div class="team-row ${cls}">
+                <div class="team-pos">${r}</div>
+                <div>
+                  <div class="team-name">${a.nombre}</div>
+                  ${sub ? `<div class="team-sub">${sub}</div>` : ''}
+                </div>
+                <div class="team-val">${usaMetric ? a.metric : a.ventas}</div>
               </div>
-              <div class="team-val">${usaRacha ? a.metric : a.ventas}</div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       `;
     }
   } else {
-    // PODIO TOP 3
-    const top3 = state.agentes.slice(0, 3);
-    while (top3.length < 3) top3.push({ nombre:'—', ventas:0, centro:'', supervisor:'' });
-
-    const orden = [top3[1], top3[0], top3[2]]; // 2,1,3 visual order
+    // PODIO TOP 3 — con manejo de empates por rank
+    // Tomar todos los agentes con rank <= 3 (mostrar empates completos)
+    const conRank = state.agentes.filter(a => a.rank && a.rank <= 3);
+    // Si no hay datos, fallback a top 3 normales
+    let participantes = conRank.length > 0 ? conRank : state.agentes.slice(0, 3);
+    if (participantes.length === 0) {
+      bodyHTML = `<div class="empty-state"><div class="empty-state-icon">🏆</div><div class="empty-state-msg">Sin datos para mostrar</div></div>`;
+      canvas.innerHTML = headerHTML + bodyHTML;
+      return;
+    }
+    // Agrupar por rank
+    const grupos = {};
+    participantes.forEach(a => {
+      const r = a.rank || 99;
+      if (!grupos[r]) grupos[r] = [];
+      grupos[r].push(a);
+    });
+    const ranksUsados = Object.keys(grupos).map(Number).sort((a,b) => a-b);
     const usaRacha = state.topId === 'racha';
     const valLabel = usaRacha ? 'DÍAS' : 'VENTAS';
-    bodyHTML = `
-      <div class="podium">
-        ${orden.map((a, idx) => {
-          const realIdx = idx === 0 ? 2 : idx === 1 ? 1 : 3;
-          const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
-          const subtxt = [a.centro, a.supervisor].filter(Boolean).join(' · ');
-          return `
-            <div class="spot rank-${realIdx}">
-              <div class="medal">${realIdx}</div>
-              ${state.format === '9x16' ? `
-                <div class="agent-info">
-                  <div class="agent-name">${a.nombre}</div>
-                  <div class="agent-team">${subtxt}</div>
-                </div>
-                <div class="bar"><div class="big-num">${valor}</div></div>
-              ` : `
-                <div class="agent-name">${a.nombre}</div>
-                <div class="agent-team">${subtxt}</div>
-                <div class="bar">
-                  <div class="big-num">${valor}</div>
-                  <div class="unit">${valLabel}</div>
-                </div>
-              `}
+
+    // Generar cards agrupadas por rank
+    const renderSpot = (a, rank) => {
+      const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+      const subtxt = [a.centro, a.supervisor].filter(Boolean).join(' · ');
+      return `
+        <div class="spot rank-${rank}">
+          <div class="medal">${rank}</div>
+          ${state.format === '9x16' ? `
+            <div class="agent-info">
+              <div class="agent-name">${a.nombre}</div>
+              <div class="agent-team">${subtxt}</div>
             </div>
-          `;
-        }).join('')}
-      </div>
-    `;
+            <div class="bar"><div class="big-num">${valor}</div></div>
+          ` : `
+            <div class="agent-name">${a.nombre}</div>
+            <div class="agent-team">${subtxt}</div>
+            <div class="bar">
+              <div class="big-num">${valor}</div>
+              <div class="unit">${valLabel}</div>
+            </div>
+          `}
+        </div>
+      `;
+    };
+
+    // Si solo hay rank 1 con 3 personas (3 way tie), todos al mismo nivel
+    // Si hay 2 ranks (1° y 3° por ejemplo), grupo de oros arriba y grupo de bronces abajo
+    // Si hay 3 ranks (1° 2° 3° clásico), podio tradicional
+    const totalAgentes = participantes.length;
+
+    if (ranksUsados.length === 3 && grupos[ranksUsados[0]].length === 1 && grupos[ranksUsados[1]].length === 1 && grupos[ranksUsados[2]].length === 1) {
+      // Caso clásico: 1-2-3 sin empates → podio tradicional con 2-1-3 visual
+      const ag1 = grupos[ranksUsados[0]][0];
+      const ag2 = grupos[ranksUsados[1]][0];
+      const ag3 = grupos[ranksUsados[2]][0];
+      bodyHTML = `
+        <div class="podium">
+          ${renderSpot(ag2, ranksUsados[1])}
+          ${renderSpot(ag1, ranksUsados[0])}
+          ${renderSpot(ag3, ranksUsados[2])}
+        </div>
+      `;
+    } else {
+      // Hay empates: mostrar agrupados por rank en filas
+      // Si todos caben en una fila (≤4 personas), una sola fila
+      // Si son 5+, hacer dos filas: oro/plata arriba, bronce abajo
+      const grandeUnaFila = totalAgentes <= 4;
+      if (grandeUnaFila) {
+        // Todos en una fila, primero los oros, luego platas, luego bronces
+        let cards = '';
+        ranksUsados.forEach(r => {
+          grupos[r].forEach(a => { cards += renderSpot(a, r); });
+        });
+        bodyHTML = `<div class="podium podium-empate">${cards}</div>`;
+      } else {
+        // Dos filas: arriba ranks superiores (1 y 2 si existen), abajo el resto
+        const ranksArriba = ranksUsados.filter(r => r <= 2);
+        const ranksAbajo = ranksUsados.filter(r => r >= 3);
+        let arribaCards = '', abajoCards = '';
+        ranksArriba.forEach(r => grupos[r].forEach(a => { arribaCards += renderSpot(a, r); }));
+        ranksAbajo.forEach(r => grupos[r].forEach(a => { abajoCards += renderSpot(a, r); }));
+        bodyHTML = `
+          <div class="podium-multi">
+            ${arribaCards ? `<div class="podium-fila podium-fila-top">${arribaCards}</div>` : ''}
+            ${abajoCards ? `<div class="podium-fila podium-fila-bot">${abajoCards}</div>` : ''}
+          </div>
+        `;
+      }
+    }
   }
 
   const footerHTML = `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
@@ -1408,14 +1902,23 @@ async function descargarPNG() {
 // BOOT
 // ====================================================================
 initUI();
-// Cargar datos de ejemplo iniciales (manual con tus tres top)
+// Datos de ejemplo iniciales (solo se ven mientras carga real)
 state.agentes = [
-  { nombre:'NORWIN LOT ROJAS GARCIA', ventas:19, centro:'JV', supervisor:'' },
-  { nombre:'GLADYS LIZBETH CRUZ MEDRANO', ventas:18, centro:'CC2', supervisor:'' },
-  { nombre:'JENNY PEREZ TOME', ventas:17, centro:'JV', supervisor:'' },
+  { nombre:'NORWIN LOT ROJAS GARCIA', ventas:22, centro:'JV', supervisor:'CARMEN', rank:1 },
+  { nombre:'GLADYS LIZBETH CRUZ MEDRANO', ventas:22, centro:'CC2', supervisor:'REYNA', rank:1 },
+  { nombre:'CORAL FLORES LOPEZ', ventas:18, centro:'JV', supervisor:'CARMEN', rank:3 },
+  { nombre:'IVAN JOSEPH CORONA MORALES', ventas:18, centro:'CC2', supervisor:'ALAN', rank:3 },
+  { nombre:'JENNY PEREZ TOME', ventas:18, centro:'JV', supervisor:'JORGE', rank:3 },
 ];
 state.manual = true;
 render();
+
+// Si Supabase está disponible, intentar cargar datos reales automáticamente
+setTimeout(() => {
+  if (db) {
+    cargarDesdeSupabase();
+  }
+}, 800);
 </script>
 </body>
 </html>
