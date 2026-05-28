@@ -161,10 +161,14 @@
   .corner-bl { bottom:18px; left:18px; border-bottom-width:2px; border-left-width:2px; }
   .corner-br { bottom:18px; right:18px; border-bottom-width:2px; border-right-width:2px; }
 
-  /* Aspect ratios */
+  /* Aspect ratios — usados por defecto */
   .ratio-16x9 { aspect-ratio:16/9; width:880px; }
   .ratio-9x16 { aspect-ratio:9/16; width:495px; }
   .ratio-1x1 { aspect-ratio:1/1; width:720px; }
+  /* Cuando hay lista de 10/15 agentes, el canvas se hace más alto sin distorsionar */
+  .ratio-16x9.tall-list { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:30px; }
+  .ratio-1x1.tall-list { aspect-ratio:auto; width:720px; height:auto; min-height:720px; padding-bottom:30px; }
+  .ratio-9x16.tall-list { aspect-ratio:auto; width:495px; height:auto; min-height:880px; padding-bottom:30px; }
 
   /* HEADER del top */
   .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
@@ -284,6 +288,77 @@
     text-align:center; padding:14px; position:relative; z-index:2;
     font-size:10px; color:var(--gold-3); letter-spacing:3px; text-transform:uppercase;
     border-top:1px solid rgba(212,175,55,0.15); margin:0 40px;
+  }
+
+  /* ============ BATALLA DE CENTROS ============ */
+  .centros-wrap {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    gap:30px; padding:0 50px 20px; z-index:2; position:relative;
+  }
+  .centro-card {
+    flex:1; max-width:340px; text-align:center;
+    padding:24px 18px;
+    background:linear-gradient(180deg, rgba(212,175,55,0.06), rgba(0,0,0,0.4));
+    border:2px solid rgba(212,175,55,0.25); border-radius:18px;
+    position:relative; transition:all .3s;
+  }
+  .centro-card.ganador {
+    background:linear-gradient(180deg, rgba(212,175,55,0.32), rgba(212,175,55,0.08));
+    border-color:rgba(212,175,55,0.7); transform:scale(1.05);
+    box-shadow:0 10px 40px rgba(212,175,55,0.4);
+  }
+  .centro-crown {
+    position:absolute; top:-30px; left:50%; transform:translateX(-50%);
+    font-size:40px;
+  }
+  .centro-nombre {
+    font-family:'Syne'; font-weight:800; font-size:42px;
+    background:linear-gradient(180deg, #fff, var(--gold-2));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    line-height:1;
+  }
+  .centro-sub { font-size:11px; color:var(--gold-3); letter-spacing:3px; margin-top:4px; text-transform:uppercase; }
+  .centro-num { font-family:'Anton'; font-size:82px; color:var(--gold-1); margin-top:16px; line-height:1; }
+  .centro-card.ganador .centro-num { color:var(--gold-1); text-shadow:0 0 20px rgba(212,175,55,0.5); }
+  .centro-lbl { font-size:10px; letter-spacing:2.5px; color:var(--text-soft); margin-top:4px; text-transform:uppercase; }
+  .centro-vs {
+    font-family:'Anton'; font-size:48px; color:var(--gold-2);
+    text-shadow:0 0 18px rgba(212,175,55,0.5);
+  }
+  .centros-bar {
+    margin:0 80px 40px; height:38px; border-radius:20px; overflow:hidden;
+    display:flex; border:1px solid rgba(212,175,55,0.3);
+    z-index:2; position:relative;
+  }
+  .centros-bar-cc2 {
+    background:linear-gradient(90deg, var(--gold-2), var(--gold-1));
+    display:flex; align-items:center; justify-content:flex-start; padding-left:14px;
+    color:#3a2e00; font-family:'Anton'; font-size:18px; transition:width .3s;
+  }
+  .centros-bar-jv {
+    background:linear-gradient(90deg, #c0c0c0, #888);
+    display:flex; align-items:center; justify-content:flex-end; padding-right:14px;
+    color:#1a1a1a; font-family:'Anton'; font-size:18px; transition:width .3s;
+  }
+  /* Cuando JV gana, invertir colores */
+  .centros-wrap:has(.centro-card.ganador.JV) ~ .centros-bar .centros-bar-jv {
+    background:linear-gradient(90deg, var(--gold-2), var(--gold-1)); color:#3a2e00;
+  }
+
+  /* ============ FIX OVERFLOW TOP N grandes ============ */
+  /* En 16:9 con 15 agentes, hacemos el header más compacto */
+  .canvas-top:has(.team-list.n-10) .top-header,
+  .canvas-top:has(.team-list.n-15) .top-header {
+    padding:24px 24px 8px;
+  }
+  .canvas-top:has(.team-list.n-10) .top-title {
+    font-size:30px;
+  }
+  .canvas-top:has(.team-list.n-15) .top-title {
+    font-size:26px;
+  }
+  .canvas-top:has(.team-list.n-15) .top-header {
+    padding:18px 24px 6px;
   }
 
   /* SOLO 1 AGENTE (revelación, rey ticket, primero meta, cierre día) */
@@ -582,9 +657,16 @@ function initUI() {
       state.topId = el.dataset.top;
       grid.querySelectorAll('.top-opt').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
-      // Ocultar selector de cantidad si el top es de 1 solo agente
+      // Ocultar selector de cantidad si el top es de 1 solo agente o centro
       const soloTops = ['rev','crec','ticket','meta'];
-      document.getElementById('section-cantidad').style.display = soloTops.includes(state.topId) ? 'none' : 'block';
+      const sinCantidad = soloTops.includes(state.topId) || state.topId === 'centro';
+      document.getElementById('section-cantidad').style.display = sinCantidad ? 'none' : 'block';
+      // Cierre del Día: cambiar automáticamente a modo "día"
+      if (state.topId === 'diario' && state.modo !== 'dia') {
+        state.modo = 'dia';
+        document.getElementById('sel-modo').value = 'dia';
+        renderModoExtra();
+      }
       render();
     };
   });
@@ -720,28 +802,93 @@ async function cargarDesdeSupabase() {
       fechaFin = `${state.anio}-${String(state.mes).padStart(2, '0')}-${String(ultDia).padStart(2, '0')}`;
     }
 
-    // Cargar ventas activadas en el rango
-    let query = db.from('ventas_detalle')
-      .select('ejecutivo, supervisor, plan, fecha_activacion, fecha_bo, fecha_cancelacion, estatus')
-      .gte('fecha_activacion', fechaIni)
-      .lte('fecha_activacion', fechaFin)
-      .eq('estatus', 'activada');
+    // ============================================================
+    // 1. Cargar SUPERVISORES vigentes (igual que reporte semanal)
+    // ============================================================
+    const hoyStr = new Date().toISOString().split('T')[0];
+    // Para top de mes pasado, usamos el último día del mes como referencia de "vigencia"
+    const refSupStr = fechaFin > hoyStr ? hoyStr : fechaFin;
+    const { data: supConfig } = await db.from('supervisores_config').select('*');
+    const supsVigentes = (supConfig || []).filter(s => {
+      const ini = s.fecha_inicio || '1900-01-01';
+      const fin = s.fecha_fin || '9999-12-31';
+      return ini <= refSupStr && fin >= refSupStr;
+    }).map(s => s.supervisor);
 
-    const { data: ventas, error } = await query;
-    if (error) throw error;
+    // ============================================================
+    // 2. Cargar VENTAS (igual que reporte semanal: trae todo, filtra en cliente)
+    // ============================================================
+    let allVentas = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: chunk, error } = await db.from('ventas_detalle')
+        .select('ejecutivo, supervisor, supervisor_act, supervisor_can, plan, fecha_bo, fecha_activacion, fecha_cancelacion, estatus, renta_sin_impuestos')
+        .order('fecha_bo')
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      if (!chunk || chunk.length === 0) break;
+      allVentas = allVentas.concat(chunk);
+      if (chunk.length < pageSize) break;
+      from += pageSize;
+      if (from > 100000) break; // safety
+    }
 
-    // Cargar plantilla para info de centro, fecha_ingreso, etc.
-    const { data: plantilla } = await db.from('plantilla').select('*');
+    // ============================================================
+    // 3. Sobreescribir r.supervisor con supervisor_act (igual que reporte)
+    //    Reporte: si estatus=activada Y supervisor_act → sobrescribe
+    // ============================================================
+    allVentas.forEach(r => {
+      if (r.estatus === 'activada' && r.supervisor_act) {
+        r.supervisor = r.supervisor_act;
+      } else if (r.estatus === 'cancelada' && r.supervisor_can) {
+        r.supervisor = r.supervisor_can;
+      }
+    });
+
+    // ============================================================
+    // 4. Cargar PLANTILLA con campos necesarios
+    // ============================================================
+    const { data: plantilla } = await db.from('plantilla')
+      .select('nombre, supervisor, fecha_ingreso, fecha_baja, estatus, centro');
     const mapaPlantilla = {};
     (plantilla || []).forEach(p => { mapaPlantilla[p.nombre] = p; });
 
-    // Cargar canceladas para excluir
-    const { data: canceladas } = await db.from('ventas_detalle')
-      .select('ejecutivo, fecha_cancelacion')
-      .gte('fecha_cancelacion', fechaIni)
-      .lte('fecha_cancelacion', fechaFin);
+    // Si no hay centro en plantilla, deducirlo del supervisor (vía supervisores_config.centro)
+    const mapaCentroSup = {};
+    (supConfig || []).forEach(s => { if (s.supervisor && s.centro) mapaCentroSup[s.supervisor] = s.centro; });
 
-    state.rawData = { ventas: ventas || [], plantilla: mapaPlantilla, canceladas: canceladas || [], fechaIni, fechaFin };
+    // ============================================================
+    // 5. Cargar ASIGNACIONES_SUPERVISOR vigentes a la fecha de corte
+    //    (para Revelación, queremos saber el sup ACTUAL del agente)
+    // ============================================================
+    const { data: asignaciones } = await db.from('asignaciones_supervisor').select('*');
+    const mapaSupAgente = {};
+    (asignaciones || []).forEach(a => {
+      const ini = a.fecha_inicio || '1900-01-01';
+      const fin = a.fecha_fin || '9999-12-31';
+      if (ini <= refSupStr && fin >= refSupStr && a.ejecutivo) {
+        mapaSupAgente[a.ejecutivo] = a.supervisor;
+      }
+    });
+
+    // ============================================================
+    // 6. Cargar METAS si vamos a usar "Primero en Meta"
+    // ============================================================
+    const { data: metas } = await db.from('metas_agente')
+      .select('ejecutivo, supervisor, anio, mes, meta_activadas, tipo_meta')
+      .eq('anio', state.anio).eq('mes', state.mes);
+
+    state.rawData = {
+      ventas: allVentas,
+      plantilla: mapaPlantilla,
+      supsVigentes,
+      mapaCentroSup,
+      mapaSupAgente,
+      metas: metas || [],
+      fechaIni,
+      fechaFin
+    };
     state.manual = false;
 
     // Calcular agentes según tipo de top
@@ -757,30 +904,161 @@ async function cargarDesdeSupabase() {
 
 function procesarDatos() {
   if (!state.rawData) return [];
-  const { ventas, plantilla } = state.rawData;
+  const { ventas, plantilla, supsVigentes, mapaCentroSup, mapaSupAgente, metas, fechaIni, fechaFin } = state.rawData;
 
-  // Aplicar filtros de supervisor y centro
-  let vfilt = ventas;
-  if (state.supervisor) {
-    vfilt = vfilt.filter(v => v.supervisor === state.supervisor);
-  }
-  if (state.centro) {
-    vfilt = vfilt.filter(v => {
-      const p = plantilla[v.ejecutivo];
-      return p && p.centro === state.centro;
+  // Helper: centro del agente
+  const centroAgente = (nombre, supSobrescrito) => {
+    const p = plantilla[nombre];
+    if (p && p.centro) return p.centro;
+    // Si no, intentar por supervisor
+    if (supSobrescrito && mapaCentroSup[supSobrescrito]) return mapaCentroSup[supSobrescrito];
+    return '';
+  };
+
+  // ============================================================
+  // CASO ESPECIAL: Mejor Centro — agrupar por centro
+  // ============================================================
+  if (state.topId === 'centro') {
+    const porCentro = { CC2: 0, JV: 0 };
+    ventas.forEach(v => {
+      if (!v.ejecutivo) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      const c = centroAgente(v.ejecutivo, v.supervisor);
+      if (c === 'CC2' || c === 'JV') porCentro[c]++;
     });
+    return [
+      { nombre: 'CC2 ANTEQUERA', ventas: porCentro.CC2, centro: 'CC2', metric: porCentro.CC2 },
+      { nombre: 'JUÁREZ TORRE JV', ventas: porCentro.JV, centro: 'JV', metric: porCentro.JV }
+    ].sort((a, b) => b.ventas - a.ventas);
   }
 
-  // Agrupar por ejecutivo
+  // ============================================================
+  // CASO ESPECIAL: Mayor Crecimiento — comparar vs mes anterior
+  // ============================================================
+  if (state.topId === 'crec') {
+    // Calcular ventas mes actual y mes anterior por agente
+    const mesAnt = state.mes === 1 ? 12 : state.mes - 1;
+    const anioAnt = state.mes === 1 ? state.anio - 1 : state.anio;
+    const ultDiaAnt = new Date(anioAnt, mesAnt, 0).getDate();
+    const iniAnt = `${anioAnt}-${String(mesAnt).padStart(2, '0')}-01`;
+    const finAnt = `${anioAnt}-${String(mesAnt).padStart(2, '0')}-${String(ultDiaAnt).padStart(2, '0')}`;
+    const actual = {}, anterior = {};
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_activacion) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (v.fecha_activacion >= fechaIni && v.fecha_activacion <= fechaFin) {
+        actual[v.ejecutivo] = (actual[v.ejecutivo] || 0) + 1;
+      }
+      if (v.fecha_activacion >= iniAnt && v.fecha_activacion <= finAnt) {
+        anterior[v.ejecutivo] = (anterior[v.ejecutivo] || 0) + 1;
+      }
+    });
+    const arr = Object.keys(actual).map(nombre => {
+      const ant = anterior[nombre] || 0;
+      const act = actual[nombre];
+      const crec = act - ant;
+      const pct = ant > 0 ? Math.round((act - ant) / ant * 100) : (act > 0 ? 100 : 0);
+      const supActual = mapaSupAgente[nombre] || '';
+      return {
+        nombre, ventas: act, anterior: ant, supervisor: supActual,
+        centro: centroAgente(nombre, supActual),
+        metric: `+${crec} (${pct >= 0 ? '+' : ''}${pct}%)`
+      };
+    }).filter(a => a.ventas > a.anterior && a.anterior > 0); // crecimiento real (no nuevos)
+    arr.sort((a, b) => (b.ventas - b.anterior) - (a.ventas - a.anterior));
+    return arr;
+  }
+
+  // ============================================================
+  // CASO ESPECIAL: Rey del Ticket — mayor ARPU del mes
+  // ============================================================
+  if (state.topId === 'ticket') {
+    const acumArpu = {}; // {ejecutivo: {sum, count}}
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_activacion) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      if (!v.renta_sin_impuestos || v.renta_sin_impuestos <= 0) return;
+      if (!acumArpu[v.ejecutivo]) acumArpu[v.ejecutivo] = { sum: 0, count: 0 };
+      acumArpu[v.ejecutivo].sum += Number(v.renta_sin_impuestos);
+      acumArpu[v.ejecutivo].count++;
+    });
+    const arr = Object.entries(acumArpu)
+      .filter(([_, a]) => a.count >= 3) // mínimo 3 ventas para tener ARPU representativo
+      .map(([nombre, a]) => {
+        const supActual = mapaSupAgente[nombre] || '';
+        return {
+          nombre,
+          ventas: a.count,
+          supervisor: supActual,
+          centro: centroAgente(nombre, supActual),
+          metric: '$' + Math.round(a.sum / a.count).toLocaleString('es-MX')
+        };
+      });
+    arr.sort((a, b) => (b.metric.length === a.metric.length ? b.metric.localeCompare(a.metric) : b.metric.length - a.metric.length));
+    // Mejor: ordenar por valor numérico
+    arr.sort((a, b) => parseFloat(b.metric.replace(/[^0-9.]/g, '')) - parseFloat(a.metric.replace(/[^0-9.]/g, '')));
+    return arr;
+  }
+
+  // ============================================================
+  // CASO ESPECIAL: Primero en Meta — quién llegó primero a su meta
+  // ============================================================
+  if (state.topId === 'meta') {
+    // Para cada agente con meta, encontrar la fecha en la que llegó a la meta
+    const mapaMetas = {};
+    metas.forEach(m => { mapaMetas[m.ejecutivo] = m.meta_activadas; });
+
+    const ventasPorAgenteFechas = {}; // {nombre: [fecha1, fecha2,...] ordenadas}
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_activacion) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      if (!ventasPorAgenteFechas[v.ejecutivo]) ventasPorAgenteFechas[v.ejecutivo] = [];
+      ventasPorAgenteFechas[v.ejecutivo].push(v.fecha_activacion);
+    });
+
+    const arr = [];
+    Object.entries(ventasPorAgenteFechas).forEach(([nombre, fechas]) => {
+      const meta = mapaMetas[nombre];
+      if (!meta || meta <= 0) return;
+      if (fechas.length < meta) return;
+      fechas.sort();
+      const fechaCumplida = fechas[meta - 1]; // la enésima venta
+      const supActual = mapaSupAgente[nombre] || '';
+      arr.push({
+        nombre,
+        ventas: fechas.length,
+        supervisor: supActual,
+        centro: centroAgente(nombre, supActual),
+        metric: fechaCumplida,
+        meta: meta
+      });
+    });
+    arr.sort((a, b) => a.metric.localeCompare(b.metric));
+    return arr;
+  }
+
+  // ============================================================
+  // POR DEFECTO: agrupar por ejecutivo, contar fecha_activacion en rango
+  // Esto es la misma lógica del reporte semanal
+  // ============================================================
   const porAgente = {};
-  vfilt.forEach(v => {
+  ventas.forEach(v => {
+    if (!v.ejecutivo) return;
+    // Solo cuenta si el supervisor (ya sobreescrito con supervisor_act) está vigente
+    if (!supsVigentes.includes(v.supervisor)) return;
+    // Solo cuenta si fecha_activacion está en el rango
+    if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+
     if (!porAgente[v.ejecutivo]) {
       const p = plantilla[v.ejecutivo] || {};
       porAgente[v.ejecutivo] = {
         nombre: v.ejecutivo,
         ventas: 0,
         supervisor: v.supervisor,
-        centro: p.centro || '',
+        centro: p.centro || mapaCentroSup[v.supervisor] || '',
         fecha_ingreso: p.fecha_ingreso || null,
         fechas: []
       };
@@ -791,41 +1069,62 @@ function procesarDatos() {
 
   let arr = Object.values(porAgente);
 
+  // Aplicar filtros UI (centro / supervisor)
+  if (state.centro) {
+    arr = arr.filter(a => a.centro === state.centro);
+  }
+  if (state.supervisor) {
+    arr = arr.filter(a => a.supervisor === state.supervisor);
+  }
+
   // Reglas específicas según tipo
   if (state.topId === 'rev') {
-    // Revelación: nuevos con <=60 días al final del periodo
-    const refDate = new Date(state.rawData.fechaFin);
+    // Revelación: agentes con <=60 días al final del periodo
+    const refDate = new Date(fechaFin + 'T12:00:00');
     arr = arr.filter(a => {
       if (!a.fecha_ingreso) return false;
-      const ing = new Date(a.fecha_ingreso);
+      const ing = new Date(a.fecha_ingreso + 'T12:00:00');
       const dias = (refDate - ing) / (1000 * 60 * 60 * 24);
       return dias >= 0 && dias <= 60;
     });
-  } else if (state.topId === 'racha') {
-    // Calcular racha de días consecutivos con venta
+    // Para revelación, usar el supervisor ACTUAL del agente (no el de la primera venta)
+    arr.forEach(a => {
+      if (mapaSupAgente[a.nombre]) a.supervisor = mapaSupAgente[a.nombre];
+    });
+    arr.sort((a, b) => b.ventas - a.ventas);
+    return arr;
+  }
+
+  if (state.topId === 'racha') {
+    // Racha: días consecutivos con venta (excluye domingos automáticamente)
     arr.forEach(a => {
       const fechasOrd = [...new Set(a.fechas)].sort();
-      let maxRacha = 1, actual = 1;
+      let maxRacha = fechasOrd.length > 0 ? 1 : 0;
+      let actual = fechasOrd.length > 0 ? 1 : 0;
       for (let i = 1; i < fechasOrd.length; i++) {
-        const d1 = new Date(fechasOrd[i-1]);
-        const d2 = new Date(fechasOrd[i]);
-        const diff = (d2 - d1) / (1000 * 60 * 60 * 24);
-        if (diff === 1) { actual++; maxRacha = Math.max(maxRacha, actual); }
+        const d1 = new Date(fechasOrd[i-1] + 'T12:00:00');
+        const d2 = new Date(fechasOrd[i] + 'T12:00:00');
+        const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+        // Considerar consecutivos si: diff=1, o diff=2 si el día intermedio es domingo
+        let consecutivos = false;
+        if (diff === 1) consecutivos = true;
+        else if (diff === 2) {
+          const diaIntermedio = new Date(d1);
+          diaIntermedio.setDate(diaIntermedio.getDate() + 1);
+          if (diaIntermedio.getDay() === 0) consecutivos = true;
+        }
+        if (consecutivos) { actual++; maxRacha = Math.max(maxRacha, actual); }
         else { actual = 1; }
       }
-      a.metric = maxRacha;
+      a.metric = maxRacha + ' días';
+      a._rachaNum = maxRacha;
     });
-    arr.sort((a, b) => b.metric - a.metric);
-  } else if (state.topId === 'diario') {
-    // Mismo procesamiento, pero el modo "dia" ya filtró la fecha
-    // Se ordena por ventas
+    arr.sort((a, b) => b._rachaNum - a._rachaNum);
+    return arr;
   }
 
-  // Por defecto, ordenar por ventas descendente
-  if (state.topId !== 'racha') {
-    arr.sort((a, b) => b.ventas - a.ventas);
-  }
-
+  // 'diario' y resto: ordenar por ventas
+  arr.sort((a, b) => b.ventas - a.ventas);
   return arr;
 }
 
@@ -854,7 +1153,9 @@ function aplicarManual() {
 // ====================================================================
 function render() {
   const canvas = document.getElementById('canvas');
-  canvas.className = 'canvas-top ratio-' + state.format;
+  // Determinar si necesitamos lista alta (Top 10 o 15)
+  const tallList = (state.cantidad >= 10) && !['rev','crec','ticket','meta','centro'].includes(state.topId);
+  canvas.className = 'canvas-top ratio-' + state.format + (tallList ? ' tall-list' : '');
 
   if (!state.agentes || state.agentes.length === 0) {
     canvas.innerHTML = `
@@ -875,83 +1176,193 @@ function render() {
   if (state.centro) subtitle += ` · ${state.centro}`;
   if (state.supervisor) subtitle += ` · ${state.supervisor}`;
 
+  // Título DINÁMICO según tipo de top + cantidad
+  const soloTopsLista = ['rev','crec','ticket','meta'];
+  const usaCantidad = !soloTopsLista.includes(state.topId) && state.topId !== 'centro';
+  let titleText = top.label.toUpperCase();
+  let kickerText = top.desc.toUpperCase();
+  if (usaCantidad) {
+    // Reemplazar "Top 3 Global" → "TOP 5 GLOBAL" según cantidad
+    titleText = `TOP ${state.cantidad} ${state.topId === 'global' ? 'GLOBAL' : state.topId === 'equipo' ? (state.supervisor || 'EQUIPO').toUpperCase() : ''}`;
+    kickerText = `EXPERTCELL · LOS ${state.cantidad} MEJORES`;
+  } else if (state.topId === 'centro') {
+    titleText = 'BATALLA DE CENTROS';
+    kickerText = 'CC2 ANTEQUERA vs JUÁREZ TORRE JV';
+  } else {
+    kickerText = `EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}`;
+  }
+
   const headerHTML = `
     <div class="corner-tl"></div><div class="corner-tr"></div>
     <div class="corner-bl"></div><div class="corner-br"></div>
     <div class="top-header">
-      <div class="top-kicker">EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}</div>
-      <div class="top-title">${top.label.toUpperCase()}</div>
+      <div class="top-kicker">${kickerText}</div>
+      <div class="top-title">${titleText}</div>
       <div class="top-subtitle">${subtitle}</div>
     </div>
   `;
 
-  // Determinar estructura: solo 1 agente / podio 3 / lista N
+  // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
   const soloTops = ['rev','crec','ticket','meta'];
   const listaTops = ['equipo']; // siempre lista vertical
 
   let bodyHTML = '';
 
+  // ========== CASO ESPECIAL: Top por equipo SIN supervisor seleccionado ==========
+  if (state.topId === 'equipo' && !state.supervisor) {
+    bodyHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">👑</div>
+        <div class="empty-state-msg" style="color:#fbbf24;">
+          <strong>Selecciona un supervisor</strong><br>
+          <span style="font-size:12px; color:#888;">Para mostrar el top de un equipo,<br>elige primero en "Filtros → Supervisor"</span>
+        </div>
+      </div>
+    `;
+    canvas.innerHTML = headerHTML + bodyHTML;
+    return;
+  }
+
+  // ========== CASO ESPECIAL: Batalla de centros ==========
+  if (state.topId === 'centro') {
+    const cc2 = state.agentes.find(a => a.centro === 'CC2') || { ventas: 0 };
+    const jv  = state.agentes.find(a => a.centro === 'JV') || { ventas: 0 };
+    const total = cc2.ventas + jv.ventas;
+    const pctCC2 = total > 0 ? (cc2.ventas / total * 100) : 50;
+    const pctJV = 100 - pctCC2;
+    const ganador = cc2.ventas > jv.ventas ? 'CC2' : jv.ventas > cc2.ventas ? 'JV' : null;
+
+    bodyHTML = `
+      <div class="centros-wrap">
+        <div class="centro-card ${ganador === 'CC2' ? 'ganador' : ''}">
+          <div class="centro-crown">${ganador === 'CC2' ? '👑' : ''}</div>
+          <div class="centro-nombre">CC2</div>
+          <div class="centro-sub">ANTEQUERA</div>
+          <div class="centro-num">${cc2.ventas}</div>
+          <div class="centro-lbl">VENTAS</div>
+        </div>
+        <div class="centro-vs">VS</div>
+        <div class="centro-card ${ganador === 'JV' ? 'ganador' : ''}">
+          <div class="centro-crown">${ganador === 'JV' ? '👑' : ''}</div>
+          <div class="centro-nombre">JV</div>
+          <div class="centro-sub">JUÁREZ</div>
+          <div class="centro-num">${jv.ventas}</div>
+          <div class="centro-lbl">VENTAS</div>
+        </div>
+      </div>
+      <div class="centros-bar">
+        <div class="centros-bar-cc2" style="width:${pctCC2.toFixed(1)}%;">${pctCC2 >= 15 ? pctCC2.toFixed(0) + '%' : ''}</div>
+        <div class="centros-bar-jv" style="width:${pctJV.toFixed(1)}%;">${pctJV >= 15 ? pctJV.toFixed(0) + '%' : ''}</div>
+      </div>
+    `;
+    canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+    return;
+  }
+
   if (soloTops.includes(state.topId)) {
     // SOLO 1 agente destacado
+    if (!state.agentes || state.agentes.length === 0) {
+      bodyHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">${top.icon}</div>
+          <div class="empty-state-msg" style="color:#fbbf24;">
+            <strong>Sin candidatos para este reconocimiento</strong><br>
+            <span style="font-size:12px; color:#888;">${
+              state.topId === 'rev' ? 'No hay agentes nuevos (≤60 días) con ventas en el periodo' :
+              state.topId === 'crec' ? 'No hay agentes con crecimiento vs mes anterior' :
+              state.topId === 'ticket' ? 'No hay agentes con suficientes ventas (mín 3) y ARPU > 0' :
+              state.topId === 'meta' ? 'Ningún agente ha cumplido su meta del mes aún' : 'Sin datos'
+            }</span>
+          </div>
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML;
+      return;
+    }
     const a = state.agentes[0];
-    const metricLabel = state.topId === 'ticket' ? 'ARPU' :
+    const metricLabel = state.topId === 'ticket' ? 'ARPU PROMEDIO' :
                         state.topId === 'crec' ? 'CRECIMIENTO' :
-                        state.topId === 'meta' ? 'CUMPLIDO' : 'VENTAS';
+                        state.topId === 'meta' ? 'META CUMPLIDA EL' : 'VENTAS';
+    const metricVal = a.metric !== undefined ? a.metric : a.ventas;
+    // Para meta, mostrar fecha legible
+    let displayVal = metricVal;
+    if (state.topId === 'meta' && typeof metricVal === 'string' && metricVal.length === 10) {
+      const [y, m, d] = metricVal.split('-');
+      displayVal = `${d}/${m}`;
+    }
     bodyHTML = `
       <div class="solo">
         <div class="solo-trophy">${top.icon}</div>
         <div class="solo-name">${a.nombre}</div>
-        <div class="solo-team">${a.supervisor || a.centro || ''}</div>
+        <div class="solo-team">${a.supervisor || ''}${a.centro ? ' · ' + a.centro : ''}</div>
         <div class="solo-meta">
           <div class="solo-stat">
-            <div class="solo-stat-val">${a.metric || a.ventas}</div>
+            <div class="solo-stat-val">${displayVal}</div>
             <div class="solo-stat-lbl">${metricLabel}</div>
           </div>
+          ${state.topId === 'meta' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS / ${a.meta} META</div></div>` : ''}
+          ${state.topId === 'crec' ? `<div class="solo-stat"><div class="solo-stat-val">${a.anterior}→${a.ventas}</div><div class="solo-stat-lbl">MES ANT → ACTUAL</div></div>` : ''}
+          ${state.topId === 'ticket' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS</div></div>` : ''}
+          ${state.topId === 'rev' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS</div></div>` : ''}
         </div>
       </div>
     `;
   } else if (listaTops.includes(state.topId) || state.cantidad > 3) {
     // LISTA VERTICAL (siempre para "equipo", o cuando se piden 5+ para otros tops)
     const arr = state.agentes.slice(0, state.cantidad);
-    bodyHTML = `
-      <div class="team-list n-${arr.length}">
-        ${arr.map((a, i) => `
-          <div class="team-row ${i === 0 ? 'first' : ''} ${i === 1 ? 'second' : ''} ${i === 2 ? 'third' : ''}">
-            <div class="team-pos">${i + 1}</div>
-            <div>
-              <div class="team-name">${a.nombre}</div>
-              ${(a.centro || a.supervisor) ? `<div class="team-sub">${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}</div>` : ''}
+    if (arr.length === 0) {
+      bodyHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">${top.icon}</div>
+          <div class="empty-state-msg">Sin datos para mostrar</div>
+        </div>
+      `;
+    } else {
+      const usaRacha = state.topId === 'racha';
+      bodyHTML = `
+        <div class="team-list n-${arr.length}">
+          ${arr.map((a, i) => `
+            <div class="team-row ${i === 0 ? 'first' : ''} ${i === 1 ? 'second' : ''} ${i === 2 ? 'third' : ''}">
+              <div class="team-pos">${i + 1}</div>
+              <div>
+                <div class="team-name">${a.nombre}</div>
+                ${(a.centro || a.supervisor) ? `<div class="team-sub">${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}</div>` : ''}
+              </div>
+              <div class="team-val">${usaRacha ? a.metric : a.ventas}</div>
             </div>
-            <div class="team-val">${a.ventas}</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
+          `).join('')}
+        </div>
+      `;
+    }
   } else {
     // PODIO TOP 3
     const top3 = state.agentes.slice(0, 3);
-    while (top3.length < 3) top3.push({ nombre:'—', ventas:0, centro:'' });
+    while (top3.length < 3) top3.push({ nombre:'—', ventas:0, centro:'', supervisor:'' });
 
     const orden = [top3[1], top3[0], top3[2]]; // 2,1,3 visual order
+    const usaRacha = state.topId === 'racha';
+    const valLabel = usaRacha ? 'DÍAS' : 'VENTAS';
     bodyHTML = `
       <div class="podium">
         ${orden.map((a, idx) => {
           const realIdx = idx === 0 ? 2 : idx === 1 ? 1 : 3;
+          const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+          const subtxt = [a.centro, a.supervisor].filter(Boolean).join(' · ');
           return `
             <div class="spot rank-${realIdx}">
               <div class="medal">${realIdx}</div>
               ${state.format === '9x16' ? `
                 <div class="agent-info">
                   <div class="agent-name">${a.nombre}</div>
-                  <div class="agent-team">${a.centro || a.supervisor || ''}</div>
+                  <div class="agent-team">${subtxt}</div>
                 </div>
-                <div class="bar"><div class="big-num">${a.ventas}</div></div>
+                <div class="bar"><div class="big-num">${valor}</div></div>
               ` : `
                 <div class="agent-name">${a.nombre}</div>
-                <div class="agent-team">${a.centro || a.supervisor || ''}</div>
+                <div class="agent-team">${subtxt}</div>
                 <div class="bar">
-                  <div class="big-num">${a.ventas}</div>
-                  <div class="unit">VENTAS</div>
+                  <div class="big-num">${valor}</div>
+                  <div class="unit">${valLabel}</div>
                 </div>
               `}
             </div>
