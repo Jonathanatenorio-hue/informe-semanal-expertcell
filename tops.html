@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Generador de Reconocimientos · ExpertCell</title>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Sora:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
+<style>
+  /* ==================== BASE ==================== */
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --gold-1:#ffe89c;
+    --gold-2:#d4af37;
+    --gold-3:#a8861f;
+    --silver:#c8c8c8;
+    --bronze:#b06f3a;
+    --bg-base:#0a0a0f;
+    --bg-card:#14141c;
+    --border:rgba(212,175,55,0.25);
+    --text:#fff;
+    --text-soft:#999;
+  }
+  body {
+    background:#06060a; color:var(--text); font-family:'Sora',sans-serif;
+    min-height:100vh; display:flex; flex-direction:column;
+  }
+
+  /* ==================== HEADER ==================== */
+  .topbar {
+    background:linear-gradient(180deg,#0a0a0f,#06060a);
+    border-bottom:1px solid rgba(212,175,55,0.18);
+    padding:18px 32px; display:flex; align-items:center; justify-content:space-between;
+  }
+  .brand { display:flex; align-items:center; gap:14px; }
+  .brand-mark {
+    width:38px; height:38px; border-radius:8px;
+    background:linear-gradient(135deg,var(--gold-1),var(--gold-2));
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Syne'; font-weight:800; font-size:20px; color:#3a2e00;
+  }
+  .brand-text h1 { font-family:'Syne'; font-size:18px; letter-spacing:0.5px; }
+  .brand-text small { color:var(--text-soft); font-size:11px; letter-spacing:2px; text-transform:uppercase; }
+  .status { display:flex; align-items:center; gap:10px; font-size:12px; color:var(--text-soft); }
+  .status-dot { width:8px; height:8px; border-radius:50%; background:#5b5b5b; }
+  .status-dot.on { background:#22c55e; box-shadow:0 0 8px #22c55e; }
+
+  /* ==================== LAYOUT ==================== */
+  .main { flex:1; display:grid; grid-template-columns:380px 1fr; gap:0; }
+  @media (max-width:900px) { .main { grid-template-columns:1fr; } }
+
+  /* ==================== PANEL CONTROLES ==================== */
+  .panel {
+    background:#0a0a0f; padding:24px; overflow-y:auto;
+    border-right:1px solid rgba(212,175,55,0.12);
+    max-height:calc(100vh - 75px);
+  }
+  .section { margin-bottom:24px; }
+  .section-title {
+    font-size:10px; letter-spacing:3px; color:var(--gold-2);
+    text-transform:uppercase; font-weight:700; margin-bottom:10px;
+    padding-bottom:6px; border-bottom:1px dashed rgba(212,175,55,0.25);
+  }
+  label { display:block; font-size:11px; color:var(--text-soft); margin-bottom:6px; text-transform:uppercase; letter-spacing:1.5px; font-weight:600; }
+  select, input, textarea {
+    width:100%; background:#14141c; color:var(--text); border:1px solid rgba(212,175,55,0.2);
+    padding:10px 12px; border-radius:6px; font-size:13px; font-family:inherit;
+    transition:border-color .2s;
+  }
+  select:focus, input:focus, textarea:focus { outline:none; border-color:var(--gold-2); }
+  textarea { resize:vertical; min-height:90px; font-family:'Sora'; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .btn {
+    width:100%; padding:12px 18px; border:none; border-radius:8px;
+    font-family:'Sora'; font-weight:700; font-size:13px; cursor:pointer;
+    transition:all .2s; letter-spacing:0.5px;
+  }
+  .btn-gold {
+    background:linear-gradient(135deg,var(--gold-1),var(--gold-2));
+    color:#3a2e00;
+  }
+  .btn-gold:hover { transform:translateY(-1px); box-shadow:0 8px 20px rgba(212,175,55,0.35); }
+  .btn-ghost {
+    background:transparent; color:var(--gold-2); border:1px solid var(--gold-2);
+  }
+  .btn-ghost:hover { background:rgba(212,175,55,0.1); }
+  .btn-sm { padding:8px 12px; font-size:12px; }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  /* TOP TYPE GRID */
+  .top-grid {
+    display:grid; grid-template-columns:1fr 1fr; gap:8px;
+  }
+  .top-opt {
+    background:#14141c; border:1px solid rgba(212,175,55,0.15); padding:10px 8px;
+    border-radius:8px; cursor:pointer; text-align:center; transition:all .2s;
+  }
+  .top-opt:hover { border-color:var(--gold-2); }
+  .top-opt.active {
+    background:linear-gradient(135deg,rgba(212,175,55,0.15),rgba(212,175,55,0.05));
+    border-color:var(--gold-2);
+  }
+  .top-opt-icon { font-size:22px; display:block; margin-bottom:4px; }
+  .top-opt-label { font-size:10px; font-weight:600; letter-spacing:0.5px; line-height:1.2; }
+
+  /* FORMAT chips */
+  .chips { display:flex; gap:8px; }
+  .chip {
+    flex:1; background:#14141c; border:1px solid rgba(212,175,55,0.2); padding:8px 4px;
+    border-radius:6px; cursor:pointer; text-align:center; font-size:11px; font-weight:600;
+    transition:all .2s;
+  }
+  .chip:hover { border-color:var(--gold-2); }
+  .chip.active { background:rgba(212,175,55,0.15); border-color:var(--gold-2); color:var(--gold-1); }
+
+  /* ==================== PREVIEW AREA ==================== */
+  .preview-area {
+    padding:30px; display:flex; flex-direction:column; align-items:center;
+    overflow:auto; max-height:calc(100vh - 75px);
+    background:
+      radial-gradient(ellipse at top, rgba(212,175,55,0.04), transparent 60%),
+      #06060a;
+  }
+  .preview-title {
+    color:var(--text-soft); font-size:11px; letter-spacing:3px;
+    margin-bottom:14px; text-transform:uppercase;
+  }
+  .preview-wrap {
+    background:#000; border-radius:18px; overflow:hidden; box-shadow:0 30px 70px rgba(0,0,0,0.6);
+  }
+  .preview-actions { display:flex; gap:10px; margin-top:20px; }
+
+  /* ==================== CANVAS DEL TOP (Luxury Dark Gold) ==================== */
+  .canvas-top {
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.18), transparent 65%),
+      radial-gradient(ellipse at 50% 100%, rgba(212,175,55,0.08), transparent 60%),
+      linear-gradient(160deg, #14141c 0%, #0a0a0f 60%, #050508 100%);
+    position:relative; overflow:hidden;
+    display:flex; flex-direction:column;
+    color:#fff;
+    border:1px solid rgba(212,175,55,0.3);
+  }
+  /* Background pattern */
+  .canvas-top::before {
+    content:''; position:absolute; inset:0;
+    background-image:radial-gradient(circle at 1px 1px, rgba(212,175,55,0.06) 1px, transparent 0);
+    background-size:32px 32px;
+    pointer-events:none;
+  }
+  /* Decorative gold corners */
+  .corner-tl, .corner-tr, .corner-bl, .corner-br {
+    position:absolute; width:60px; height:60px;
+    border-color:rgba(212,175,55,0.6);
+    border-style:solid; border-width:0;
+  }
+  .corner-tl { top:18px; left:18px; border-top-width:2px; border-left-width:2px; }
+  .corner-tr { top:18px; right:18px; border-top-width:2px; border-right-width:2px; }
+  .corner-bl { bottom:18px; left:18px; border-bottom-width:2px; border-left-width:2px; }
+  .corner-br { bottom:18px; right:18px; border-bottom-width:2px; border-right-width:2px; }
+
+  /* Aspect ratios */
+  .ratio-16x9 { aspect-ratio:16/9; width:880px; }
+  .ratio-9x16 { aspect-ratio:9/16; width:495px; }
+  .ratio-1x1 { aspect-ratio:1/1; width:720px; }
+
+  /* HEADER del top */
+  .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
+  .top-kicker {
+    font-size:11px; letter-spacing:6px; color:var(--gold-2); font-weight:600;
+    margin-bottom:8px;
+  }
+  .top-title {
+    font-family:'Syne'; font-weight:800; font-size:38px; letter-spacing:1px;
+    line-height:1; margin-bottom:6px;
+    background:linear-gradient(180deg, #fff 0%, var(--gold-2) 100%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .top-subtitle { font-size:12px; color:#888; letter-spacing:2px; text-transform:uppercase; }
+  /* Adaptaciones para verticales/cuadrados */
+  .ratio-9x16 .top-title { font-size:32px; }
+  .ratio-9x16 .top-header { padding-top:60px; }
+
+  /* PODIO horizontal (para 16:9 y 1:1) */
+  .podium {
+    flex:1; display:flex; align-items:flex-end; justify-content:center;
+    gap:18px; padding:0 40px 60px; z-index:2; position:relative;
+  }
+  .spot { display:flex; flex-direction:column; align-items:center; }
+  .medal {
+    width:64px; height:64px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Anton'; font-size:28px; margin-bottom:12px;
+    position:relative;
+  }
+  .spot.rank-1 .medal {
+    width:84px; height:84px; font-size:38px;
+    background:radial-gradient(circle at 30% 30%, var(--gold-1), var(--gold-2) 70%, var(--gold-3));
+    color:#3a2e00;
+    box-shadow:0 0 35px rgba(212,175,55,0.65), inset 0 -3px 8px rgba(0,0,0,0.25);
+  }
+  .spot.rank-1 .medal::after {
+    content:''; position:absolute; inset:-6px; border-radius:50%;
+    border:1px solid rgba(212,175,55,0.4); animation:ringPulse 2s ease-in-out infinite;
+  }
+  @keyframes ringPulse { 0%,100% { transform:scale(1); opacity:0.7; } 50% { transform:scale(1.06); opacity:0.3; } }
+  .spot.rank-2 .medal {
+    background:radial-gradient(circle at 30% 30%, #f0f0f0, var(--silver) 70%, #8a8a8a);
+    color:#333; box-shadow:0 4px 14px rgba(200,200,200,0.25), inset 0 -3px 8px rgba(0,0,0,0.2);
+  }
+  .spot.rank-3 .medal {
+    background:radial-gradient(circle at 30% 30%, #e0a878, var(--bronze) 70%, #7a4720);
+    color:#3a1e00; box-shadow:0 4px 14px rgba(176,111,58,0.25), inset 0 -3px 8px rgba(0,0,0,0.2);
+  }
+  .agent-name {
+    font-family:'Sora'; font-weight:800; font-size:13px;
+    text-align:center; max-width:130px; line-height:1.2; margin-bottom:4px;
+    color:#fff;
+  }
+  .agent-team {
+    font-size:10px; color:var(--gold-2); letter-spacing:1.5px;
+    margin-bottom:10px; text-transform:uppercase; font-weight:600;
+  }
+  .bar {
+    width:128px; border-radius:10px 10px 0 0;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    padding-top:14px; position:relative;
+  }
+  .spot.rank-1 .bar {
+    height:180px;
+    background:linear-gradient(180deg, rgba(212,175,55,0.45), rgba(212,175,55,0.06));
+    border:1px solid rgba(212,175,55,0.5); border-bottom:none;
+    box-shadow:inset 0 4px 20px rgba(212,175,55,0.15);
+  }
+  .spot.rank-2 .bar {
+    height:135px;
+    background:linear-gradient(180deg, rgba(200,200,200,0.32), rgba(200,200,200,0.04));
+    border:1px solid rgba(200,200,200,0.32); border-bottom:none;
+  }
+  .spot.rank-3 .bar {
+    height:100px;
+    background:linear-gradient(180deg, rgba(176,111,58,0.32), rgba(176,111,58,0.04));
+    border:1px solid rgba(176,111,58,0.32); border-bottom:none;
+  }
+  .big-num { font-family:'Anton'; font-size:50px; line-height:1; }
+  .spot.rank-1 .big-num { color:var(--gold-1); font-size:58px; }
+  .spot.rank-2 .big-num { color:#e8e8e8; }
+  .spot.rank-3 .big-num { color:#e0a878; }
+  .unit { font-size:9px; letter-spacing:2.5px; color:var(--text-soft); margin-top:4px; text-transform:uppercase; }
+
+  /* Adaptación VERTICAL — lista en lugar de podio */
+  .ratio-9x16 .podium {
+    flex-direction:column; align-items:stretch; justify-content:center;
+    gap:18px; padding:20px 40px 50px;
+  }
+  .ratio-9x16 .spot {
+    flex-direction:row; align-items:center; gap:16px;
+    background:linear-gradient(90deg, rgba(212,175,55,0.06), transparent);
+    padding:14px 18px; border-radius:12px;
+    border-left:3px solid var(--gold-2);
+  }
+  .ratio-9x16 .spot.rank-1 { border-left-color:var(--gold-1); background:linear-gradient(90deg, rgba(212,175,55,0.18), transparent); }
+  .ratio-9x16 .spot.rank-2 { border-left-color:var(--silver); }
+  .ratio-9x16 .spot.rank-3 { border-left-color:var(--bronze); }
+  .ratio-9x16 .medal { margin-bottom:0; flex-shrink:0; }
+  .ratio-9x16 .spot.rank-1 .medal { width:64px; height:64px; font-size:30px; }
+  .ratio-9x16 .agent-info {
+    flex:1; display:flex; flex-direction:column; align-items:flex-start; text-align:left;
+  }
+  .ratio-9x16 .agent-name { text-align:left; max-width:none; font-size:15px; margin-bottom:2px; }
+  .ratio-9x16 .agent-team { margin-bottom:0; }
+  .ratio-9x16 .bar {
+    background:none !important; border:none !important; height:auto !important;
+    width:auto; padding:0; flex-shrink:0;
+  }
+  .ratio-9x16 .big-num { font-size:42px; }
+  .ratio-9x16 .spot.rank-1 .big-num { font-size:50px; }
+  .ratio-9x16 .unit { display:none; }
+
+  /* FOOTER */
+  .top-footer {
+    text-align:center; padding:14px; position:relative; z-index:2;
+    font-size:10px; color:var(--gold-3); letter-spacing:3px; text-transform:uppercase;
+    border-top:1px solid rgba(212,175,55,0.15); margin:0 40px;
+  }
+
+  /* SOLO 1 AGENTE (revelación, rey ticket, primero meta, cierre día) */
+  .solo {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:18px; padding:0 30px 40px; z-index:2; position:relative;
+  }
+  .solo-trophy {
+    width:120px; height:120px; border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, var(--gold-1), var(--gold-2) 70%, var(--gold-3));
+    display:flex; align-items:center; justify-content:center;
+    font-size:60px;
+    box-shadow:0 0 50px rgba(212,175,55,0.5), inset 0 -4px 10px rgba(0,0,0,0.3);
+    position:relative;
+  }
+  .solo-trophy::after {
+    content:''; position:absolute; inset:-8px; border-radius:50%;
+    border:1px solid rgba(212,175,55,0.35); animation:ringPulse 2s ease-in-out infinite;
+  }
+  .solo-name {
+    font-family:'Syne'; font-weight:800; font-size:30px; text-align:center;
+    background:linear-gradient(180deg, #fff, var(--gold-1));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+    max-width:600px; line-height:1.1;
+  }
+  .solo-meta { display:flex; gap:24px; align-items:center; }
+  .solo-stat {
+    text-align:center; padding:14px 20px;
+    background:rgba(212,175,55,0.06); border:1px solid rgba(212,175,55,0.25); border-radius:10px;
+    min-width:120px;
+  }
+  .solo-stat-val { font-family:'Anton'; font-size:38px; color:var(--gold-1); line-height:1; }
+  .solo-stat-lbl { font-size:10px; letter-spacing:2px; color:var(--text-soft); margin-top:6px; text-transform:uppercase; }
+  .solo-team { font-size:13px; color:var(--gold-2); letter-spacing:2.5px; text-transform:uppercase; }
+
+  /* TABLA tipo equipo (top por supervisor: hasta 5 agentes) */
+  .team-list {
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    gap:12px; padding:0 80px 50px; z-index:2; position:relative;
+  }
+  .team-row {
+    display:grid; grid-template-columns:50px 1fr 100px; gap:18px; align-items:center;
+    padding:14px 22px;
+    background:linear-gradient(90deg, rgba(212,175,55,0.06), rgba(212,175,55,0.01));
+    border-radius:12px; border:1px solid rgba(212,175,55,0.15);
+    border-left:3px solid var(--gold-2);
+  }
+  .team-row.first {
+    background:linear-gradient(90deg, rgba(212,175,55,0.22), rgba(212,175,55,0.04));
+    border-color:rgba(212,175,55,0.55); border-left:4px solid var(--gold-1);
+  }
+  .team-pos {
+    font-family:'Anton'; font-size:30px; color:var(--gold-2);
+    text-align:center;
+  }
+  .team-row.first .team-pos { color:var(--gold-1); font-size:36px; }
+  .team-name { font-family:'Sora'; font-weight:700; font-size:15px; }
+  .team-row.first .team-name { font-size:17px; }
+  .team-val {
+    font-family:'Anton'; font-size:36px; color:var(--gold-1); text-align:right; line-height:1;
+  }
+
+  /* ==================== UTILIDADES ==================== */
+  .small-help { font-size:11px; color:#666; margin-top:4px; line-height:1.4; }
+  .empty-state {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    color:var(--text-soft); text-align:center; padding:60px 20px; z-index:2; position:relative;
+  }
+  .empty-state-icon { font-size:60px; margin-bottom:20px; opacity:0.4; }
+  .empty-state-msg { font-size:14px; line-height:1.6; max-width:400px; }
+  .badge {
+    display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px;
+    background:rgba(212,175,55,0.18); color:var(--gold-1); margin-left:6px;
+  }
+  .alert {
+    padding:10px 12px; border-radius:6px; font-size:12px; margin-bottom:14px;
+    border-left:3px solid;
+  }
+  .alert-error { background:rgba(220,38,38,0.1); border-color:#dc2626; color:#fca5a5; }
+  .alert-info { background:rgba(212,175,55,0.06); border-color:var(--gold-2); color:var(--gold-1); }
+</style>
+</head>
+<body>
+
+<!-- ==================== HEADER ==================== -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">⬢</div>
+    <div class="brand-text">
+      <h1>Generador de Reconocimientos</h1>
+      <small>ExpertCell · Luxury Dark Gold</small>
+    </div>
+  </div>
+  <div class="status">
+    <div class="status-dot" id="dot-supabase"></div>
+    <span id="lbl-supabase">Supabase desconectado</span>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ==================== PANEL CONTROLES ==================== -->
+  <div class="panel">
+
+    <div class="section">
+      <div class="section-title">Tipo de reconocimiento</div>
+      <div class="top-grid" id="top-grid">
+        <!-- Se renderiza desde JS -->
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Formato</div>
+      <div class="chips" id="format-chips">
+        <div class="chip active" data-format="16x9">16:9 TV</div>
+        <div class="chip" data-format="9x16">9:16 Vertical</div>
+        <div class="chip" data-format="1x1">1:1 Cuadrado</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Periodo</div>
+      <div class="row">
+        <div>
+          <label>Mes</label>
+          <select id="sel-mes"></select>
+        </div>
+        <div>
+          <label>Año</label>
+          <select id="sel-anio"></select>
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <label>Modo</label>
+        <select id="sel-modo">
+          <option value="mes">Mes completo</option>
+          <option value="dia">Día específico</option>
+          <option value="rango">Rango de días</option>
+        </select>
+      </div>
+      <div id="modo-extra" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Filtros (opcional)</div>
+      <div class="row">
+        <div>
+          <label>Centro</label>
+          <select id="sel-centro">
+            <option value="">Todos</option>
+            <option value="CC2">CC2</option>
+            <option value="JV">JV / Juárez</option>
+          </select>
+        </div>
+        <div>
+          <label>Supervisor</label>
+          <select id="sel-sup">
+            <option value="">Todos</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Datos</div>
+      <div id="data-source" class="alert alert-info" style="display:none;">
+        Conecta a Supabase para cargar datos automáticamente
+      </div>
+      <button class="btn btn-gold" id="btn-cargar">⚡ Cargar desde Supabase</button>
+      <button class="btn btn-ghost btn-sm" id="btn-manual" style="margin-top:8px;">✏️ Capturar manualmente</button>
+      <div id="manual-input" style="display:none; margin-top:12px;">
+        <label>Datos manuales (uno por línea: NOMBRE | VENTAS | EQUIPO)</label>
+        <textarea id="txt-manual" placeholder="NORWIN LOT ROJAS GARCIA | 19 | JV
+GLADYS LIZBETH CRUZ MEDRANO | 18 | CC2
+JENNY PEREZ TOME | 17 | JV"></textarea>
+        <button class="btn btn-gold btn-sm" id="btn-aplicar-manual" style="margin-top:8px;">Aplicar</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <button class="btn btn-gold" id="btn-descargar">📥 Descargar PNG (alta resolución)</button>
+      <div class="small-help">Se descarga la imagen actual del preview en 2x de resolución.</div>
+    </div>
+  </div>
+
+  <!-- ==================== PREVIEW ==================== -->
+  <div class="preview-area">
+    <div class="preview-title">Vista previa · Se descarga tal cual lo ves</div>
+    <div class="preview-wrap">
+      <div class="canvas-top ratio-16x9" id="canvas">
+        <div class="empty-state">
+          <div class="empty-state-icon">🏆</div>
+          <div class="empty-state-msg">Selecciona un tipo de reconocimiento y carga los datos para ver la imagen aquí.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ====================================================================
+// CONFIG: SUPABASE
+// ====================================================================
+const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzNDc2NzcsImV4cCI6MjA1NzkyMzY3N30.YjGmDx5hHcSO_W5l0bPnzuBONNg1IIZB4G6w6yp3CGI';
+let db = null;
+try {
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+} catch(e) { console.warn('Supabase init failed', e); }
+
+// ====================================================================
+// CONFIG: TIPOS DE TOP
+// ====================================================================
+const TOPS = [
+  { id:'global', icon:'🏆', label:'Top 3 Global',     desc:'Los 3 mejores agentes' },
+  { id:'equipo', icon:'👑', label:'Top por Equipo',   desc:'Top de un supervisor' },
+  { id:'centro', icon:'🥇', label:'Mejor Centro',     desc:'CC2 vs JV' },
+  { id:'rev',    icon:'🚀', label:'Revelación',       desc:'Mejor nuevo (≤60d)' },
+  { id:'crec',   icon:'📈', label:'Mayor Crecimiento',desc:'Mayor incremento vs mes anterior' },
+  { id:'racha',  icon:'🔥', label:'Racha Activa',     desc:'Más días consecutivos vendiendo' },
+  { id:'ticket', icon:'💎', label:'Rey del Ticket',   desc:'Mayor ARPU del mes' },
+  { id:'diario', icon:'⚡', label:'Cierre del Día',   desc:'Top del día específico' },
+  { id:'meta',   icon:'🎯', label:'Primero en Meta',  desc:'Quién cumplió meta primero' },
+];
+
+// ====================================================================
+// STATE
+// ====================================================================
+let state = {
+  topId: 'global',
+  format: '16x9',
+  mes: new Date().getMonth() + 1,
+  anio: new Date().getFullYear(),
+  modo: 'mes',
+  fecha: new Date().toISOString().split('T')[0],
+  fechaInicio: '', fechaFin: '',
+  centro: '',
+  supervisor: '',
+  agentes: [],     // datos cargados [{nombre, ventas, equipo, supervisor, centro, ...}]
+  manual: false,
+  rawData: null,
+};
+
+// ====================================================================
+// INIT UI
+// ====================================================================
+function initUI() {
+  // Render top type grid
+  const grid = document.getElementById('top-grid');
+  grid.innerHTML = TOPS.map(t => `
+    <div class="top-opt ${t.id === state.topId ? 'active' : ''}" data-top="${t.id}" title="${t.desc}">
+      <span class="top-opt-icon">${t.icon}</span>
+      <div class="top-opt-label">${t.label}</div>
+    </div>
+  `).join('');
+  grid.querySelectorAll('.top-opt').forEach(el => {
+    el.onclick = () => {
+      state.topId = el.dataset.top;
+      grid.querySelectorAll('.top-opt').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      render();
+    };
+  });
+
+  // Format chips
+  document.querySelectorAll('.chip').forEach(el => {
+    el.onclick = () => {
+      state.format = el.dataset.format;
+      document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      applyFormat();
+    };
+  });
+
+  // Mes/año
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const selMes = document.getElementById('sel-mes');
+  selMes.innerHTML = meses.map((m, i) => `<option value="${i+1}" ${i+1 === state.mes ? 'selected' : ''}>${m}</option>`).join('');
+  selMes.onchange = (e) => { state.mes = parseInt(e.target.value); };
+
+  const selAnio = document.getElementById('sel-anio');
+  const yearActual = new Date().getFullYear();
+  selAnio.innerHTML = [yearActual - 1, yearActual, yearActual + 1].map(y => `<option value="${y}" ${y === state.anio ? 'selected' : ''}>${y}</option>`).join('');
+  selAnio.onchange = (e) => { state.anio = parseInt(e.target.value); };
+
+  // Modo
+  document.getElementById('sel-modo').onchange = (e) => {
+    state.modo = e.target.value;
+    renderModoExtra();
+  };
+  renderModoExtra();
+
+  // Filtros
+  document.getElementById('sel-centro').onchange = (e) => { state.centro = e.target.value; };
+  document.getElementById('sel-sup').onchange = (e) => { state.supervisor = e.target.value; };
+
+  // Botones
+  document.getElementById('btn-cargar').onclick = cargarDesdeSupabase;
+  document.getElementById('btn-manual').onclick = () => {
+    document.getElementById('manual-input').style.display = document.getElementById('manual-input').style.display === 'none' ? 'block' : 'none';
+  };
+  document.getElementById('btn-aplicar-manual').onclick = aplicarManual;
+  document.getElementById('btn-descargar').onclick = descargarPNG;
+
+  // Conectar Supabase y cargar supervisores
+  conectarSupabase();
+}
+
+function renderModoExtra() {
+  const cont = document.getElementById('modo-extra');
+  if (state.modo === 'dia') {
+    cont.innerHTML = `<label>Fecha</label><input type="date" id="inp-fecha" value="${state.fecha}">`;
+    document.getElementById('inp-fecha').onchange = (e) => { state.fecha = e.target.value; };
+  } else if (state.modo === 'rango') {
+    cont.innerHTML = `
+      <div class="row">
+        <div><label>Desde</label><input type="date" id="inp-ini"></div>
+        <div><label>Hasta</label><input type="date" id="inp-fin"></div>
+      </div>`;
+    document.getElementById('inp-ini').onchange = (e) => { state.fechaInicio = e.target.value; };
+    document.getElementById('inp-fin').onchange = (e) => { state.fechaFin = e.target.value; };
+  } else {
+    cont.innerHTML = '';
+  }
+}
+
+function applyFormat() {
+  const canvas = document.getElementById('canvas');
+  canvas.className = 'canvas-top ratio-' + state.format;
+  render();
+}
+
+// ====================================================================
+// SUPABASE
+// ====================================================================
+async function conectarSupabase() {
+  if (!db) {
+    setStatus(false, 'Supabase no disponible');
+    return;
+  }
+  try {
+    // Cargar supervisores activos
+    const { data, error } = await db.from('supervisores_config').select('nombre').limit(20);
+    if (error) throw error;
+    setStatus(true, 'Conectado a Supabase');
+    const selSup = document.getElementById('sel-sup');
+    const sups = [...new Set((data || []).map(d => d.nombre))].sort();
+    selSup.innerHTML = '<option value="">Todos</option>' + sups.map(s => `<option value="${s}">${s}</option>`).join('');
+  } catch(e) {
+    console.error(e);
+    setStatus(false, 'Error: ' + (e.message || e));
+  }
+}
+
+function setStatus(on, msg) {
+  document.getElementById('dot-supabase').classList.toggle('on', on);
+  document.getElementById('lbl-supabase').textContent = msg;
+}
+
+async function cargarDesdeSupabase() {
+  if (!db) return alert('Supabase no conectado');
+  const btn = document.getElementById('btn-cargar');
+  btn.disabled = true; btn.textContent = '⏳ Cargando...';
+
+  try {
+    // Fechas según modo
+    let fechaIni, fechaFin;
+    if (state.modo === 'dia') {
+      fechaIni = fechaFin = state.fecha;
+    } else if (state.modo === 'rango') {
+      if (!state.fechaInicio || !state.fechaFin) throw new Error('Faltan fechas');
+      fechaIni = state.fechaInicio;
+      fechaFin = state.fechaFin;
+    } else {
+      const ultDia = new Date(state.anio, state.mes, 0).getDate();
+      fechaIni = `${state.anio}-${String(state.mes).padStart(2, '0')}-01`;
+      fechaFin = `${state.anio}-${String(state.mes).padStart(2, '0')}-${String(ultDia).padStart(2, '0')}`;
+    }
+
+    // Cargar ventas activadas en el rango
+    let query = db.from('ventas_detalle')
+      .select('ejecutivo, supervisor, plan, fecha_activacion, fecha_bo, fecha_cancelacion, estatus')
+      .gte('fecha_activacion', fechaIni)
+      .lte('fecha_activacion', fechaFin)
+      .eq('estatus', 'activada');
+
+    const { data: ventas, error } = await query;
+    if (error) throw error;
+
+    // Cargar plantilla para info de centro, fecha_ingreso, etc.
+    const { data: plantilla } = await db.from('plantilla').select('*');
+    const mapaPlantilla = {};
+    (plantilla || []).forEach(p => { mapaPlantilla[p.nombre] = p; });
+
+    // Cargar canceladas para excluir
+    const { data: canceladas } = await db.from('ventas_detalle')
+      .select('ejecutivo, fecha_cancelacion')
+      .gte('fecha_cancelacion', fechaIni)
+      .lte('fecha_cancelacion', fechaFin);
+
+    state.rawData = { ventas: ventas || [], plantilla: mapaPlantilla, canceladas: canceladas || [], fechaIni, fechaFin };
+    state.manual = false;
+
+    // Calcular agentes según tipo de top
+    state.agentes = procesarDatos();
+    render();
+  } catch(e) {
+    console.error(e);
+    alert('Error al cargar: ' + (e.message || e));
+  } finally {
+    btn.disabled = false; btn.textContent = '⚡ Cargar desde Supabase';
+  }
+}
+
+function procesarDatos() {
+  if (!state.rawData) return [];
+  const { ventas, plantilla } = state.rawData;
+
+  // Aplicar filtros de supervisor y centro
+  let vfilt = ventas;
+  if (state.supervisor) {
+    vfilt = vfilt.filter(v => v.supervisor === state.supervisor);
+  }
+  if (state.centro) {
+    vfilt = vfilt.filter(v => {
+      const p = plantilla[v.ejecutivo];
+      return p && p.centro === state.centro;
+    });
+  }
+
+  // Agrupar por ejecutivo
+  const porAgente = {};
+  vfilt.forEach(v => {
+    if (!porAgente[v.ejecutivo]) {
+      const p = plantilla[v.ejecutivo] || {};
+      porAgente[v.ejecutivo] = {
+        nombre: v.ejecutivo,
+        ventas: 0,
+        supervisor: v.supervisor,
+        centro: p.centro || '',
+        fecha_ingreso: p.fecha_ingreso || null,
+        fechas: []
+      };
+    }
+    porAgente[v.ejecutivo].ventas++;
+    porAgente[v.ejecutivo].fechas.push(v.fecha_activacion);
+  });
+
+  let arr = Object.values(porAgente);
+
+  // Reglas específicas según tipo
+  if (state.topId === 'rev') {
+    // Revelación: nuevos con <=60 días al final del periodo
+    const refDate = new Date(state.rawData.fechaFin);
+    arr = arr.filter(a => {
+      if (!a.fecha_ingreso) return false;
+      const ing = new Date(a.fecha_ingreso);
+      const dias = (refDate - ing) / (1000 * 60 * 60 * 24);
+      return dias >= 0 && dias <= 60;
+    });
+  } else if (state.topId === 'racha') {
+    // Calcular racha de días consecutivos con venta
+    arr.forEach(a => {
+      const fechasOrd = [...new Set(a.fechas)].sort();
+      let maxRacha = 1, actual = 1;
+      for (let i = 1; i < fechasOrd.length; i++) {
+        const d1 = new Date(fechasOrd[i-1]);
+        const d2 = new Date(fechasOrd[i]);
+        const diff = (d2 - d1) / (1000 * 60 * 60 * 24);
+        if (diff === 1) { actual++; maxRacha = Math.max(maxRacha, actual); }
+        else { actual = 1; }
+      }
+      a.metric = maxRacha;
+    });
+    arr.sort((a, b) => b.metric - a.metric);
+  } else if (state.topId === 'diario') {
+    // Mismo procesamiento, pero el modo "dia" ya filtró la fecha
+    // Se ordena por ventas
+  }
+
+  // Por defecto, ordenar por ventas descendente
+  if (state.topId !== 'racha') {
+    arr.sort((a, b) => b.ventas - a.ventas);
+  }
+
+  return arr;
+}
+
+// ====================================================================
+// CAPTURA MANUAL
+// ====================================================================
+function aplicarManual() {
+  const txt = document.getElementById('txt-manual').value;
+  const lineas = txt.split('\n').map(l => l.trim()).filter(l => l);
+  const agentes = lineas.map(l => {
+    const partes = l.split('|').map(p => p.trim());
+    return {
+      nombre: partes[0] || '',
+      ventas: parseInt(partes[1]) || 0,
+      centro: partes[2] || '',
+      supervisor: partes[3] || ''
+    };
+  }).filter(a => a.nombre);
+  state.agentes = agentes;
+  state.manual = true;
+  render();
+}
+
+// ====================================================================
+// RENDER DEL TOP
+// ====================================================================
+function render() {
+  const canvas = document.getElementById('canvas');
+  canvas.className = 'canvas-top ratio-' + state.format;
+
+  if (!state.agentes || state.agentes.length === 0) {
+    canvas.innerHTML = `
+      <div class="corner-tl"></div><div class="corner-tr"></div>
+      <div class="corner-bl"></div><div class="corner-br"></div>
+      <div class="empty-state">
+        <div class="empty-state-icon">🏆</div>
+        <div class="empty-state-msg">Sin datos cargados.<br>Carga desde Supabase o captura manualmente.</div>
+      </div>`;
+    return;
+  }
+
+  const top = TOPS.find(t => t.id === state.topId);
+  const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  let subtitle = `${meses[state.mes - 1]} ${state.anio}`;
+  if (state.modo === 'dia') subtitle = `Día ${state.fecha}`;
+  else if (state.modo === 'rango') subtitle = `${state.fechaInicio} → ${state.fechaFin}`;
+  if (state.centro) subtitle += ` · ${state.centro}`;
+  if (state.supervisor) subtitle += ` · ${state.supervisor}`;
+
+  const headerHTML = `
+    <div class="corner-tl"></div><div class="corner-tr"></div>
+    <div class="corner-bl"></div><div class="corner-br"></div>
+    <div class="top-header">
+      <div class="top-kicker">EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}</div>
+      <div class="top-title">${top.label.toUpperCase()}</div>
+      <div class="top-subtitle">${subtitle}</div>
+    </div>
+  `;
+
+  // Determinar estructura: solo 1 agente / podio 3 / lista 5
+  const soloTops = ['rev','crec','ticket','meta'];
+  const listaTops = ['equipo']; // lista de hasta 5
+
+  let bodyHTML = '';
+
+  if (soloTops.includes(state.topId)) {
+    // SOLO 1 agente destacado
+    const a = state.agentes[0];
+    const metricLabel = state.topId === 'ticket' ? 'ARPU' :
+                        state.topId === 'crec' ? 'CRECIMIENTO' :
+                        state.topId === 'meta' ? 'CUMPLIDO' : 'VENTAS';
+    bodyHTML = `
+      <div class="solo">
+        <div class="solo-trophy">${top.icon}</div>
+        <div class="solo-name">${a.nombre}</div>
+        <div class="solo-team">${a.supervisor || a.centro || ''}</div>
+        <div class="solo-meta">
+          <div class="solo-stat">
+            <div class="solo-stat-val">${a.metric || a.ventas}</div>
+            <div class="solo-stat-lbl">${metricLabel}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  } else if (listaTops.includes(state.topId)) {
+    // LISTA hasta 5 agentes
+    const arr = state.agentes.slice(0, 5);
+    bodyHTML = `
+      <div class="team-list">
+        ${arr.map((a, i) => `
+          <div class="team-row ${i === 0 ? 'first' : ''}">
+            <div class="team-pos">${i + 1}</div>
+            <div>
+              <div class="team-name">${a.nombre}</div>
+              ${a.centro ? `<div class="agent-team" style="margin-top:2px;">${a.centro}</div>` : ''}
+            </div>
+            <div class="team-val">${a.ventas}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } else {
+    // PODIO TOP 3 (default)
+    const top3 = state.agentes.slice(0, 3);
+    while (top3.length < 3) top3.push({ nombre:'—', ventas:0, centro:'' });
+
+    const orden = [top3[1], top3[0], top3[2]]; // 2,1,3 visual order
+    bodyHTML = `
+      <div class="podium">
+        ${orden.map((a, idx) => {
+          const realIdx = idx === 0 ? 2 : idx === 1 ? 1 : 3;
+          return `
+            <div class="spot rank-${realIdx}">
+              <div class="medal">${realIdx}</div>
+              ${state.format === '9x16' ? `
+                <div class="agent-info">
+                  <div class="agent-name">${a.nombre}</div>
+                  <div class="agent-team">${a.centro || a.supervisor || ''}</div>
+                </div>
+                <div class="bar"><div class="big-num">${a.ventas}</div></div>
+              ` : `
+                <div class="agent-name">${a.nombre}</div>
+                <div class="agent-team">${a.centro || a.supervisor || ''}</div>
+                <div class="bar">
+                  <div class="big-num">${a.ventas}</div>
+                  <div class="unit">VENTAS</div>
+                </div>
+              `}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+  }
+
+  const footerHTML = `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+  canvas.innerHTML = headerHTML + bodyHTML + footerHTML;
+}
+
+// ====================================================================
+// DESCARGA PNG
+// ====================================================================
+async function descargarPNG() {
+  const canvas = document.getElementById('canvas');
+  const btn = document.getElementById('btn-descargar');
+  btn.disabled = true; btn.textContent = '⏳ Generando...';
+  try {
+    const dataUrl = await htmlToImage.toPng(canvas, {
+      pixelRatio: 2,
+      backgroundColor: '#06060a',
+      style: { transform: 'scale(1)' }
+    });
+    const top = TOPS.find(t => t.id === state.topId);
+    const meses = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const fname = `top_${top.id}_${meses[state.mes - 1]}${state.anio}_${state.format}.png`;
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = fname;
+    a.click();
+  } catch(e) {
+    console.error(e);
+    alert('Error al exportar: ' + (e.message || e));
+  } finally {
+    btn.disabled = false; btn.textContent = '📥 Descargar PNG (alta resolución)';
+  }
+}
+
+// ====================================================================
+// BOOT
+// ====================================================================
+initUI();
+// Cargar datos de ejemplo iniciales (manual con tus tres top)
+state.agentes = [
+  { nombre:'NORWIN LOT ROJAS GARCIA', ventas:19, centro:'JV', supervisor:'' },
+  { nombre:'GLADYS LIZBETH CRUZ MEDRANO', ventas:18, centro:'CC2', supervisor:'' },
+  { nombre:'JENNY PEREZ TOME', ventas:17, centro:'JV', supervisor:'' },
+];
+state.manual = true;
+render();
+</script>
+</body>
+</html>
