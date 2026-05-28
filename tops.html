@@ -322,29 +322,54 @@
   /* TABLA tipo equipo (top por supervisor: hasta 5 agentes) */
   .team-list {
     flex:1; display:flex; flex-direction:column; justify-content:center;
-    gap:12px; padding:0 80px 50px; z-index:2; position:relative;
+    gap:8px; padding:0 60px 40px; z-index:2; position:relative;
   }
+  .team-list.n-10, .team-list.n-15 { padding:0 80px 30px; gap:5px; }
   .team-row {
     display:grid; grid-template-columns:50px 1fr 100px; gap:18px; align-items:center;
-    padding:14px 22px;
-    background:linear-gradient(90deg, rgba(212,175,55,0.06), rgba(212,175,55,0.01));
-    border-radius:12px; border:1px solid rgba(212,175,55,0.15);
-    border-left:3px solid var(--gold-2);
+    padding:12px 20px;
+    background:linear-gradient(90deg, rgba(212,175,55,0.05), rgba(212,175,55,0.01));
+    border-radius:10px; border:1px solid rgba(212,175,55,0.12);
+    border-left:3px solid var(--gold-3);
+    transition:all .2s;
   }
+  .team-list.n-10 .team-row, .team-list.n-15 .team-row { padding:7px 16px; gap:14px; }
   .team-row.first {
-    background:linear-gradient(90deg, rgba(212,175,55,0.22), rgba(212,175,55,0.04));
-    border-color:rgba(212,175,55,0.55); border-left:4px solid var(--gold-1);
+    background:linear-gradient(90deg, rgba(212,175,55,0.28), rgba(212,175,55,0.04));
+    border-color:rgba(212,175,55,0.6); border-left:4px solid var(--gold-1);
+    box-shadow:0 4px 18px rgba(212,175,55,0.18);
+  }
+  .team-row.second {
+    background:linear-gradient(90deg, rgba(200,200,200,0.18), rgba(200,200,200,0.02));
+    border-color:rgba(200,200,200,0.4); border-left:4px solid var(--silver);
+  }
+  .team-row.third {
+    background:linear-gradient(90deg, rgba(176,111,58,0.18), rgba(176,111,58,0.02));
+    border-color:rgba(176,111,58,0.4); border-left:4px solid var(--bronze);
   }
   .team-pos {
-    font-family:'Anton'; font-size:30px; color:var(--gold-2);
-    text-align:center;
+    font-family:'Anton'; font-size:28px; color:var(--gold-2);
+    text-align:center; line-height:1;
   }
   .team-row.first .team-pos { color:var(--gold-1); font-size:36px; }
-  .team-name { font-family:'Sora'; font-weight:700; font-size:15px; }
-  .team-row.first .team-name { font-size:17px; }
-  .team-val {
-    font-family:'Anton'; font-size:36px; color:var(--gold-1); text-align:right; line-height:1;
+  .team-row.second .team-pos { color:var(--silver); }
+  .team-row.third .team-pos { color:var(--bronze); }
+  .team-list.n-10 .team-pos, .team-list.n-15 .team-pos { font-size:22px; }
+  .team-list.n-10 .team-row.first .team-pos, .team-list.n-15 .team-row.first .team-pos { font-size:28px; }
+  .team-name { font-family:'Sora'; font-weight:700; font-size:14px; color:#fff; line-height:1.2; }
+  .team-row.first .team-name { font-size:16px; }
+  .team-list.n-10 .team-name, .team-list.n-15 .team-name { font-size:12px; }
+  .team-sub {
+    font-size:10px; color:var(--gold-3); letter-spacing:1.5px;
+    text-transform:uppercase; margin-top:2px; font-weight:600;
   }
+  .team-list.n-10 .team-sub, .team-list.n-15 .team-sub { font-size:9px; margin-top:1px; }
+  .team-val {
+    font-family:'Anton'; font-size:32px; color:var(--gold-1); text-align:right; line-height:1;
+  }
+  .team-list.n-10 .team-val, .team-list.n-15 .team-val { font-size:24px; }
+  .team-row.first .team-val { font-size:38px; }
+  .team-list.n-10 .team-row.first .team-val, .team-list.n-15 .team-row.first .team-val { font-size:28px; }
 
   /* ==================== UTILIDADES ==================== */
   .small-help { font-size:11px; color:#666; margin-top:4px; line-height:1.4; }
@@ -374,12 +399,12 @@
     <div class="brand-mark">⬢</div>
     <div class="brand-text">
       <h1>Generador de Reconocimientos</h1>
-      <small>ExpertCell · Luxury Dark Gold</small>
+      <small>ExpertCell · Reconocimientos</small>
     </div>
   </div>
   <div class="status">
     <div class="status-dot" id="dot-supabase"></div>
-    <span id="lbl-supabase">Supabase desconectado</span>
+    <span id="lbl-supabase">Sistema desconectado</span>
   </div>
 </div>
 
@@ -402,6 +427,17 @@
         <div class="chip" data-format="9x16">9:16 Vertical</div>
         <div class="chip" data-format="1x1">1:1 Cuadrado</div>
       </div>
+    </div>
+
+    <div class="section" id="section-cantidad">
+      <div class="section-title">Cantidad de agentes</div>
+      <div class="chips" id="cant-chips">
+        <div class="chip active" data-cant="3">Top 3</div>
+        <div class="chip" data-cant="5">Top 5</div>
+        <div class="chip" data-cant="10">Top 10</div>
+        <div class="chip" data-cant="15">Top 15</div>
+      </div>
+      <div class="small-help" style="margin-top:6px;">Top 3 = podio · 5+ = lista vertical</div>
     </div>
 
     <div class="section">
@@ -450,9 +486,9 @@
     <div class="section">
       <div class="section-title">Datos</div>
       <div id="data-source" class="alert alert-info" style="display:none;">
-        Conecta a Supabase para cargar datos automáticamente
+        Conecta el sistema para cargar datos automáticamente
       </div>
-      <button class="btn btn-gold" id="btn-cargar">⚡ Cargar desde Supabase</button>
+      <button class="btn btn-gold" id="btn-cargar">⚡ Cargar datos del sistema</button>
       <button class="btn btn-ghost btn-sm" id="btn-manual" style="margin-top:8px;">✏️ Capturar manualmente</button>
       <div id="manual-input" style="display:none; margin-top:12px;">
         <label>Datos manuales (uno por línea: NOMBRE | VENTAS | EQUIPO)</label>
@@ -489,7 +525,7 @@ JENNY PEREZ TOME | 17 | JV"></textarea>
 // CONFIG: SUPABASE
 // ====================================================================
 const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDIzNDc2NzcsImV4cCI6MjA1NzkyMzY3N30.YjGmDx5hHcSO_W5l0bPnzuBONNg1IIZB4G6w6yp3CGI';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
 let db = null;
 try {
   db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -516,6 +552,7 @@ const TOPS = [
 let state = {
   topId: 'global',
   format: '16x9',
+  cantidad: 3,
   mes: new Date().getMonth() + 1,
   anio: new Date().getFullYear(),
   modo: 'mes',
@@ -545,17 +582,30 @@ function initUI() {
       state.topId = el.dataset.top;
       grid.querySelectorAll('.top-opt').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
+      // Ocultar selector de cantidad si el top es de 1 solo agente
+      const soloTops = ['rev','crec','ticket','meta'];
+      document.getElementById('section-cantidad').style.display = soloTops.includes(state.topId) ? 'none' : 'block';
       render();
     };
   });
 
   // Format chips
-  document.querySelectorAll('.chip').forEach(el => {
+  document.querySelectorAll('#format-chips .chip').forEach(el => {
     el.onclick = () => {
       state.format = el.dataset.format;
-      document.querySelectorAll('.chip').forEach(x => x.classList.remove('active'));
+      document.querySelectorAll('#format-chips .chip').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       applyFormat();
+    };
+  });
+
+  // Cantidad chips
+  document.querySelectorAll('#cant-chips .chip').forEach(el => {
+    el.onclick = () => {
+      state.cantidad = parseInt(el.dataset.cant);
+      document.querySelectorAll('#cant-chips .chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      render();
     };
   });
 
@@ -622,14 +672,14 @@ function applyFormat() {
 // ====================================================================
 async function conectarSupabase() {
   if (!db) {
-    setStatus(false, 'Supabase no disponible');
+    setStatus(false, 'Sistema no disponible');
     return;
   }
   try {
     // Cargar supervisores activos
     const { data, error } = await db.from('supervisores_config').select('nombre').limit(20);
     if (error) throw error;
-    setStatus(true, 'Conectado a Supabase');
+    setStatus(true, 'Sistema conectado');
     const selSup = document.getElementById('sel-sup');
     const sups = [...new Set((data || []).map(d => d.nombre))].sort();
     selSup.innerHTML = '<option value="">Todos</option>' + sups.map(s => `<option value="${s}">${s}</option>`).join('');
@@ -645,7 +695,7 @@ function setStatus(on, msg) {
 }
 
 async function cargarDesdeSupabase() {
-  if (!db) return alert('Supabase no conectado');
+  if (!db) return alert('Sistema no conectado');
   const btn = document.getElementById('btn-cargar');
   btn.disabled = true; btn.textContent = '⏳ Cargando...';
 
@@ -695,7 +745,7 @@ async function cargarDesdeSupabase() {
     console.error(e);
     alert('Error al cargar: ' + (e.message || e));
   } finally {
-    btn.disabled = false; btn.textContent = '⚡ Cargar desde Supabase';
+    btn.disabled = false; btn.textContent = '⚡ Cargar datos del sistema';
   }
 }
 
@@ -806,7 +856,7 @@ function render() {
       <div class="corner-bl"></div><div class="corner-br"></div>
       <div class="empty-state">
         <div class="empty-state-icon">🏆</div>
-        <div class="empty-state-msg">Sin datos cargados.<br>Carga desde Supabase o captura manualmente.</div>
+        <div class="empty-state-msg">Sin datos cargados.<br>Carga los datos automáticamente o captura manualmente.</div>
       </div>`;
     return;
   }
@@ -829,9 +879,9 @@ function render() {
     </div>
   `;
 
-  // Determinar estructura: solo 1 agente / podio 3 / lista 5
+  // Determinar estructura: solo 1 agente / podio 3 / lista N
   const soloTops = ['rev','crec','ticket','meta'];
-  const listaTops = ['equipo']; // lista de hasta 5
+  const listaTops = ['equipo']; // siempre lista vertical
 
   let bodyHTML = '';
 
@@ -854,17 +904,17 @@ function render() {
         </div>
       </div>
     `;
-  } else if (listaTops.includes(state.topId)) {
-    // LISTA hasta 5 agentes
-    const arr = state.agentes.slice(0, 5);
+  } else if (listaTops.includes(state.topId) || state.cantidad > 3) {
+    // LISTA VERTICAL (siempre para "equipo", o cuando se piden 5+ para otros tops)
+    const arr = state.agentes.slice(0, state.cantidad);
     bodyHTML = `
-      <div class="team-list">
+      <div class="team-list n-${arr.length}">
         ${arr.map((a, i) => `
-          <div class="team-row ${i === 0 ? 'first' : ''}">
+          <div class="team-row ${i === 0 ? 'first' : ''} ${i === 1 ? 'second' : ''} ${i === 2 ? 'third' : ''}">
             <div class="team-pos">${i + 1}</div>
             <div>
               <div class="team-name">${a.nombre}</div>
-              ${a.centro ? `<div class="agent-team" style="margin-top:2px;">${a.centro}</div>` : ''}
+              ${(a.centro || a.supervisor) ? `<div class="team-sub">${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}</div>` : ''}
             </div>
             <div class="team-val">${a.ventas}</div>
           </div>
@@ -872,7 +922,7 @@ function render() {
       </div>
     `;
   } else {
-    // PODIO TOP 3 (default)
+    // PODIO TOP 3
     const top3 = state.agentes.slice(0, 3);
     while (top3.length < 3) top3.push({ nombre:'—', ventas:0, centro:'' });
 
