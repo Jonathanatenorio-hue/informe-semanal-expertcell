@@ -292,10 +292,6 @@
   .ratio-16x9.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
   .ratio-1x1.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
   .ratio-9x16.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
-  /* Cuando hay podio multi-fila, dar altura extra para que las 2 filas quepan SIEMPRE */
-  .ratio-16x9.tall-list:has(.podium-multi) { min-height:560px; padding-bottom:40px; }
-  .ratio-1x1.tall-list:has(.podium-multi) { min-height:760px; padding-bottom:40px; }
-  .ratio-9x16.tall-list:has(.podium-multi) { min-height:920px; padding-bottom:40px; }
 
   /* HEADER del top */
   .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
@@ -335,6 +331,26 @@
     align-items:flex-end !important; gap:14px;
     flex-wrap:wrap;
   }
+  /* Podio en una sola fila con orden 3-1-1-3 (ganadores al centro) */
+  /* Se ajusta el ancho de cada card según cuántas hay */
+  .podium-fila-unica {
+    gap:14px; padding:0 30px 50px; flex-wrap:nowrap;
+  }
+  /* Cuando son 4 cards en fila, achicarlas un poco */
+  .podium-fila-unica .spot { max-width:185px; min-width:130px; }
+  .podium-fila-unica .spot .bar { width:135px; }
+  /* Si hay 5+ cards, más compactas */
+  .podium-fila-unica:has(.spot:nth-child(5)) .spot { max-width:160px; }
+  .podium-fila-unica:has(.spot:nth-child(5)) .spot .bar { width:115px; }
+  .podium-fila-unica:has(.spot:nth-child(5)) .spot.rank-1 .bar { height:160px; }
+  .podium-fila-unica:has(.spot:nth-child(5)) .spot.rank-2 .bar { height:122px; }
+  .podium-fila-unica:has(.spot:nth-child(5)) .spot.rank-3 .bar { height:92px; }
+  /* Si hay 6+ cards, todavía más compactas */
+  .podium-fila-unica:has(.spot:nth-child(6)) .spot { max-width:140px; min-width:110px; }
+  .podium-fila-unica:has(.spot:nth-child(6)) .spot .bar { width:100px; }
+  .podium-fila-unica:has(.spot:nth-child(6)) .spot .agent-name { font-size:11px; }
+  .podium-fila-unica:has(.spot:nth-child(6)) .spot .big-num { font-size:38px !important; }
+  .podium-fila-unica:has(.spot:nth-child(6)) .spot.rank-1 .big-num { font-size:46px !important; }
   /* Podio multi-fila (cuando hay muchos empates) */
   .podium-multi {
     flex:1; display:flex; flex-direction:column; justify-content:center;
@@ -1655,8 +1671,8 @@
   /* ============================================ */
   .cards-layout {
     flex:1; display:flex; align-items:center; justify-content:center;
-    gap:28px; padding:14px 30px 24px; z-index:2; position:relative;
-    flex-wrap:wrap;
+    gap:24px; padding:14px 24px 24px; z-index:2; position:relative;
+    flex-wrap:nowrap;
   }
   .player-card {
     width:200px; height:300px; position:relative;
@@ -1668,12 +1684,60 @@
     background:linear-gradient(160deg, rgba(var(--accent-rgb),0.18), rgba(0,0,0,0.55));
     border:2px solid rgba(var(--accent-rgb),0.4);
     box-shadow:0 12px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1);
+    flex-shrink:0;
   }
   .player-card.rank-1 {
     width:220px; height:330px;
     background:linear-gradient(160deg, rgba(var(--accent-rgb),0.35), rgba(0,0,0,0.5));
     border:3px solid var(--accent-1);
     box-shadow:0 16px 40px rgba(var(--accent-rgb),0.4), 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  /* Auto-shrink cuando hay 4 cards: cada una más compacta */
+  .cards-layout:has(.player-card:nth-child(4)) { gap:16px; }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card {
+    width:170px; height:265px; padding:14px 12px;
+  }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card.rank-1 {
+    width:185px; height:285px;
+  }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card-avatar {
+    width:60px; height:60px; font-size:24px;
+  }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card.rank-1 .player-card-avatar {
+    width:70px; height:70px; font-size:28px;
+  }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card-num {
+    font-size:62px;
+  }
+  .cards-layout:has(.player-card:nth-child(4)) .player-card.rank-1 .player-card-num {
+    font-size:74px;
+  }
+  /* Cuando hay 5 cards: aún más compactas */
+  .cards-layout:has(.player-card:nth-child(5)) { gap:10px; }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card {
+    width:148px; height:240px; padding:12px 8px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card.rank-1 {
+    width:160px; height:255px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card-avatar {
+    width:50px; height:50px; font-size:20px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card.rank-1 .player-card-avatar {
+    width:58px; height:58px; font-size:24px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card-num {
+    font-size:50px; bottom:38px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card.rank-1 .player-card-num {
+    font-size:60px;
+  }
+  .cards-layout:has(.player-card:nth-child(5)) .player-card-name {
+    font-size:11px;
+  }
+  /* Si hay 6+: dos filas (3 arriba + 3 abajo) */
+  .cards-layout:has(.player-card:nth-child(6)) {
+    flex-wrap:wrap; align-content:center;
   }
   .player-card.rank-2 {
     border-color:#c8c8c8;
@@ -1816,6 +1880,296 @@
   }
 
   /* ============================================ */
+  /* LISTA LAYOUT: BAR RACE (barras horizontales proporcionales) */
+  /* ============================================ */
+  .barrace-list {
+    flex:1; display:flex; flex-direction:column; gap:8px;
+    padding:10px 30px 22px; z-index:2; position:relative;
+    justify-content:center;
+  }
+  .barrace-list.barrace-n-10 { gap:5px; padding:8px 30px 18px; }
+  .barrace-row {
+    display:grid; grid-template-columns:42px 1fr; gap:12px;
+    align-items:center;
+  }
+  .barrace-list.barrace-n-10 .barrace-row { grid-template-columns:32px 1fr; gap:10px; }
+  .barrace-rank {
+    font-family:'Anton', sans-serif; font-size:30px; color:var(--accent-3);
+    line-height:0.9; text-align:center;
+  }
+  .barrace-list.barrace-n-10 .barrace-rank { font-size:22px; }
+  .barrace-row.first .barrace-rank { color:var(--accent-1); font-size:34px; }
+  .barrace-row.second .barrace-rank { color:#c8c8c8; }
+  .barrace-row.third .barrace-rank { color:#b06f3a; }
+  .barrace-track {
+    position:relative; height:42px; min-width:0;
+    background:rgba(0,0,0,0.3); border-radius:10px;
+    border:1px solid rgba(var(--accent-rgb),0.15);
+    overflow:hidden;
+  }
+  .barrace-list.barrace-n-10 .barrace-track { height:32px; }
+  .barrace-bar {
+    position:absolute; left:0; top:0; bottom:0;
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.45), rgba(var(--accent-rgb),0.85));
+    border-radius:10px;
+    display:flex; align-items:center; padding-left:12px;
+    box-shadow:0 0 16px rgba(var(--accent-rgb),0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+    transition:width 0.6s ease;
+    overflow:hidden;
+  }
+  .barrace-row.first .barrace-bar {
+    background:linear-gradient(90deg, var(--accent-3), var(--accent-1));
+    box-shadow:0 0 22px rgba(var(--accent-rgb),0.55), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .barrace-row.second .barrace-bar {
+    background:linear-gradient(90deg, #888, #e8e8e8);
+    box-shadow:0 0 14px rgba(200,200,200,0.3);
+  }
+  .barrace-row.third .barrace-bar {
+    background:linear-gradient(90deg, #7a4720, #e0a878);
+    box-shadow:0 0 14px rgba(176,111,58,0.3);
+  }
+  .barrace-info {
+    display:flex; flex-direction:column; min-width:0; max-width:75%;
+  }
+  .barrace-name {
+    font-family:'Sora'; font-weight:800; font-size:14px;
+    color:var(--accent-dark);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    line-height:1.1;
+  }
+  .barrace-row.second .barrace-name, .barrace-row.third .barrace-name { color:var(--accent-dark); }
+  .barrace-list.barrace-n-10 .barrace-name { font-size:11px; }
+  .barrace-sub {
+    font-family:'Sora'; font-size:10px; color:rgba(0,0,0,0.7);
+    letter-spacing:1px; text-transform:uppercase; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .barrace-list.barrace-n-10 .barrace-sub { font-size:8px; letter-spacing:0.5px; }
+  .barrace-val {
+    position:absolute; right:12px; top:50%; transform:translateY(-50%);
+    font-family:'Anton', sans-serif; font-size:24px; color:#fff;
+    text-shadow:0 2px 6px rgba(0,0,0,0.7), 0 0 12px rgba(0,0,0,0.5);
+    z-index:2; line-height:0.9;
+    display:flex; flex-direction:column; align-items:flex-end;
+  }
+  .barrace-list.barrace-n-10 .barrace-val { font-size:18px; right:10px; }
+  .barrace-val .team-val-main { font-size:inherit; color:#fff; }
+  .barrace-val .team-val-sub { font-size:9px; color:rgba(255,255,255,0.85); letter-spacing:0.5px; }
+  /* Ajustes 9:16 */
+  .ratio-9x16 .barrace-list { padding:8px 16px 18px; }
+  .ratio-9x16 .barrace-row { grid-template-columns:32px 1fr; gap:8px; }
+  .ratio-9x16 .barrace-track { height:34px; }
+  .ratio-9x16 .barrace-name { font-size:11px; }
+  .ratio-9x16 .barrace-sub { font-size:8px; }
+  .ratio-9x16 .barrace-val { font-size:18px; }
+  .ratio-9x16 .barrace-rank { font-size:22px; }
+
+  /* ============================================ */
+  /* LISTA LAYOUT: HEXÁGONOS (panal de abejas) */
+  /* ============================================ */
+  .hexa-list {
+    flex:1; display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+    gap:14px;
+    padding:14px 24px 22px; z-index:2; position:relative;
+    align-content:center;
+  }
+  .hexa-list.hexa-n-10 {
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:10px; padding:10px 18px 18px;
+  }
+  .hexa-cell {
+    display:flex; align-items:center; gap:12px;
+    padding:6px;
+    min-width:0;
+  }
+  .hexa-shape {
+    width:80px; height:90px;
+    background:linear-gradient(160deg, rgba(var(--accent-rgb),0.25), rgba(0,0,0,0.6));
+    clip-path:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    flex-shrink:0; position:relative;
+    border:none;
+  }
+  .hexa-list.hexa-n-10 .hexa-shape { width:64px; height:72px; }
+  /* Borde simulado con un pseudo-elemento más grande detrás */
+  .hexa-cell.first .hexa-shape {
+    background:linear-gradient(160deg, var(--accent-2), var(--accent-3));
+    box-shadow:0 0 25px rgba(var(--accent-rgb),0.55);
+  }
+  .hexa-cell.second .hexa-shape {
+    background:linear-gradient(160deg, #e0e0e0, #888);
+  }
+  .hexa-cell.third .hexa-shape {
+    background:linear-gradient(160deg, #e0a878, #7a4720);
+  }
+  .hexa-rank {
+    font-family:'Anton', sans-serif; font-size:11px;
+    color:var(--accent-1); letter-spacing:1px;
+    position:absolute; top:14px;
+  }
+  .hexa-cell.first .hexa-rank, .hexa-cell.second .hexa-rank, .hexa-cell.third .hexa-rank {
+    color:var(--accent-dark);
+  }
+  .hexa-initials {
+    font-family:'Anton', sans-serif; font-size:20px;
+    color:var(--accent-1); margin-top:8px; line-height:1;
+  }
+  .hexa-cell.first .hexa-initials, .hexa-cell.second .hexa-initials, .hexa-cell.third .hexa-initials {
+    color:var(--accent-dark);
+  }
+  .hexa-list.hexa-n-10 .hexa-initials { font-size:16px; }
+  .hexa-num {
+    font-family:'Anton', sans-serif; font-size:18px;
+    color:var(--accent-1); margin-top:4px; line-height:0.9;
+  }
+  .hexa-cell.first .hexa-num, .hexa-cell.second .hexa-num, .hexa-cell.third .hexa-num {
+    color:var(--accent-dark);
+  }
+  .hexa-list.hexa-n-10 .hexa-num { font-size:14px; }
+  .hexa-num .team-val-main { font-size:inherit; }
+  .hexa-num .team-val-sub { display:none; } /* en hexa, solo el dato principal */
+  .hexa-meta {
+    flex:1; min-width:0;
+  }
+  .hexa-name {
+    font-family:'Sora'; font-weight:800; font-size:12px; color:#fff;
+    line-height:1.15;
+    overflow:hidden; text-overflow:ellipsis;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+    margin-bottom:3px;
+  }
+  .hexa-list.hexa-n-10 .hexa-name { font-size:10px; }
+  .hexa-sub {
+    font-family:'Sora'; font-size:9px; color:var(--accent-2);
+    letter-spacing:0.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ratio-9x16 .hexa-list { grid-template-columns:1fr; gap:8px; padding:10px 16px 16px; }
+  .ratio-9x16 .hexa-shape { width:60px; height:68px; }
+  .ratio-9x16 .hexa-initials { font-size:14px; }
+  .ratio-9x16 .hexa-num { font-size:14px; }
+
+  /* ============================================ */
+  /* LISTA LAYOUT: MIXTA (Top 3 destacado + resto compacto) */
+  /* ============================================ */
+  .mixta-list {
+    flex:1; display:flex; flex-direction:column;
+    padding:8px 28px 20px; gap:12px;
+    z-index:2; position:relative;
+  }
+  .mixta-top-section {
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .mixta-top {
+    display:grid; grid-template-columns:54px 1fr auto; gap:14px;
+    align-items:center; padding:10px 14px;
+    border-radius:12px;
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.1), rgba(0,0,0,0.35));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+  }
+  .mixta-top.first {
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.32), rgba(0,0,0,0.35));
+    border:2px solid var(--accent-1);
+    box-shadow:0 6px 20px rgba(var(--accent-rgb),0.25);
+  }
+  .mixta-top.second {
+    border-color:#c8c8c8;
+    background:linear-gradient(90deg, rgba(200,200,200,0.18), rgba(0,0,0,0.35));
+  }
+  .mixta-top.third {
+    border-color:#b06f3a;
+    background:linear-gradient(90deg, rgba(176,111,58,0.18), rgba(0,0,0,0.35));
+  }
+  .mixta-top-medal {
+    width:48px; height:48px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Anton', sans-serif; font-size:24px;
+    background:radial-gradient(circle at 30% 30%, var(--accent-1), var(--accent-2));
+    color:var(--accent-dark);
+    box-shadow:0 4px 12px rgba(var(--accent-rgb),0.4);
+  }
+  .mixta-top.second .mixta-top-medal {
+    background:radial-gradient(circle at 30% 30%, #e8e8e8, #888);
+    color:#333;
+  }
+  .mixta-top.third .mixta-top-medal {
+    background:radial-gradient(circle at 30% 30%, #e0a878, #7a4720);
+    color:#fff;
+  }
+  .mixta-top-info { min-width:0; }
+  .mixta-top-name {
+    font-family:'Sora'; font-weight:800; font-size:15px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    line-height:1.1; margin-bottom:2px;
+  }
+  .mixta-top.first .mixta-top-name { font-size:17px; }
+  .mixta-top-sub {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2);
+    letter-spacing:1.5px; text-transform:uppercase; font-weight:600;
+  }
+  .mixta-top-val {
+    font-family:'Anton', sans-serif; font-size:32px;
+    color:var(--accent-1); line-height:0.9; text-align:right;
+    display:flex; flex-direction:column; align-items:flex-end;
+  }
+  .mixta-top.first .mixta-top-val { font-size:38px; }
+  .mixta-top.second .mixta-top-val { color:#e8e8e8; }
+  .mixta-top.third .mixta-top-val { color:#e0a878; }
+  .mixta-top-val .team-val-main { font-size:inherit; }
+  .mixta-top-val .team-val-sub { font-size:10px; }
+
+  .mixta-divider {
+    text-align:center; padding:4px 0;
+    font-family:'Sora'; font-size:9px; color:var(--text-soft);
+    letter-spacing:3px; text-transform:uppercase;
+  }
+  .mixta-rest-section {
+    display:flex; flex-direction:column; gap:3px;
+  }
+  .mixta-rest-row {
+    display:grid; grid-template-columns:30px 1fr 1fr auto; gap:10px;
+    align-items:center; padding:5px 12px;
+    background:rgba(var(--accent-rgb),0.03);
+    border-radius:6px;
+    border-left:2px solid rgba(var(--accent-rgb),0.3);
+  }
+  .mixta-rest-rank {
+    font-family:'Anton', sans-serif; font-size:16px;
+    color:var(--accent-2); text-align:center;
+  }
+  .mixta-rest-name {
+    font-family:'Sora'; font-weight:600; font-size:11px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mixta-rest-sub {
+    font-family:'Sora'; font-size:9px; color:var(--accent-2);
+    letter-spacing:1px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mixta-rest-val {
+    font-family:'Anton', sans-serif; font-size:16px;
+    color:var(--accent-1); text-align:right;
+    display:flex; flex-direction:column; align-items:flex-end;
+  }
+  .mixta-rest-val .team-val-main { font-size:inherit; }
+  .mixta-rest-val .team-val-sub { font-size:8px; }
+  /* 9:16 mixta */
+  .ratio-9x16 .mixta-list { padding:8px 14px 16px; gap:8px; }
+  .ratio-9x16 .mixta-top { grid-template-columns:38px 1fr auto; gap:8px; padding:8px 10px; }
+  .ratio-9x16 .mixta-top-medal { width:36px; height:36px; font-size:18px; }
+  .ratio-9x16 .mixta-top-name { font-size:12px; }
+  .ratio-9x16 .mixta-top.first .mixta-top-name { font-size:13px; }
+  .ratio-9x16 .mixta-top-sub { font-size:8px; letter-spacing:0.5px; }
+  .ratio-9x16 .mixta-top-val { font-size:24px; }
+  .ratio-9x16 .mixta-top.first .mixta-top-val { font-size:28px; }
+  .ratio-9x16 .mixta-rest-row { grid-template-columns:22px 1fr auto; gap:6px; padding:4px 8px; }
+  .ratio-9x16 .mixta-rest-sub { display:none; }
+  .ratio-9x16 .mixta-rest-name { font-size:10px; }
+  .ratio-9x16 .mixta-rest-val { font-size:12px; }
+
+  /* ============================================ */
   /* ADAPTACIONES DE TEMA PARA LAYOUTS NUEVOS */
   /* ============================================ */
   /* STAT BOARD en tema editorial */
@@ -1951,7 +2305,7 @@
     </div>
 
     <div class="section">
-      <div class="section-title">Diseño / Layout</div>
+      <div class="section-title">Diseño / Layout (Top 3)</div>
       <div class="chips" id="layout-chips" style="flex-wrap:wrap;">
         <div class="chip active" data-layout="podio">🏆 Podio Clásico</div>
         <div class="chip" data-layout="cards">🎴 Cards</div>
@@ -1959,7 +2313,18 @@
         <div class="chip" data-layout="cinema">🎬 Cinema</div>
         <div class="chip" data-layout="trofeo">🏅 Trofeo</div>
       </div>
-      <div class="small-help" style="margin-top:6px;">5 diseños distintos · combina con cualquier color</div>
+      <div class="small-help" style="margin-top:6px;">Aplica al Top 3 · combina con cualquier color</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Estilo de lista (Top 5/10)</div>
+      <div class="chips" id="listLayout-chips" style="flex-wrap:wrap;">
+        <div class="chip active" data-listlayout="clasica">📋 Lista Clásica</div>
+        <div class="chip" data-listlayout="barrace">📊 Bar Race</div>
+        <div class="chip" data-listlayout="hexagon">⬢ Hexágonos</div>
+        <div class="chip" data-listlayout="mixta">⭐ Mixta (Top3 + lista)</div>
+      </div>
+      <div class="small-help" style="margin-top:6px;">Aplica solo a Top 5 y Top 10</div>
     </div>
 
     <div class="section">
@@ -2120,7 +2485,8 @@ let state = {
   format: '16x9',
   cantidad: 3,
   tema: 'gold',
-  layout: 'podio', // podio | mini | cards
+  layout: 'podio', // podio | cards | stat | cinema | trofeo (para Top 3)
+  listLayout: 'clasica', // clasica | barrace | hexagon | mixta (para Top 5/10)
   stickers: 'off',
   mes: new Date().getMonth() + 1,
   anio: new Date().getFullYear(),
@@ -2164,6 +2530,16 @@ function initUI() {
     el.onclick = () => {
       state.layout = el.dataset.layout;
       document.querySelectorAll('#layout-chips .chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      render();
+    };
+  });
+
+  // List Layout chips (para Top 5/10)
+  document.querySelectorAll('#listLayout-chips .chip').forEach(el => {
+    el.onclick = () => {
+      state.listLayout = el.dataset.listlayout;
+      document.querySelectorAll('#listLayout-chips .chip').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       render();
     };
@@ -2581,67 +2957,20 @@ function procesarDatos() {
   // ============================================================
   if (state.topId === 'centro') {
     const porCentro = { CC2: 0, JV: 0 };
-    // DEBUG: contar paso a paso
-    let totalVentas = 0;
-    let sinEjecutivo = 0;
-    let supNoVigente = 0;
-    let fechaFuera = 0;
-    let sinCentroFinal = 0;
-    const supsNoVigentes = new Set();
-    const ventasSinCentro = [];
-    const ventasSupNoVigenteEnMayo = []; // <-- las que el reporte sí cuenta pero yo no
-
     ventas.forEach(v => {
-      totalVentas++;
-      if (!v.ejecutivo) { sinEjecutivo++; return; }
-      if (!supsVigentes.includes(v.supervisor)) {
-        supNoVigente++;
-        if (v.supervisor) supsNoVigentes.add(v.supervisor);
-        // Si la venta está en mayo, podría ser parte de las "perdidas"
-        if (v.fecha_activacion && v.fecha_activacion >= fechaIni && v.fecha_activacion <= fechaFin) {
-          ventasSupNoVigenteEnMayo.push({
-            sup: v.supervisor, ej: v.ejecutivo, fecha: v.fecha_activacion,
-            estatus: v.estatus, supAct: v.supervisor_act, supCan: v.supervisor_can
-          });
-        }
-        return;
-      }
-      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) {
-        fechaFuera++;
-        return;
-      }
+      if (!v.ejecutivo) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      // NOTA: NO excluir supervisores como ejecutivos aquí — el reporte semanal
+      // los incluye en el conteo de Avance Mensual del centro
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
       // Estrategia robusta: primero por mapaCentroSup (sup→centro), luego plantilla del agente
       let c = mapaCentroSup[v.supervisor];
       if (!c || (c !== 'CC2' && c !== 'JV')) {
         const p = plantilla[v.ejecutivo];
         if (p && p.centro) c = String(p.centro).trim().toUpperCase();
       }
-      if (c === 'CC2' || c === 'JV') {
-        porCentro[c]++;
-      } else {
-        sinCentroFinal++;
-        ventasSinCentro.push({ej: v.ejecutivo, sup: v.supervisor, fecha: v.fecha_activacion, estatus: v.estatus});
-      }
+      if (c === 'CC2' || c === 'JV') porCentro[c]++;
     });
-    console.log('═══════════════════════════════════════');
-    console.log('🔍 DEBUG MEJOR CENTRO - paso a paso');
-    console.log('═══════════════════════════════════════');
-    console.log('Total ventas en BD (cargadas):', totalVentas);
-    console.log('├─ Sin ejecutivo (descartadas):', sinEjecutivo);
-    console.log('├─ Sup NO vigente (descartadas):', supNoVigente);
-    console.log('├─ Fecha fuera de rango:', fechaFuera);
-    console.log('├─ Sin centro final:', sinCentroFinal);
-    console.log('└─ CONTADAS: CC2='+porCentro.CC2+' + JV='+porCentro.JV+' = '+(porCentro.CC2+porCentro.JV));
-    console.log('---');
-    console.log('Rango de fechas usado:', fechaIni, '→', fechaFin);
-    console.log('Supervisores vigentes:', supsVigentes);
-    console.log('Supervisores ignorados (no vigentes):', Array.from(supsNoVigentes));
-    if (ventasSinCentro.length > 0) console.log('Ventas sin centro asignado:', ventasSinCentro);
-    if (ventasSupNoVigenteEnMayo.length > 0) {
-      console.log('🚨 Ventas en mayo con sup NO vigente (las "perdidas"):', ventasSupNoVigenteEnMayo.length);
-      console.table(ventasSupNoVigenteEnMayo);
-    }
-    console.log('═══════════════════════════════════════');
     // Calcular meta por centro = suma de metas de supervisores vigentes del centro
     const metaCentro = { CC2: 0, JV: 0 };
     (metasSup || []).forEach(m => {
@@ -2936,13 +3265,9 @@ function aplicarManual() {
 function render() {
   const canvas = document.getElementById('canvas');
   // Determinar si necesitamos lista alta (Top 10 o 15)
-  // Determinar si necesitamos lista alta (Top 10 o 15, Resumen, o empates en Top 3)
-  const totalAgentesParaPodio = (state.agentes || []).filter(a => a.rank && a.rank <= 3).length;
-  // Cualquier empate produce multi-fila → mejor dar espacio extra al canvas
-  const empatesTop3 = totalAgentesParaPodio >= 4; // 4+ personas en top 3 = al menos un empate
+  // Determinar si necesitamos lista alta (Top 10, Resumen)
   const tallList = ((state.cantidad >= 10) && !['rev','crec','ticket','meta','centro','resumenc'].includes(state.topId))
-    || state.topId === 'resumenc'
-    || (empatesTop3 && !['rev','crec','ticket','meta','centro','resumenc','supVtas','supMeta'].includes(state.topId));
+    || state.topId === 'resumenc';
   canvas.className = 'canvas-top ratio-' + state.format + ' layout-' + state.layout + (tallList ? ' tall-list' : '');
 
   if (!state.agentes || state.agentes.length === 0) {
@@ -3277,67 +3602,190 @@ function render() {
     } else {
       const usaRacha = state.topId === 'racha';
       const usaMetric = ['racha','supMeta','ticketTop','crecTop'].includes(state.topId);
-      bodyHTML = `
-        <div class="team-list n-${arr.length}">
-          ${arr.map((a, i) => {
-            const r = a.rank || (i + 1);
-            const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
-            // Subtítulo según tipo
-            let sub = '';
-            if (a.esSupervisor) {
-              sub = a.centro || '';
-              if (state.topId === 'supMeta' && a.meta) sub += ` · Meta ${a.meta}`;
-              if (state.topId === 'supMeta' && a.ventas) sub += ` · ${a.ventas} vtas`;
-            } else if (state.topId === 'crecTop') {
-              const subParts = [];
-              if (a.centro) subParts.push(a.centro);
-              if (a.supervisor) subParts.push(a.supervisor);
-              if (a.anterior !== undefined) subParts.push(`${a.anterior}→${a.ventas} vtas`);
-              sub = subParts.join(' · ');
-            } else if (state.topId === 'ticketTop') {
-              const subParts = [];
-              if (a.centro) subParts.push(a.centro);
-              if (a.supervisor) subParts.push(a.supervisor);
-              if (a.ventas) subParts.push(`${a.ventas} vtas`);
-              sub = subParts.join(' · ');
-            } else if (state.topId === 'revTop') {
-              const subParts = [];
-              if (a.centro) subParts.push(a.centro);
-              if (a.supervisor) subParts.push(a.supervisor);
-              if (a.diasEnEmpresa !== undefined) subParts.push(`${a.diasEnEmpresa}d`);
-              sub = subParts.join(' · ');
-            } else if (a.centro || a.supervisor) {
-              sub = `${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}`;
-            }
-            return `
-              <div class="team-row ${cls}">
-                <div class="team-pos">${r}</div>
-                <div>
-                  <div class="team-name">${a.nombre}</div>
-                  ${sub ? `<div class="team-sub">${sub}</div>` : ''}
+
+      // Helper: subtítulo enriquecido por tipo de top
+      const getSub = (a) => {
+        if (a.esSupervisor) {
+          let s = a.centro || '';
+          if (state.topId === 'supMeta' && a.meta) s += ` · Meta ${a.meta}`;
+          if (state.topId === 'supMeta' && a.ventas) s += ` · ${a.ventas} vtas`;
+          return s;
+        }
+        if (state.topId === 'crecTop') {
+          const parts = [];
+          if (a.centro) parts.push(a.centro);
+          if (a.supervisor) parts.push(a.supervisor);
+          if (a.anterior !== undefined) parts.push(`${a.anterior}→${a.ventas} vtas`);
+          return parts.join(' · ');
+        }
+        if (state.topId === 'ticketTop') {
+          const parts = [];
+          if (a.centro) parts.push(a.centro);
+          if (a.supervisor) parts.push(a.supervisor);
+          if (a.ventas) parts.push(`${a.ventas} vtas`);
+          return parts.join(' · ');
+        }
+        if (state.topId === 'revTop') {
+          const parts = [];
+          if (a.centro) parts.push(a.centro);
+          if (a.supervisor) parts.push(a.supervisor);
+          if (a.diasEnEmpresa !== undefined) parts.push(`${a.diasEnEmpresa}d`);
+          return parts.join(' · ');
+        }
+        if (a.centro || a.supervisor) {
+          return `${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}`;
+        }
+        return '';
+      };
+
+      // Helper: valor a mostrar
+      const getVal = (a) => {
+        if (state.topId === 'crecTop') {
+          return `<span class="team-val-main">+${a.crecAbs}</span><span class="team-val-sub">+${a.crecPct}%</span>`;
+        }
+        return usaMetric ? a.metric : a.ventas;
+      };
+
+      // Helper: iniciales
+      const inicialesLista = (n) => {
+        const parts = (n || '').trim().split(/\s+/);
+        if (parts.length === 0) return '?';
+        if (parts.length === 1) return parts[0].substr(0, 2).toUpperCase();
+        return (parts[0][0] + parts[1][0]).toUpperCase();
+      };
+
+      // ========== LAYOUT: BAR RACE (barras horizontales proporcionales) ==========
+      if (state.listLayout === 'barrace') {
+        // Calcular valor numérico para proporciones
+        const getNum = (a) => {
+          if (state.topId === 'racha') return a._rachaNum || 0;
+          if (state.topId === 'supMeta') return parseFloat(String(a.metric || '0').replace('%', '')) || 0;
+          if (state.topId === 'ticketTop') return parseFloat(String(a.metric || '0').replace(/[^0-9.]/g, '')) || 0;
+          if (state.topId === 'crecTop') return a.crecAbs || 0;
+          return a.ventas || 0;
+        };
+        const maxVal = Math.max(...arr.map(getNum), 1);
+        bodyHTML = `
+          <div class="barrace-list barrace-n-${arr.length}">
+            ${arr.map((a, i) => {
+              const r = a.rank || (i + 1);
+              const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
+              const num = getNum(a);
+              const pct = (num / maxVal) * 100;
+              const sub = getSub(a);
+              return `
+                <div class="barrace-row ${cls}">
+                  <div class="barrace-rank">${r}</div>
+                  <div class="barrace-track">
+                    <div class="barrace-bar" style="width:${pct.toFixed(1)}%;">
+                      <div class="barrace-info">
+                        <div class="barrace-name">${a.nombre}</div>
+                        ${sub ? `<div class="barrace-sub">${sub}</div>` : ''}
+                      </div>
+                    </div>
+                    <div class="barrace-val">${getVal(a)}</div>
+                  </div>
                 </div>
-                <div class="team-val">${
-                  state.topId === 'crecTop'
-                    ? `<span class="team-val-main">+${a.crecAbs}</span><span class="team-val-sub">+${a.crecPct}%</span>`
-                    : (usaMetric ? a.metric : a.ventas)
-                }</div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+      // ========== LAYOUT: HEXÁGONOS (panal de abejas) ==========
+      else if (state.listLayout === 'hexagon') {
+        bodyHTML = `
+          <div class="hexa-list hexa-n-${arr.length}">
+            ${arr.map((a, i) => {
+              const r = a.rank || (i + 1);
+              const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
+              const sub = getSub(a);
+              return `
+                <div class="hexa-cell ${cls}">
+                  <div class="hexa-shape">
+                    <div class="hexa-rank">#${r}</div>
+                    <div class="hexa-initials">${inicialesLista(a.nombre)}</div>
+                    <div class="hexa-num">${getVal(a)}</div>
+                  </div>
+                  <div class="hexa-meta">
+                    <div class="hexa-name">${a.nombre}</div>
+                    ${sub ? `<div class="hexa-sub">${sub}</div>` : ''}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+      // ========== LAYOUT: MIXTA (Top 3 destacado + resto compacto) ==========
+      else if (state.listLayout === 'mixta') {
+        const top3 = arr.filter(a => (a.rank || 99) <= 3);
+        const resto = arr.filter(a => (a.rank || 99) > 3);
+        // Top 3 en formato mini-card horizontal
+        const top3Html = top3.map(a => {
+          const r = a.rank || 1;
+          const cls = r === 1 ? 'first' : r === 2 ? 'second' : 'third';
+          const sub = getSub(a);
+          return `
+            <div class="mixta-top ${cls}">
+              <div class="mixta-top-medal">${r}</div>
+              <div class="mixta-top-info">
+                <div class="mixta-top-name">${a.nombre}</div>
+                ${sub ? `<div class="mixta-top-sub">${sub}</div>` : ''}
               </div>
-            `;
-          }).join('')}
-        </div>
-      `;
+              <div class="mixta-top-val">${getVal(a)}</div>
+            </div>
+          `;
+        }).join('');
+        // Resto en lista compacta
+        const restoHtml = resto.map((a, i) => {
+          const r = a.rank || (i + 4);
+          const sub = getSub(a);
+          return `
+            <div class="mixta-rest-row">
+              <div class="mixta-rest-rank">${r}</div>
+              <div class="mixta-rest-name">${a.nombre}</div>
+              ${sub ? `<div class="mixta-rest-sub">${sub}</div>` : '<div></div>'}
+              <div class="mixta-rest-val">${getVal(a)}</div>
+            </div>
+          `;
+        }).join('');
+        bodyHTML = `
+          <div class="mixta-list">
+            <div class="mixta-top-section">${top3Html}</div>
+            ${resto.length > 0 ? `
+              <div class="mixta-divider">— resto del top —</div>
+              <div class="mixta-rest-section">${restoHtml}</div>
+            ` : ''}
+          </div>
+        `;
+      }
+      // ========== LAYOUT: CLÁSICA (lista por defecto) ==========
+      else {
+        bodyHTML = `
+          <div class="team-list n-${arr.length}">
+            ${arr.map((a, i) => {
+              const r = a.rank || (i + 1);
+              const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
+              const sub = getSub(a);
+              return `
+                <div class="team-row ${cls}">
+                  <div class="team-pos">${r}</div>
+                  <div>
+                    <div class="team-name">${a.nombre}</div>
+                    ${sub ? `<div class="team-sub">${sub}</div>` : ''}
+                  </div>
+                  <div class="team-val">${getVal(a)}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
     }
   } else {
     // PODIO TOP 3 — con manejo de empates por rank
     // Tomar todos los agentes con rank <= 3 (mostrar empates completos)
     const conRank = state.agentes.filter(a => a.rank && a.rank <= 3);
-    // DEBUG: ver qué hay en state.agentes (top 10 y los que tienen rank <= 3)
-    if (state.topId === 'global') {
-      console.log('🏆 DEBUG TOP 3 GLOBAL');
-      console.log('Total agentes en state.agentes:', state.agentes.length);
-      console.log('Top 10 agentes:', state.agentes.slice(0, 10).map(a => ({nombre: a.nombre, ventas: a.ventas, rank: a.rank, sup: a.supervisor})));
-      console.log('Con rank <= 3:', conRank.length, conRank.map(a => `${a.nombre} (${a.ventas} vtas, rank ${a.rank})`));
-    }
     // Si no hay datos, fallback a top 3 normales
     let participantes = conRank.length > 0 ? conRank : state.agentes.slice(0, 3);
     if (participantes.length === 0) {
@@ -3505,12 +3953,13 @@ function render() {
     // ============================================
     if (state.layout === 'cards') {
       const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      const sinTilt = ordenados.length >= 4; // sin inclinación con 4+ cards
       bodyHTML = `
         <div class="cards-layout">
           ${ordenados.map((a, i) => {
             const r = a.rank || (i + 1);
             const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
-            const tilt = i === 0 ? '-2deg' : i === 1 ? '3deg' : '-1deg';
+            const tilt = sinTilt ? '0deg' : (i === 0 ? '-2deg' : i === 1 ? '3deg' : '-1deg');
             return `
               <div class="player-card rank-${r}" style="--tilt:${tilt};">
                 <div class="player-card-bg"></div>
@@ -3589,19 +4038,34 @@ function render() {
         </div>
       `;
     } else {
-      // Hay empates: usar multi-fila SIEMPRE
-      // Arriba: rank 1 (oros) y rank 2 (platas) si existen
-      // Abajo: rank 3+ (bronces)
-      const ranksArriba = ranksUsados.filter(r => r <= 2);
-      const ranksAbajo = ranksUsados.filter(r => r >= 3);
-      let arribaCards = '', abajoCards = '';
-      ranksArriba.forEach(r => grupos[r].forEach(a => { arribaCards += renderSpot(a, r); }));
-      ranksAbajo.forEach(r => grupos[r].forEach(a => { abajoCards += renderSpot(a, r); }));
+      // Hay empates: ordenar en UNA sola fila con ganadores al CENTRO
+      // Estilo "3-1-1-3": bronces a los lados, oros al centro
+      // Si hay rank 1, 2, 3: ordena como 3-2-1-1-2-3 reflejando hacia el centro
+      // Distribución: por cada rank, mitad va a la izquierda (orden inverso) y mitad a la derecha
+      const izq = []; // del peor rank al mejor (3, 3, 2, ...)
+      const der = []; // del mejor al peor
+      ranksUsados.slice().reverse().forEach(r => {
+        // Comenzar desde el peor rank (3, 2, 1)
+        const personas = grupos[r];
+        if (r === 1) {
+          // Los #1 van al centro; si son varios, dividir
+          const mitad = Math.ceil(personas.length / 2);
+          personas.slice(0, mitad).forEach(p => izq.push({ag: p, rank: r}));
+          personas.slice(mitad).forEach(p => der.push({ag: p, rank: r}));
+        } else {
+          // Para rank 2 y 3, alternar (uno a la izq, uno a la der)
+          personas.forEach((p, i) => {
+            if (i % 2 === 0) izq.push({ag: p, rank: r});
+            else der.push({ag: p, rank: r});
+          });
+        }
+      });
+      // izq actualmente está en orden peor→mejor, der en orden peor→mejor.
+      // Para el visual 3-1-1-3 necesitamos: izq queda igual (peor al borde, mejor al centro),
+      // y der invertido (mejor al centro, peor al borde)
+      const cardsHTML = [...izq, ...der.reverse()].map(item => renderSpot(item.ag, item.rank)).join('');
       bodyHTML = `
-        <div class="podium-multi">
-          ${arribaCards ? `<div class="podium-fila podium-fila-top">${arribaCards}</div>` : ''}
-          ${abajoCards ? `<div class="podium-fila podium-fila-bot">${abajoCards}</div>` : ''}
-        </div>
+        <div class="podium podium-fila-unica">${cardsHTML}</div>
       `;
     }
   }
