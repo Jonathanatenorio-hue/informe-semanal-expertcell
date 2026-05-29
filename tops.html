@@ -2575,37 +2575,55 @@ function procesarDatos() {
   // ============================================================
   if (state.topId === 'centro') {
     const porCentro = { CC2: 0, JV: 0 };
-    const supsIgnorados = new Set();
-    const sinCentro = [];
-    let totalEnRango = 0;
+    // DEBUG: contar paso a paso
+    let totalVentas = 0;
+    let sinEjecutivo = 0;
+    let supNoVigente = 0;
+    let fechaFuera = 0;
+    let sinCentroFinal = 0;
+    const supsNoVigentes = new Set();
+    const ventasSinCentro = [];
+
     ventas.forEach(v => {
-      if (!v.ejecutivo) return;
+      totalVentas++;
+      if (!v.ejecutivo) { sinEjecutivo++; return; }
       if (!supsVigentes.includes(v.supervisor)) {
-        if (v.supervisor) supsIgnorados.add(v.supervisor);
+        supNoVigente++;
+        if (v.supervisor) supsNoVigentes.add(v.supervisor);
         return;
       }
-      // NOTA: NO excluir supervisores como ejecutivos aquí — el reporte semanal
-      // los incluye en el conteo de Avance Mensual del centro
-      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
-      totalEnRango++;
+      if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) {
+        fechaFuera++;
+        return;
+      }
       // Estrategia robusta: primero por mapaCentroSup (sup→centro), luego plantilla del agente
       let c = mapaCentroSup[v.supervisor];
       if (!c || (c !== 'CC2' && c !== 'JV')) {
         const p = plantilla[v.ejecutivo];
         if (p && p.centro) c = String(p.centro).trim().toUpperCase();
       }
-      if (c === 'CC2' || c === 'JV') porCentro[c]++;
-      else sinCentro.push({ej: v.ejecutivo, sup: v.supervisor, fecha: v.fecha_activacion});
+      if (c === 'CC2' || c === 'JV') {
+        porCentro[c]++;
+      } else {
+        sinCentroFinal++;
+        ventasSinCentro.push({ej: v.ejecutivo, sup: v.supervisor, fecha: v.fecha_activacion, estatus: v.estatus});
+      }
     });
-    console.log('🔍 DEBUG MEJOR CENTRO');
-    console.log('Total ventas activadas en rango (con sup vigente):', totalEnRango);
-    console.log('  → CC2:', porCentro.CC2);
-    console.log('  → JV:', porCentro.JV);
-    console.log('  → Sin centro asignado:', sinCentro.length);
-    if (sinCentro.length > 0) console.log('     Detalle sin centro:', sinCentro);
-    console.log('Supervisores ignorados (no vigentes):', Array.from(supsIgnorados));
+    console.log('═══════════════════════════════════════');
+    console.log('🔍 DEBUG MEJOR CENTRO - paso a paso');
+    console.log('═══════════════════════════════════════');
+    console.log('Total ventas en BD (cargadas):', totalVentas);
+    console.log('├─ Sin ejecutivo (descartadas):', sinEjecutivo);
+    console.log('├─ Sup NO vigente (descartadas):', supNoVigente);
+    console.log('├─ Fecha fuera de rango:', fechaFuera);
+    console.log('├─ Sin centro final:', sinCentroFinal);
+    console.log('└─ CONTADAS: CC2='+porCentro.CC2+' + JV='+porCentro.JV+' = '+(porCentro.CC2+porCentro.JV));
+    console.log('---');
+    console.log('Rango de fechas usado:', fechaIni, '→', fechaFin);
     console.log('Supervisores vigentes:', supsVigentes);
-    console.log('mapaCentroSup:', mapaCentroSup);
+    console.log('Supervisores ignorados (no vigentes):', Array.from(supsNoVigentes));
+    if (ventasSinCentro.length > 0) console.log('Ventas sin centro asignado:', ventasSinCentro);
+    console.log('═══════════════════════════════════════');
     // Calcular meta por centro = suma de metas de supervisores vigentes del centro
     const metaCentro = { CC2: 0, JV: 0 };
     (metasSup || []).forEach(m => {
@@ -3526,12 +3544,13 @@ function render() {
       `;
     };
 
-    // Si solo hay rank 1 con 3 personas (3 way tie), todos al mismo nivel
-    // Si hay 2 ranks (1° y 3° por ejemplo), grupo de oros arriba y grupo de bronces abajo
-    // Si hay 3 ranks (1° 2° 3° clásico), podio tradicional
+    // Decidir layout del podio:
+    // - Si NO hay empates en absoluto (1-2-3 con una persona cada uno) → podio clásico
+    // - Si hay empates (cualquier tipo) → multi-fila (filas arriba y abajo) para verse mejor
     const totalAgentes = participantes.length;
+    const hayEmpates = ranksUsados.some(r => grupos[r].length > 1);
 
-    if (ranksUsados.length === 3 && grupos[ranksUsados[0]].length === 1 && grupos[ranksUsados[1]].length === 1 && grupos[ranksUsados[2]].length === 1) {
+    if (!hayEmpates && ranksUsados.length === 3) {
       // Caso clásico: 1-2-3 sin empates → podio tradicional con 2-1-3 visual
       const ag1 = grupos[ranksUsados[0]][0];
       const ag2 = grupos[ranksUsados[1]][0];
@@ -3544,31 +3563,20 @@ function render() {
         </div>
       `;
     } else {
-      // Hay empates: mostrar agrupados por rank en filas
-      // Si todos caben en una fila (≤4 personas), una sola fila
-      // Si son 5+, hacer dos filas: oro/plata arriba, bronce abajo
-      const grandeUnaFila = totalAgentes <= 4;
-      if (grandeUnaFila) {
-        // Todos en una fila, primero los oros, luego platas, luego bronces
-        let cards = '';
-        ranksUsados.forEach(r => {
-          grupos[r].forEach(a => { cards += renderSpot(a, r); });
-        });
-        bodyHTML = `<div class="podium podium-empate">${cards}</div>`;
-      } else {
-        // Dos filas: arriba ranks superiores (1 y 2 si existen), abajo el resto
-        const ranksArriba = ranksUsados.filter(r => r <= 2);
-        const ranksAbajo = ranksUsados.filter(r => r >= 3);
-        let arribaCards = '', abajoCards = '';
-        ranksArriba.forEach(r => grupos[r].forEach(a => { arribaCards += renderSpot(a, r); }));
-        ranksAbajo.forEach(r => grupos[r].forEach(a => { abajoCards += renderSpot(a, r); }));
-        bodyHTML = `
-          <div class="podium-multi">
-            ${arribaCards ? `<div class="podium-fila podium-fila-top">${arribaCards}</div>` : ''}
-            ${abajoCards ? `<div class="podium-fila podium-fila-bot">${abajoCards}</div>` : ''}
-          </div>
-        `;
-      }
+      // Hay empates: usar multi-fila SIEMPRE
+      // Arriba: rank 1 (oros) y rank 2 (platas) si existen
+      // Abajo: rank 3+ (bronces)
+      const ranksArriba = ranksUsados.filter(r => r <= 2);
+      const ranksAbajo = ranksUsados.filter(r => r >= 3);
+      let arribaCards = '', abajoCards = '';
+      ranksArriba.forEach(r => grupos[r].forEach(a => { arribaCards += renderSpot(a, r); }));
+      ranksAbajo.forEach(r => grupos[r].forEach(a => { abajoCards += renderSpot(a, r); }));
+      bodyHTML = `
+        <div class="podium-multi">
+          ${arribaCards ? `<div class="podium-fila podium-fila-top">${arribaCards}</div>` : ''}
+          ${abajoCards ? `<div class="podium-fila podium-fila-bot">${abajoCards}</div>` : ''}
+        </div>
+      `;
     }
   }
 
