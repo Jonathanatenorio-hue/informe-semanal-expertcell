@@ -292,9 +292,15 @@
   .ratio-16x9.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
   .ratio-1x1.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
   .ratio-9x16.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
+  /* Cuando hay podio multi-fila, dar altura extra para que las 2 filas quepan SIEMPRE */
+  .ratio-16x9.tall-list:has(.podium-multi) { min-height:560px; padding-bottom:40px; }
+  .ratio-1x1.tall-list:has(.podium-multi) { min-height:760px; padding-bottom:40px; }
+  .ratio-9x16.tall-list:has(.podium-multi) { min-height:920px; padding-bottom:40px; }
 
   /* HEADER del top */
   .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
+  /* Cuando hay podio multi-fila, header más compacto para dejar más espacio al podio */
+  .canvas-top:has(.podium-multi) .top-header { padding:24px 24px 8px; }
   /* Cuando stickers están activos, hay que dejar espacio arriba para la cinta */
   .canvas-top:has(.sticker-ribbon) .top-header { padding-top:64px; }
   .top-kicker {
@@ -3325,6 +3331,13 @@ function render() {
     // PODIO TOP 3 — con manejo de empates por rank
     // Tomar todos los agentes con rank <= 3 (mostrar empates completos)
     const conRank = state.agentes.filter(a => a.rank && a.rank <= 3);
+    // DEBUG: ver qué hay en state.agentes (top 10 y los que tienen rank <= 3)
+    if (state.topId === 'global') {
+      console.log('🏆 DEBUG TOP 3 GLOBAL');
+      console.log('Total agentes en state.agentes:', state.agentes.length);
+      console.log('Top 10 agentes:', state.agentes.slice(0, 10).map(a => ({nombre: a.nombre, ventas: a.ventas, rank: a.rank, sup: a.supervisor})));
+      console.log('Con rank <= 3:', conRank.length, conRank.map(a => `${a.nombre} (${a.ventas} vtas, rank ${a.rank})`));
+    }
     // Si no hay datos, fallback a top 3 normales
     let participantes = conRank.length > 0 ? conRank : state.agentes.slice(0, 3);
     if (participantes.length === 0) {
