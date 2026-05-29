@@ -643,6 +643,58 @@
   /* En 1:1 cuadrado: ranking abajo */
   .ratio-1x1 .resumen-wrap { grid-template-columns:1fr; }
 
+  /* ============ STICKERS DE CELEBRACIÓN ============ */
+  .sticker {
+    position:absolute; z-index:5; pointer-events:none;
+    animation:stickerFloat 3s ease-in-out infinite;
+  }
+  .sticker.confetti {
+    font-size:32px;
+    filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+  }
+  .confetti-1 { top:6%; left:10%; animation-delay:0s; transform:rotate(-15deg); }
+  .confetti-2 { top:8%; right:14%; animation-delay:0.4s; transform:rotate(20deg); font-size:38px; }
+  .confetti-3 { top:38%; left:4%; animation-delay:0.8s; transform:rotate(-25deg); font-size:28px; }
+  .confetti-4 { top:55%; right:6%; animation-delay:1.2s; transform:rotate(15deg); font-size:30px; }
+  .confetti-5 { bottom:18%; left:8%; animation-delay:1.6s; transform:rotate(-10deg); font-size:34px; }
+  .confetti-6 { bottom:25%; right:10%; animation-delay:2s; transform:rotate(25deg); font-size:26px; }
+  @keyframes stickerFloat {
+    0%, 100% { transform:translateY(0) rotate(var(--r, 0deg)); }
+    50% { transform:translateY(-8px) rotate(calc(var(--r, 0deg) + 5deg)); }
+  }
+  /* Badges con texto - fijos en posiciones llamativas */
+  .sticker.badge {
+    padding:8px 18px; border-radius:24px;
+    font-family:'Anton', sans-serif; font-size:18px; letter-spacing:2px;
+    color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.4);
+    box-shadow:0 8px 20px rgba(0,0,0,0.3), inset 0 -2px 4px rgba(0,0,0,0.15);
+    transform:rotate(-8deg);
+  }
+  .badge-fire {
+    top:12%; left:18%;
+    background:linear-gradient(135deg, #ff4444, #ff7700);
+    border:2px solid #fff;
+  }
+  .badge-fire::before { content:'🔥 '; }
+  .badge-top {
+    top:14%; right:18%;
+    background:linear-gradient(135deg, #ffd700, #ff8800);
+    border:2px solid #fff;
+    transform:rotate(8deg);
+    color:#3a2100;
+    text-shadow:0 1px 2px rgba(255,255,255,0.4);
+  }
+  .badge-top::before { content:'👑 '; }
+  /* Variantes posicionales para vertical (9:16) */
+  .ratio-9x16 .sticker.confetti { font-size:24px; }
+  .ratio-9x16 .badge-fire, .ratio-9x16 .badge-top {
+    font-size:14px; padding:6px 12px;
+  }
+  .ratio-9x16 .confetti-1 { top:4%; left:6%; }
+  .ratio-9x16 .confetti-2 { top:5%; right:6%; }
+  .ratio-9x16 .badge-fire { top:24%; left:8%; }
+  .ratio-9x16 .badge-top { top:25%; right:8%; }
+
   /* ============ ESTILOS POR TEMA (acentos visuales) ============ */
 
   /* ===== TEMA EDITORIAL: revista premium, claro, serif elegante ===== */
@@ -1195,6 +1247,15 @@
     </div>
 
     <div class="section">
+      <div class="section-title">Stickers de celebración</div>
+      <div class="chips" id="stickers-chips">
+        <div class="chip active" data-stickers="off">Sin stickers</div>
+        <div class="chip" data-stickers="on">✨ Con celebración</div>
+      </div>
+      <div class="small-help" style="margin-top:6px;">Agrega confetti y badges al #1</div>
+    </div>
+
+    <div class="section">
       <div class="section-title">Formato</div>
       <div class="chips" id="format-chips">
         <div class="chip active" data-format="16x9">16:9 TV</div>
@@ -1209,7 +1270,6 @@
         <div class="chip active" data-cant="3">Top 3</div>
         <div class="chip" data-cant="5">Top 5</div>
         <div class="chip" data-cant="10">Top 10</div>
-        <div class="chip" data-cant="15">Top 15</div>
       </div>
       <div class="small-help" style="margin-top:6px;">Top 3 = podio · 5+ = lista vertical</div>
     </div>
@@ -1309,18 +1369,17 @@ try {
 // CONFIG: TIPOS DE TOP
 // ====================================================================
 const TOPS = [
-  { id:'global',    icon:'🏆', label:'Top 3 Global',     desc:'Los 3 mejores agentes' },
-  { id:'equipo',    icon:'👑', label:'Top por Equipo',   desc:'Top de un supervisor' },
-  { id:'centro',    icon:'🥇', label:'Mejor Centro',     desc:'CC2 vs JV' },
-  { id:'resumenc',  icon:'📋', label:'Resumen Centro',   desc:'Top 3 por cada equipo del centro' },
-  { id:'supVtas',   icon:'🎖️', label:'Top Supervisores', desc:'Por ventas totales del equipo' },
-  { id:'supMeta',   icon:'📊', label:'Sup. por % Meta',  desc:'Cumplimiento de meta' },
-  { id:'rev',       icon:'🚀', label:'Revelación',       desc:'Mejor nuevo (≤60d)' },
-  { id:'crec',      icon:'📈', label:'Mayor Crecimiento',desc:'Mayor incremento vs mes anterior' },
-  { id:'racha',     icon:'🔥', label:'Racha Activa',     desc:'Más días consecutivos vendiendo' },
-  { id:'ticket',    icon:'💎', label:'Rey del Ticket',   desc:'Mayor ARPU del mes' },
-  { id:'diario',    icon:'⚡', label:'Cierre del Día',   desc:'Top del día específico' },
-  { id:'meta',      icon:'🎯', label:'Primero en Meta',  desc:'Quién cumplió meta primero' },
+  { id:'global',    icon:'🏆', label:'Top Global',        desc:'Los mejores agentes' },
+  { id:'centro',    icon:'🥇', label:'Mejor Centro',      desc:'CC2 vs JV' },
+  { id:'resumenc',  icon:'📋', label:'Resumen Centro',    desc:'Top 3 por cada equipo' },
+  { id:'supVtas',   icon:'🎖️', label:'Top Supervisores',  desc:'Por ventas totales' },
+  { id:'supMeta',   icon:'📊', label:'Sup. por % Meta',   desc:'Cumplimiento de meta' },
+  { id:'rev',       icon:'🚀', label:'Revelación',        desc:'Mejor nuevo (≤60d)' },
+  { id:'crec',      icon:'📈', label:'Mayor Crecimiento', desc:'Mayor incremento vs mes anterior' },
+  { id:'racha',     icon:'🔥', label:'Racha Activa',      desc:'Más días consecutivos vendiendo' },
+  { id:'ticket',    icon:'💎', label:'Rey del Ticket',    desc:'Mayor ARPU del mes' },
+  { id:'diario',    icon:'⚡', label:'Cierre del Día',    desc:'Top del día específico' },
+  { id:'meta',      icon:'🎯', label:'Primero en Meta',   desc:'Quién cumplió meta primero' },
 ];
 
 // ====================================================================
@@ -1330,7 +1389,8 @@ let state = {
   topId: 'global',
   format: '16x9',
   cantidad: 3,
-  tema: 'gold',  // gold | vibrant | neon
+  tema: 'gold',
+  stickers: 'off', // off | on
   mes: new Date().getMonth() + 1,
   anio: new Date().getFullYear(),
   modo: 'mes',
@@ -1382,6 +1442,16 @@ function initUI() {
       el.classList.add('active');
       aplicarTema();
       render(); // re-render para reaplicar clases
+    };
+  });
+
+  // Stickers chips
+  document.querySelectorAll('#stickers-chips .chip').forEach(el => {
+    el.onclick = () => {
+      state.stickers = el.dataset.stickers;
+      document.querySelectorAll('#stickers-chips .chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      render();
     };
   });
 
@@ -1464,7 +1534,7 @@ function applyFormat() {
 
 function aplicarTema() {
   // Aplica clase de tema al body para que CSS variables cambien
-  document.body.classList.remove('theme-gold', 'theme-vibrant', 'theme-neon');
+  document.body.classList.remove('theme-gold', 'theme-vibrant', 'theme-neon', 'theme-editorial', 'theme-gradient');
   document.body.classList.add('theme-' + state.tema);
 }
 
@@ -1910,11 +1980,15 @@ function procesarDatos() {
 
     if (!porAgente[v.ejecutivo]) {
       const p = plantilla[v.ejecutivo] || {};
+      // Asignar centro con fallback: plantilla > mapaCentroSup > centro del supervisor original
+      let centro = p.centro || mapaCentroSup[v.supervisor] || '';
+      // Normalizar: a veces puede venir como "JV" o "CC2" con espacios
+      if (centro) centro = String(centro).trim().toUpperCase();
       porAgente[v.ejecutivo] = {
         nombre: v.ejecutivo,
         ventas: 0,
         supervisor: v.supervisor,
-        centro: p.centro || mapaCentroSup[v.supervisor] || '',
+        centro: centro,
         fecha_ingreso: p.fecha_ingreso || null,
         fechas: []
       };
@@ -2086,15 +2160,35 @@ function render() {
     titleText = `RANKING POR % META${state.centro ? ' · ' + state.centro : ''}`;
     kickerText = 'EXPERTCELL · CUMPLIMIENTO DE META';
   } else if (usaCantidad) {
-    titleText = `TOP ${state.cantidad} ${state.topId === 'global' ? 'GLOBAL' : state.topId === 'equipo' ? (state.supervisor || 'EQUIPO').toUpperCase() : ''}`;
+    // Título dinámico para Top Global considerando filtros
+    let ambito = 'GLOBAL';
+    if (state.supervisor) {
+      ambito = state.supervisor.toUpperCase();
+    } else if (state.centro) {
+      ambito = state.centro === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ JV';
+    }
+    titleText = `TOP ${state.cantidad} ${ambito}`;
     kickerText = `EXPERTCELL · LOS ${state.cantidad} MEJORES`;
   } else {
     kickerText = `EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}`;
   }
 
+  // Stickers de celebración (opcional)
+  const stickersHTML = state.stickers === 'on' ? `
+    <div class="sticker confetti confetti-1">🎉</div>
+    <div class="sticker confetti confetti-2">🎊</div>
+    <div class="sticker confetti confetti-3">⭐</div>
+    <div class="sticker confetti confetti-4">✨</div>
+    <div class="sticker confetti confetti-5">🎉</div>
+    <div class="sticker confetti confetti-6">⭐</div>
+    <div class="sticker badge badge-fire">¡FUEGO!</div>
+    <div class="sticker badge badge-top">¡TOP!</div>
+  ` : '';
+
   const headerHTML = `
     <div class="corner-tl"></div><div class="corner-tr"></div>
     <div class="corner-bl"></div><div class="corner-br"></div>
+    ${stickersHTML}
     <div class="top-header">
       <div class="top-kicker">${kickerText}</div>
       <div class="top-title">${titleText}</div>
@@ -2104,24 +2198,9 @@ function render() {
 
   // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
   const soloTops = ['rev','crec','ticket','meta'];
-  const listaTops = ['equipo', 'supVtas', 'supMeta']; // siempre lista vertical
+  const listaTops = ['supVtas', 'supMeta']; // siempre lista vertical
 
   let bodyHTML = '';
-
-  // ========== CASO ESPECIAL: Top por equipo SIN supervisor seleccionado ==========
-  if (state.topId === 'equipo' && !state.supervisor) {
-    bodyHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">👑</div>
-        <div class="empty-state-msg" style="color:#fbbf24;">
-          <strong>Selecciona un supervisor</strong><br>
-          <span style="font-size:12px; color:#888;">Para mostrar el top de un equipo,<br>elige primero en "Filtros → Supervisor"</span>
-        </div>
-      </div>
-    `;
-    canvas.innerHTML = headerHTML + bodyHTML;
-    return;
-  }
 
   // ========== CASO ESPECIAL: Resumen por Centro ==========
   if (state.topId === 'resumenc') {
