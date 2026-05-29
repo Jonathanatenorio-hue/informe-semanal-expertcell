@@ -332,31 +332,31 @@
   /* Podio multi-fila (cuando hay muchos empates) */
   .podium-multi {
     flex:1; display:flex; flex-direction:column; justify-content:center;
-    gap:16px; padding:8px 24px 28px; z-index:2; position:relative;
+    gap:10px; padding:4px 20px 18px; z-index:2; position:relative;
   }
   .podium-fila {
     display:flex; align-items:flex-end; justify-content:center;
-    gap:12px; flex-wrap:wrap;
+    gap:10px; flex-wrap:wrap;
   }
   /* En fila superior, las barras pueden ser más bajas que en podio clásico para que quepan */
-  .podium-fila-top .spot .bar { height:auto !important; min-height:78px; padding:12px 10px; }
-  .podium-fila-bot .spot .bar { height:auto !important; min-height:62px; padding:10px 8px; }
+  .podium-fila-top .spot .bar { height:auto !important; min-height:62px; padding:8px 8px; }
+  .podium-fila-bot .spot .bar { height:auto !important; min-height:54px; padding:8px 8px; }
   .podium-fila .spot {
-    max-width:180px; min-width:130px;
+    max-width:170px; min-width:120px;
   }
   /* Cuando son muchas cards en una fila, achicarlas */
-  .podium-fila .spot .bar { width:118px; }
+  .podium-fila .spot .bar { width:108px; }
   .podium-fila .spot .agent-name {
-    font-size:12px; max-width:160px; line-height:1.2;
+    font-size:11px; max-width:150px; line-height:1.15;
     margin-bottom:2px; word-wrap:break-word; overflow-wrap:break-word;
   }
-  .podium-fila .spot .agent-team { font-size:9px; margin-bottom:6px; letter-spacing:1px; }
-  .podium-fila .spot .big-num { font-size:38px !important; line-height:1; }
-  .podium-fila .spot.rank-1 .big-num { font-size:44px !important; }
-  .podium-fila .spot .unit { font-size:8px; margin-top:2px; }
+  .podium-fila .spot .agent-team { font-size:8.5px; margin-bottom:4px; letter-spacing:0.8px; }
+  .podium-fila .spot .big-num { font-size:34px !important; line-height:1; }
+  .podium-fila .spot.rank-1 .big-num { font-size:40px !important; }
+  .podium-fila .spot .unit { font-size:7.5px; margin-top:1px; }
   /* Medalla más pequeña en multi-fila */
-  .podium-fila .spot .medal { width:48px; height:48px; font-size:20px; margin-bottom:8px; }
-  .podium-fila .spot.rank-1 .medal { width:58px; height:58px; font-size:24px; }
+  .podium-fila .spot .medal { width:42px; height:42px; font-size:18px; margin-bottom:6px; }
+  .podium-fila .spot.rank-1 .medal { width:52px; height:52px; font-size:22px; }
   .spot { display:flex; flex-direction:column; align-items:center; }
   .medal {
     width:64px; height:64px; border-radius:50%;
@@ -2583,6 +2583,7 @@ function procesarDatos() {
     let sinCentroFinal = 0;
     const supsNoVigentes = new Set();
     const ventasSinCentro = [];
+    const ventasSupNoVigenteEnMayo = []; // <-- las que el reporte sí cuenta pero yo no
 
     ventas.forEach(v => {
       totalVentas++;
@@ -2590,6 +2591,13 @@ function procesarDatos() {
       if (!supsVigentes.includes(v.supervisor)) {
         supNoVigente++;
         if (v.supervisor) supsNoVigentes.add(v.supervisor);
+        // Si la venta está en mayo, podría ser parte de las "perdidas"
+        if (v.fecha_activacion && v.fecha_activacion >= fechaIni && v.fecha_activacion <= fechaFin) {
+          ventasSupNoVigenteEnMayo.push({
+            sup: v.supervisor, ej: v.ejecutivo, fecha: v.fecha_activacion,
+            estatus: v.estatus, supAct: v.supervisor_act, supCan: v.supervisor_can
+          });
+        }
         return;
       }
       if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) {
@@ -2623,6 +2631,10 @@ function procesarDatos() {
     console.log('Supervisores vigentes:', supsVigentes);
     console.log('Supervisores ignorados (no vigentes):', Array.from(supsNoVigentes));
     if (ventasSinCentro.length > 0) console.log('Ventas sin centro asignado:', ventasSinCentro);
+    if (ventasSupNoVigenteEnMayo.length > 0) {
+      console.log('🚨 Ventas en mayo con sup NO vigente (las "perdidas"):', ventasSupNoVigenteEnMayo.length);
+      console.table(ventasSupNoVigenteEnMayo);
+    }
     console.log('═══════════════════════════════════════');
     // Calcular meta por centro = suma de metas de supervisores vigentes del centro
     const metaCentro = { CC2: 0, JV: 0 };
@@ -2918,12 +2930,13 @@ function aplicarManual() {
 function render() {
   const canvas = document.getElementById('canvas');
   // Determinar si necesitamos lista alta (Top 10 o 15)
-  // Determinar si necesitamos lista alta (Top 10 o 15, Resumen, o muchos empates en Top 3)
+  // Determinar si necesitamos lista alta (Top 10 o 15, Resumen, o empates en Top 3)
   const totalAgentesParaPodio = (state.agentes || []).filter(a => a.rank && a.rank <= 3).length;
-  const muchosEmpates = totalAgentesParaPodio >= 5; // ej. 2+3 = 5
+  // Cualquier empate produce multi-fila → mejor dar espacio extra al canvas
+  const empatesTop3 = totalAgentesParaPodio >= 4; // 4+ personas en top 3 = al menos un empate
   const tallList = ((state.cantidad >= 10) && !['rev','crec','ticket','meta','centro','resumenc'].includes(state.topId))
     || state.topId === 'resumenc'
-    || (muchosEmpates && !['rev','crec','ticket','meta','centro','resumenc','supVtas','supMeta'].includes(state.topId));
+    || (empatesTop3 && !['rev','crec','ticket','meta','centro','resumenc','supVtas','supMeta'].includes(state.topId));
   canvas.className = 'canvas-top ratio-' + state.format + ' layout-' + state.layout + (tallList ? ' tall-list' : '');
 
   if (!state.agentes || state.agentes.length === 0) {
@@ -3617,6 +3630,7 @@ async function descargarPNG() {
 // ====================================================================
 initUI();
 aplicarTema();
+window.state = state; // exponer para debug en consola
 // Datos de ejemplo iniciales (solo se ven mientras carga real)
 state.agentes = [
   { nombre:'NORWIN LOT ROJAS GARCIA', ventas:22, centro:'JV', supervisor:'CARMEN', rank:1 },
