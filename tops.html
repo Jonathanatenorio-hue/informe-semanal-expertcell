@@ -93,28 +93,28 @@
     --rank-3-bg: linear-gradient(135deg, #d4a878, #a07040 70%, #6a4720);
     --rank-3-color: #1a1a1a;
   }
-  /* ===== TEMA: GRADIENT (modern instagram) ===== */
+  /* ===== TEMA: GRADIENT AT&T (azul + blanco moderno) ===== */
   body.theme-gradient {
-    --canvas-bg-1: #6b2fc7;
-    --canvas-bg-2: #c73d9a;
-    --canvas-bg-3: #ff7a45;
-    --canvas-glow-top: rgba(255,255,255,0.15);
-    --canvas-glow-bot: rgba(255,255,255,0.05);
-    --canvas-dot: rgba(255,255,255,0.08);
+    --canvas-bg-1: #00A8E0;
+    --canvas-bg-2: #0077C8;
+    --canvas-bg-3: #003B7A;
+    --canvas-glow-top: rgba(255,255,255,0.2);
+    --canvas-glow-bot: rgba(0,168,224,0.18);
+    --canvas-dot: rgba(255,255,255,0.06);
     --canvas-corner: rgba(255,255,255,0.85);
     --canvas-border: rgba(255,255,255,0.35);
     --accent-1: #ffffff;
-    --accent-2: #ffe7c2;
-    --accent-3: #ffd494;
-    --accent-dark: #4a1a8a;
-    --accent-rgb: 255, 231, 194;
+    --accent-2: #cfe9f8;
+    --accent-3: #a8d4f0;
+    --accent-dark: #003B7A;
+    --accent-rgb: 207, 233, 248;
     --title-font: 'Outfit', sans-serif;
     --num-font: 'Outfit', sans-serif;
-    --rank-1-bg: linear-gradient(135deg, #fff, #ffe7c2 60%, #ffb874);
-    --rank-1-color: #4a1a8a;
-    --rank-2-bg: linear-gradient(135deg, #f0f0ff, #d4d4ff 70%, #a0a0e8);
-    --rank-2-color: #2a1a4a;
-    --rank-3-bg: linear-gradient(135deg, #ffd7e8, #ff9ec5 70%, #c75a8e);
+    --rank-1-bg: linear-gradient(135deg, #fff, #cfe9f8 60%, #75bce4);
+    --rank-1-color: #003B7A;
+    --rank-2-bg: linear-gradient(135deg, #e8f4fd, #b5d8f0 70%, #75a8d8);
+    --rank-2-color: #003B7A;
+    --rank-3-bg: linear-gradient(135deg, #d4e8f8, #92bee0 70%, #4a86b8);
     --rank-3-color: #fff;
   }
   /* ===== TEMA: NEON (esports) ===== */
@@ -288,9 +288,15 @@
   .ratio-16x9.tall-list { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:30px; }
   .ratio-1x1.tall-list { aspect-ratio:auto; width:720px; height:auto; min-height:720px; padding-bottom:30px; }
   .ratio-9x16.tall-list { aspect-ratio:auto; width:495px; height:auto; min-height:880px; padding-bottom:30px; }
+  /* Resumen Centro siempre con buen padding inferior para que el ranking respire */
+  .ratio-16x9.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
+  .ratio-1x1.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
+  .ratio-9x16.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
 
   /* HEADER del top */
   .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
+  /* Cuando stickers están activos, hay que dejar espacio arriba para la cinta */
+  .canvas-top:has(.sticker-ribbon) .top-header { padding-top:64px; }
   .top-kicker {
     font-size:11px; letter-spacing:6px; color:var(--accent-2); font-weight:600;
     margin-bottom:8px;
@@ -480,6 +486,75 @@
   .centro-num { font-family:'Anton'; font-size:82px; color:var(--accent-1); margin-top:16px; line-height:1; }
   .centro-card.ganador .centro-num { color:var(--accent-1); text-shadow:0 0 20px rgba(var(--accent-rgb),0.5); }
   .centro-lbl { font-size:10px; letter-spacing:2.5px; color:var(--text-soft); margin-top:4px; text-transform:uppercase; }
+  .centro-detalle {
+    font-size:11px; color:var(--accent-2); letter-spacing:1px;
+    margin-top:10px; padding-top:8px; border-top:1px solid rgba(var(--accent-rgb),0.2);
+    font-weight:600;
+  }
+
+  /* ============ CARRERA A META (tabla) ============ */
+  .carrera-wrap {
+    flex:1; display:flex; flex-direction:column; padding:6px 28px 18px;
+    z-index:2; position:relative; min-height:0;
+  }
+  .carrera-table {
+    background:rgba(var(--accent-rgb),0.04); border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:10px; padding:6px; display:flex; flex-direction:column; gap:3px;
+    flex:1; overflow:hidden;
+  }
+  .carrera-header, .carrera-row {
+    display:grid; grid-template-columns:34px minmax(0, 2.2fr) minmax(0, 1.4fr) 70px 80px 60px;
+    gap:10px; align-items:center; padding:6px 10px; border-radius:6px;
+  }
+  .carrera-header {
+    background:rgba(var(--accent-rgb),0.15);
+    color:var(--accent-1); font-family:'Sora'; font-weight:700;
+    font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+    border-bottom:1px solid rgba(var(--accent-rgb),0.3);
+  }
+  .carrera-row {
+    background:rgba(var(--accent-rgb),0.03);
+    border-left:2px solid rgba(var(--accent-rgb),0.3);
+  }
+  .carrera-row.first {
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.25), rgba(var(--accent-rgb),0.04));
+    border-left-color:var(--accent-1);
+  }
+  .carrera-row.second {
+    background:rgba(200,200,200,0.08);
+    border-left-color:#c8c8c8;
+  }
+  .carrera-row.third {
+    background:rgba(176,111,58,0.08);
+    border-left-color:#b06f3a;
+  }
+  .carrera-pos {
+    font-family:'Anton'; font-size:18px; color:var(--accent-2); text-align:center;
+  }
+  .carrera-row.first .carrera-pos { color:var(--accent-1); font-size:20px; }
+  .carrera-name {
+    font-family:'Sora'; font-weight:700; font-size:12px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  }
+  .carrera-centro {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2); letter-spacing:0.5px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+  }
+  .carrera-meta, .carrera-fecha, .carrera-vtas {
+    font-family:'Anton'; font-size:16px; color:#fff; text-align:center;
+  }
+  .carrera-fecha { color:var(--accent-1); }
+  .carrera-meta { color:var(--text-soft); font-size:14px; }
+  /* Ajustes 9:16 */
+  .ratio-9x16 .carrera-wrap { padding:6px 14px 18px; }
+  .ratio-9x16 .carrera-header, .ratio-9x16 .carrera-row {
+    grid-template-columns:26px minmax(0, 2fr) 60px 50px;
+    gap:6px; padding:5px 8px;
+  }
+  .ratio-9x16 .carrera-header > div:nth-child(3),
+  .ratio-9x16 .carrera-row > div:nth-child(3) { display:none; } /* ocultar centro */
+  .ratio-9x16 .carrera-header > div:nth-child(6),
+  .ratio-9x16 .carrera-row > div:nth-child(6) { display:none; } /* ocultar vtas */
   .centro-vs {
     font-family:'Anton'; font-size:48px; color:var(--accent-2);
     text-shadow:0 0 18px rgba(var(--accent-rgb),0.5);
@@ -506,13 +581,16 @@
 
   /* ============ RESUMEN POR CENTRO ============ */
   /* Layout: 3 columnas de mini-podios, ranking abajo en barra horizontal */
+  /* Crece naturalmente con el contenido (canvas tall-list permite altura auto) */
   .resumen-wrap {
-    flex:1; display:flex; flex-direction:column; gap:16px;
-    padding:8px 24px 22px; z-index:2; position:relative; min-height:0;
+    display:flex; flex-direction:column; gap:14px;
+    padding:8px 24px 22px; z-index:2; position:relative;
   }
   .resumen-grid {
     display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;
-    align-content:start; min-height:0;
+    /* fila auto: cada fila se ajusta al contenido más alto de su fila */
+    grid-auto-rows:auto;
+    align-items:stretch;
   }
   .mini-card {
     background:linear-gradient(180deg, rgba(var(--accent-rgb),0.08), rgba(0,0,0,0.4));
@@ -548,7 +626,14 @@
   .mini-pct.plow { background:rgba(220,38,38,0.18); color:#fca5a5; border:1px solid rgba(220,38,38,0.3); }
   .mini-podio {
     display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;
+    flex:1; min-height:0; align-content:start;
   }
+  /* Cuando hay 4 elementos (empate en 3°), 4 columnas */
+  .mini-podio.n-4 { grid-template-columns:repeat(4, 1fr); }
+  /* Cuando hay 5 elementos, mantener 3 cols y el último ocupa media fila */
+  .mini-podio.n-5 { grid-template-columns:repeat(3, 1fr); }
+  /* Para 6, 3 columnas se ven bien */
+  .mini-podio.n-6 { grid-template-columns:repeat(3, 1fr); }
   .mini-spot {
     text-align:center; padding:8px 4px 10px;
     background:rgba(var(--accent-rgb),0.05); border-radius:8px;
@@ -643,57 +728,72 @@
   /* En 1:1 cuadrado: ranking abajo */
   .ratio-1x1 .resumen-wrap { grid-template-columns:1fr; }
 
-  /* ============ STICKERS DE CELEBRACIÓN ============ */
-  .sticker {
+  /* ============ STICKERS SVG PROFESIONALES ============ */
+  .sticker-laurel, .sticker-star, .sticker-diamond, .sticker-burst, .sticker-ribbon {
     position:absolute; z-index:5; pointer-events:none;
-    animation:stickerFloat 3s ease-in-out infinite;
   }
-  .sticker.confetti {
-    font-size:32px;
-    filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+  .sticker-laurel { color:var(--accent-1); opacity:0.85; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.35)); }
+  .sticker-laurel svg { width:100%; height:100%; }
+  .sticker-laurel-l { top:30%; left:3%; width:55px; height:90px; }
+  .sticker-laurel-r { top:30%; right:3%; width:55px; height:90px; }
+
+  .sticker-star { color:var(--accent-1); filter:drop-shadow(0 2px 6px rgba(0,0,0,0.4)); animation:stickerPulse 2.4s ease-in-out infinite; }
+  .sticker-star svg { width:100%; height:100%; }
+  .sticker-star-1 { top:7%; left:11%; width:26px; height:26px; animation-delay:0s; }
+  .sticker-star-2 { top:9%; right:13%; width:32px; height:32px; animation-delay:0.5s; }
+  .sticker-star-3 { bottom:22%; left:6%; width:22px; height:22px; animation-delay:1s; }
+  .sticker-star-4 { bottom:18%; right:8%; width:28px; height:28px; animation-delay:1.5s; }
+  @keyframes stickerPulse {
+    0%, 100% { transform:scale(1); opacity:1; }
+    50% { transform:scale(1.18); opacity:0.85; }
   }
-  .confetti-1 { top:6%; left:10%; animation-delay:0s; transform:rotate(-15deg); }
-  .confetti-2 { top:8%; right:14%; animation-delay:0.4s; transform:rotate(20deg); font-size:38px; }
-  .confetti-3 { top:38%; left:4%; animation-delay:0.8s; transform:rotate(-25deg); font-size:28px; }
-  .confetti-4 { top:55%; right:6%; animation-delay:1.2s; transform:rotate(15deg); font-size:30px; }
-  .confetti-5 { bottom:18%; left:8%; animation-delay:1.6s; transform:rotate(-10deg); font-size:34px; }
-  .confetti-6 { bottom:25%; right:10%; animation-delay:2s; transform:rotate(25deg); font-size:26px; }
-  @keyframes stickerFloat {
-    0%, 100% { transform:translateY(0) rotate(var(--r, 0deg)); }
-    50% { transform:translateY(-8px) rotate(calc(var(--r, 0deg) + 5deg)); }
+
+  .sticker-diamond { color:var(--accent-2); filter:drop-shadow(0 3px 8px rgba(0,0,0,0.45)); }
+  .sticker-diamond svg { width:100%; height:100%; }
+  .sticker-diamond-1 { top:14%; left:6%; width:22px; height:22px; transform:rotate(-12deg); }
+  .sticker-diamond-2 { top:18%; right:6%; width:26px; height:26px; transform:rotate(15deg); }
+
+  .sticker-burst { color:var(--accent-1); filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5)); opacity:0.9; }
+  .sticker-burst svg { width:100%; height:100%; }
+  .sticker-burst-1 { top:42%; left:2.5%; width:24px; height:24px; }
+  .sticker-burst-2 { top:42%; right:2.5%; width:24px; height:24px; }
+
+  /* Cinta TOP PERFORMER */
+  .sticker-ribbon {
+    top:8px; left:50%; transform:translateX(-50%) rotate(-2deg);
+    width:200px; height:42px; color:var(--accent-2);
+    filter:drop-shadow(0 6px 14px rgba(0,0,0,0.5));
+    display:flex; align-items:center; justify-content:center;
   }
-  /* Badges con texto - fijos en posiciones llamativas */
-  .sticker.badge {
-    padding:8px 18px; border-radius:24px;
-    font-family:'Anton', sans-serif; font-size:18px; letter-spacing:2px;
-    color:#fff; text-shadow:0 2px 4px rgba(0,0,0,0.4);
-    box-shadow:0 8px 20px rgba(0,0,0,0.3), inset 0 -2px 4px rgba(0,0,0,0.15);
-    transform:rotate(-8deg);
+  .sticker-ribbon svg { position:absolute; inset:0; width:100%; height:100%; }
+  .sticker-ribbon-text {
+    position:relative; z-index:1;
+    font-family:'Anton', sans-serif; font-size:15px; letter-spacing:3px;
+    color:var(--accent-dark); text-shadow:0 1px 1px rgba(255,255,255,0.3);
+    padding:4px 12px;
   }
-  .badge-fire {
-    top:12%; left:18%;
-    background:linear-gradient(135deg, #ff4444, #ff7700);
-    border:2px solid #fff;
-  }
-  .badge-fire::before { content:'🔥 '; }
-  .badge-top {
-    top:14%; right:18%;
-    background:linear-gradient(135deg, #ffd700, #ff8800);
-    border:2px solid #fff;
-    transform:rotate(8deg);
-    color:#3a2100;
-    text-shadow:0 1px 2px rgba(255,255,255,0.4);
-  }
-  .badge-top::before { content:'👑 '; }
-  /* Variantes posicionales para vertical (9:16) */
-  .ratio-9x16 .sticker.confetti { font-size:24px; }
-  .ratio-9x16 .badge-fire, .ratio-9x16 .badge-top {
-    font-size:14px; padding:6px 12px;
-  }
-  .ratio-9x16 .confetti-1 { top:4%; left:6%; }
-  .ratio-9x16 .confetti-2 { top:5%; right:6%; }
-  .ratio-9x16 .badge-fire { top:24%; left:8%; }
-  .ratio-9x16 .badge-top { top:25%; right:8%; }
+
+  /* Ajustes 9:16 vertical */
+  .ratio-9x16 .sticker-laurel-l, .ratio-9x16 .sticker-laurel-r { width:42px; height:70px; top:32%; }
+  .ratio-9x16 .sticker-ribbon { width:160px; height:38px; }
+  .ratio-9x16 .sticker-ribbon-text { font-size:12px; letter-spacing:2px; }
+  .ratio-9x16 .sticker-star { transform:scale(0.85); }
+
+  /* En 1:1 cuadrado: stickers un poco más pequeños */
+  .ratio-1x1 .sticker-laurel-l, .ratio-1x1 .sticker-laurel-r { width:50px; height:80px; }
+
+  /* En tema neon, stickers con glow extra */
+  body.theme-neon .sticker-star { filter:drop-shadow(0 0 10px var(--accent-2)) drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+  body.theme-neon .sticker-laurel { opacity:1; filter:drop-shadow(0 0 8px var(--accent-2)) drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+  body.theme-neon .sticker-diamond { filter:drop-shadow(0 0 8px var(--accent-2)); }
+
+  /* En tema editorial (claro), oscurecer un poco los stickers */
+  body.theme-editorial .sticker-laurel { color:#8a6f30; opacity:0.7; filter:none; }
+  body.theme-editorial .sticker-star { color:#c8a04a; filter:drop-shadow(0 1px 2px rgba(0,0,0,0.15)); }
+  body.theme-editorial .sticker-diamond { color:#8a6f30; }
+  body.theme-editorial .sticker-burst { color:#c8a04a; opacity:0.8; }
+  body.theme-editorial .sticker-ribbon { color:#c8a04a; }
+  body.theme-editorial .sticker-ribbon-text { color:#fff; text-shadow:0 1px 1px rgba(0,0,0,0.2); }
 
   /* ============ ESTILOS POR TEMA (acentos visuales) ============ */
 
@@ -856,12 +956,12 @@
   /* ===== TEMA GRADIENT: moderno instagram con glassmorphism ===== */
   body.theme-gradient .canvas-top {
     background:
-      radial-gradient(ellipse at 0% 0%, #8a3eda 0%, transparent 50%),
-      radial-gradient(ellipse at 100% 100%, #ff7a45 0%, transparent 50%),
-      radial-gradient(ellipse at 50% 50%, #c73d9a 0%, transparent 70%),
-      linear-gradient(135deg, #6b2fc7 0%, #c73d9a 50%, #ff7a45 100%);
+      radial-gradient(ellipse at 0% 0%, rgba(255,255,255,0.18) 0%, transparent 55%),
+      radial-gradient(ellipse at 100% 100%, #003B7A 0%, transparent 60%),
+      radial-gradient(ellipse at 50% 50%, #0077C8 0%, transparent 70%),
+      linear-gradient(135deg, #00A8E0 0%, #0077C8 50%, #003B7A 100%);
     border:none;
-    box-shadow:inset 0 0 80px rgba(255,255,255,0.1);
+    box-shadow:inset 0 0 80px rgba(255,255,255,0.12);
   }
   body.theme-gradient .canvas-top::before {
     background-image:none; /* sin pattern, fondo limpio gradiente */
@@ -991,8 +1091,8 @@
   body.theme-gradient .centro-sub, body.theme-gradient .centro-lbl { color:rgba(255,255,255,0.85); }
   body.theme-gradient .centro-vs { color:#fff; font-family:'Outfit', sans-serif; }
   body.theme-gradient .centros-bar { border:1px solid rgba(255,255,255,0.4); }
-  body.theme-gradient .centros-bar-cc2 { background:linear-gradient(90deg, rgba(255,255,255,0.5), rgba(255,255,255,0.85)); color:#4a1a8a; }
-  body.theme-gradient .centros-bar-jv { background:linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,255,255,0.55)); color:#2a1a4a; }
+  body.theme-gradient .centros-bar-cc2 { background:linear-gradient(90deg, rgba(255,255,255,0.5), rgba(255,255,255,0.85)); color:#003B7A; }
+  body.theme-gradient .centros-bar-jv { background:linear-gradient(90deg, rgba(255,255,255,0.3), rgba(255,255,255,0.55)); color:#003B7A; }
   /* Resumen centro en gradient */
   body.theme-gradient .mini-card {
     background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
@@ -1031,7 +1131,7 @@
   body.theme-gradient .ranking-name { color:#fff; }
   body.theme-gradient .ranking-bar-wrap { background:rgba(0,0,0,0.25); }
   body.theme-gradient .ranking-bar { background:linear-gradient(90deg, rgba(255,255,255,0.7), #fff); }
-  body.theme-gradient .ranking-bar-val { color:#4a1a8a; }
+  body.theme-gradient .ranking-bar-val { color:#003B7A; }
   /* Empty state */
   body.theme-gradient .empty-state-msg { color:rgba(255,255,255,0.85) !important; }
   body.theme-gradient .empty-state-msg strong { color:#fff; }
@@ -1181,10 +1281,24 @@
   .team-list.n-10 .team-sub, .team-list.n-15 .team-sub { font-size:9px; margin-top:1px; }
   .team-val {
     font-family:'Anton'; font-size:32px; color:var(--accent-1); text-align:right; line-height:1;
+    display:flex; flex-direction:column; align-items:flex-end; justify-content:center;
   }
-  .team-list.n-10 .team-val, .team-list.n-15 .team-val { font-size:24px; }
+  .team-val-main {
+    font-family:'Anton', sans-serif; font-size:34px; color:var(--accent-1); line-height:0.9;
+  }
+  .team-val-sub {
+    font-family:'Sora', sans-serif; font-weight:500; font-size:11px; color:var(--accent-2);
+    letter-spacing:1px; margin-top:3px; opacity:0.85;
+  }
+  .team-row.first .team-val-main { font-size:42px; }
+  .team-row.first .team-val-sub { font-size:12px; }
+  .team-list.n-10 .team-val { font-size:24px; }
+  .team-list.n-10 .team-val-main { font-size:24px; }
+  .team-list.n-10 .team-val-sub { font-size:10px; margin-top:2px; }
   .team-row.first .team-val { font-size:38px; }
-  .team-list.n-10 .team-row.first .team-val, .team-list.n-15 .team-row.first .team-val { font-size:28px; }
+  .team-list.n-10 .team-row.first .team-val { font-size:28px; }
+  .team-list.n-10 .team-row.first .team-val-main { font-size:30px; }
+  .team-list.n-10 .team-row.first .team-val-sub { font-size:11px; }
 
   /* ==================== UTILIDADES ==================== */
   .small-help { font-size:11px; color:#666; margin-top:4px; line-height:1.4; }
@@ -1204,6 +1318,601 @@
   }
   .alert-error { background:rgba(220,38,38,0.1); border-color:#dc2626; color:#fca5a5; }
   .alert-info { background:rgba(var(--accent-rgb),0.06); border-color:var(--accent-2); color:var(--accent-1); }
+
+  /* ============================================ */
+  /* LAYOUT STAT BOARD (dashboard deportivo) */
+  /* ============================================ */
+  .stat-layout {
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    padding:14px 40px 24px; gap:14px; z-index:2; position:relative;
+  }
+  .stat-row {
+    display:grid; grid-template-columns:80px 1fr 120px; gap:20px;
+    align-items:center; padding:14px 18px;
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.06), rgba(0,0,0,0.25));
+    border:1px solid rgba(var(--accent-rgb),0.2);
+    border-radius:14px;
+  }
+  .stat-row.rank-1 {
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.22), rgba(0,0,0,0.25));
+    border:2px solid var(--accent-1);
+    box-shadow:0 8px 24px rgba(var(--accent-rgb),0.25);
+  }
+  .stat-row.rank-2 {
+    border-color:#c8c8c8;
+    background:linear-gradient(90deg, rgba(200,200,200,0.15), rgba(0,0,0,0.25));
+  }
+  .stat-row.rank-3 {
+    border-color:#b06f3a;
+    background:linear-gradient(90deg, rgba(176,111,58,0.18), rgba(0,0,0,0.25));
+  }
+  .stat-pos {
+    text-align:center; padding:8px 12px;
+    background:rgba(0,0,0,0.35); border-radius:10px;
+    border:1px solid rgba(var(--accent-rgb),0.3);
+  }
+  .stat-row.rank-1 .stat-pos {
+    background:var(--accent-1); border-color:var(--accent-1);
+  }
+  .stat-pos-num {
+    font-family:'Anton', sans-serif; font-size:32px;
+    color:var(--accent-1); line-height:0.9;
+  }
+  .stat-row.rank-1 .stat-pos-num { color:var(--accent-dark); }
+  .stat-row.rank-2 .stat-pos-num { color:#c8c8c8; }
+  .stat-row.rank-3 .stat-pos-num { color:#b06f3a; }
+  .stat-pos-lbl {
+    font-family:'Sora'; font-size:8px; color:var(--text-soft);
+    letter-spacing:2px; margin-top:2px; font-weight:600;
+  }
+  .stat-row.rank-1 .stat-pos-lbl { color:var(--accent-dark); }
+  .stat-info { min-width:0; }
+  .stat-name {
+    font-family:'Sora'; font-weight:800; font-size:17px; color:#fff;
+    line-height:1.1; margin-bottom:3px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .stat-row.rank-1 .stat-name { font-size:19px; }
+  .stat-team {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2);
+    letter-spacing:1.5px; text-transform:uppercase; font-weight:600;
+    margin-bottom:8px;
+  }
+  .stat-bar-wrap {
+    background:rgba(0,0,0,0.45); border-radius:6px; height:8px; overflow:hidden;
+    border:1px solid rgba(var(--accent-rgb),0.18);
+  }
+  .stat-bar {
+    height:100%; background:linear-gradient(90deg, var(--accent-3), var(--accent-1));
+    border-radius:6px; min-width:8px;
+    box-shadow:0 0 12px rgba(var(--accent-rgb),0.5);
+  }
+  .stat-row.rank-2 .stat-bar { background:linear-gradient(90deg, #888, #e8e8e8); }
+  .stat-row.rank-3 .stat-bar { background:linear-gradient(90deg, #7a4720, #e0a878); }
+  .stat-val { text-align:right; }
+  .stat-val-num {
+    font-family:'Anton', sans-serif; font-size:54px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-1px;
+  }
+  .stat-row.rank-1 .stat-val-num { font-size:64px; }
+  .stat-row.rank-2 .stat-val-num { color:#e8e8e8; }
+  .stat-row.rank-3 .stat-val-num { color:#e0a878; }
+  .stat-val-lbl {
+    font-family:'Sora'; font-size:9px; color:var(--text-soft);
+    letter-spacing:2.5px; text-transform:uppercase; font-weight:600; margin-top:2px;
+  }
+  /* 9:16 vertical stat */
+  .ratio-9x16 .stat-layout { padding:10px 20px 18px; gap:10px; }
+  .ratio-9x16 .stat-row { grid-template-columns:48px 1fr 70px; gap:10px; padding:10px 12px; }
+  .ratio-9x16 .stat-pos-num { font-size:20px; }
+  .ratio-9x16 .stat-name { font-size:13px; }
+  .ratio-9x16 .stat-row.rank-1 .stat-name { font-size:14px; }
+  .ratio-9x16 .stat-team { font-size:8px; letter-spacing:1px; }
+  .ratio-9x16 .stat-val-num { font-size:30px; }
+  .ratio-9x16 .stat-row.rank-1 .stat-val-num { font-size:38px; }
+  .ratio-9x16 .stat-val-lbl { font-size:7px; letter-spacing:1.5px; }
+
+  /* ============================================ */
+  /* LAYOUT CINEMA (cartel de película) */
+  /* ============================================ */
+  .cinema-layout {
+    flex:1; display:grid; grid-template-columns:1.5fr 1fr; gap:24px;
+    padding:10px 32px 24px; z-index:2; position:relative; align-items:stretch;
+  }
+  .cinema-main {
+    background:linear-gradient(180deg, rgba(var(--accent-rgb),0.12), rgba(0,0,0,0.55));
+    border:2px solid var(--accent-2);
+    border-radius:16px; padding:18px 20px 22px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    position:relative; overflow:hidden;
+    box-shadow:0 16px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .cinema-main::before {
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(circle at 50% 0%, rgba(var(--accent-rgb),0.28), transparent 60%);
+    pointer-events:none;
+  }
+  .cinema-rank-badge {
+    position:absolute; top:14px; left:14px;
+    font-family:'Anton', sans-serif; font-size:20px;
+    background:var(--accent-1); color:var(--accent-dark);
+    padding:4px 14px; border-radius:20px;
+    letter-spacing:2px; z-index:2;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+  }
+  .cinema-avatar-wrap {
+    position:relative; width:130px; height:130px;
+    margin-bottom:14px; z-index:1;
+  }
+  .cinema-avatar {
+    width:100%; height:100%; border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, var(--accent-1), var(--accent-2) 70%, var(--accent-3));
+    color:var(--accent-dark);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Anton', sans-serif; font-size:56px; letter-spacing:-2px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.5), inset 0 -4px 8px rgba(0,0,0,0.2);
+    border:3px solid rgba(255,255,255,0.35);
+    position:relative; z-index:1;
+  }
+  .cinema-glow {
+    position:absolute; inset:-15px; border-radius:50%;
+    background:radial-gradient(circle, rgba(var(--accent-rgb),0.4), transparent 65%);
+    z-index:0;
+    animation:cinemaGlow 2.5s ease-in-out infinite;
+  }
+  @keyframes cinemaGlow {
+    0%, 100% { opacity:0.7; transform:scale(1); }
+    50% { opacity:1; transform:scale(1.08); }
+  }
+  .cinema-name {
+    font-family:var(--title-font); font-weight:800; font-size:24px;
+    color:#fff; text-align:center; line-height:1.1; letter-spacing:-0.5px;
+    margin-bottom:6px; z-index:1; position:relative;
+    text-shadow:0 4px 12px rgba(0,0,0,0.4);
+    max-width:100%; word-wrap:break-word;
+  }
+  .cinema-team {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2);
+    letter-spacing:3px; text-transform:uppercase; font-weight:600;
+    margin-bottom:14px; z-index:1; position:relative;
+  }
+  .cinema-rating {
+    display:flex; flex-direction:column; align-items:center;
+    background:rgba(0,0,0,0.4); padding:10px 26px; border-radius:14px;
+    border:1.5px solid rgba(var(--accent-rgb),0.45);
+    z-index:1; position:relative;
+  }
+  .cinema-rating-num {
+    font-family:'Anton', sans-serif; font-size:62px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-2px;
+    text-shadow:0 0 18px rgba(var(--accent-rgb),0.4);
+  }
+  .cinema-rating-lbl {
+    font-family:'Sora'; font-size:10px; color:var(--text-soft);
+    letter-spacing:3px; text-transform:uppercase; font-weight:600; margin-top:2px;
+  }
+  .cinema-supporting {
+    background:linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.6));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:14px; padding:14px 16px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .cinema-supporting-lbl {
+    font-family:'Sora'; font-size:9px; color:var(--accent-2);
+    letter-spacing:2.5px; text-transform:uppercase; font-weight:700;
+    text-align:center; padding-bottom:6px;
+    border-bottom:1px solid rgba(var(--accent-rgb),0.2);
+  }
+  .cinema-supporting-list {
+    display:flex; flex-direction:column; gap:8px; flex:1; justify-content:center;
+  }
+  .cinema-supporting-item {
+    background:rgba(var(--accent-rgb),0.04);
+    border-left:2px solid var(--accent-3);
+    padding:8px 10px; border-radius:6px;
+  }
+  .cinema-supporting-item.rank-2 { border-left-color:#c8c8c8; }
+  .cinema-supporting-item.rank-3 { border-left-color:#b06f3a; }
+  .cinema-supp-rank {
+    font-family:'Anton', sans-serif; font-size:14px; color:var(--accent-2);
+    display:inline-block; margin-right:6px;
+  }
+  .cinema-supp-name {
+    font-family:'Sora'; font-weight:700; font-size:11px; color:#fff;
+    display:block; margin-top:1px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .cinema-supp-team {
+    font-family:'Sora'; font-size:8px; color:var(--accent-2);
+    letter-spacing:1.5px; text-transform:uppercase; margin-top:2px;
+  }
+  .cinema-supp-val {
+    font-family:'Anton', sans-serif; font-size:18px; color:var(--accent-1);
+    margin-top:4px;
+  }
+  /* 9:16 vertical cinema */
+  .ratio-9x16 .cinema-layout { grid-template-columns:1fr; gap:12px; padding:6px 18px 18px; }
+  .ratio-9x16 .cinema-avatar-wrap { width:100px; height:100px; }
+  .ratio-9x16 .cinema-avatar { font-size:42px; }
+  .ratio-9x16 .cinema-name { font-size:18px; }
+  .ratio-9x16 .cinema-rating-num { font-size:42px; }
+  /* 1:1 cinema */
+  .ratio-1x1 .cinema-layout { grid-template-columns:1fr; gap:14px; }
+
+  /* ============================================ */
+  /* LAYOUT TROFEO CENTRADO (placa de premio) */
+  /* ============================================ */
+  .trofeo-layout {
+    flex:1; display:flex; flex-direction:column; align-items:center;
+    padding:6px 40px 24px; gap:18px; z-index:2; position:relative; justify-content:center;
+  }
+  .trofeo-placa {
+    width:100%; max-width:580px;
+    background:linear-gradient(180deg, rgba(var(--accent-rgb),0.15), rgba(0,0,0,0.55));
+    border:3px double var(--accent-2);
+    border-radius:18px; padding:20px 32px 24px;
+    display:flex; flex-direction:column; align-items:center;
+    position:relative; overflow:hidden;
+    box-shadow:0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .trofeo-placa::before {
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb),0.3), transparent 60%);
+    pointer-events:none;
+  }
+  .trofeo-deco-top, .trofeo-deco-bottom {
+    height:1px; width:80%;
+    background:linear-gradient(90deg, transparent, var(--accent-2), transparent);
+  }
+  .trofeo-deco-top { margin-bottom:10px; }
+  .trofeo-deco-bottom { margin-top:10px; }
+  .trofeo-medalla {
+    width:92px; height:92px; margin-bottom:10px;
+    filter:drop-shadow(0 8px 20px rgba(var(--accent-rgb),0.5));
+    z-index:1;
+  }
+  .trofeo-kicker {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2);
+    letter-spacing:6px; text-transform:uppercase; font-weight:700;
+    margin-bottom:6px; z-index:1; position:relative;
+  }
+  .trofeo-name {
+    font-family:var(--title-font); font-weight:800; font-size:30px;
+    color:#fff; text-align:center; line-height:1.1; letter-spacing:-0.5px;
+    margin-bottom:8px; z-index:1; position:relative;
+    text-shadow:0 4px 12px rgba(0,0,0,0.4);
+    max-width:100%; word-wrap:break-word;
+  }
+  .trofeo-team {
+    font-family:'Sora'; font-size:11px; color:var(--accent-1);
+    letter-spacing:2.5px; text-transform:uppercase; font-weight:600;
+    z-index:1; position:relative;
+  }
+  .trofeo-divider {
+    font-family:'Sora'; font-size:10px; color:var(--accent-3);
+    letter-spacing:8px; margin:10px 0;
+    z-index:1; position:relative;
+  }
+  .trofeo-val {
+    display:flex; align-items:baseline; gap:12px;
+    z-index:1; position:relative;
+  }
+  .trofeo-num {
+    font-family:'Anton', sans-serif; font-size:74px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-2px;
+    text-shadow:0 0 24px rgba(var(--accent-rgb),0.5);
+  }
+  .trofeo-lbl {
+    font-family:'Sora'; font-size:11px; color:var(--text-soft);
+    letter-spacing:3px; text-transform:uppercase; font-weight:600;
+  }
+  /* Honoríficos: lista pequeña abajo */
+  .trofeo-honor {
+    width:100%; max-width:580px;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  .trofeo-honor-lbl {
+    font-family:'Sora'; font-size:9px; color:var(--accent-3);
+    letter-spacing:5px; text-transform:uppercase; font-weight:600;
+  }
+  .trofeo-honor-list {
+    display:flex; flex-direction:row; gap:12px; flex-wrap:wrap; justify-content:center;
+    width:100%;
+  }
+  .trofeo-honor-item {
+    display:flex; align-items:center; gap:8px;
+    background:rgba(var(--accent-rgb),0.05);
+    border:1px solid rgba(var(--accent-rgb),0.2);
+    padding:6px 12px; border-radius:8px;
+  }
+  .trofeo-honor-rank {
+    font-family:'Anton', sans-serif; font-size:14px; color:var(--accent-2);
+  }
+  .trofeo-honor-name {
+    font-family:'Sora'; font-weight:700; font-size:11px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;
+  }
+  .trofeo-honor-val {
+    font-family:'Sora'; font-size:10px; color:var(--accent-2);
+    letter-spacing:1px;
+  }
+  /* 9:16 vertical trofeo */
+  .ratio-9x16 .trofeo-layout { padding:6px 18px 18px; gap:10px; }
+  .ratio-9x16 .trofeo-placa { padding:14px 18px 16px; }
+  .ratio-9x16 .trofeo-medalla { width:72px; height:72px; }
+  .ratio-9x16 .trofeo-name { font-size:20px; }
+  .ratio-9x16 .trofeo-num { font-size:52px; }
+  .ratio-9x16 .trofeo-honor-list { flex-direction:column; }
+
+  /* ============================================ */
+  /* LAYOUT CARDS VIBRANTES (estilo NBA/FIFA) */
+  /* ============================================ */
+  .cards-layout {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    gap:28px; padding:14px 30px 24px; z-index:2; position:relative;
+    flex-wrap:wrap;
+  }
+  .player-card {
+    width:200px; height:300px; position:relative;
+    border-radius:18px; padding:18px 16px;
+    display:flex; flex-direction:column; align-items:center;
+    transform:rotate(var(--tilt, 0deg));
+    transition:transform 0.3s ease;
+    overflow:hidden;
+    background:linear-gradient(160deg, rgba(var(--accent-rgb),0.18), rgba(0,0,0,0.55));
+    border:2px solid rgba(var(--accent-rgb),0.4);
+    box-shadow:0 12px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .player-card.rank-1 {
+    width:220px; height:330px;
+    background:linear-gradient(160deg, rgba(var(--accent-rgb),0.35), rgba(0,0,0,0.5));
+    border:3px solid var(--accent-1);
+    box-shadow:0 16px 40px rgba(var(--accent-rgb),0.4), 0 4px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .player-card.rank-2 {
+    border-color:#c8c8c8;
+    background:linear-gradient(160deg, rgba(200,200,200,0.18), rgba(0,0,0,0.55));
+  }
+  .player-card.rank-3 {
+    border-color:#b06f3a;
+    background:linear-gradient(160deg, rgba(176,111,58,0.2), rgba(0,0,0,0.55));
+  }
+  /* Halo de brillo en fondo */
+  .player-card-bg {
+    position:absolute; inset:0;
+    background:radial-gradient(circle at 50% 0%, rgba(var(--accent-rgb),0.3), transparent 65%);
+    pointer-events:none; z-index:0;
+  }
+  /* Número grande de ventas */
+  .player-card-num {
+    position:absolute; bottom:46px; right:14px;
+    font-family:'Anton', sans-serif; font-size:78px; line-height:0.9;
+    color:var(--accent-1); letter-spacing:-3px;
+    text-shadow:0 4px 12px rgba(0,0,0,0.55);
+    z-index:1;
+  }
+  .player-card.rank-1 .player-card-num { font-size:92px; color:var(--accent-1); }
+  .player-card.rank-2 .player-card-num { color:#e8e8e8; }
+  .player-card.rank-3 .player-card-num { color:#e0a878; }
+  /* Rank badge */
+  .player-card-rank {
+    position:absolute; top:10px; left:10px;
+    font-family:'Anton', sans-serif; font-size:18px;
+    background:var(--accent-1); color:var(--accent-dark);
+    padding:3px 10px; border-radius:14px;
+    letter-spacing:1px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+    z-index:2;
+  }
+  .player-card.rank-2 .player-card-rank { background:#e8e8e8; color:#333; }
+  .player-card.rank-3 .player-card-rank { background:#e0a878; color:#3a1e00; }
+  /* Avatar circular con iniciales */
+  .player-card-avatar {
+    width:74px; height:74px; border-radius:50%;
+    background:linear-gradient(135deg, var(--accent-1), var(--accent-3));
+    color:var(--accent-dark);
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Anton', sans-serif; font-size:32px; letter-spacing:-1px;
+    margin-top:6px; margin-bottom:14px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.4), inset 0 -3px 6px rgba(0,0,0,0.2);
+    border:2px solid rgba(255,255,255,0.3);
+    z-index:1;
+  }
+  .player-card.rank-1 .player-card-avatar {
+    width:84px; height:84px; font-size:36px;
+    box-shadow:0 8px 24px rgba(var(--accent-rgb),0.5), inset 0 -3px 6px rgba(0,0,0,0.2);
+  }
+  .player-card.rank-2 .player-card-avatar {
+    background:linear-gradient(135deg, #fff, #c8c8c8);
+    color:#333;
+  }
+  .player-card.rank-3 .player-card-avatar {
+    background:linear-gradient(135deg, #e0a878, #b06f3a);
+    color:#fff;
+  }
+  /* Nombre */
+  .player-card-name {
+    font-family:'Sora'; font-weight:800; font-size:13px; color:#fff;
+    text-align:center; line-height:1.2; margin-bottom:6px;
+    max-width:100%; word-wrap:break-word; overflow-wrap:break-word;
+    text-shadow:0 2px 4px rgba(0,0,0,0.5);
+    z-index:1;
+  }
+  .player-card.rank-1 .player-card-name { font-size:14px; }
+  /* Stats */
+  .player-card-stats {
+    display:flex; gap:5px; align-items:center; justify-content:center;
+    flex-wrap:wrap; z-index:1;
+  }
+  .pc-stat {
+    font-family:'Sora'; font-size:9px; color:var(--accent-2);
+    letter-spacing:1.5px; text-transform:uppercase; font-weight:600;
+  }
+  .pc-stat-sep { color:var(--text-soft); opacity:0.5; }
+  /* Label (VENTAS) abajo del número */
+  .player-card-label {
+    position:absolute; bottom:18px; right:18px;
+    font-family:'Sora'; font-size:9px; color:var(--text-soft);
+    letter-spacing:2.5px; text-transform:uppercase; font-weight:500;
+    z-index:1;
+  }
+  /* 9:16 vertical: cards una sobre otra */
+  .ratio-9x16 .cards-layout { flex-direction:column; gap:12px; padding:10px 16px 20px; }
+  .ratio-9x16 .player-card { width:90%; max-width:340px; height:auto; padding:14px; }
+  .ratio-9x16 .player-card.rank-1 { width:95%; max-width:360px; }
+  .ratio-9x16 .player-card-num { font-size:54px; bottom:14px; right:16px; }
+  .ratio-9x16 .player-card.rank-1 .player-card-num { font-size:64px; }
+  .ratio-9x16 .player-card-avatar { width:54px; height:54px; font-size:22px; margin-bottom:8px; }
+  .ratio-9x16 .player-card.rank-1 .player-card-avatar { width:64px; height:64px; font-size:26px; }
+  .ratio-9x16 .player-card-label { display:none; }
+  /* 1:1 cuadrado: cards más compactas */
+  .ratio-1x1 .player-card { width:175px; height:280px; }
+  .ratio-1x1 .player-card.rank-1 { width:190px; height:300px; }
+
+  /* Estilo cards en tema editorial */
+  body.theme-editorial .player-card {
+    background:linear-gradient(160deg, rgba(0,0,0,0.04), rgba(0,0,0,0.08));
+    border:1px solid #c0c0c0;
+    box-shadow:0 8px 20px rgba(0,0,0,0.12);
+  }
+  body.theme-editorial .player-card.rank-1 {
+    border:2px solid #8a6f30;
+    background:linear-gradient(160deg, rgba(200,160,74,0.12), rgba(0,0,0,0.04));
+  }
+  body.theme-editorial .player-card-num {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .player-card.rank-1 .player-card-num { color:#8a6f30; }
+  body.theme-editorial .player-card-name { color:#1a1a1a; text-shadow:none; }
+  body.theme-editorial .player-card-rank { color:#fff; }
+
+  /* Estilo cards en tema gradient (glass) */
+  body.theme-gradient .player-card {
+    background:rgba(255,255,255,0.15); backdrop-filter:blur(15px);
+    border:1.5px solid rgba(255,255,255,0.3);
+  }
+  body.theme-gradient .player-card.rank-1 {
+    background:rgba(255,255,255,0.28); border:2px solid #fff;
+  }
+  body.theme-gradient .player-card-num { color:#fff; }
+  body.theme-gradient .player-card-name { color:#fff; }
+
+  /* Estilo cards en tema neon */
+  body.theme-neon .player-card {
+    box-shadow:0 0 30px rgba(255,0,128,0.3), 0 12px 32px rgba(0,0,0,0.5);
+  }
+  body.theme-neon .player-card.rank-1 {
+    box-shadow:0 0 50px var(--accent-2), 0 16px 40px rgba(0,0,0,0.5);
+  }
+  body.theme-neon .player-card-num {
+    text-shadow:0 0 15px var(--accent-2), 0 4px 12px rgba(0,0,0,0.55);
+  }
+
+  /* ============================================ */
+  /* ADAPTACIONES DE TEMA PARA LAYOUTS NUEVOS */
+  /* ============================================ */
+  /* STAT BOARD en tema editorial */
+  body.theme-editorial .stat-row {
+    background:rgba(0,0,0,0.04); border:1px solid #c0c0c0;
+  }
+  body.theme-editorial .stat-row.rank-1 {
+    background:rgba(200,160,74,0.12); border-color:#8a6f30;
+  }
+  body.theme-editorial .stat-pos { background:rgba(0,0,0,0.05); border-color:#c0c0c0; }
+  body.theme-editorial .stat-row.rank-1 .stat-pos { background:#8a6f30; border-color:#8a6f30; color:#fff; }
+  body.theme-editorial .stat-pos-num { color:#1a1a1a; }
+  body.theme-editorial .stat-row.rank-1 .stat-pos-num { color:#fff; }
+  body.theme-editorial .stat-name {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-weight:700;
+  }
+  body.theme-editorial .stat-val-num {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-style:italic;
+  }
+  body.theme-editorial .stat-row.rank-1 .stat-val-num { color:#8a6f30; }
+  body.theme-editorial .stat-bar-wrap { background:#e8e3d6; }
+
+  /* STAT BOARD en tema gradient */
+  body.theme-gradient .stat-row {
+    background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+    backdrop-filter:blur(10px);
+  }
+  body.theme-gradient .stat-row.rank-1 {
+    background:rgba(255,255,255,0.3); border:2px solid #fff;
+  }
+  body.theme-gradient .stat-pos { background:rgba(0,0,0,0.3); }
+  body.theme-gradient .stat-row.rank-1 .stat-pos { background:#fff; }
+  body.theme-gradient .stat-pos-num { color:#fff; }
+  body.theme-gradient .stat-row.rank-1 .stat-pos-num { color:#003B7A; }
+  body.theme-gradient .stat-name { color:#fff; }
+  body.theme-gradient .stat-val-num { color:#fff; }
+
+  /* CINEMA en tema editorial */
+  body.theme-editorial .cinema-main {
+    background:linear-gradient(180deg, rgba(200,160,74,0.1), rgba(0,0,0,0.04));
+    border:2px solid #8a6f30;
+    box-shadow:0 12px 32px rgba(0,0,0,0.15);
+  }
+  body.theme-editorial .cinema-name {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .cinema-rating { background:rgba(0,0,0,0.04); border-color:#c0c0c0; }
+  body.theme-editorial .cinema-rating-num {
+    color:#8a6f30; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .cinema-supporting {
+    background:rgba(0,0,0,0.02); border:1px solid #c0c0c0;
+  }
+
+  /* CINEMA en tema gradient */
+  body.theme-gradient .cinema-main {
+    background:rgba(255,255,255,0.15); border:2px solid rgba(255,255,255,0.5);
+    backdrop-filter:blur(15px);
+  }
+  body.theme-gradient .cinema-name { color:#fff; }
+  body.theme-gradient .cinema-rating { background:rgba(0,0,0,0.25); border-color:rgba(255,255,255,0.4); }
+  body.theme-gradient .cinema-rating-num { color:#fff; }
+  body.theme-gradient .cinema-supporting { background:rgba(255,255,255,0.1); border-color:rgba(255,255,255,0.3); }
+
+  /* TROFEO en tema editorial */
+  body.theme-editorial .trofeo-placa {
+    background:linear-gradient(180deg, rgba(200,160,74,0.1), rgba(0,0,0,0.04));
+    border:3px double #8a6f30;
+    box-shadow:0 12px 32px rgba(0,0,0,0.15);
+  }
+  body.theme-editorial .trofeo-name {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .trofeo-kicker { color:#8a6f30; }
+  body.theme-editorial .trofeo-num {
+    color:#8a6f30; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .trofeo-honor-item { background:rgba(0,0,0,0.03); border-color:#c0c0c0; }
+  body.theme-editorial .trofeo-honor-name { color:#1a1a1a; }
+
+  /* TROFEO en tema gradient */
+  body.theme-gradient .trofeo-placa {
+    background:rgba(255,255,255,0.18); border:3px double rgba(255,255,255,0.7);
+    backdrop-filter:blur(15px);
+  }
+  body.theme-gradient .trofeo-name { color:#fff; }
+  body.theme-gradient .trofeo-num { color:#fff; }
+  body.theme-gradient .trofeo-honor-item { background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.35); }
+
+  /* TROFEO/CINEMA en tema neon: glows */
+  body.theme-neon .cinema-rating-num,
+  body.theme-neon .trofeo-num {
+    text-shadow:0 0 18px var(--accent-2), 0 0 36px var(--accent-2);
+  }
+  body.theme-neon .cinema-avatar,
+  body.theme-neon .cinema-main {
+    box-shadow:0 0 40px var(--accent-2), 0 12px 30px rgba(0,0,0,0.5);
+  }
+
 </style>
 </head>
 <body>
@@ -1236,14 +1945,26 @@
     </div>
 
     <div class="section">
-      <div class="section-title">Tema visual</div>
+      <div class="section-title">Diseño / Layout</div>
+      <div class="chips" id="layout-chips" style="flex-wrap:wrap;">
+        <div class="chip active" data-layout="podio">🏆 Podio Clásico</div>
+        <div class="chip" data-layout="cards">🎴 Cards</div>
+        <div class="chip" data-layout="stat">📊 Stat Board</div>
+        <div class="chip" data-layout="cinema">🎬 Cinema</div>
+        <div class="chip" data-layout="trofeo">🏅 Trofeo</div>
+      </div>
+      <div class="small-help" style="margin-top:6px;">5 diseños distintos · combina con cualquier color</div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Tema visual (color)</div>
       <div class="chips" id="tema-chips" style="flex-wrap:wrap;">
         <div class="chip active" data-tema="gold">🥇 Dorado</div>
         <div class="chip" data-tema="neon">🎮 Neón</div>
         <div class="chip" data-tema="editorial">📰 Editorial</div>
         <div class="chip" data-tema="gradient">🌈 Gradient</div>
       </div>
-      <div class="small-help" style="margin-top:6px;">4 estilos · cambia diario para mantener fresco</div>
+      <div class="small-help" style="margin-top:6px;">4 paletas de color · combina con cualquier diseño</div>
     </div>
 
     <div class="section">
@@ -1252,7 +1973,7 @@
         <div class="chip active" data-stickers="off">Sin stickers</div>
         <div class="chip" data-stickers="on">✨ Con celebración</div>
       </div>
-      <div class="small-help" style="margin-top:6px;">Agrega confetti y badges al #1</div>
+      <div class="small-help" style="margin-top:6px;">Laureles, cinta y estrellas SVG</div>
     </div>
 
     <div class="section">
@@ -1370,16 +2091,19 @@ try {
 // ====================================================================
 const TOPS = [
   { id:'global',    icon:'🏆', label:'Top Global',        desc:'Los mejores agentes' },
-  { id:'centro',    icon:'🥇', label:'Mejor Centro',      desc:'CC2 vs JV' },
+  { id:'centro',    icon:'🥇', label:'Mejor Centro',      desc:'CC2 vs JV por % meta' },
   { id:'resumenc',  icon:'📋', label:'Resumen Centro',    desc:'Top 3 por cada equipo' },
   { id:'supVtas',   icon:'🎖️', label:'Top Supervisores',  desc:'Por ventas totales' },
   { id:'supMeta',   icon:'📊', label:'Sup. por % Meta',   desc:'Cumplimiento de meta' },
   { id:'rev',       icon:'🚀', label:'Revelación',        desc:'Mejor nuevo (≤60d)' },
+  { id:'revTop',    icon:'⭐', label:'Top Revelaciones',  desc:'Top de nuevos (≤60d)' },
   { id:'crec',      icon:'📈', label:'Mayor Crecimiento', desc:'Mayor incremento vs mes anterior' },
+  { id:'crecTop',   icon:'📊', label:'Top Crecimientos',  desc:'Ranking de mayor crecimiento' },
   { id:'racha',     icon:'🔥', label:'Racha Activa',      desc:'Más días consecutivos vendiendo' },
   { id:'ticket',    icon:'💎', label:'Rey del Ticket',    desc:'Mayor ARPU del mes' },
-  { id:'diario',    icon:'⚡', label:'Cierre del Día',    desc:'Top del día específico' },
+  { id:'ticketTop', icon:'💰', label:'Top del Ticket',    desc:'Ranking por ARPU' },
   { id:'meta',      icon:'🎯', label:'Primero en Meta',   desc:'Quién cumplió meta primero' },
+  { id:'metaCarr',  icon:'🏁', label:'Carrera a Meta',    desc:'Tabla de cumplimientos' },
 ];
 
 // ====================================================================
@@ -1390,7 +2114,8 @@ let state = {
   format: '16x9',
   cantidad: 3,
   tema: 'gold',
-  stickers: 'off', // off | on
+  layout: 'podio', // podio | mini | cards
+  stickers: 'off',
   mes: new Date().getMonth() + 1,
   anio: new Date().getFullYear(),
   modo: 'mes',
@@ -1422,15 +2147,19 @@ function initUI() {
       el.classList.add('active');
       // Ocultar selector de cantidad si el top es de 1 solo agente o centro
       const soloTops = ['rev','crec','ticket','meta'];
-      const sinCantidad = soloTops.includes(state.topId) || ['centro','resumenc','supVtas','supMeta'].includes(state.topId);
+      const sinCantidad = soloTops.includes(state.topId) || ['centro','resumenc','supVtas','supMeta','metaCarr'].includes(state.topId);
       document.getElementById('section-cantidad').style.display = sinCantidad ? 'none' : 'block';
-      // Cierre del Día: cambiar automáticamente a modo "día"
-      if (state.topId === 'diario' && state.modo !== 'dia') {
-        state.modo = 'dia';
-        document.getElementById('sel-modo').value = 'dia';
-        renderModoExtra();
-      }
       actualizarYRender();
+    };
+  });
+
+  // Layout chips
+  document.querySelectorAll('#layout-chips .chip').forEach(el => {
+    el.onclick = () => {
+      state.layout = el.dataset.layout;
+      document.querySelectorAll('#layout-chips .chip').forEach(x => x.classList.remove('active'));
+      el.classList.add('active');
+      render();
     };
   });
 
@@ -1842,27 +2571,62 @@ function procesarDatos() {
   }
 
   // ============================================================
-  // CASO ESPECIAL: Mejor Centro — agrupar por centro
+  // CASO ESPECIAL: Mejor Centro — agrupar por centro y comparar % de meta
   // ============================================================
   if (state.topId === 'centro') {
     const porCentro = { CC2: 0, JV: 0 };
+    const supsIgnorados = new Set();
+    const sinCentro = [];
+    let totalEnRango = 0;
     ventas.forEach(v => {
       if (!v.ejecutivo) return;
-      if (!supsVigentes.includes(v.supervisor)) return;
+      if (!supsVigentes.includes(v.supervisor)) {
+        if (v.supervisor) supsIgnorados.add(v.supervisor);
+        return;
+      }
+      // NOTA: NO excluir supervisores como ejecutivos aquí — el reporte semanal
+      // los incluye en el conteo de Avance Mensual del centro
       if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
-      const c = centroAgente(v.ejecutivo, v.supervisor);
+      totalEnRango++;
+      // Estrategia robusta: primero por mapaCentroSup (sup→centro), luego plantilla del agente
+      let c = mapaCentroSup[v.supervisor];
+      if (!c || (c !== 'CC2' && c !== 'JV')) {
+        const p = plantilla[v.ejecutivo];
+        if (p && p.centro) c = String(p.centro).trim().toUpperCase();
+      }
       if (c === 'CC2' || c === 'JV') porCentro[c]++;
+      else sinCentro.push({ej: v.ejecutivo, sup: v.supervisor, fecha: v.fecha_activacion});
     });
+    console.log('🔍 DEBUG MEJOR CENTRO');
+    console.log('Total ventas activadas en rango (con sup vigente):', totalEnRango);
+    console.log('  → CC2:', porCentro.CC2);
+    console.log('  → JV:', porCentro.JV);
+    console.log('  → Sin centro asignado:', sinCentro.length);
+    if (sinCentro.length > 0) console.log('     Detalle sin centro:', sinCentro);
+    console.log('Supervisores ignorados (no vigentes):', Array.from(supsIgnorados));
+    console.log('Supervisores vigentes:', supsVigentes);
+    console.log('mapaCentroSup:', mapaCentroSup);
+    // Calcular meta por centro = suma de metas de supervisores vigentes del centro
+    const metaCentro = { CC2: 0, JV: 0 };
+    (metasSup || []).forEach(m => {
+      const c = mapaCentroSup[m.supervisor];
+      if (!supsVigentes.includes(m.supervisor)) return;
+      if (c === 'CC2' || c === 'JV') {
+        metaCentro[c] += (m.meta_activadas || 0);
+      }
+    });
+    const pctCC2 = metaCentro.CC2 > 0 ? (porCentro.CC2 / metaCentro.CC2 * 100) : 0;
+    const pctJV  = metaCentro.JV  > 0 ? (porCentro.JV  / metaCentro.JV  * 100) : 0;
     return [
-      { nombre: 'CC2 ANTEQUERA', ventas: porCentro.CC2, centro: 'CC2', metric: porCentro.CC2 },
-      { nombre: 'JUÁREZ TORRE JV', ventas: porCentro.JV, centro: 'JV', metric: porCentro.JV }
-    ].sort((a, b) => b.ventas - a.ventas);
+      { nombre: 'CC2 ANTEQUERA', ventas: porCentro.CC2, meta: metaCentro.CC2, pct: pctCC2, centro: 'CC2', metric: pctCC2.toFixed(0) + '%', _pctNum: pctCC2 },
+      { nombre: 'JUÁREZ TORRE JV', ventas: porCentro.JV, meta: metaCentro.JV, pct: pctJV, centro: 'JV', metric: pctJV.toFixed(0) + '%', _pctNum: pctJV }
+    ].sort((a, b) => b._pctNum - a._pctNum);
   }
 
   // ============================================================
   // CASO ESPECIAL: Mayor Crecimiento — comparar vs mes anterior
   // ============================================================
-  if (state.topId === 'crec') {
+  if (state.topId === 'crec' || state.topId === 'crecTop') {
     // Calcular ventas mes actual y mes anterior por agente
     const mesAnt = state.mes === 1 ? 12 : state.mes - 1;
     const anioAnt = state.mes === 1 ? state.anio - 1 : state.anio;
@@ -1889,17 +2653,20 @@ function procesarDatos() {
       return {
         nombre, ventas: act, anterior: ant, supervisor: supActual,
         centro: centroAgente(nombre, supActual),
+        crecAbs: crec,
+        crecPct: pct,
         metric: `+${crec} (${pct >= 0 ? '+' : ''}${pct}%)`
       };
     }).filter(a => a.ventas > a.anterior && a.anterior > 0); // crecimiento real (no nuevos)
     arr.sort((a, b) => (b.ventas - b.anterior) - (a.ventas - a.anterior));
+    asignarRangos(arr, a => a.crecAbs);
     return arr;
   }
 
   // ============================================================
   // CASO ESPECIAL: Rey del Ticket — mayor ARPU del mes
   // ============================================================
-  if (state.topId === 'ticket') {
+  if (state.topId === 'ticket' || state.topId === 'ticketTop') {
     const acumArpu = {}; // {ejecutivo: {sum, count}}
     ventas.forEach(v => {
       if (!v.ejecutivo || !v.fecha_activacion) return;
@@ -1931,7 +2698,7 @@ function procesarDatos() {
   // ============================================================
   // CASO ESPECIAL: Primero en Meta — quién llegó primero a su meta
   // ============================================================
-  if (state.topId === 'meta') {
+  if (state.topId === 'meta' || state.topId === 'metaCarr') {
     // Para cada agente con meta, encontrar la fecha en la que llegó a la meta
     const mapaMetas = {};
     metas.forEach(m => { mapaMetas[m.ejecutivo] = m.meta_activadas; });
@@ -1940,6 +2707,7 @@ function procesarDatos() {
     ventas.forEach(v => {
       if (!v.ejecutivo || !v.fecha_activacion) return;
       if (!supsVigentes.includes(v.supervisor)) return;
+      if (supsVigentes.includes(v.ejecutivo)) return; // excluir supervisores
       if (v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
       if (!ventasPorAgenteFechas[v.ejecutivo]) ventasPorAgenteFechas[v.ejecutivo] = [];
       ventasPorAgenteFechas[v.ejecutivo].push(v.fecha_activacion);
@@ -1959,11 +2727,21 @@ function procesarDatos() {
         supervisor: supActual,
         centro: centroAgente(nombre, supActual),
         metric: fechaCumplida,
+        fechaCumplio: fechaCumplida,
         meta: meta
       });
     });
-    arr.sort((a, b) => a.metric.localeCompare(b.metric));
-    return arr;
+    // Aplicar filtros de UI
+    let filtrado = arr;
+    if (state.centro) {
+      filtrado = filtrado.filter(a => a.centro === state.centro || mapaCentroSup[a.supervisor] === state.centro);
+    }
+    if (state.supervisor) {
+      filtrado = filtrado.filter(a => a.supervisor === state.supervisor);
+    }
+    filtrado.sort((a, b) => a.metric.localeCompare(b.metric));
+    asignarRangos(filtrado, a => -new Date(a.fechaCumplio).getTime()); // rank por fecha (más temprano = mejor)
+    return filtrado;
   }
 
   // ============================================================
@@ -1975,6 +2753,9 @@ function procesarDatos() {
     if (!v.ejecutivo) return;
     // Solo cuenta si el supervisor (ya sobreescrito con supervisor_act) está vigente
     if (!supsVigentes.includes(v.supervisor)) return;
+    // EXCLUIR: si el "ejecutivo" es a la vez un supervisor vigente, no debe contar
+    // (caso de ventas mal capturadas donde el nombre del supervisor quedó como ejecutivo)
+    if (supsVigentes.includes(v.ejecutivo)) return;
     // Solo cuenta si fecha_activacion está en el rango
     if (!v.fecha_activacion || v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
 
@@ -2001,20 +2782,26 @@ function procesarDatos() {
 
   // Aplicar filtros UI (centro / supervisor)
   if (state.centro) {
-    arr = arr.filter(a => a.centro === state.centro);
+    arr = arr.filter(a => {
+      // Filtra por centro del agente O del supervisor
+      if (a.centro === state.centro) return true;
+      if (mapaCentroSup[a.supervisor] === state.centro) return true;
+      return false;
+    });
   }
   if (state.supervisor) {
     arr = arr.filter(a => a.supervisor === state.supervisor);
   }
 
   // Reglas específicas según tipo
-  if (state.topId === 'rev') {
+  if (state.topId === 'rev' || state.topId === 'revTop') {
     // Revelación: agentes con <=60 días al final del periodo
     const refDate = new Date(fechaFin + 'T12:00:00');
     arr = arr.filter(a => {
       if (!a.fecha_ingreso) return false;
       const ing = new Date(a.fecha_ingreso + 'T12:00:00');
       const dias = (refDate - ing) / (1000 * 60 * 60 * 24);
+      a.diasEnEmpresa = Math.floor(dias);
       return dias >= 0 && dias <= 60;
     });
     // Para revelación, usar el supervisor ACTUAL del agente (no el de la primera venta)
@@ -2119,7 +2906,7 @@ function render() {
   const tallList = ((state.cantidad >= 10) && !['rev','crec','ticket','meta','centro','resumenc'].includes(state.topId))
     || state.topId === 'resumenc'
     || (muchosEmpates && !['rev','crec','ticket','meta','centro','resumenc','supVtas','supMeta'].includes(state.topId));
-  canvas.className = 'canvas-top ratio-' + state.format + (tallList ? ' tall-list' : '');
+  canvas.className = 'canvas-top ratio-' + state.format + ' layout-' + state.layout + (tallList ? ' tall-list' : '');
 
   if (!state.agentes || state.agentes.length === 0) {
     canvas.innerHTML = `
@@ -2173,16 +2960,27 @@ function render() {
     kickerText = `EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}`;
   }
 
-  // Stickers de celebración (opcional)
+  // Stickers de celebración SVG profesionales (opcional)
+  const SVG_LAUREL_LEFT = `<svg viewBox="0 0 60 100" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M55 8 Q35 28 30 50 Q25 72 50 92"/><path d="M52 18 Q42 18 38 28 Q42 26 50 28"/><path d="M48 30 Q36 32 32 44 Q38 40 46 42"/><path d="M44 46 Q30 50 28 62 Q36 58 44 60"/><path d="M44 64 Q32 70 34 82 Q42 76 48 78"/></g></svg>`;
+  const SVG_LAUREL_RIGHT = `<svg viewBox="0 0 60 100" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 8 Q25 28 30 50 Q35 72 10 92"/><path d="M8 18 Q18 18 22 28 Q18 26 10 28"/><path d="M12 30 Q24 32 28 44 Q22 40 14 42"/><path d="M16 46 Q30 50 32 62 Q24 58 16 60"/><path d="M16 64 Q28 70 26 82 Q18 76 12 78"/></g></svg>`;
+  const SVG_STAR = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2 L19.6 12.4 L30 13 L21.8 19.6 L24.8 30 L16 24 L7.2 30 L10.2 19.6 L2 13 L12.4 12.4 Z" fill="currentColor" stroke="rgba(0,0,0,0.2)" stroke-width="0.5"/></svg>`;
+  const SVG_DIAMOND = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor"><path d="M6 4 L26 4 L30 12 L16 30 L2 12 Z" opacity="0.95"/><path d="M6 4 L11 12 L16 4 Z" fill="rgba(255,255,255,0.35)"/><path d="M16 4 L21 12 L26 4 Z" fill="rgba(255,255,255,0.18)"/><path d="M2 12 L11 12 L6 4 Z" fill="rgba(0,0,0,0.18)"/><path d="M21 12 L30 12 L26 4 Z" fill="rgba(0,0,0,0.12)"/></g></svg>`;
+  const SVG_BURST = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><g stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"><line x1="16" y1="2" x2="16" y2="8"/><line x1="16" y1="24" x2="16" y2="30"/><line x1="2" y1="16" x2="8" y2="16"/><line x1="24" y1="16" x2="30" y2="16"/><line x1="6" y1="6" x2="10" y2="10"/><line x1="22" y1="22" x2="26" y2="26"/><line x1="26" y1="6" x2="22" y2="10"/><line x1="10" y1="22" x2="6" y2="26"/></g><circle cx="16" cy="16" r="4" fill="currentColor"/></svg>`;
+  const SVG_RIBBON = `<svg viewBox="0 0 160 50" xmlns="http://www.w3.org/2000/svg"><path d="M0 8 L20 0 L140 0 L160 8 L160 42 L140 50 L20 50 L0 42 Z" fill="currentColor"/><path d="M0 8 L20 0 L20 50 L0 42 Z" fill="rgba(0,0,0,0.18)"/><path d="M160 8 L140 0 L140 50 L160 42 Z" fill="rgba(0,0,0,0.18)"/></svg>`;
+  const SVG_TROPHY = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><g fill="currentColor"><path d="M22 8 L42 8 L42 26 Q42 38 32 38 Q22 38 22 26 Z" opacity="0.95"/><path d="M22 12 L14 12 Q10 12 10 16 L10 22 Q10 28 18 30" stroke="currentColor" stroke-width="2.5" fill="none"/><path d="M42 12 L50 12 Q54 12 54 16 L54 22 Q54 28 46 30" stroke="currentColor" stroke-width="2.5" fill="none"/><rect x="28" y="38" width="8" height="10"/><rect x="20" y="48" width="24" height="6" rx="1"/></g></svg>`;
+
   const stickersHTML = state.stickers === 'on' ? `
-    <div class="sticker confetti confetti-1">🎉</div>
-    <div class="sticker confetti confetti-2">🎊</div>
-    <div class="sticker confetti confetti-3">⭐</div>
-    <div class="sticker confetti confetti-4">✨</div>
-    <div class="sticker confetti confetti-5">🎉</div>
-    <div class="sticker confetti confetti-6">⭐</div>
-    <div class="sticker badge badge-fire">¡FUEGO!</div>
-    <div class="sticker badge badge-top">¡TOP!</div>
+    <div class="sticker-laurel sticker-laurel-l">${SVG_LAUREL_LEFT}</div>
+    <div class="sticker-laurel sticker-laurel-r">${SVG_LAUREL_RIGHT}</div>
+    <div class="sticker-star sticker-star-1">${SVG_STAR}</div>
+    <div class="sticker-star sticker-star-2">${SVG_STAR}</div>
+    <div class="sticker-star sticker-star-3">${SVG_STAR}</div>
+    <div class="sticker-star sticker-star-4">${SVG_STAR}</div>
+    <div class="sticker-diamond sticker-diamond-1">${SVG_DIAMOND}</div>
+    <div class="sticker-diamond sticker-diamond-2">${SVG_DIAMOND}</div>
+    <div class="sticker-burst sticker-burst-1">${SVG_BURST}</div>
+    <div class="sticker-burst sticker-burst-2">${SVG_BURST}</div>
+    <div class="sticker-ribbon">${SVG_RIBBON}<div class="sticker-ribbon-text">TOP PERFORMER</div></div>
   ` : '';
 
   const headerHTML = `
@@ -2198,9 +2996,63 @@ function render() {
 
   // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
   const soloTops = ['rev','crec','ticket','meta'];
-  const listaTops = ['supVtas', 'supMeta']; // siempre lista vertical
+  const listaTops = ['supVtas', 'supMeta', 'revTop', 'crecTop', 'ticketTop']; // siempre lista vertical
 
   let bodyHTML = '';
+
+  // ========== CASO ESPECIAL: Carrera a Meta (tabla) ==========
+  if (state.topId === 'metaCarr') {
+    const arr = (state.agentes || []).filter(a => a.fechaCumplio);
+    if (arr.length === 0) {
+      bodyHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏁</div>
+          <div class="empty-state-msg">
+            <strong>Nadie ha cumplido meta aún</strong><br>
+            <span style="font-size:12px; color:#888;">Aparecerán aquí conforme la vayan logrando</span>
+          </div>
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+    bodyHTML = `
+      <div class="carrera-wrap">
+        <div class="carrera-table">
+          <div class="carrera-header">
+            <div>#</div>
+            <div>AGENTE</div>
+            <div>CENTRO</div>
+            <div>META</div>
+            <div>CUMPLIÓ</div>
+            <div>VTAS</div>
+          </div>
+          ${arr.map((a, i) => {
+            const r = a.rank || (i + 1);
+            const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
+            // Fecha legible
+            let fechaTxt = a.fechaCumplio || '';
+            if (fechaTxt.length === 10) {
+              const [y, m, d] = fechaTxt.split('-');
+              fechaTxt = `${d}/${m}`;
+            }
+            return `
+              <div class="carrera-row ${cls}">
+                <div class="carrera-pos">${r}</div>
+                <div class="carrera-name">${a.nombre}</div>
+                <div class="carrera-centro">${a.centro || ''}${a.supervisor ? ' · ' + a.supervisor : ''}</div>
+                <div class="carrera-meta">${a.meta || '-'}</div>
+                <div class="carrera-fecha">${fechaTxt}</div>
+                <div class="carrera-vtas">${a.ventas}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+    canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+    return;
+  }
 
   // ========== CASO ESPECIAL: Resumen por Centro ==========
   if (state.topId === 'resumenc') {
@@ -2242,7 +3094,7 @@ function render() {
               ${eq.meta ? `<span class="mini-pct ${pctClass}">${eq.pct}% meta</span>` : ''}
             </div>
           </div>
-          <div class="mini-podio">${cards || '<div class="mini-empty">Sin ventas</div>'}</div>
+          <div class="mini-podio n-${t.length}">${cards || '<div class="mini-empty">Sin ventas</div>'}</div>
         </div>
       `;
     };
@@ -2281,14 +3133,17 @@ function render() {
     return;
   }
 
-  // ========== CASO ESPECIAL: Batalla de centros ==========
+  // ========== CASO ESPECIAL: Batalla de centros (por % meta) ==========
   if (state.topId === 'centro') {
-    const cc2 = state.agentes.find(a => a.centro === 'CC2') || { ventas: 0 };
-    const jv  = state.agentes.find(a => a.centro === 'JV') || { ventas: 0 };
-    const total = cc2.ventas + jv.ventas;
-    const pctCC2 = total > 0 ? (cc2.ventas / total * 100) : 50;
-    const pctJV = 100 - pctCC2;
-    const ganador = cc2.ventas > jv.ventas ? 'CC2' : jv.ventas > cc2.ventas ? 'JV' : null;
+    const cc2 = state.agentes.find(a => a.centro === 'CC2') || { ventas: 0, meta: 0, pct: 0, _pctNum: 0 };
+    const jv  = state.agentes.find(a => a.centro === 'JV')  || { ventas: 0, meta: 0, pct: 0, _pctNum: 0 };
+    const pctCC2num = cc2._pctNum || 0;
+    const pctJVnum = jv._pctNum || 0;
+    // Para la barra horizontal, mostrar proporción de avance (no del total combinado)
+    const sumaPcts = pctCC2num + pctJVnum;
+    const wCC2 = sumaPcts > 0 ? (pctCC2num / sumaPcts * 100) : 50;
+    const wJV  = sumaPcts > 0 ? (pctJVnum  / sumaPcts * 100) : 50;
+    const ganador = pctCC2num > pctJVnum ? 'CC2' : pctJVnum > pctCC2num ? 'JV' : null;
 
     bodyHTML = `
       <div class="centros-wrap">
@@ -2296,21 +3151,23 @@ function render() {
           <div class="centro-crown">${ganador === 'CC2' ? '👑' : ''}</div>
           <div class="centro-nombre">CC2</div>
           <div class="centro-sub">ANTEQUERA</div>
-          <div class="centro-num">${cc2.ventas}</div>
-          <div class="centro-lbl">VENTAS</div>
+          <div class="centro-num">${cc2.pct.toFixed(0)}%</div>
+          <div class="centro-lbl">CUMPLIMIENTO</div>
+          <div class="centro-detalle">${cc2.ventas} / ${cc2.meta} ventas</div>
         </div>
         <div class="centro-vs">VS</div>
         <div class="centro-card ${ganador === 'JV' ? 'ganador' : ''}">
           <div class="centro-crown">${ganador === 'JV' ? '👑' : ''}</div>
           <div class="centro-nombre">JV</div>
           <div class="centro-sub">JUÁREZ</div>
-          <div class="centro-num">${jv.ventas}</div>
-          <div class="centro-lbl">VENTAS</div>
+          <div class="centro-num">${jv.pct.toFixed(0)}%</div>
+          <div class="centro-lbl">CUMPLIMIENTO</div>
+          <div class="centro-detalle">${jv.ventas} / ${jv.meta} ventas</div>
         </div>
       </div>
       <div class="centros-bar">
-        <div class="centros-bar-cc2" style="width:${pctCC2.toFixed(1)}%;">${pctCC2 >= 15 ? pctCC2.toFixed(0) + '%' : ''}</div>
-        <div class="centros-bar-jv" style="width:${pctJV.toFixed(1)}%;">${pctJV >= 15 ? pctJV.toFixed(0) + '%' : ''}</div>
+        <div class="centros-bar-cc2" style="width:${wCC2.toFixed(1)}%;">${wCC2 >= 15 ? cc2.pct.toFixed(0) + '%' : ''}</div>
+        <div class="centros-bar-jv" style="width:${wJV.toFixed(1)}%;">${wJV >= 15 ? jv.pct.toFixed(0) + '%' : ''}</div>
       </div>
     `;
     canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
@@ -2340,8 +3197,13 @@ function render() {
     const a = state.agentes[0];
     const metricLabel = state.topId === 'ticket' ? 'ARPU PROMEDIO' :
                         state.topId === 'crec' ? 'CRECIMIENTO' :
-                        state.topId === 'meta' ? 'META CUMPLIDA EL' : 'VENTAS';
-    const metricVal = a.metric !== undefined ? a.metric : a.ventas;
+                        state.topId === 'meta' ? 'META CUMPLIDA EL' :
+                        state.topId === 'rev' ? 'VENTAS' : 'VENTAS';
+    let metricVal = a.metric !== undefined ? a.metric : a.ventas;
+    // Para revelación, el primer stat siempre es ventas (sin usar a.metric porque puede ser undefined)
+    if (state.topId === 'rev') {
+      metricVal = a.ventas;
+    }
     // Para meta, mostrar fecha legible
     let displayVal = metricVal;
     if (state.topId === 'meta' && typeof metricVal === 'string' && metricVal.length === 10) {
@@ -2360,8 +3222,8 @@ function render() {
           </div>
           ${state.topId === 'meta' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS / ${a.meta} META</div></div>` : ''}
           ${state.topId === 'crec' ? `<div class="solo-stat"><div class="solo-stat-val">${a.anterior}→${a.ventas}</div><div class="solo-stat-lbl">MES ANT → ACTUAL</div></div>` : ''}
-          ${state.topId === 'ticket' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS</div></div>` : ''}
-          ${state.topId === 'rev' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS</div></div>` : ''}
+          ${state.topId === 'ticket' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS DEL MES</div></div>` : ''}
+          ${state.topId === 'rev' && a.diasEnEmpresa !== undefined ? `<div class="solo-stat"><div class="solo-stat-val">${a.diasEnEmpresa}</div><div class="solo-stat-lbl">DÍAS EN EMPRESA</div></div>` : ''}
         </div>
       </div>
     `;
@@ -2377,20 +3239,36 @@ function render() {
       `;
     } else {
       const usaRacha = state.topId === 'racha';
-      const usaMetric = ['racha','supMeta'].includes(state.topId);
-      const subPrefijo = state.topId === 'supVtas' || state.topId === 'supMeta' ? '' : null;
+      const usaMetric = ['racha','supMeta','ticketTop','crecTop'].includes(state.topId);
       bodyHTML = `
         <div class="team-list n-${arr.length}">
           ${arr.map((a, i) => {
             const r = a.rank || (i + 1);
             const cls = r === 1 ? 'first' : r === 2 ? 'second' : r === 3 ? 'third' : '';
-            // Subtítulo: para supervisores, mostrar centro (sin "Supervisor:");
-            // para agentes, centro + supervisor
+            // Subtítulo según tipo
             let sub = '';
             if (a.esSupervisor) {
               sub = a.centro || '';
               if (state.topId === 'supMeta' && a.meta) sub += ` · Meta ${a.meta}`;
               if (state.topId === 'supMeta' && a.ventas) sub += ` · ${a.ventas} vtas`;
+            } else if (state.topId === 'crecTop') {
+              const subParts = [];
+              if (a.centro) subParts.push(a.centro);
+              if (a.supervisor) subParts.push(a.supervisor);
+              if (a.anterior !== undefined) subParts.push(`${a.anterior}→${a.ventas} vtas`);
+              sub = subParts.join(' · ');
+            } else if (state.topId === 'ticketTop') {
+              const subParts = [];
+              if (a.centro) subParts.push(a.centro);
+              if (a.supervisor) subParts.push(a.supervisor);
+              if (a.ventas) subParts.push(`${a.ventas} vtas`);
+              sub = subParts.join(' · ');
+            } else if (state.topId === 'revTop') {
+              const subParts = [];
+              if (a.centro) subParts.push(a.centro);
+              if (a.supervisor) subParts.push(a.supervisor);
+              if (a.diasEnEmpresa !== undefined) subParts.push(`${a.diasEnEmpresa}d`);
+              sub = subParts.join(' · ');
             } else if (a.centro || a.supervisor) {
               sub = `${a.centro || ''}${a.centro && a.supervisor ? ' · ' : ''}${a.supervisor || ''}`;
             }
@@ -2401,7 +3279,11 @@ function render() {
                   <div class="team-name">${a.nombre}</div>
                   ${sub ? `<div class="team-sub">${sub}</div>` : ''}
                 </div>
-                <div class="team-val">${usaMetric ? a.metric : a.ventas}</div>
+                <div class="team-val">${
+                  state.topId === 'crecTop'
+                    ? `<span class="team-val-main">+${a.crecAbs}</span><span class="team-val-sub">+${a.crecPct}%</span>`
+                    : (usaMetric ? a.metric : a.ventas)
+                }</div>
               </div>
             `;
           }).join('')}
@@ -2419,6 +3301,197 @@ function render() {
       canvas.innerHTML = headerHTML + bodyHTML;
       return;
     }
+    const usaRacha = state.topId === 'racha';
+    const valLabel = usaRacha ? 'DÍAS' : 'VENTAS';
+
+    // Helper común: iniciales para avatar
+    const iniciales = (n) => {
+      const parts = (n || '').trim().split(/\s+/);
+      if (parts.length === 0) return '?';
+      if (parts.length === 1) return parts[0].substr(0, 2).toUpperCase();
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    };
+
+    // ============================================
+    // LAYOUT: Stat Board (dashboard deportivo)
+    // ============================================
+    if (state.layout === 'stat') {
+      const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      const maxVal = Math.max(...ordenados.map(a => usaRacha ? (a._rachaNum || 0) : a.ventas), 1);
+      bodyHTML = `
+        <div class="stat-layout">
+          ${ordenados.map((a, i) => {
+            const r = a.rank || (i + 1);
+            const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+            const pct = (valor / maxVal) * 100;
+            return `
+              <div class="stat-row rank-${r}">
+                <div class="stat-pos">
+                  <div class="stat-pos-num">${r}</div>
+                  <div class="stat-pos-lbl">RANK</div>
+                </div>
+                <div class="stat-info">
+                  <div class="stat-name">${a.nombre}</div>
+                  <div class="stat-team">${a.centro || '—'} · ${a.supervisor || '—'}</div>
+                  <div class="stat-bar-wrap">
+                    <div class="stat-bar" style="width:${pct}%;"></div>
+                  </div>
+                </div>
+                <div class="stat-val">
+                  <div class="stat-val-num">${valor}</div>
+                  <div class="stat-val-lbl">${valLabel}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+
+    // ============================================
+    // LAYOUT: Cinema (cartel de película)
+    // ============================================
+    if (state.layout === 'cinema') {
+      const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      const principal = ordenados[0];
+      const resto = ordenados.slice(1);
+      const valor1 = usaRacha ? (principal._rachaNum || 0) : principal.ventas;
+      bodyHTML = `
+        <div class="cinema-layout">
+          <div class="cinema-main">
+            <div class="cinema-rank-badge">#${principal.rank || 1}</div>
+            <div class="cinema-avatar-wrap">
+              <div class="cinema-avatar">${iniciales(principal.nombre)}</div>
+              <div class="cinema-glow"></div>
+            </div>
+            <div class="cinema-name">${principal.nombre}</div>
+            <div class="cinema-team">${principal.centro || '—'} · ${principal.supervisor || '—'}</div>
+            <div class="cinema-rating">
+              <div class="cinema-rating-num">${valor1}</div>
+              <div class="cinema-rating-lbl">${valLabel}</div>
+            </div>
+          </div>
+          ${resto.length > 0 ? `
+            <div class="cinema-supporting">
+              <div class="cinema-supporting-lbl">★ MENCIONES ESPECIALES ★</div>
+              <div class="cinema-supporting-list">
+                ${resto.map(a => {
+                  const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+                  return `
+                    <div class="cinema-supporting-item rank-${a.rank || 2}">
+                      <div class="cinema-supp-rank">#${a.rank || 2}</div>
+                      <div class="cinema-supp-name">${a.nombre}</div>
+                      <div class="cinema-supp-team">${a.centro || ''} · ${a.supervisor || ''}</div>
+                      <div class="cinema-supp-val">${valor}</div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+
+    // ============================================
+    // LAYOUT: Trofeo Centrado (placa de premio)
+    // ============================================
+    if (state.layout === 'trofeo') {
+      const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      const principal = ordenados[0];
+      const resto = ordenados.slice(1);
+      const valor1 = usaRacha ? (principal._rachaNum || 0) : principal.ventas;
+      bodyHTML = `
+        <div class="trofeo-layout">
+          <div class="trofeo-placa">
+            <div class="trofeo-deco-top"></div>
+            <div class="trofeo-medalla">
+              <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+                <circle cx="40" cy="40" r="36" fill="url(#gold-grad)" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/>
+                <circle cx="40" cy="40" r="28" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+                <text x="40" y="52" text-anchor="middle" font-family="Anton" font-size="32" fill="rgba(0,0,0,0.65)">${principal.rank || 1}</text>
+                <defs>
+                  <radialGradient id="gold-grad" cx="30%" cy="30%">
+                    <stop offset="0%" stop-color="var(--accent-1)"/>
+                    <stop offset="70%" stop-color="var(--accent-2)"/>
+                    <stop offset="100%" stop-color="var(--accent-3)"/>
+                  </radialGradient>
+                </defs>
+              </svg>
+            </div>
+            <div class="trofeo-kicker">CAMPEÓN DEL MES</div>
+            <div class="trofeo-name">${principal.nombre}</div>
+            <div class="trofeo-team">${principal.centro || '—'} · ${principal.supervisor || '—'}</div>
+            <div class="trofeo-divider">◆ ◆ ◆</div>
+            <div class="trofeo-val">
+              <span class="trofeo-num">${valor1}</span>
+              <span class="trofeo-lbl">${valLabel}</span>
+            </div>
+            <div class="trofeo-deco-bottom"></div>
+          </div>
+          ${resto.length > 0 ? `
+            <div class="trofeo-honor">
+              <div class="trofeo-honor-lbl">— TAMBIÉN RECONOCEMOS —</div>
+              <div class="trofeo-honor-list">
+                ${resto.map(a => {
+                  const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+                  return `
+                    <div class="trofeo-honor-item">
+                      <span class="trofeo-honor-rank">#${a.rank || 2}</span>
+                      <span class="trofeo-honor-name">${a.nombre}</span>
+                      <span class="trofeo-honor-val">${valor} ${valLabel.toLowerCase()}</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+
+    // ============================================
+    // LAYOUT: Cards Vibrantes
+    // ============================================
+    if (state.layout === 'cards') {
+      const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
+      bodyHTML = `
+        <div class="cards-layout">
+          ${ordenados.map((a, i) => {
+            const r = a.rank || (i + 1);
+            const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+            const tilt = i === 0 ? '-2deg' : i === 1 ? '3deg' : '-1deg';
+            return `
+              <div class="player-card rank-${r}" style="--tilt:${tilt};">
+                <div class="player-card-bg"></div>
+                <div class="player-card-num">${valor}</div>
+                <div class="player-card-rank">#${r}</div>
+                <div class="player-card-avatar">${iniciales(a.nombre)}</div>
+                <div class="player-card-name">${a.nombre}</div>
+                <div class="player-card-stats">
+                  <span class="pc-stat">${a.centro || '—'}</span>
+                  <span class="pc-stat-sep">·</span>
+                  <span class="pc-stat">${a.supervisor || '—'}</span>
+                </div>
+                <div class="player-card-label">${valLabel}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+
+    // ============================================
+    // LAYOUT POR DEFECTO: Podio Clásico (existente)
+    // ============================================
     // Agrupar por rank
     const grupos = {};
     participantes.forEach(a => {
@@ -2427,8 +3500,6 @@ function render() {
       grupos[r].push(a);
     });
     const ranksUsados = Object.keys(grupos).map(Number).sort((a,b) => a-b);
-    const usaRacha = state.topId === 'racha';
-    const valLabel = usaRacha ? 'DÍAS' : 'VENTAS';
 
     // Generar cards agrupadas por rank
     const renderSpot = (a, rank) => {
