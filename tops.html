@@ -242,6 +242,14 @@
       radial-gradient(ellipse at top, rgba(212,175,55,0.04), transparent 60%),
       #06060a;
   }
+  /* Scrollbar visible (sobre todo para resumen centro con muchos supervisores) */
+  .preview-area::-webkit-scrollbar { width:12px; }
+  .preview-area::-webkit-scrollbar-track { background:rgba(255,255,255,0.04); }
+  .preview-area::-webkit-scrollbar-thumb {
+    background:rgba(212,175,55,0.35); border-radius:6px;
+    border:2px solid #06060a;
+  }
+  .preview-area::-webkit-scrollbar-thumb:hover { background:rgba(212,175,55,0.55); }
   .preview-title {
     color:var(--text-soft); font-size:11px; letter-spacing:3px;
     margin-bottom:14px; text-transform:uppercase;
@@ -605,7 +613,8 @@
   /* Crece naturalmente con el contenido (canvas tall-list permite altura auto) */
   .resumen-wrap {
     display:flex; flex-direction:column; gap:14px;
-    padding:8px 24px 22px; z-index:2; position:relative;
+    padding:8px 24px 30px; z-index:2; position:relative;
+    flex:1 1 auto; min-height:0;
   }
   .resumen-grid {
     display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;
@@ -709,6 +718,8 @@
   /* Las filas del ranking en grid auto-fit horizontal: caben varias por fila */
   .ranking-rows {
     display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px;
+    /* Asegurar que el contenedor crece naturalmente */
+    width:100%; align-content:start;
   }
   .ranking-row {
     display:grid; grid-template-columns:22px minmax(0, 1fr) 1.4fr; gap:8px; align-items:center;
@@ -1344,9 +1355,32 @@
   /* LAYOUT STAT BOARD (dashboard deportivo) */
   /* ============================================ */
   .stat-layout {
-    flex:1; display:flex; flex-direction:column; justify-content:flex-start;
-    padding:8px 40px 18px; gap:12px; z-index:2; position:relative;
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    padding:8px 40px 18px; gap:10px; z-index:2; position:relative;
   }
+  /* Cuando hay 4+ stat-rows, todo más compacto */
+  .stat-layout:has(.stat-row:nth-child(4)) { gap:6px; padding:4px 36px 10px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-row { padding:6px 14px; grid-template-columns:70px 1fr 110px; gap:16px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-val-num { font-size:40px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-row.rank-1 .stat-val-num { font-size:46px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-pos { padding:6px 10px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-pos-num { font-size:24px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-pos-lbl { font-size:8px; letter-spacing:1.5px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-name { font-size:14px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-team { font-size:9px; margin-bottom:4px; letter-spacing:1.5px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-bar-wrap { height:6px; }
+  .stat-layout:has(.stat-row:nth-child(4)) .stat-val-lbl { font-size:8px; letter-spacing:1.5px; }
+  /* Cuando hay 5+ stat-rows, aún más compacto */
+  .stat-layout:has(.stat-row:nth-child(5)) { gap:6px; padding:4px 30px 10px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-row { padding:7px 12px; gap:14px; grid-template-columns:60px 1fr 100px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-val-num { font-size:38px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-row.rank-1 .stat-val-num { font-size:44px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-pos-num { font-size:22px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-pos { padding:5px 8px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-name { font-size:13px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-team { font-size:9px; margin-bottom:4px; letter-spacing:1px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-bar-wrap { height:6px; }
+  .stat-layout:has(.stat-row:nth-child(5)) .stat-val-lbl { font-size:8px; letter-spacing:1.5px; }
   .stat-row {
     display:grid; grid-template-columns:80px 1fr 120px; gap:20px;
     align-items:center; padding:14px 18px;
@@ -1438,7 +1472,7 @@
   /* ============================================ */
   .cinema-layout {
     flex:1; display:grid; grid-template-columns:1.5fr 1fr; gap:20px;
-    padding:8px 28px 20px; z-index:2; position:relative; align-items:stretch;
+    padding:8px 28px 20px; z-index:2; position:relative;
     min-height:0;
   }
   .cinema-main {
@@ -1448,7 +1482,7 @@
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     position:relative; overflow:hidden;
     box-shadow:0 16px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
-    min-height:0;
+    min-height:0; height:100%;
   }
   .cinema-main::before {
     content:''; position:absolute; inset:0;
@@ -1519,6 +1553,7 @@
     border:1px solid rgba(var(--accent-rgb),0.25);
     border-radius:14px; padding:14px 16px;
     display:flex; flex-direction:column; gap:10px;
+    min-height:0; height:100%;
   }
   .cinema-supporting-lbl {
     font-family:'Sora'; font-size:9px; color:var(--accent-2);
@@ -1532,12 +1567,14 @@
   .cinema-supporting-item {
     background:rgba(var(--accent-rgb),0.04);
     border-left:2px solid var(--accent-3);
-    padding:8px 10px; border-radius:6px;
+    padding:8px 12px; border-radius:6px;
+    display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center;
   }
   .cinema-supporting-item.rank-2 { border-left-color:#c8c8c8; }
   .cinema-supporting-item.rank-3 { border-left-color:#b06f3a; }
+  .cinema-supp-info { min-width:0; }
   .cinema-supp-rank {
-    font-family:'Anton', sans-serif; font-size:14px; color:var(--accent-2);
+    font-family:'Anton', sans-serif; font-size:13px; color:var(--accent-2);
     display:inline-block; margin-right:6px;
   }
   .cinema-supp-name {
@@ -1548,11 +1585,14 @@
   .cinema-supp-team {
     font-family:'Sora'; font-size:8px; color:var(--accent-2);
     letter-spacing:1.5px; text-transform:uppercase; margin-top:2px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   .cinema-supp-val {
-    font-family:'Anton', sans-serif; font-size:18px; color:var(--accent-1);
-    margin-top:4px;
+    font-family:'Anton', sans-serif; font-size:22px; color:var(--accent-1);
+    line-height:0.9; text-align:right;
   }
+  .cinema-supporting-item.rank-2 .cinema-supp-val { color:#e8e8e8; }
+  .cinema-supporting-item.rank-3 .cinema-supp-val { color:#e0a878; }
   /* 9:16 vertical cinema */
   .ratio-9x16 .cinema-layout { grid-template-columns:1fr; gap:12px; padding:6px 18px 18px; }
   .ratio-9x16 .cinema-avatar-wrap { width:100px; height:100px; }
@@ -2435,7 +2475,7 @@ JENNY PEREZ TOME | 17 | JV"></textarea>
 
   <!-- ==================== PREVIEW ==================== -->
   <div class="preview-area">
-    <div class="preview-title">Vista previa · Se descarga tal cual lo ves</div>
+    <div class="preview-title">Vista previa · La imagen descargada se ve completa aunque aquí salga cortada por la pantalla ↓</div>
     <div class="preview-wrap">
       <div class="canvas-top ratio-16x9" id="canvas">
         <div class="empty-state">
@@ -3875,9 +3915,13 @@ function render() {
                   const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
                   return `
                     <div class="cinema-supporting-item rank-${a.rank || 2}">
-                      <div class="cinema-supp-rank">#${a.rank || 2}</div>
-                      <div class="cinema-supp-name">${a.nombre}</div>
-                      <div class="cinema-supp-team">${a.centro || ''} · ${a.supervisor || ''}</div>
+                      <div class="cinema-supp-info">
+                        <div>
+                          <span class="cinema-supp-rank">#${a.rank || 2}</span>
+                        </div>
+                        <div class="cinema-supp-name">${a.nombre}</div>
+                        <div class="cinema-supp-team">${a.centro || ''} · ${a.supervisor || ''}</div>
+                      </div>
                       <div class="cinema-supp-val">${valor}</div>
                     </div>
                   `;
