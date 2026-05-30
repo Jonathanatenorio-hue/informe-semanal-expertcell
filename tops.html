@@ -1251,14 +1251,16 @@
   .solo-stat {
     text-align:center; padding:14px 20px;
     background:rgba(var(--accent-rgb),0.06); border:1px solid rgba(var(--accent-rgb),0.25); border-radius:10px;
-    min-width:120px; max-width:240px;
+    min-width:120px; max-width:280px;
   }
   .solo-stat-val {
-    font-family:'Anton'; font-size:36px; color:var(--accent-1); line-height:1;
-    word-break:break-all; overflow-wrap:break-word;
+    font-family:'Anton'; font-size:46px; color:var(--accent-1); line-height:1;
+    white-space:nowrap;
   }
-  /* Si el stat val tiene más de 8 chars (e.g. "$12,345"), reducir tamaño */
-  .solo-stat-val:has(> *), .solo-stat-val { font-size:clamp(20px, 4vw, 36px); }
+  .solo-stat-extra {
+    font-family:'Sora'; font-weight:700; font-size:14px;
+    color:var(--accent-2); margin-top:4px; letter-spacing:1px;
+  }
   .solo-stat-lbl { font-size:10px; letter-spacing:2px; color:var(--text-soft); margin-top:6px; text-transform:uppercase; }
   .solo-team { font-size:13px; color:var(--accent-2); letter-spacing:2.5px; text-transform:uppercase; text-align:center; padding:0 20px; }
 
@@ -1268,6 +1270,34 @@
     gap:8px; padding:0 60px 40px; z-index:2; position:relative;
   }
   .team-list.n-10, .team-list.n-15 { padding:0 80px 30px; gap:5px; }
+  /* Compactar cuando hay 6+ filas (típicamente Top Supervisores con 6-8 sups) */
+  .team-list:has(.team-row:nth-child(6)) { gap:6px; padding:0 50px 24px; }
+  .team-list:has(.team-row:nth-child(6)) .team-row { padding:8px 16px; }
+  .team-list:has(.team-row:nth-child(6)) .team-pos { font-size:22px; }
+  .team-list:has(.team-row:nth-child(6)) .team-row.first .team-pos { font-size:28px; }
+  .team-list:has(.team-row:nth-child(6)) .team-name { font-size:14px; }
+  .team-list:has(.team-row:nth-child(6)) .team-row.first .team-name { font-size:15px; }
+  .team-list:has(.team-row:nth-child(6)) .team-val { font-size:28px; }
+  .team-list:has(.team-row:nth-child(6)) .team-row.first .team-val { font-size:32px; }
+  /* Más compacto con 7+ */
+  .team-list:has(.team-row:nth-child(7)) { gap:5px; padding:0 46px 20px; }
+  .team-list:has(.team-row:nth-child(7)) .team-row { padding:6px 14px; }
+  .team-list:has(.team-row:nth-child(7)) .team-pos { font-size:20px; }
+  .team-list:has(.team-row:nth-child(7)) .team-row.first .team-pos { font-size:26px; }
+  .team-list:has(.team-row:nth-child(7)) .team-name { font-size:13px; }
+  .team-list:has(.team-row:nth-child(7)) .team-row.first .team-name { font-size:14px; }
+  .team-list:has(.team-row:nth-child(7)) .team-val { font-size:24px; }
+  .team-list:has(.team-row:nth-child(7)) .team-row.first .team-val { font-size:28px; }
+  /* Aún más compacto con 8+ */
+  .team-list:has(.team-row:nth-child(8)) { gap:4px; padding:0 40px 18px; }
+  .team-list:has(.team-row:nth-child(8)) .team-row { padding:5px 12px; gap:14px; }
+  .team-list:has(.team-row:nth-child(8)) .team-pos { font-size:18px; }
+  .team-list:has(.team-row:nth-child(8)) .team-row.first .team-pos { font-size:22px; }
+  .team-list:has(.team-row:nth-child(8)) .team-name { font-size:12px; }
+  .team-list:has(.team-row:nth-child(8)) .team-row.first .team-name { font-size:13px; }
+  .team-list:has(.team-row:nth-child(8)) .team-sub { font-size:9px; margin-top:1px; }
+  .team-list:has(.team-row:nth-child(8)) .team-val { font-size:22px; }
+  .team-list:has(.team-row:nth-child(8)) .team-row.first .team-val { font-size:26px; }
   .team-row {
     display:grid; grid-template-columns:50px minmax(0, 1fr) 100px; gap:18px; align-items:center;
     padding:12px 20px;
@@ -1669,6 +1699,11 @@
   .trofeo-lbl {
     font-family:'Sora'; font-size:11px; color:var(--text-soft);
     letter-spacing:3px; text-transform:uppercase; font-weight:600;
+  }
+  .trofeo-extra {
+    font-family:'Sora'; font-weight:700; font-size:13px;
+    color:var(--accent-2); margin-top:6px; letter-spacing:1px;
+    text-transform:uppercase; z-index:1; position:relative;
   }
   /* Honoríficos: lista pequeña abajo */
   .trofeo-honor {
@@ -3400,7 +3435,10 @@ function render() {
 
   // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
   const soloTops = ['rev','crec','ticket','meta'];
-  const listaTops = ['supVtas', 'supMeta', 'revTop', 'crecTop', 'ticketTop']; // siempre lista vertical
+  // Lista vertical OBLIGATORIA solo para supervisores (no caben en formato "podio")
+  const listaTops = ['supVtas', 'supMeta'];
+  // Variantes "Top" de agentes (revTop, crecTop, ticketTop): cuando cantidad=3 usan layout visual,
+  // cuando cantidad>3 caen en lista. Eso ya lo maneja la condición "state.cantidad > 3" abajo.
 
   let bodyHTML = '';
 
@@ -3608,12 +3646,63 @@ function render() {
     if (state.topId === 'rev') {
       metricVal = a.ventas;
     }
+    // Para crecimiento, el "+12" grande y "+400%" como subtexto
+    let metricSubtxt = '';
+    if (state.topId === 'crec') {
+      metricVal = `+${a.crecAbs || 0}`;
+      metricSubtxt = `+${a.crecPct || 0}%`;
+    }
     // Para meta, mostrar fecha legible
     let displayVal = metricVal;
     if (state.topId === 'meta' && typeof metricVal === 'string' && metricVal.length === 10) {
       const [y, m, d] = metricVal.split('-');
       displayVal = `${d}/${m}`;
     }
+    // ===== LAYOUT TROFEO para tops "solo" (un solo agente) =====
+    if (state.layout === 'trofeo') {
+      const labelKicker = state.topId === 'rev' ? 'REVELACIÓN DEL MES' :
+                          state.topId === 'crec' ? 'MAYOR CRECIMIENTO' :
+                          state.topId === 'ticket' ? 'REY DEL TICKET' :
+                          state.topId === 'meta' ? 'PRIMERO EN META' : 'CAMPEÓN DEL MES';
+      bodyHTML = `
+        <div class="trofeo-layout">
+          <div class="trofeo-placa">
+            <div class="trofeo-deco-top"></div>
+            <div class="trofeo-medalla">
+              <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
+                <circle cx="40" cy="40" r="36" fill="url(#gold-grad-solo)" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/>
+                <circle cx="40" cy="40" r="28" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
+                <text x="40" y="52" text-anchor="middle" font-family="Anton" font-size="32" fill="rgba(0,0,0,0.65)">1</text>
+                <defs>
+                  <radialGradient id="gold-grad-solo" cx="30%" cy="30%">
+                    <stop offset="0%" stop-color="var(--accent-1)"/>
+                    <stop offset="70%" stop-color="var(--accent-2)"/>
+                    <stop offset="100%" stop-color="var(--accent-3)"/>
+                  </radialGradient>
+                </defs>
+              </svg>
+            </div>
+            <div class="trofeo-kicker">${labelKicker}</div>
+            <div class="trofeo-name">${a.nombre}</div>
+            <div class="trofeo-team">${a.centro || '—'} · ${a.supervisor || '—'}</div>
+            <div class="trofeo-divider">◆ ◆ ◆</div>
+            <div class="trofeo-val">
+              <span class="trofeo-num">${displayVal}</span>
+              <span class="trofeo-lbl">${metricLabel}</span>
+            </div>
+            ${metricSubtxt ? `<div class="trofeo-extra">${metricSubtxt}</div>` : ''}
+            ${state.topId === 'crec' ? `<div class="trofeo-extra">${a.anterior} → ${a.ventas} ventas</div>` : ''}
+            ${state.topId === 'ticket' ? `<div class="trofeo-extra">${a.ventas} ventas del mes</div>` : ''}
+            ${state.topId === 'meta' ? `<div class="trofeo-extra">${a.ventas} vtas / ${a.meta} meta</div>` : ''}
+            ${state.topId === 'rev' && a.diasEnEmpresa !== undefined ? `<div class="trofeo-extra">${a.diasEnEmpresa} días en empresa</div>` : ''}
+            <div class="trofeo-deco-bottom"></div>
+          </div>
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
+
     bodyHTML = `
       <div class="solo">
         <div class="solo-trophy">${top.icon}</div>
@@ -3622,6 +3711,7 @@ function render() {
         <div class="solo-meta">
           <div class="solo-stat">
             <div class="solo-stat-val">${displayVal}</div>
+            ${metricSubtxt ? `<div class="solo-stat-extra">${metricSubtxt}</div>` : ''}
             <div class="solo-stat-lbl">${metricLabel}</div>
           </div>
           ${state.topId === 'meta' ? `<div class="solo-stat"><div class="solo-stat-val">${a.ventas}</div><div class="solo-stat-lbl">VENTAS / ${a.meta} META</div></div>` : ''}
@@ -3633,7 +3723,11 @@ function render() {
     `;
   } else if (listaTops.includes(state.topId) || state.cantidad > 3) {
     // LISTA VERTICAL (siempre para "equipo", o cuando se piden 5+ para otros tops)
-    const arr = state.agentes.slice(0, state.cantidad);
+    // Para tops de SUPERVISORES, mostrar TODOS (no limitar a state.cantidad)
+    const todosLosSups = ['supVtas', 'supMeta'].includes(state.topId);
+    const arr = todosLosSups
+      ? state.agentes.slice()
+      : state.agentes.slice(0, state.cantidad);
     if (arr.length === 0) {
       bodyHTML = `
         <div class="empty-state">
@@ -3836,7 +3930,44 @@ function render() {
       return;
     }
     const usaRacha = state.topId === 'racha';
-    const valLabel = usaRacha ? 'DÍAS' : 'VENTAS';
+
+    // Helper: número grande a mostrar según el topId
+    const getValor = (a) => {
+      if (usaRacha) return a._rachaNum || 0;
+      if (state.topId === 'crecTop') return `+${a.crecAbs || 0}`;
+      if (state.topId === 'ticketTop') return a.metric || a.ventas;
+      // revTop, global, etc → ventas
+      return a.ventas;
+    };
+
+    // Helper: label debajo del número grande
+    const getValLabel = () => {
+      if (usaRacha) return 'DÍAS';
+      if (state.topId === 'crecTop') return 'VS MES ANT';
+      if (state.topId === 'ticketTop') return 'ARPU';
+      return 'VENTAS';
+    };
+
+    // Helper: dato extra para sublínea (sustituye a centro·sup en algunos casos)
+    const getExtraDato = (a) => {
+      if (state.topId === 'crecTop') return `${a.anterior || 0} → ${a.ventas || 0} vtas (+${a.crecPct || 0}%)`;
+      if (state.topId === 'ticketTop') return `${a.ventas || 0} vtas`;
+      if (state.topId === 'revTop' && a.diasEnEmpresa !== undefined) return `${a.diasEnEmpresa}d en empresa`;
+      return '';
+    };
+
+    const valLabel = getValLabel();
+
+    // Helper: valor NUMÉRICO puro (para cálculo de proporciones / barras)
+    const getNum = (a) => {
+      if (usaRacha) return a._rachaNum || 0;
+      if (state.topId === 'crecTop') return a.crecAbs || 0;
+      if (state.topId === 'ticketTop') {
+        // ticketTop guarda el ARPU en a.metric como string ("$1,234"), extraer número
+        return parseFloat(String(a.metric || '0').replace(/[^0-9.]/g, '')) || a.ventas || 0;
+      }
+      return a.ventas || 0;
+    };
 
     // Helper común: iniciales para avatar
     const iniciales = (n) => {
@@ -3851,13 +3982,14 @@ function render() {
     // ============================================
     if (state.layout === 'stat') {
       const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
-      const maxVal = Math.max(...ordenados.map(a => usaRacha ? (a._rachaNum || 0) : a.ventas), 1);
+      const maxVal = Math.max(...ordenados.map(getNum), 1);
       bodyHTML = `
         <div class="stat-layout">
           ${ordenados.map((a, i) => {
             const r = a.rank || (i + 1);
-            const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
-            const pct = (valor / maxVal) * 100;
+            const valor = getValor(a);
+            const numVal = getNum(a);
+            const pct = (numVal / maxVal) * 100;
             return `
               <div class="stat-row rank-${r}">
                 <div class="stat-pos">
@@ -3912,7 +4044,7 @@ function render() {
               <div class="cinema-supporting-lbl">★ MENCIONES ESPECIALES ★</div>
               <div class="cinema-supporting-list">
                 ${resto.map(a => {
-                  const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+                  const valor = getValor(a);
                   return `
                     <div class="cinema-supporting-item rank-${a.rank || 2}">
                       <div class="cinema-supp-info">
@@ -3976,7 +4108,7 @@ function render() {
               <div class="trofeo-honor-lbl">— TAMBIÉN RECONOCEMOS —</div>
               <div class="trofeo-honor-list">
                 ${resto.map(a => {
-                  const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+                  const valor = getValor(a);
                   return `
                     <div class="trofeo-honor-item">
                       <span class="trofeo-honor-rank">#${a.rank || 2}</span>
@@ -4004,7 +4136,7 @@ function render() {
         <div class="cards-layout">
           ${ordenados.map((a, i) => {
             const r = a.rank || (i + 1);
-            const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+            const valor = getValor(a);
             const tilt = sinTilt ? '0deg' : (i === 0 ? '-2deg' : i === 1 ? '3deg' : '-1deg');
             return `
               <div class="player-card rank-${r}" style="--tilt:${tilt};">
@@ -4042,7 +4174,7 @@ function render() {
 
     // Generar cards agrupadas por rank
     const renderSpot = (a, rank) => {
-      const valor = usaRacha ? (a._rachaNum || 0) : a.ventas;
+      const valor = getValor(a);
       const subtxt = [a.centro, a.supervisor].filter(Boolean).join(' · ');
       return `
         <div class="spot rank-${rank}">
