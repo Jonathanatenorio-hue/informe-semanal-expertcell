@@ -3735,6 +3735,7 @@ try {
 // ====================================================================
 // CONFIG: TIPOS DE TOP
 // ====================================================================
+const MESES_LARGOS = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const TOPS = [
   { id:'global',    icon:'🏆', label:'Top Global',        desc:'Los mejores agentes' },
   { id:'centro',    icon:'🥇', label:'Mejor Centro',      desc:'CC2 vs JV por % meta' },
@@ -6412,6 +6413,7 @@ function parsearIdPantalla(id) {
 function renderCustomPantalla(topId) {
   const canvas = document.getElementById('canvas');
   if (!canvas) return;
+  const meses = MESES_LARGOS;
   // Establecer ratio para que sea 16:9
   canvas.classList.remove('ratio-9x16', 'ratio-1x1');
   canvas.classList.add('ratio-16x9');
@@ -7306,10 +7308,12 @@ function comprimirImagen(file, maxWidth = 1200, quality = 0.7) {
   return new Promise((resolve, reject) => {
     if (!file) { reject(new Error('No file')); return; }
     if (!file.type.startsWith('image/')) { reject(new Error('No es imagen')); return; }
+    console.log('[comprimirImagen] iniciando', { name: file.name, size: file.size, type: file.type, maxWidth, quality });
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
+        console.log('[comprimirImagen] imagen decodificada', img.width, 'x', img.height);
         try {
           let w = img.width, h = img.height;
           if (w > maxWidth) {
@@ -7320,14 +7324,26 @@ function comprimirImagen(file, maxWidth = 1200, quality = 0.7) {
           canvas.width = Math.round(w);
           canvas.height = Math.round(h);
           const ctx = canvas.getContext('2d');
+          if (!ctx) { reject(new Error('No se pudo crear contexto 2D')); return; }
           ctx.fillStyle = '#0a0a14';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          let dataUrl;
+          try {
+            dataUrl = canvas.toDataURL('image/jpeg', quality);
+          } catch(err) {
+            reject(new Error('toDataURL falló: ' + err.message));
+            return;
+          }
+          if (!dataUrl || dataUrl === 'data:,') {
+            reject(new Error('toDataURL devolvió vacío'));
+            return;
+          }
+          console.log('[comprimirImagen] OK, tamaño dataUrl:', (dataUrl.length / 1024).toFixed(0), 'KB');
           resolve(dataUrl);
         } catch(err) { reject(err); }
       };
-      img.onerror = () => reject(new Error('Error decodificando imagen'));
+      img.onerror = () => reject(new Error('Error decodificando imagen (formato no soportado?)'));
       img.src = e.target.result;
     };
     reader.onerror = () => reject(new Error('Error leyendo archivo'));
@@ -7413,49 +7429,64 @@ function iniciarUpload(id) {
 }
 
 async function manejarUpload(file) {
-  if (!imagenUploadingId || !file) return;
+  console.log('[Imagen] manejarUpload llamado', { file, imagenUploadingId });
+  if (!imagenUploadingId) {
+    alert('Error: no hay slot seleccionado para subir. Cierra el modal y vuelve a intentar.');
+    return;
+  }
+  if (!file) {
+    alert('Error: no se recibió archivo.');
+    return;
+  }
   const idGuardado = imagenUploadingId;
   imagenUploadingId = null;
 
-  // Indicar al usuario que está procesando
-  const itemEl = document.querySelector(`.imagen-item [data-id="${idGuardado}"]`);
-  let originalText = '';
-  if (itemEl) {
-    originalText = itemEl.textContent;
-    itemEl.textContent = '⏳ Procesando...';
-    itemEl.disabled = true;
+  // Mostrar indicador en el item
+  const allBtns = document.querySelectorAll('.imagen-btn-subir');
+  let btnEl = null;
+  allBtns.forEach(b => { if (b.dataset.id === idGuardado) btnEl = b; });
+  const originalText = btnEl ? btnEl.textContent : '';
+  if (btnEl) {
+    btnEl.textContent = '⏳';
+    btnEl.disabled = true;
   }
 
   try {
-    // Validar tamaño antes
+    if (!file.type || !file.type.startsWith('image/')) {
+      throw new Error('El archivo no es una imagen válida (debe ser JPG, PNG, etc.)');
+    }
     if (file.size > 30 * 1024 * 1024) {
-      throw new Error(`La imagen pesa ${(file.size/1024/1024).toFixed(1)} MB. Máximo soportado: 30 MB. Reduce el tamaño antes de subir.`);
+      throw new Error(`La imagen pesa ${(file.size/1024/1024).toFixed(1)} MB. Máximo: 30 MB.`);
     }
 
-    console.log('[Imagen] Procesando', file.name, file.size, 'bytes');
+    console.log('[Imagen] Procesando', file.name, file.size, 'bytes', file.type);
     const dataUrl = await comprimirAdaptativo(file);
     const mbFinal = tamanoMBData(dataUrl);
     console.log('[Imagen] Tamaño comprimido:', mbFinal.toFixed(2), 'MB');
 
-    // Intentar guardar
+    // Guardar en memoria primero
+    const previo = imagenesData[idGuardado];
     imagenesData[idGuardado] = dataUrl;
+
+    // Intentar persistir
     try {
       localStorage.setItem(IMAGENES_KEY, JSON.stringify(imagenesData));
     } catch(storageErr) {
-      // localStorage lleno
-      delete imagenesData[idGuardado];
-      const totalUsado = JSON.stringify(imagenesData).length / (1024 * 1024);
-      throw new Error(`Almacenamiento lleno (${totalUsado.toFixed(1)} MB usado). Borra alguna imagen primero o usa imágenes más pequeñas.`);
+      // Revertir
+      if (previo) imagenesData[idGuardado] = previo;
+      else delete imagenesData[idGuardado];
+      const total = (JSON.stringify(imagenesData).length / (1024 * 1024)).toFixed(1);
+      throw new Error(`Almacenamiento del navegador lleno (${total} MB usado). Borra alguna imagen primero.`);
     }
 
-    renderListaImagenes();
     console.log('[Imagen] ✓ Guardada como', idGuardado);
+    renderListaImagenes(); // re-render completo
   } catch(e) {
     console.error('[Imagen] Error:', e);
-    alert('❌ No se pudo guardar la imagen.\n\n' + (e.message || e.toString()));
-    if (itemEl) {
-      itemEl.textContent = originalText;
-      itemEl.disabled = false;
+    alert('❌ ' + (e.message || e.toString()));
+    if (btnEl) {
+      btnEl.textContent = originalText;
+      btnEl.disabled = false;
     }
   }
 }
