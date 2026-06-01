@@ -7,6 +7,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Sora:wght@400;500;600;700;800&family=Syne:wght@700;800&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/html-to-image@1.11.11/dist/html-to-image.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
   /* ==================== BASE ==================== */
   * { margin:0; padding:0; box-sizing:border-box; }
@@ -706,29 +707,39 @@
     border-radius:8px;
   }
 
-  /* Banner de período (Cierre Mayo / En Vivo Junio) */
+  /* Banner de período como etiqueta desprendida esquina superior derecha */
   .periodo-banner {
-    position:absolute; top:14px; left:50%;
-    transform:translateX(-50%);
-    background:linear-gradient(135deg, #94a3b8, #64748b);
+    position:absolute; top:18px; right:-6px;
+    background:linear-gradient(135deg, #cbd5e1, #94a3b8);
     color:#1a1a1a;
-    padding:6px 18px;
-    border-radius:20px;
-    font-family:'Sora'; font-weight:900; font-size:11px;
+    padding:5px 14px 5px 18px;
+    font-family:'Sora'; font-weight:900; font-size:10px;
     letter-spacing:2px;
-    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    box-shadow:-4px 6px 14px rgba(0,0,0,0.5);
     z-index:50;
-    border:1.5px solid rgba(255,255,255,0.4);
+    border:1px solid rgba(0,0,0,0.15);
+    border-right:none;
+    transform:rotate(0deg);
+    /* Forma de etiqueta con muesca a la izquierda y bandera a la derecha */
+    clip-path:polygon(8px 0, 100% 0, 100% 100%, 8px 100%, 0 50%);
+  }
+  /* Pseudo-elemento para la "sombra desprendida" del lado derecho */
+  .periodo-banner::after {
+    content:'';
+    position:absolute; right:0; top:100%;
+    width:6px; height:8px;
+    background:rgba(0,0,0,0.4);
+    clip-path:polygon(0 0, 100% 0, 0 100%);
   }
   .periodo-banner.periodo-junio {
-    background:linear-gradient(135deg, #10b981, #059669);
+    background:linear-gradient(135deg, #34d399, #10b981);
     color:#fff;
-    border-color:rgba(255,255,255,0.5);
+    text-shadow:0 1px 2px rgba(0,0,0,0.3);
     animation:periodo-pulse 2.5s ease-in-out infinite;
   }
   @keyframes periodo-pulse {
-    0%, 100% { box-shadow:0 4px 14px rgba(16,185,129,0.4); }
-    50% { box-shadow:0 4px 22px rgba(16,185,129,0.7); }
+    0%, 100% { box-shadow:-4px 6px 14px rgba(16,185,129,0.5); }
+    50% { box-shadow:-4px 6px 22px rgba(16,185,129,0.9); }
   }
   .btn-secondary {
     background:rgba(255,255,255,0.06); color:#ccc;
@@ -737,6 +748,64 @@
     border-radius:8px; cursor:pointer;
   }
   .btn-secondary:hover { background:rgba(255,255,255,0.1); }
+  .btn-export {
+    background:linear-gradient(135deg, #14b8a6, #0d9488); color:#fff;
+    border:1px solid #14b8a6;
+    padding:10px 18px;
+    font-family:'Sora'; font-weight:700; font-size:13px;
+    border-radius:8px; cursor:pointer;
+    box-shadow:0 4px 12px rgba(20,184,166,0.3);
+  }
+  .btn-export:hover { transform:translateY(-1px); box-shadow:0 6px 16px rgba(20,184,166,0.45); }
+  .btn-export:disabled { opacity:0.6; cursor:wait; }
+
+  /* Overlay de exportación */
+  #export-overlay {
+    position:fixed; inset:0; z-index:10000;
+    background:rgba(0,0,0,0.85);
+    backdrop-filter:blur(12px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .export-overlay-card {
+    width:90%; max-width:480px;
+    background:linear-gradient(180deg, #1a1a24, #0f0f18);
+    border:2px solid #14b8a6;
+    border-radius:16px;
+    padding:32px 28px;
+    text-align:center;
+    box-shadow:0 30px 80px rgba(0,0,0,0.6);
+  }
+  .export-overlay-icon { font-size:48px; margin-bottom:12px; }
+  .export-overlay-title {
+    font-family:'Syne', sans-serif; font-weight:800; font-size:22px;
+    color:#fff; margin-bottom:6px;
+  }
+  .export-overlay-subtitle {
+    font-family:'Sora'; font-size:12px; color:#a7f3d0;
+    letter-spacing:0.5px; margin-bottom:18px;
+    min-height:18px;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .export-overlay-bar-wrap {
+    width:100%; height:10px; background:rgba(255,255,255,0.1);
+    border-radius:6px; overflow:hidden; margin-bottom:8px;
+  }
+  .export-overlay-bar {
+    height:100%; background:linear-gradient(90deg, #14b8a6, #d4af37);
+    border-radius:6px; transition:width 0.3s ease;
+  }
+  .export-overlay-counter {
+    font-family:'Anton', sans-serif; font-size:24px;
+    color:#d4af37; letter-spacing:2px; margin-bottom:18px;
+  }
+  .export-overlay-cancel {
+    background:transparent; color:#999;
+    border:1px solid rgba(255,255,255,0.2);
+    padding:8px 18px; border-radius:8px;
+    font-family:'Sora'; font-size:12px; font-weight:600;
+    cursor:pointer;
+  }
+  .export-overlay-cancel:hover { background:rgba(255,255,255,0.06); color:#fff; }
 
   /* MODAL */
   .presentar-modal {
@@ -6975,6 +7044,217 @@ function anteriorPantallaPresentar() {
   mostrarPantallaPresentar();
 }
 
+// ========================================================================
+// EXPORTAR SLIDESHOW como ZIP de PNGs (para USB → TV)
+// ========================================================================
+async function exportarSlideshow() {
+  if (presentarConfig.pantallas.length === 0) {
+    alert('Selecciona al menos una pantalla para exportar.');
+    return;
+  }
+  if (typeof JSZip === 'undefined') {
+    alert('Librería JSZip no cargó. Recarga la página.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-export-slideshow');
+  const btnText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Iniciando...';
+
+  // Crear overlay de progreso
+  const overlay = document.createElement('div');
+  overlay.id = 'export-overlay';
+  overlay.innerHTML = `
+    <div class="export-overlay-card">
+      <div class="export-overlay-icon">📦</div>
+      <div class="export-overlay-title">Generando slideshow</div>
+      <div class="export-overlay-subtitle" id="export-status">Iniciando...</div>
+      <div class="export-overlay-bar-wrap">
+        <div class="export-overlay-bar" id="export-bar" style="width:0%"></div>
+      </div>
+      <div class="export-overlay-counter" id="export-counter">0 / ${presentarConfig.pantallas.length}</div>
+      <button class="export-overlay-cancel" id="export-cancel-btn">Cancelar</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  let cancelado = false;
+  document.getElementById('export-cancel-btn').onclick = () => { cancelado = true; };
+
+  // Guardar state original
+  const origState = {
+    topId: state.topId, layout: state.layout, tema: state.tema, cantidad: state.cantidad,
+    centro: state.centro, supervisor: state.supervisor, stickers: state.stickers,
+    mes: state.mes, anio: state.anio
+  };
+
+  // Aplicar tema/layout/stickers según config
+  const combo = getComboDelDia();
+  state.tema = presentarConfig.tema === 'auto' ? combo.tema : presentarConfig.tema;
+  state.layout = presentarConfig.layout === 'auto' ? combo.layout : presentarConfig.layout;
+  state.stickers = presentarConfig.stickers;
+  state.cantidad = 3;
+
+  const zip = new JSZip();
+  const cacheRawData = {};
+
+  try {
+    for (let i = 0; i < presentarConfig.pantallas.length; i++) {
+      if (cancelado) {
+        document.getElementById('export-status').textContent = 'Cancelado';
+        break;
+      }
+      const idPantalla = presentarConfig.pantallas[i];
+      const parsed = parsearIdPantalla(idPantalla);
+      const numStr = String(i + 1).padStart(3, '0');
+      const labelClean = idPantalla.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 40);
+      const fileName = `${numStr}_${labelClean}.png`;
+
+      document.getElementById('export-status').textContent = `Procesando: ${idPantalla}`;
+      document.getElementById('export-counter').textContent = `${i + 1} / ${presentarConfig.pantallas.length}`;
+      document.getElementById('export-bar').style.width = `${((i) / presentarConfig.pantallas.length * 100)}%`;
+
+      // === IMAGEN del reporte: usar la imagen guardada directamente ===
+      if (parsed.esImagen) {
+        const dataUrl = imagenesData[parsed.imgId];
+        if (dataUrl) {
+          const b64 = dataUrl.split(',')[1];
+          zip.file(fileName.replace('.png', '.jpg'), b64, { base64: true });
+        }
+        continue;
+      }
+
+      // === Cambiar período si aplica ===
+      const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
+      const targetAnio = (parsed.periodo === 'mayo' || parsed.periodo === 'junio') ? 2026 : null;
+      if (targetMes && (state.mes !== targetMes || state.anio !== targetAnio)) {
+        state.mes = targetMes;
+        state.anio = targetAnio;
+        const cacheKey = `${targetAnio}_${targetMes}`;
+        if (cacheRawData[cacheKey]) {
+          state.rawData = cacheRawData[cacheKey];
+        } else {
+          await cargarDesdeSupabase();
+          cacheRawData[cacheKey] = state.rawData;
+        }
+      }
+
+      // === Render normal o custom ===
+      state.topId = parsed.topId;
+      state.centro = parsed.centro;
+      state.supervisor = parsed.supervisor;
+
+      if (parsed.topId === 'top10') {
+        state.topId = 'global';
+        state.cantidad = 10;
+      } else {
+        const soloTops = ['rev','crec','ticket','meta'];
+        if (soloTops.includes(parsed.topId)) state.cantidad = 1;
+        else state.cantidad = 3;
+      }
+
+      aplicarTema();
+
+      const esComunicado = parsed.topId.startsWith('com_');
+      const esGrafica = parsed.topId.startsWith('graf_');
+      const esCustom = parsed.topId === 'promAgente' || esComunicado || esGrafica;
+      if (esCustom) {
+        renderCustomPantalla(parsed.topId);
+      } else {
+        if (state.rawData) state.agentes = procesarDatos();
+        render();
+      }
+
+      // Agregar banner si tiene período
+      if (parsed.periodo) {
+        const canvasEl = document.getElementById('canvas');
+        if (canvasEl) {
+          const prev = canvasEl.querySelector('.periodo-banner');
+          if (prev) prev.remove();
+          const banner = document.createElement('div');
+          banner.className = 'periodo-banner' + (parsed.periodo === 'junio' ? ' periodo-junio' : '');
+          banner.textContent = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
+          canvasEl.appendChild(banner);
+        }
+      }
+
+      // Esperar a que se pinte
+      await new Promise(r => setTimeout(r, 250));
+
+      // Capturar como PNG
+      const canvasCap = document.getElementById('canvas');
+      try {
+        const pngDataUrl = await htmlToImage.toPng(canvasCap, {
+          pixelRatio: 2,
+          backgroundColor: '#06060a',
+          style: { transform: 'scale(1)' }
+        });
+        const b64 = pngDataUrl.split(',')[1];
+        zip.file(fileName, b64, { base64: true });
+      } catch(e) {
+        console.warn(`Error capturando pantalla ${idPantalla}:`, e);
+      }
+    }
+
+    if (!cancelado) {
+      document.getElementById('export-status').textContent = 'Empaquetando ZIP...';
+      document.getElementById('export-bar').style.width = '95%';
+
+      const fecha = new Date();
+      const fechaStr = `${fecha.getFullYear()}-${String(fecha.getMonth()+1).padStart(2,'0')}-${String(fecha.getDate()).padStart(2,'0')}`;
+      const readme = `EXPERTCELL · SLIDESHOW PARA TV
+Generado: ${fechaStr}
+Total pantallas: ${presentarConfig.pantallas.length}
+Duración recomendada por imagen: ${presentarConfig.duracion} segundos
+
+INSTRUCCIONES PARA REPRODUCIR EN TV:
+1. Extrae todas las imágenes a una carpeta de USB (vacía la carpeta si tiene archivos viejos)
+2. Conecta el USB a la TV
+3. En el menú USB de la TV, elige "Ver fotos" / "Galería" / "USB"
+4. Elige "Reproducir todas" o "Slideshow"
+5. Configura la duración por imagen a ${presentarConfig.duracion} segundos en el menú de la TV
+6. Activa "Repetir" para que corra en bucle todo el día
+`;
+      zip.file('LEEME.txt', readme);
+
+      const blob = await zip.generateAsync({ type: 'blob' }, (metadata) => {
+        document.getElementById('export-bar').style.width = `${95 + metadata.percent * 0.05}%`;
+      });
+
+      const nombreZip = `expertcell_slideshow_${fechaStr}.zip`;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nombreZip;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+
+      document.getElementById('export-status').textContent = '✅ ¡Listo! Descargando...';
+      document.getElementById('export-bar').style.width = '100%';
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  } catch(e) {
+    console.error('Error exportando slideshow:', e);
+    document.getElementById('export-status').textContent = '❌ Error: ' + (e.message || e.toString());
+    await new Promise(r => setTimeout(r, 3000));
+  }
+
+  // Limpiar overlay
+  overlay.remove();
+
+  // Restaurar state original
+  Object.assign(state, origState);
+  aplicarTema();
+  if (state.rawData) {
+    state.agentes = procesarDatos();
+    render();
+  }
+
+  btn.disabled = false;
+  btn.textContent = btnText;
+}
+
+window.exportarSlideshow = exportarSlideshow;
+
 document.getElementById('btn-presentar').onclick = abrirModalPresentar;
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement && presentarState.activo) {
@@ -7022,35 +7302,66 @@ function guardarImagenes() {
 }
 
 // Comprime una imagen redimensionándola y bajando calidad JPEG
-function comprimirImagen(file, maxWidth = 1400, quality = 0.75) {
+function comprimirImagen(file, maxWidth = 1200, quality = 0.7) {
   return new Promise((resolve, reject) => {
+    if (!file) { reject(new Error('No file')); return; }
+    if (!file.type.startsWith('image/')) { reject(new Error('No es imagen')); return; }
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
       img.onload = () => {
-        // Calcular tamaño final
-        let w = img.width, h = img.height;
-        if (w > maxWidth) {
-          h = h * (maxWidth / w);
-          w = maxWidth;
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        // Fondo blanco por si es PNG con transparencia (para JPEG)
-        ctx.fillStyle = '#0a0a14';
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(img, 0, 0, w, h);
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(dataUrl);
+        try {
+          let w = img.width, h = img.height;
+          if (w > maxWidth) {
+            h = h * (maxWidth / w);
+            w = maxWidth;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(w);
+          canvas.height = Math.round(h);
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#0a0a14';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          resolve(dataUrl);
+        } catch(err) { reject(err); }
       };
-      img.onerror = reject;
+      img.onerror = () => reject(new Error('Error decodificando imagen'));
       img.src = e.target.result;
     };
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('Error leyendo archivo'));
     reader.readAsDataURL(file);
   });
+}
+
+// Estimar el tamaño en MB de un data URL
+function tamanoMBData(dataUrl) {
+  // base64 = 4/3 del tamaño binario, restamos cabecera
+  const b64 = dataUrl.split(',')[1] || '';
+  return (b64.length * 0.75) / (1024 * 1024);
+}
+
+// Comprimir progresivamente bajando calidad hasta caber en límite
+async function comprimirAdaptativo(file) {
+  // Estrategia: probar tamaños/calidades progresivos hasta que el data URL pese < 800 KB
+  const configs = [
+    { w: 1400, q: 0.8 },
+    { w: 1200, q: 0.75 },
+    { w: 1000, q: 0.7 },
+    { w: 900,  q: 0.65 },
+    { w: 800,  q: 0.6 },
+    { w: 700,  q: 0.55 },
+  ];
+  const TARGET_MB = 0.8;
+  let last = null;
+  for (const c of configs) {
+    const url = await comprimirImagen(file, c.w, c.q);
+    last = url;
+    const mb = tamanoMBData(url);
+    if (mb < TARGET_MB) return url;
+  }
+  return last; // devolver el más comprimido aunque exceda
 }
 
 function abrirModalImagenes() {
@@ -7103,17 +7414,50 @@ function iniciarUpload(id) {
 
 async function manejarUpload(file) {
   if (!imagenUploadingId || !file) return;
-  try {
-    const dataUrl = await comprimirImagen(file);
-    imagenesData[imagenUploadingId] = dataUrl;
-    if (guardarImagenes()) {
-      renderListaImagenes();
-    }
-  } catch(e) {
-    console.error(e);
-    alert('Error procesando la imagen. Intenta con otra.');
-  }
+  const idGuardado = imagenUploadingId;
   imagenUploadingId = null;
+
+  // Indicar al usuario que está procesando
+  const itemEl = document.querySelector(`.imagen-item [data-id="${idGuardado}"]`);
+  let originalText = '';
+  if (itemEl) {
+    originalText = itemEl.textContent;
+    itemEl.textContent = '⏳ Procesando...';
+    itemEl.disabled = true;
+  }
+
+  try {
+    // Validar tamaño antes
+    if (file.size > 30 * 1024 * 1024) {
+      throw new Error(`La imagen pesa ${(file.size/1024/1024).toFixed(1)} MB. Máximo soportado: 30 MB. Reduce el tamaño antes de subir.`);
+    }
+
+    console.log('[Imagen] Procesando', file.name, file.size, 'bytes');
+    const dataUrl = await comprimirAdaptativo(file);
+    const mbFinal = tamanoMBData(dataUrl);
+    console.log('[Imagen] Tamaño comprimido:', mbFinal.toFixed(2), 'MB');
+
+    // Intentar guardar
+    imagenesData[idGuardado] = dataUrl;
+    try {
+      localStorage.setItem(IMAGENES_KEY, JSON.stringify(imagenesData));
+    } catch(storageErr) {
+      // localStorage lleno
+      delete imagenesData[idGuardado];
+      const totalUsado = JSON.stringify(imagenesData).length / (1024 * 1024);
+      throw new Error(`Almacenamiento lleno (${totalUsado.toFixed(1)} MB usado). Borra alguna imagen primero o usa imágenes más pequeñas.`);
+    }
+
+    renderListaImagenes();
+    console.log('[Imagen] ✓ Guardada como', idGuardado);
+  } catch(e) {
+    console.error('[Imagen] Error:', e);
+    alert('❌ No se pudo guardar la imagen.\n\n' + (e.message || e.toString()));
+    if (itemEl) {
+      itemEl.textContent = originalText;
+      itemEl.disabled = false;
+    }
+  }
 }
 
 function borrarImagen(id) {
@@ -7224,6 +7568,7 @@ window.restaurarPantallasDefault = restaurarPantallasDefault;
     </div>
     <div class="presentar-modal-footer">
       <button class="btn btn-secondary" onclick="cerrarModalPresentar()">Cancelar</button>
+      <button class="btn btn-export" id="btn-export-slideshow" onclick="exportarSlideshow()">📦 Exportar ZIP para USB</button>
       <button class="btn btn-gold" onclick="iniciarPresentacion()">▶️ Iniciar presentación</button>
     </div>
   </div>
