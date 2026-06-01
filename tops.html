@@ -259,6 +259,182 @@
   }
   .preview-actions { display:flex; gap:10px; margin-top:20px; }
 
+  /* ==================== BOTÓN PRESENTAR Y MODAL ==================== */
+  .btn-presentar {
+    background:linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff;
+    border:1px solid #6366f1;
+    width:100%; padding:12px 18px;
+    font-family:'Sora'; font-weight:700; font-size:13px;
+    border-radius:8px; cursor:pointer;
+    letter-spacing:0.5px; transition:all 0.2s;
+    box-shadow:0 4px 14px rgba(99,102,241,0.3);
+  }
+  .btn-presentar:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(99,102,241,0.45); }
+  .btn-secondary {
+    background:rgba(255,255,255,0.06); color:#ccc;
+    border:1px solid rgba(255,255,255,0.15);
+    padding:10px 18px; font-family:'Sora'; font-weight:600; font-size:13px;
+    border-radius:8px; cursor:pointer;
+  }
+  .btn-secondary:hover { background:rgba(255,255,255,0.1); }
+
+  /* MODAL */
+  .presentar-modal {
+    position:fixed; inset:0; z-index:1000;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .presentar-modal-bg {
+    position:absolute; inset:0;
+    background:rgba(0,0,0,0.75);
+    backdrop-filter:blur(8px);
+  }
+  .presentar-modal-card {
+    position:relative;
+    width:90%; max-width:560px;
+    max-height:90vh; overflow-y:auto;
+    background:linear-gradient(180deg, #1a1a24, #0f0f18);
+    border:1px solid rgba(212,175,55,0.3);
+    border-radius:16px;
+    box-shadow:0 30px 70px rgba(0,0,0,0.6);
+    color:#e5e5e5;
+  }
+  .presentar-modal-header {
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:20px 24px 16px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  .presentar-modal-title {
+    font-family:'Syne', sans-serif; font-weight:800; font-size:20px;
+    color:#fff;
+  }
+  .presentar-modal-subtitle {
+    font-family:'Sora'; font-size:12px; color:#999; margin-top:4px;
+  }
+  .presentar-modal-close {
+    background:rgba(255,255,255,0.08); border:none; color:#999;
+    width:32px; height:32px; border-radius:50%; cursor:pointer;
+    font-size:14px; line-height:1;
+  }
+  .presentar-modal-close:hover { background:rgba(255,255,255,0.15); color:#fff; }
+  .presentar-modal-body { padding:20px 24px; }
+  .presentar-section { margin-bottom:22px; }
+  .presentar-section-title {
+    font-family:'Sora'; font-weight:700; font-size:11px; color:#d4af37;
+    letter-spacing:2px; text-transform:uppercase; margin-bottom:8px;
+  }
+  .presentar-pantalla-item {
+    display:flex; align-items:center; gap:10px;
+    padding:8px 12px; margin-bottom:5px;
+    background:rgba(255,255,255,0.03);
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:8px; cursor:pointer;
+    transition:all 0.15s;
+  }
+  .presentar-pantalla-item:hover { background:rgba(255,255,255,0.06); border-color:rgba(212,175,55,0.25); }
+  .presentar-pantalla-item.active {
+    background:rgba(212,175,55,0.1); border-color:rgba(212,175,55,0.45);
+  }
+  .presentar-pantalla-check {
+    width:20px; height:20px; border-radius:6px;
+    border:1.5px solid rgba(255,255,255,0.25);
+    display:flex; align-items:center; justify-content:center;
+    flex-shrink:0;
+  }
+  .presentar-pantalla-item.active .presentar-pantalla-check {
+    background:#d4af37; border-color:#d4af37; color:#000;
+    font-weight:bold;
+  }
+  .presentar-pantalla-info { flex:1; min-width:0; }
+  .presentar-pantalla-icon { font-size:18px; }
+  .presentar-pantalla-name { font-family:'Sora'; font-weight:700; font-size:13px; color:#fff; }
+  .presentar-pantalla-desc { font-family:'Sora'; font-size:10px; color:#888; margin-top:1px; }
+  .presentar-style-preview {
+    display:flex; gap:12px; align-items:center;
+    padding:12px 16px;
+    background:rgba(99,102,241,0.08);
+    border:1px solid rgba(99,102,241,0.25);
+    border-radius:8px;
+  }
+  .presentar-style-day {
+    font-family:'Anton', sans-serif; font-size:18px; color:#a5a3ff;
+    letter-spacing:2px; text-transform:uppercase;
+  }
+  .presentar-style-combo {
+    font-family:'Sora'; font-size:12px; color:#ccc;
+    flex:1;
+  }
+  .presentar-modal-footer {
+    display:flex; justify-content:flex-end; gap:10px;
+    padding:16px 24px 20px;
+    border-top:1px solid rgba(255,255,255,0.06);
+  }
+
+  /* STAGE DE PRESENTACIÓN (fullscreen) */
+  .presentar-stage {
+    position:fixed; inset:0; z-index:9999;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .presentar-stage-canvas {
+    width:100vw; height:100vh;
+    display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  /* El canvas adentro escala para llenar la pantalla manteniendo proporción */
+  .presentar-stage-canvas .canvas-top {
+    transform-origin:center center;
+    box-shadow:none;
+  }
+  /* Transición fade-zoom */
+  .presentar-fading-out { animation:presentar-fadeout 0.6s ease-in forwards; }
+  .presentar-fading-in { animation:presentar-fadein 0.6s ease-out forwards; }
+  @keyframes presentar-fadeout {
+    from { opacity:1; transform:scale(1); }
+    to { opacity:0; transform:scale(1.05); }
+  }
+  @keyframes presentar-fadein {
+    from { opacity:0; transform:scale(0.97); }
+    to { opacity:1; transform:scale(1); }
+  }
+  /* Indicador de dots inferior */
+  .presentar-stage-dots {
+    position:absolute; bottom:24px; left:50%;
+    transform:translateX(-50%);
+    display:flex; gap:8px;
+    z-index:10;
+  }
+  .presentar-dot {
+    width:8px; height:8px; border-radius:50%;
+    background:rgba(255,255,255,0.18);
+    transition:all 0.4s;
+  }
+  .presentar-dot.active {
+    background:#d4af37;
+    width:24px; border-radius:4px;
+    box-shadow:0 0 12px rgba(212,175,55,0.5);
+  }
+  /* Indicador esquina inferior derecha del tema del día */
+  .presentar-stage-day {
+    position:absolute; bottom:22px; right:28px;
+    font-family:'Sora'; font-size:10px;
+    color:rgba(255,255,255,0.35);
+    letter-spacing:3px; text-transform:uppercase;
+    z-index:10;
+  }
+  /* Botón de salida (solo aparece al mover el mouse) */
+  .presentar-stage-exit {
+    position:absolute; top:20px; right:20px;
+    background:rgba(0,0,0,0.6); color:#fff;
+    border:1px solid rgba(255,255,255,0.2);
+    padding:8px 14px; border-radius:8px;
+    font-family:'Sora'; font-size:11px;
+    cursor:pointer; opacity:0; transition:opacity 0.3s;
+    z-index:11;
+  }
+  .presentar-stage:hover .presentar-stage-exit { opacity:1; }
+  .presentar-stage-exit:hover { background:rgba(0,0,0,0.85); }
+
   /* ==================== CANVAS DEL TOP (tema dinámico) ==================== */
   .canvas-top {
     background:
@@ -2907,6 +3083,11 @@ JENNY PEREZ TOME | 17 | JV"></textarea>
       <button class="btn btn-gold" id="btn-descargar">📥 Descargar PNG (alta resolución)</button>
       <div class="small-help">Se descarga la imagen actual del preview en 2x de resolución.</div>
     </div>
+
+    <div class="section">
+      <button class="btn btn-presentar" id="btn-presentar">🎬 Modo Presentación (TV)</button>
+      <div class="small-help">Rota varias pantallas en pantalla completa. Ideal para TV de la operación.</div>
+    </div>
   </div>
 
   <!-- ==================== PREVIEW ==================== -->
@@ -5031,6 +5212,308 @@ setTimeout(() => {
     cargarDesdeSupabase();
   }
 }, 800);
+
+// ========================================================================
+// MODO PRESENTACIÓN (TV / Proyector)
+// ========================================================================
+const PRESENTAR_KEY = 'expertcell_presentar_config_v1';
+let presentarConfig = {
+  duracion: 60,
+  pantallas: []
+};
+let presentarState = {
+  activo: false,
+  indice: 0,
+  timer: null,
+  origState: null
+};
+
+const COMBO_DEL_DIA = [
+  { dia: 'DOMINGO',   tema: 'gold',     layout: 'trofeo' },
+  { dia: 'LUNES',     tema: 'gold',     layout: 'podio'  },
+  { dia: 'MARTES',    tema: 'neon',     layout: 'cards'  },
+  { dia: 'MIÉRCOLES', tema: 'editorial', layout: 'stat'  },
+  { dia: 'JUEVES',    tema: 'gradient', layout: 'cinema' },
+  { dia: 'VIERNES',   tema: 'gold',     layout: 'trofeo' },
+  { dia: 'SÁBADO',    tema: 'neon',     layout: 'podio'  }
+];
+
+function getComboDelDia() {
+  return COMBO_DEL_DIA[new Date().getDay()];
+}
+
+const PANTALLAS_DISPONIBLES = [
+  { topId: 'global',   icon: '🏆', label: 'Top 3 Global',        desc: 'Los 3 mejores agentes del mes' },
+  { topId: 'centro',   icon: '🥇', label: 'Mejor Centro',         desc: 'Competencia entre CC2 y JV' },
+  { topId: 'resumenc', icon: '📋', label: 'Resumen Centro',       desc: 'Top 3 por cada supervisor' },
+  { topId: 'supVtas',  icon: '🎖️', label: 'Top Supervisores',    desc: 'Por ventas totales' },
+  { topId: 'supMeta',  icon: '📊', label: 'Sup. por % Meta',      desc: 'Por cumplimiento' },
+  { topId: 'rev',      icon: '🚀', label: 'Revelación del mes',   desc: 'El mejor agente nuevo' },
+  { topId: 'crec',     icon: '📈', label: 'Mayor Crecimiento',    desc: 'Quien más creció vs mes anterior' },
+  { topId: 'racha',    icon: '🔥', label: 'Racha Activa',          desc: 'Programa de premios' },
+  { topId: 'ticket',   icon: '💎', label: 'Rey del Ticket',       desc: 'Mejor ARPU' },
+  { topId: 'meta',     icon: '🎯', label: 'Primero en Meta',      desc: 'Quien llegó primero' },
+  { topId: 'metaCarr', icon: '🏁', label: 'Carrera a Meta',       desc: 'Tabla de quien cumplió' }
+];
+
+function cargarConfigPresentar() {
+  try {
+    const saved = localStorage.getItem(PRESENTAR_KEY);
+    if (saved) {
+      const cfg = JSON.parse(saved);
+      presentarConfig.duracion = cfg.duracion || 60;
+      presentarConfig.pantallas = cfg.pantallas || [];
+    }
+  } catch(e) { console.warn(e); }
+}
+
+function guardarConfigPresentar() {
+  localStorage.setItem(PRESENTAR_KEY, JSON.stringify(presentarConfig));
+}
+
+function abrirModalPresentar() {
+  cargarConfigPresentar();
+  if (presentarConfig.pantallas.length === 0) {
+    presentarConfig.pantallas = ['global', 'centro', 'racha', 'supVtas', 'rev', 'crec', 'ticket'];
+  }
+
+  document.querySelectorAll('#presentar-duracion-chips .chip').forEach(c => {
+    c.classList.toggle('active', parseInt(c.dataset.dur) === presentarConfig.duracion);
+    c.onclick = () => {
+      presentarConfig.duracion = parseInt(c.dataset.dur);
+      document.querySelectorAll('#presentar-duracion-chips .chip').forEach(x => x.classList.remove('active'));
+      c.classList.add('active');
+    };
+  });
+
+  const list = document.getElementById('presentar-pantallas-list');
+  list.innerHTML = PANTALLAS_DISPONIBLES.map(p => {
+    const activo = presentarConfig.pantallas.includes(p.topId);
+    return `
+      <div class="presentar-pantalla-item ${activo ? 'active' : ''}" data-topid="${p.topId}">
+        <div class="presentar-pantalla-check">${activo ? '✓' : ''}</div>
+        <div class="presentar-pantalla-icon">${p.icon}</div>
+        <div class="presentar-pantalla-info">
+          <div class="presentar-pantalla-name">${p.label}</div>
+          <div class="presentar-pantalla-desc">${p.desc}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  list.querySelectorAll('.presentar-pantalla-item').forEach(el => {
+    el.onclick = () => {
+      const id = el.dataset.topid;
+      const idx = presentarConfig.pantallas.indexOf(id);
+      if (idx >= 0) presentarConfig.pantallas.splice(idx, 1);
+      else presentarConfig.pantallas.push(id);
+      el.classList.toggle('active');
+      el.querySelector('.presentar-pantalla-check').textContent = presentarConfig.pantallas.includes(id) ? '✓' : '';
+    };
+  });
+
+  const combo = getComboDelDia();
+  const nombreTema = { gold: 'DORADO LUXURY', neon: 'NEÓN ESPORTS', editorial: 'EDITORIAL', gradient: 'GRADIENT AT&T' };
+  const nombreLayout = { podio: 'Podio clásico', cards: 'Cards estilo NBA', stat: 'Stat Board deportivo', cinema: 'Cinema con menciones', trofeo: 'Trofeo formal' };
+  document.querySelector('#presentar-style-preview .presentar-style-day').textContent = combo.dia;
+  document.querySelector('#presentar-style-preview .presentar-style-combo').textContent =
+    `${nombreTema[combo.tema] || combo.tema} · ${nombreLayout[combo.layout] || combo.layout}`;
+
+  document.getElementById('presentar-modal').style.display = 'flex';
+}
+
+function cerrarModalPresentar() {
+  document.getElementById('presentar-modal').style.display = 'none';
+}
+
+function iniciarPresentacion() {
+  if (presentarConfig.pantallas.length === 0) {
+    alert('Selecciona al menos una pantalla para mostrar.');
+    return;
+  }
+  guardarConfigPresentar();
+  cerrarModalPresentar();
+
+  presentarState.origState = {
+    topId: state.topId,
+    layout: state.layout,
+    tema: state.tema,
+    cantidad: state.cantidad
+  };
+
+  const combo = getComboDelDia();
+  state.tema = combo.tema;
+  state.layout = combo.layout;
+  state.cantidad = 3;
+
+  const stage = document.getElementById('presentar-stage');
+  stage.style.display = 'flex';
+  document.getElementById('presentar-stage-day').textContent = `${combo.dia} · ${combo.tema.toUpperCase()} · ${combo.layout.toUpperCase()}`;
+
+  const dotsEl = document.getElementById('presentar-stage-dots');
+  dotsEl.innerHTML = presentarConfig.pantallas.map((_, i) =>
+    `<div class="presentar-dot" data-idx="${i}"></div>`
+  ).join('');
+
+  if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
+  else if (stage.webkitRequestFullscreen) stage.webkitRequestFullscreen();
+
+  presentarState.activo = true;
+  presentarState.indice = 0;
+  mostrarPantallaPresentar();
+  document.addEventListener('keydown', escapePresentar);
+}
+
+function escapePresentar(e) {
+  if (e.key === 'Escape' && presentarState.activo) {
+    salirPresentacion();
+  } else if ((e.key === 'ArrowRight' || e.key === ' ') && presentarState.activo) {
+    e.preventDefault();
+    siguientePantallaPresentar();
+  } else if (e.key === 'ArrowLeft' && presentarState.activo) {
+    anteriorPantallaPresentar();
+  }
+}
+
+function salirPresentacion() {
+  presentarState.activo = false;
+  clearTimeout(presentarState.timer);
+  document.removeEventListener('keydown', escapePresentar);
+  document.getElementById('presentar-stage').style.display = 'none';
+
+  if (presentarState.origState) {
+    Object.assign(state, presentarState.origState);
+    presentarState.origState = null;
+  }
+
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
+
+  aplicarTema();
+  if (state.rawData) actualizarYRender();
+  else render();
+}
+
+function mostrarPantallaPresentar() {
+  if (!presentarState.activo) return;
+  const idx = presentarState.indice;
+  const topId = presentarConfig.pantallas[idx];
+  state.topId = topId;
+
+  const soloTops = ['rev','crec','ticket','meta'];
+  if (soloTops.includes(topId)) state.cantidad = 1;
+  else state.cantidad = 3;
+
+  aplicarTema();
+  if (state.rawData) state.agentes = procesarDatos();
+  render();
+  setTimeout(() => copiarCanvasAStage(), 50);
+
+  document.querySelectorAll('.presentar-dot').forEach((d, i) => {
+    d.classList.toggle('active', i === idx);
+  });
+
+  clearTimeout(presentarState.timer);
+  presentarState.timer = setTimeout(() => {
+    if (!presentarState.activo) return;
+    siguientePantallaPresentar();
+  }, presentarConfig.duracion * 1000);
+}
+
+function copiarCanvasAStage() {
+  const canvas = document.getElementById('canvas');
+  const stageCanvas = document.getElementById('presentar-stage-canvas');
+  if (!canvas) return;
+  const clon = canvas.cloneNode(true);
+  clon.id = 'canvas-stage-' + Date.now();
+  clon.classList.add('presentar-fading-in');
+
+  const rect = canvas.getBoundingClientRect();
+  const winW = window.innerWidth;
+  const winH = window.innerHeight - 60;
+  const scale = Math.min(winW / rect.width, winH / rect.height) * 0.95;
+  clon.style.transform = `scale(${scale})`;
+
+  const previo = stageCanvas.querySelector('.canvas-top');
+  if (previo) {
+    previo.classList.add('presentar-fading-out');
+    setTimeout(() => previo.remove(), 600);
+  }
+  stageCanvas.appendChild(clon);
+}
+
+function siguientePantallaPresentar() {
+  presentarState.indice = (presentarState.indice + 1) % presentarConfig.pantallas.length;
+  mostrarPantallaPresentar();
+}
+
+function anteriorPantallaPresentar() {
+  presentarState.indice = (presentarState.indice - 1 + presentarConfig.pantallas.length) % presentarConfig.pantallas.length;
+  mostrarPantallaPresentar();
+}
+
+document.getElementById('btn-presentar').onclick = abrirModalPresentar;
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && presentarState.activo) {
+    salirPresentacion();
+  }
+});
+
+window.cerrarModalPresentar = cerrarModalPresentar;
+window.iniciarPresentacion = iniciarPresentacion;
+window.salirPresentacion = salirPresentacion;
 </script>
+
+<!-- ============ MODAL DE CONFIGURACIÓN DE PRESENTACIÓN ============ -->
+<div id="presentar-modal" class="presentar-modal" style="display:none;">
+  <div class="presentar-modal-bg" onclick="cerrarModalPresentar()"></div>
+  <div class="presentar-modal-card">
+    <div class="presentar-modal-header">
+      <div>
+        <div class="presentar-modal-title">🎬 Modo Presentación</div>
+        <div class="presentar-modal-subtitle">Elige qué pantallas mostrar y cuánto dura cada una</div>
+      </div>
+      <button class="presentar-modal-close" onclick="cerrarModalPresentar()">✕</button>
+    </div>
+    <div class="presentar-modal-body">
+      <div class="presentar-section">
+        <div class="presentar-section-title">⏱️ Duración por pantalla</div>
+        <div class="chips" id="presentar-duracion-chips">
+          <div class="chip" data-dur="30">30 seg</div>
+          <div class="chip active" data-dur="60">1 min</div>
+          <div class="chip" data-dur="90">1.5 min</div>
+          <div class="chip" data-dur="120">2 min</div>
+        </div>
+      </div>
+
+      <div class="presentar-section">
+        <div class="presentar-section-title">📊 Pantallas a mostrar</div>
+        <div class="small-help" style="margin-bottom:8px;">Marca las que quieres. Se rotan en el orden que aparecen.</div>
+        <div id="presentar-pantallas-list"></div>
+      </div>
+
+      <div class="presentar-section">
+        <div class="presentar-section-title">🎨 Estilo del día</div>
+        <div class="presentar-style-preview" id="presentar-style-preview">
+          <div class="presentar-style-day"></div>
+          <div class="presentar-style-combo"></div>
+        </div>
+        <div class="small-help" style="margin-top:6px;">El tema y diseño cambian automáticamente cada día (lunes/martes/etc.)</div>
+      </div>
+    </div>
+    <div class="presentar-modal-footer">
+      <button class="btn btn-secondary" onclick="cerrarModalPresentar()">Cancelar</button>
+      <button class="btn btn-gold" onclick="iniciarPresentacion()">▶️ Iniciar presentación</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONTENEDOR DE PRESENTACIÓN FULLSCREEN ============ -->
+<div id="presentar-stage" class="presentar-stage" style="display:none;">
+  <div class="presentar-stage-canvas" id="presentar-stage-canvas"></div>
+  <div class="presentar-stage-dots" id="presentar-stage-dots"></div>
+  <div class="presentar-stage-day" id="presentar-stage-day"></div>
+  <button class="presentar-stage-exit" onclick="salirPresentacion()">✕ Salir (ESC)</button>
+</div>
+
 </body>
 </html>
