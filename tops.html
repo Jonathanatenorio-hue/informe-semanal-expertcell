@@ -731,6 +731,19 @@
     font-family:'Sora'; font-size:11px; color:#d4af37;
     text-align:center; letter-spacing:0.5px;
   }
+  .presentar-contador-row {
+    display:flex; gap:10px; align-items:center; margin-top:12px;
+  }
+  .presentar-contador-row .presentar-contador { margin-top:0; flex:1; }
+  .presentar-restaurar-btn {
+    background:rgba(99,102,241,0.12); color:#a5a3ff;
+    border:1px solid rgba(99,102,241,0.35);
+    padding:8px 12px; border-radius:6px;
+    font-family:'Sora'; font-size:10px; font-weight:700;
+    letter-spacing:0.5px; cursor:pointer;
+    white-space:nowrap;
+  }
+  .presentar-restaurar-btn:hover { background:rgba(99,102,241,0.22); color:#fff; }
   .presentar-style-preview {
     display:flex; gap:12px; align-items:center;
     padding:12px 16px;
@@ -5608,7 +5621,8 @@ setTimeout(() => {
 // ========================================================================
 // MODO PRESENTACIÓN (TV / Proyector)
 // ========================================================================
-const PRESENTAR_KEY = 'expertcell_presentar_config_v1';
+const PRESENTAR_KEY = 'expertcell_presentar_config_v2';
+let presentarSkipLoad = false;
 let presentarConfig = {
   duracion: 60,
   pantallas: []
@@ -5697,14 +5711,78 @@ function getPantallasDisponibles() {
 const PANTALLAS_DISPONIBLES = [];
 
 function cargarConfigPresentar() {
+  if (presentarSkipLoad) return;
   try {
     const saved = localStorage.getItem(PRESENTAR_KEY);
     if (saved) {
       const cfg = JSON.parse(saved);
       presentarConfig.duracion = cfg.duracion || 60;
-      presentarConfig.pantallas = cfg.pantallas || [];
+      // Filtrar pantallas que ya no existen en la lista oficial
+      const idsValidos = new Set(getPantallasDisponibles().map(p => p.id));
+      presentarConfig.pantallas = (cfg.pantallas || []).filter(id => idsValidos.has(id));
+      // Reordenar según la lista oficial para asegurar consistencia
+      ordenarPantallasSegunLista();
     }
   } catch(e) { console.warn(e); }
+}
+
+// Lista oficial de defaults EN EL ORDEN exacto que pidió el usuario
+function getPantallasDefault() {
+  return [
+    'global::',
+    'global::CC2::',
+    'global::JV::',
+    'top10::',
+    'centro::',
+    'resumenc::CC2::',
+    'resumenc::JV::',
+    'supVtas::',
+    'supMeta::',
+    'promAgente::',
+    'rev::',
+    'revTop::CC2::',
+    'revTop::JV::',
+    'crec::',
+    'crecTop::CC2::',
+    'crecTop::JV::',
+    'ticket::',
+    'ticketTop::CC2::',
+    'ticketTop::JV::',
+    'meta::',
+    'metaCarr::CC2::',
+    'metaCarr::JV::',
+    'com_din_jun::',
+    'com_racha_exp::',
+    'racha::',
+    'com_tiendita::',
+    'com_dia_tem::',
+    'com_quiniela::',
+    'com_cine::',
+    'com_fifa::',
+    'com_comis::'
+  ];
+}
+
+function restaurarPantallasDefault() {
+  presentarConfig.pantallas = getPantallasDefault();
+  guardarConfigPresentar();
+  presentarRenderModalSinRecargar();
+}
+
+function presentarRenderModalSinRecargar() {
+  presentarSkipLoad = true;
+  abrirModalPresentar();
+  presentarSkipLoad = false;
+}
+
+// Reordena presentarConfig.pantallas según el orden oficial de getPantallasDisponibles
+function ordenarPantallasSegunLista() {
+  const ordenOficial = getPantallasDisponibles().map(p => p.id);
+  presentarConfig.pantallas.sort((a, b) => {
+    const ia = ordenOficial.indexOf(a);
+    const ib = ordenOficial.indexOf(b);
+    return (ia === -1 ? 9999 : ia) - (ib === -1 ? 9999 : ib);
+  });
 }
 
 function guardarConfigPresentar() {
@@ -5717,40 +5795,8 @@ function abrirModalPresentar() {
   const pantallas = getPantallasDisponibles();
 
   if (presentarConfig.pantallas.length === 0) {
-    // Defaults: la lista completa que pidió el usuario
-    presentarConfig.pantallas = [
-      'global::',
-      'global::CC2::',
-      'global::JV::',
-      'top10::',
-      'centro::',
-      'resumenc::CC2::',
-      'resumenc::JV::',
-      'supVtas::',
-      'supMeta::',
-      'promAgente::',
-      'rev::',
-      'revTop::CC2::',
-      'revTop::JV::',
-      'crec::',
-      'crecTop::CC2::',
-      'crecTop::JV::',
-      'ticket::',
-      'ticketTop::CC2::',
-      'ticketTop::JV::',
-      'meta::',
-      'metaCarr::CC2::',
-      'metaCarr::JV::',
-      'com_din_jun::',
-      'com_racha_exp::',
-      'racha::',
-      'com_tiendita::',
-      'com_dia_tem::',
-      'com_quiniela::',
-      'com_cine::',
-      'com_fifa::',
-      'com_comis::'
-    ];
+    // Defaults: la lista completa que pidió el usuario EN EL ORDEN exacto
+    presentarConfig.pantallas = getPantallasDefault();
   }
 
   document.querySelectorAll('#presentar-duracion-chips .chip').forEach(c => {
@@ -5803,8 +5849,13 @@ function abrirModalPresentar() {
     el.onclick = () => {
       const id = el.dataset.id;
       const idx = presentarConfig.pantallas.indexOf(id);
-      if (idx >= 0) presentarConfig.pantallas.splice(idx, 1);
-      else presentarConfig.pantallas.push(id);
+      if (idx >= 0) {
+        presentarConfig.pantallas.splice(idx, 1);
+      } else {
+        // Insertar respetando el orden de la lista oficial
+        presentarConfig.pantallas.push(id);
+        ordenarPantallasSegunLista();
+      }
       el.classList.toggle('active');
       el.querySelector('.presentar-pantalla-check').textContent = presentarConfig.pantallas.includes(id) ? '✓' : '';
       actualizarContador();
@@ -5827,6 +5878,8 @@ function abrirModalPresentar() {
           if (idx < 0) presentarConfig.pantallas.push(p.id);
         }
       });
+      // Mantener orden
+      if (!todasActivas) ordenarPantallasSegunLista();
       btn.textContent = todasActivas ? 'Todas' : 'Ninguna';
       // Actualizar visualmente los items del grupo
       grupo.forEach(p => {
@@ -6488,6 +6541,7 @@ document.addEventListener('fullscreenchange', () => {
 window.cerrarModalPresentar = cerrarModalPresentar;
 window.iniciarPresentacion = iniciarPresentacion;
 window.salirPresentacion = salirPresentacion;
+window.restaurarPantallasDefault = restaurarPantallasDefault;
 </script>
 
 <!-- ============ MODAL DE CONFIGURACIÓN DE PRESENTACIÓN ============ -->
@@ -6516,7 +6570,10 @@ window.salirPresentacion = salirPresentacion;
         <div class="presentar-section-title">📊 Pantallas a mostrar</div>
         <div class="small-help" style="margin-bottom:8px;">Marca las que quieres. Se rotan en el orden que aparecen.</div>
         <div id="presentar-pantallas-list"></div>
-        <div id="presentar-contador" class="presentar-contador">0 pantallas seleccionadas</div>
+        <div class="presentar-contador-row">
+          <button class="presentar-restaurar-btn" onclick="restaurarPantallasDefault()">↻ Restaurar lista predeterminada</button>
+          <div id="presentar-contador" class="presentar-contador">0 pantallas seleccionadas</div>
+        </div>
       </div>
 
       <div class="presentar-section">
