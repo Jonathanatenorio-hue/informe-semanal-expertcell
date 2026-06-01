@@ -302,10 +302,12 @@
   .ratio-9x16.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
 
   /* HEADER del top */
-  .top-header { text-align:center; padding:42px 24px 12px; position:relative; z-index:2; }
-  /* Cuando hay podio multi-fila, header más compacto para dejar más espacio al podio */
-  .canvas-top:has(.podium-multi) .top-header { padding:24px 24px 8px; }
-  /* Cuando stickers están activos, hay que dejar espacio arriba para la cinta */
+  .top-header { text-align:center; padding:28px 24px 10px; position:relative; z-index:2; }
+  /* Cuando hay podio multi-fila, header más compacto */
+  .canvas-top:has(.podium-multi) .top-header { padding:20px 24px 8px; }
+  /* Para layouts con cards grandes (racha, stats horizontales) - más compacto */
+  .canvas-top:has(.racha-layout) .top-header { padding:16px 24px 6px; }
+  /* Stickers activos: dejar espacio arriba para la cinta */
   .canvas-top:has(.sticker-ribbon) .top-header { padding-top:64px; }
   .top-kicker {
     font-size:11px; letter-spacing:6px; color:var(--accent-2); font-weight:600;
@@ -480,7 +482,7 @@
 
   /* FOOTER */
   .top-footer {
-    text-align:center; padding:14px; position:relative; z-index:2;
+    text-align:center; padding:14px 14px 32px; position:relative; z-index:2;
     font-size:10px; color:var(--accent-3); letter-spacing:3px; text-transform:uppercase;
   }
 
@@ -1705,6 +1707,85 @@
     color:var(--accent-2); margin-top:6px; letter-spacing:1px;
     text-transform:uppercase; z-index:1; position:relative;
   }
+  /* ============ TROFEO PARA TOPS SOLO (1 agente) ============ */
+  .trofeo-solo-layout {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    padding:8px 36px 18px; z-index:2; position:relative;
+  }
+  .trofeo-solo-placa {
+    width:100%; max-width:620px;
+    background:linear-gradient(180deg, rgba(var(--accent-rgb),0.15), rgba(0,0,0,0.55));
+    border:3px double var(--accent-2);
+    border-radius:18px; padding:24px 32px 26px;
+    display:flex; flex-direction:column; align-items:center;
+    position:relative; overflow:hidden;
+    box-shadow:0 16px 44px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
+    gap:6px;
+  }
+  .trofeo-solo-placa::before {
+    content:''; position:absolute; inset:0;
+    background:radial-gradient(ellipse at 50% 0%, rgba(var(--accent-rgb),0.3), transparent 60%);
+    pointer-events:none;
+  }
+  .trofeo-solo-medalla {
+    width:80px; height:80px; margin-bottom:4px;
+    filter:drop-shadow(0 8px 20px rgba(var(--accent-rgb),0.5));
+    z-index:1; flex-shrink:0;
+  }
+  .trofeo-solo-kicker {
+    font-family:'Sora'; font-size:11px; color:var(--accent-2);
+    letter-spacing:6px; text-transform:uppercase; font-weight:700;
+    z-index:1; position:relative;
+  }
+  .trofeo-solo-name {
+    font-family:var(--title-font); font-weight:800; font-size:28px;
+    color:#fff; text-align:center; line-height:1.05; letter-spacing:-0.5px;
+    z-index:1; position:relative;
+    text-shadow:0 4px 12px rgba(0,0,0,0.4);
+    max-width:100%; word-wrap:break-word; margin-top:4px;
+  }
+  .trofeo-solo-team {
+    font-family:'Sora'; font-size:11px; color:var(--accent-1);
+    letter-spacing:2.5px; text-transform:uppercase; font-weight:600;
+    z-index:1; position:relative;
+  }
+  .trofeo-solo-divider {
+    font-family:'Sora'; font-size:11px; color:var(--accent-3);
+    letter-spacing:8px; margin:6px 0;
+    z-index:1; position:relative;
+  }
+  .trofeo-solo-val-wrap {
+    display:flex; flex-direction:column; align-items:center;
+    z-index:1; position:relative;
+  }
+  .trofeo-solo-num {
+    font-family:'Anton', sans-serif; font-size:64px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-2px;
+    text-shadow:0 0 24px rgba(var(--accent-rgb),0.5);
+  }
+  .trofeo-solo-lbl {
+    font-family:'Sora'; font-size:10px; color:var(--text-soft);
+    letter-spacing:3px; text-transform:uppercase; font-weight:600;
+    margin-top:4px;
+  }
+  .trofeo-solo-extra {
+    font-family:'Sora'; font-weight:600; font-size:12px;
+    color:var(--accent-2); letter-spacing:1.5px;
+    text-transform:uppercase; z-index:1; position:relative;
+    margin-top:8px; padding:6px 14px;
+    background:rgba(var(--accent-rgb),0.08);
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:8px;
+  }
+  /* 9:16 trofeo solo */
+  .ratio-9x16 .trofeo-solo-layout { padding:8px 16px 16px; }
+  .ratio-9x16 .trofeo-solo-placa { padding:18px 18px 20px; }
+  .ratio-9x16 .trofeo-solo-medalla { width:66px; height:66px; }
+  .ratio-9x16 .trofeo-solo-name { font-size:22px; }
+  .ratio-9x16 .trofeo-solo-num { font-size:52px; }
+  /* 1:1 trofeo solo */
+  .ratio-1x1 .trofeo-solo-medalla { width:84px; height:84px; }
+  .ratio-1x1 .trofeo-solo-num { font-size:70px; }
   /* Honoríficos: lista pequeña abajo */
   .trofeo-honor {
     width:100%; max-width:580px;
@@ -2247,6 +2328,303 @@
   .ratio-9x16 .mixta-rest-val { font-size:12px; }
 
   /* ============================================ */
+  /* ============================================ */
+  /* LAYOUT ESPECIAL: RACHA ACTIVA con hitos como timeline */
+  /* ============================================ */
+  .racha-layout {
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+    padding:6px 18px 10px; gap:6px; z-index:2; position:relative;
+  }
+  .racha-card {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.06), rgba(0,0,0,0.35));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:8px; padding:5px 14px 4px;
+    display:flex; flex-direction:column; gap:2px;
+  }
+  .racha-card-main {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.2), rgba(0,0,0,0.4));
+    border:2px solid var(--accent-1);
+    box-shadow:0 4px 14px rgba(var(--accent-rgb),0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .racha-card-row {
+    display:grid; grid-template-columns:auto 1fr auto auto; gap:12px;
+    align-items:center;
+  }
+  .racha-card-rank {
+    font-family:'Anton', sans-serif; font-size:20px; color:var(--accent-2);
+    line-height:0.9;
+  }
+  .racha-card-main .racha-card-rank { color:var(--accent-1); font-size:24px; }
+  .racha-card-info { min-width:0; }
+  .racha-card-name {
+    font-family:'Sora'; font-weight:800; font-size:12px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    line-height:1.05;
+  }
+  .racha-card-main .racha-card-name { font-size:14px; }
+  .racha-card-team {
+    font-family:'Sora'; font-size:7.5px; color:var(--accent-2);
+    letter-spacing:1.2px; text-transform:uppercase; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    margin-top:1px;
+  }
+  .racha-card-msg {
+    font-family:'Sora'; font-size:8.5px; color:var(--text-soft);
+    text-align:right; letter-spacing:0.3px;
+    display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+  }
+  .racha-card-msg strong { color:var(--accent-1); font-weight:700; }
+  .racha-card-num {
+    display:flex; align-items:baseline; gap:4px;
+  }
+  .racha-card-num-big {
+    font-family:'Anton', sans-serif; font-size:24px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-1px;
+    text-shadow:0 0 10px rgba(var(--accent-rgb),0.4);
+  }
+  .racha-card-main .racha-card-num-big { font-size:30px; }
+  .racha-card-num-lbl {
+    font-family:'Sora'; font-size:7.5px; color:var(--text-soft);
+    letter-spacing:1px; font-weight:600;
+  }
+  /* TIMELINE: aún más compacto */
+  .racha-timeline {
+    position:relative; margin:0 6px;
+    height:18px;
+  }
+  .racha-timeline-track {
+    position:absolute; top:8px; left:0; right:0; height:2px;
+    background:rgba(255,255,255,0.1);
+    border-radius:2px;
+  }
+  .racha-timeline-fill {
+    position:absolute; top:8px; left:0; height:2px;
+    background:linear-gradient(90deg, var(--accent-2), var(--accent-1));
+    border-radius:2px;
+    box-shadow:0 0 8px rgba(var(--accent-rgb),0.5);
+    transition:width 0.6s ease;
+  }
+  .racha-timeline-hito {
+    position:absolute; top:0;
+    transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:1px;
+  }
+  .racha-timeline-icon {
+    width:18px; height:18px;
+    border-radius:50%;
+    background:rgba(0,0,0,0.7);
+    border:1.5px solid rgba(255,255,255,0.15);
+    display:flex; align-items:center; justify-content:center;
+    font-size:8px;
+    transition:all 0.3s;
+    filter:grayscale(80%);
+    opacity:0.5;
+  }
+  .racha-timeline-hito-on .racha-timeline-icon {
+    background:radial-gradient(circle at 30% 30%, var(--accent-1), var(--accent-2));
+    border:1.5px solid var(--accent-1);
+    box-shadow:0 0 8px rgba(var(--accent-rgb),0.6);
+    filter:none;
+    opacity:1;
+  }
+  .racha-timeline-hito-prox .racha-timeline-icon {
+    background:rgba(0,0,0,0.85);
+    border:1.5px dashed var(--accent-3);
+    opacity:1; filter:none;
+    animation:racha-pulse 2s ease-in-out infinite;
+  }
+  @keyframes racha-pulse {
+    0%, 100% { box-shadow:0 0 0 rgba(var(--accent-rgb),0); }
+    50% { box-shadow:0 0 12px rgba(var(--accent-rgb),0.6); }
+  }
+  .racha-timeline-info { display:none; } /* ya no mostramos label bajo iconos para ahorrar espacio */
+  .racha-record {
+    color:var(--accent-3); font-weight:700; letter-spacing:1.2px;
+    font-size:7.5px; text-transform:uppercase;
+  }
+  /* 9:16 racha */
+  .ratio-9x16 .racha-layout { padding:6px 10px 10px; gap:6px; }
+  .ratio-9x16 .racha-card { padding:7px 10px 6px; gap:3px; }
+  .ratio-9x16 .racha-card-row { grid-template-columns:auto 1fr auto; gap:8px; }
+  .ratio-9x16 .racha-card-msg { display:none; }
+  .ratio-9x16 .racha-card-rank { font-size:18px; }
+  .ratio-9x16 .racha-card-main .racha-card-rank { font-size:22px; }
+  .ratio-9x16 .racha-card-name { font-size:11px; }
+  .ratio-9x16 .racha-card-main .racha-card-name { font-size:12px; }
+  .ratio-9x16 .racha-card-num-big { font-size:22px; }
+  .ratio-9x16 .racha-card-main .racha-card-num-big { font-size:26px; }
+  .ratio-9x16 .racha-timeline-icon { width:20px; height:20px; font-size:9px; }
+  .ratio-9x16 .racha-timeline-dias { font-size:7px; }
+
+  /* ============================================ */
+  /* LAYOUT RACHA GLOBAL (rondas, premios únicos) */
+  /* ============================================ */
+  .racha-glob-layout {
+    flex:1; display:flex; flex-direction:column; justify-content:flex-start;
+    padding:4px 22px 14px; gap:10px; z-index:2; position:relative;
+  }
+  .racha-preview-banner {
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.2), rgba(var(--accent-rgb),0.05));
+    border:1px solid rgba(var(--accent-rgb),0.4);
+    border-radius:8px; padding:6px 12px;
+    font-family:'Sora'; font-size:10px; color:var(--accent-1);
+    text-align:center; letter-spacing:0.5px;
+  }
+  .racha-preview-banner strong { color:var(--accent-2); font-weight:800; }
+  .racha-glob-status {
+    text-align:center; font-family:'Sora'; font-weight:800;
+    font-size:11px; color:var(--accent-1);
+    letter-spacing:2px; text-transform:uppercase;
+    padding:2px 0;
+  }
+  /* Timeline horizontal global de hitos */
+  .racha-glob-timeline {
+    position:relative; height:130px;
+    margin:0 8px;
+  }
+  .racha-glob-track {
+    position:absolute; top:36px; left:0; right:0; height:3px;
+    background:linear-gradient(90deg, rgba(var(--accent-rgb),0.1), rgba(var(--accent-rgb),0.3) 50%, rgba(var(--accent-rgb),0.1));
+    border-radius:3px;
+  }
+  .racha-glob-hito {
+    position:absolute; top:0;
+    transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center;
+    width:130px;
+  }
+  .racha-glob-icon {
+    width:54px; height:54px; border-radius:50%;
+    background:rgba(0,0,0,0.7);
+    border:2.5px solid rgba(255,255,255,0.18);
+    display:flex; align-items:center; justify-content:center;
+    font-size:24px;
+    filter:grayscale(80%);
+    opacity:0.5;
+    transition:all 0.3s;
+    margin-bottom:2px;
+  }
+  .racha-glob-hito.on .racha-glob-icon {
+    background:radial-gradient(circle at 30% 30%, var(--accent-1), var(--accent-2));
+    border:2.5px solid var(--accent-1);
+    box-shadow:0 0 18px rgba(var(--accent-rgb),0.6);
+    filter:none; opacity:1;
+  }
+  .racha-glob-hito.prox .racha-glob-icon {
+    background:rgba(0,0,0,0.85);
+    border:2.5px dashed var(--accent-3);
+    opacity:1; filter:none;
+    animation:racha-pulse 2s ease-in-out infinite;
+  }
+  .racha-glob-dias {
+    font-family:'Anton', sans-serif; font-size:14px; color:var(--accent-1);
+    line-height:1; margin-top:2px;
+  }
+  .racha-glob-hito:not(.on):not(.prox) .racha-glob-dias { color:#555; }
+  .racha-glob-premio {
+    font-family:'Sora'; font-size:9px; color:var(--accent-2);
+    letter-spacing:1px; text-transform:uppercase; font-weight:700;
+    margin-top:1px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:110px;
+  }
+  .racha-glob-hito:not(.on):not(.prox) .racha-glob-premio { color:#555; }
+  /* Canje (ganador) */
+  .racha-glob-canje {
+    margin-top:3px; text-align:center;
+    padding:2px 6px;
+    background:rgba(var(--accent-rgb),0.2);
+    border:1px solid var(--accent-2);
+    border-radius:6px;
+  }
+  .racha-glob-canje-name {
+    font-family:'Sora'; font-weight:800; font-size:9px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:115px;
+    line-height:1.1;
+  }
+  .racha-glob-canje-fecha {
+    font-family:'Sora'; font-size:8px; color:var(--accent-1);
+    letter-spacing:0.5px; margin-top:1px;
+  }
+  /* Hito en lucha */
+  .racha-glob-lucha {
+    margin-top:3px;
+    font-family:'Sora'; font-weight:800; font-size:9px; color:var(--accent-3);
+    letter-spacing:1.5px; text-transform:uppercase;
+    padding:2px 6px;
+    background:rgba(0,0,0,0.5);
+    border:1px dashed var(--accent-3);
+    border-radius:6px;
+    animation:racha-pulse 2s ease-in-out infinite;
+  }
+  /* Cards de candidatos abajo (top 3 con mayor racha) */
+  .racha-cand-list {
+    display:flex; flex-direction:column; gap:5px;
+    margin-top:4px;
+  }
+  .racha-cand-card {
+    display:grid; grid-template-columns:auto 1fr auto auto; gap:12px;
+    align-items:center;
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.06), rgba(0,0,0,0.35));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:8px; padding:6px 14px;
+  }
+  .racha-cand-main {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.18), rgba(0,0,0,0.4));
+    border:1.5px solid var(--accent-1);
+    box-shadow:0 4px 12px rgba(var(--accent-rgb),0.18);
+  }
+  .racha-cand-rank {
+    font-family:'Anton', sans-serif; font-size:20px; color:var(--accent-2);
+    line-height:0.9;
+  }
+  .racha-cand-main .racha-cand-rank { color:var(--accent-1); font-size:24px; }
+  .racha-cand-info { min-width:0; }
+  .racha-cand-name {
+    font-family:'Sora'; font-weight:800; font-size:12px; color:#fff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    line-height:1.05;
+  }
+  .racha-cand-main .racha-cand-name { font-size:14px; }
+  .racha-cand-team {
+    font-family:'Sora'; font-size:7.5px; color:var(--accent-2);
+    letter-spacing:1.2px; text-transform:uppercase; font-weight:600;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    margin-top:1px;
+  }
+  .racha-cand-msg {
+    font-family:'Sora'; font-size:9px; color:var(--text-soft);
+    text-align:right; letter-spacing:0.3px;
+    display:flex; flex-direction:column; align-items:flex-end; gap:1px;
+  }
+  .racha-cand-msg strong { color:var(--accent-1); font-weight:700; }
+  .racha-cand-premios {
+    font-size:8px; color:var(--accent-3); letter-spacing:0.3px;
+  }
+  .racha-cand-num {
+    display:flex; align-items:baseline; gap:4px;
+  }
+  .racha-cand-num-big {
+    font-family:'Anton', sans-serif; font-size:24px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-1px;
+    text-shadow:0 0 10px rgba(var(--accent-rgb),0.4);
+  }
+  .racha-cand-main .racha-cand-num-big { font-size:30px; }
+  .racha-cand-num-lbl {
+    font-family:'Sora'; font-size:7.5px; color:var(--text-soft);
+    letter-spacing:1px; font-weight:600;
+  }
+  /* 9:16 racha global */
+  .ratio-9x16 .racha-glob-layout { padding:4px 12px 12px; gap:8px; }
+  .ratio-9x16 .racha-glob-timeline { height:110px; }
+  .ratio-9x16 .racha-glob-icon { width:42px; height:42px; font-size:18px; }
+  .ratio-9x16 .racha-glob-hito { width:90px; }
+  .ratio-9x16 .racha-glob-premio { font-size:7px; max-width:80px; }
+  .ratio-9x16 .racha-glob-canje-name { font-size:8px; max-width:80px; }
+  .ratio-9x16 .racha-cand-card { grid-template-columns:auto 1fr auto; gap:8px; padding:6px 10px; }
+  .ratio-9x16 .racha-cand-msg { display:none; }
+  .ratio-9x16 .racha-cand-num-big { font-size:20px; }
+  .ratio-9x16 .racha-cand-main .racha-cand-num-big { font-size:24px; }
+
   /* ADAPTACIONES DE TEMA PARA LAYOUTS NUEVOS */
   /* ============================================ */
   /* STAT BOARD en tema editorial */
@@ -2330,6 +2708,21 @@
   }
   body.theme-editorial .trofeo-honor-item { background:rgba(0,0,0,0.03); border-color:#c0c0c0; }
   body.theme-editorial .trofeo-honor-name { color:#1a1a1a; }
+  /* Trofeo solo - editorial */
+  body.theme-editorial .trofeo-solo-placa {
+    background:linear-gradient(180deg, rgba(200,160,74,0.1), rgba(0,0,0,0.04));
+    border:3px double #8a6f30;
+    box-shadow:0 12px 32px rgba(0,0,0,0.15);
+  }
+  body.theme-editorial .trofeo-solo-name {
+    color:#1a1a1a; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
+  body.theme-editorial .trofeo-solo-kicker { color:#8a6f30; }
+  body.theme-editorial .trofeo-solo-num {
+    color:#8a6f30; font-family:'Playfair Display', serif; font-style:italic;
+    text-shadow:none;
+  }
 
   /* TROFEO en tema gradient */
   body.theme-gradient .trofeo-placa {
@@ -2339,10 +2732,18 @@
   body.theme-gradient .trofeo-name { color:#fff; }
   body.theme-gradient .trofeo-num { color:#fff; }
   body.theme-gradient .trofeo-honor-item { background:rgba(255,255,255,0.15); border-color:rgba(255,255,255,0.35); }
+  /* Trofeo solo - gradient */
+  body.theme-gradient .trofeo-solo-placa {
+    background:rgba(255,255,255,0.18); border:3px double rgba(255,255,255,0.7);
+    backdrop-filter:blur(15px);
+  }
+  body.theme-gradient .trofeo-solo-name { color:#fff; }
+  body.theme-gradient .trofeo-solo-num { color:#fff; }
 
   /* TROFEO/CINEMA en tema neon: glows */
   body.theme-neon .cinema-rating-num,
-  body.theme-neon .trofeo-num {
+  body.theme-neon .trofeo-num,
+  body.theme-neon .trofeo-solo-num {
     text-shadow:0 0 18px var(--accent-2), 0 0 36px var(--accent-2);
   }
   body.theme-neon .cinema-avatar,
@@ -2863,6 +3264,15 @@ async function cargarDesdeSupabase() {
       .select('supervisor, anio, mes, meta_activadas')
       .eq('anio', state.anio).eq('mes', state.mes);
 
+    // ============================================================
+    // 8. Cargar CALENDARIO_DIAS (días hábiles, festivos) para racha activa
+    // ============================================================
+    const { data: calData } = await db.from('calendario_dias')
+      .select('fecha, peso')
+      .gte('fecha', fechaIni).lte('fecha', fechaFin);
+    const calendario = {};
+    (calData || []).forEach(r => { calendario[r.fecha] = Number(r.peso); });
+
     state.rawData = {
       ventas: allVentas,
       plantilla: mapaPlantilla,
@@ -2871,6 +3281,7 @@ async function cargarDesdeSupabase() {
       mapaSupAgente,
       metas: metas || [],
       metasSup: metasSup || [],
+      calendario,
       fechaIni,
       fechaFin
     };
@@ -2889,7 +3300,9 @@ async function cargarDesdeSupabase() {
 
 function procesarDatos() {
   if (!state.rawData) return [];
-  const { ventas, plantilla, supsVigentes, mapaCentroSup, mapaSupAgente, metas, metasSup, fechaIni, fechaFin } = state.rawData;
+  const { ventas, plantilla, supsVigentes, mapaCentroSup, mapaSupAgente, metas, metasSup, calendario, fechaIni, fechaFin } = state.rawData;
+  // calendario puede no existir (compatibilidad), default a {}
+  const cal = calendario || {};
 
   // Helper: centro del agente
   const centroAgente = (nombre, supSobrescrito) => {
@@ -3134,6 +3547,8 @@ function procesarDatos() {
     arr.sort((a, b) => (b.metric.length === a.metric.length ? b.metric.localeCompare(a.metric) : b.metric.length - a.metric.length));
     // Mejor: ordenar por valor numérico
     arr.sort((a, b) => parseFloat(b.metric.replace(/[^0-9.]/g, '')) - parseFloat(a.metric.replace(/[^0-9.]/g, '')));
+    // Asignar ranks por valor numérico del ARPU
+    asignarRangos(arr, a => parseFloat(String(a.metric).replace(/[^0-9.]/g, '')) || 0);
     return arr;
   }
 
@@ -3256,32 +3671,203 @@ function procesarDatos() {
   }
 
   if (state.topId === 'racha') {
-    // Racha: días consecutivos con venta (excluye domingos automáticamente)
-    arr.forEach(a => {
-      const fechasOrd = [...new Set(a.fechas)].sort();
-      let maxRacha = fechasOrd.length > 0 ? 1 : 0;
-      let actual = fechasOrd.length > 0 ? 1 : 0;
-      for (let i = 1; i < fechasOrd.length; i++) {
-        const d1 = new Date(fechasOrd[i-1] + 'T12:00:00');
-        const d2 = new Date(fechasOrd[i] + 'T12:00:00');
-        const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-        // Considerar consecutivos si: diff=1, o diff=2 si el día intermedio es domingo
-        let consecutivos = false;
-        if (diff === 1) consecutivos = true;
-        else if (diff === 2) {
-          const diaIntermedio = new Date(d1);
-          diaIntermedio.setDate(diaIntermedio.getDate() + 1);
-          if (diaIntermedio.getDay() === 0) consecutivos = true;
-        }
-        if (consecutivos) { actual++; maxRacha = Math.max(maxRacha, actual); }
-        else { actual = 1; }
+    // RACHA ACTIVA - PROGRAMA DE PREMIOS GLOBALES (arranca 1 jun 2026)
+    // Reglas:
+    // - Cuenta días laborables (L-V) según calendario_dias
+    // - Solo cuenta venta PROGRAMADA (fecha_bo)
+    // - Hitos 10/15/20/25/30 → premios $500/$1000/Audífonos/$2000/Switch Lite
+    // - Premios son GLOBALES: el primero en llegar a cada hito lo gana
+    // - Cuando se canjean los 5, AL DÍA SIGUIENTE: reset total (todos a 0, premios disponibles)
+    // - Una persona puede ganar varios premios de la MISMA ronda mientras siga activa
+    // - No puede ganar de nuevo el mismo premio en la misma ronda
+
+    const PROGRAMA_INICIO = '2026-06-01'; // fecha de arranque del programa
+    const HITOS_DEF = [
+      { dias: 10, premio: '$500',         icon: '💵' },
+      { dias: 15, premio: '$1,000',       icon: '💰' },
+      { dias: 20, premio: 'Audífonos',    icon: '🎧' },
+      { dias: 25, premio: '$2,000',       icon: '💎' },
+      { dias: 30, premio: 'Switch Lite',  icon: '🎮' },
+    ];
+
+    const yMd = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${dd}`;
+    };
+
+    // Fecha de inicio efectivo: el mayor entre PROGRAMA_INICIO y el inicio del periodo
+    const inicioEfectivo = fechaIni < PROGRAMA_INICIO ? PROGRAMA_INICIO : fechaIni;
+    // Si fechaFin < PROGRAMA_INICIO no hay nada que simular (modo preview)
+    const esPreview = fechaFin < PROGRAMA_INICIO;
+
+    // 1. Construir días laborables del rango efectivo
+    // Si es preview, usar los días del mes seleccionado igual (para mostrar quién iría ganando)
+    const rangoIni = esPreview ? fechaIni : inicioEfectivo;
+    const rangoFin = fechaFin;
+    const diasLaborables = [];
+    const iniDate = new Date(rangoIni + 'T12:00:00');
+    const finDate = new Date(rangoFin + 'T12:00:00');
+    for (let d = new Date(iniDate); d <= finDate; d.setDate(d.getDate() + 1)) {
+      const fechaStr = yMd(d);
+      const dia = d.getDay();
+      if (dia === 0 || dia === 6) continue;
+      const peso = cal[fechaStr];
+      if (peso !== undefined && peso === 0) continue;
+      diasLaborables.push(fechaStr);
+    }
+
+    // 2. Indexar ventas programadas por agente y fecha
+    const fechasBOPorAgente = {}; // { nombre: Set('YYYY-MM-DD') }
+    const agentInfo = {}; // metadatos
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_bo) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (supsVigentes.includes(v.ejecutivo)) return;
+      // fecha_bo dentro del rango efectivo
+      if (v.fecha_bo < rangoIni || v.fecha_bo > rangoFin) return;
+      if (!diasLaborables.includes(v.fecha_bo)) return;
+
+      if (!fechasBOPorAgente[v.ejecutivo]) {
+        fechasBOPorAgente[v.ejecutivo] = new Set();
+        const p = plantilla[v.ejecutivo] || {};
+        let centro = p.centro || mapaCentroSup[v.supervisor] || '';
+        if (centro) centro = String(centro).trim().toUpperCase();
+        agentInfo[v.ejecutivo] = {
+          nombre: v.ejecutivo,
+          supervisor: v.supervisor,
+          centro: centro,
+        };
       }
-      a.metric = maxRacha + ' días';
-      a._rachaNum = maxRacha;
+      fechasBOPorAgente[v.ejecutivo].add(v.fecha_bo);
     });
-    arr.sort((a, b) => b._rachaNum - a._rachaNum);
-    asignarRangos(arr, a => a._rachaNum);
-    return arr;
+
+    // 3. Día anterior a hoy (límite de simulación)
+    const hoy = new Date();
+    const ayer = new Date(hoy); ayer.setDate(ayer.getDate() - 1);
+    const ayerStr = yMd(ayer);
+    let idxUltimoDiaSim = diasLaborables.length - 1;
+    for (let i = diasLaborables.length - 1; i >= 0; i--) {
+      if (diasLaborables[i] <= ayerStr) { idxUltimoDiaSim = i; break; }
+    }
+
+    // 4. SIMULACIÓN DÍA POR DÍA — calcular rondas y canjes
+    // Para cada agente, rastrear su racha continua, los hitos que YA canjeó en la ronda actual
+    const agentes = Object.keys(fechasBOPorAgente);
+    const estadoAgente = {}; // {nombre: { racha, hitosGanadosEnRonda: Set, premiosGanadosHistorial: [{ronda, hito, dia}] }}
+    agentes.forEach(n => {
+      estadoAgente[n] = { racha: 0, hitosGanadosEnRonda: new Set(), premiosGanadosHistorial: [] };
+    });
+
+    // Estado global de rondas
+    let rondaActual = 1;
+    const ROUNDS = []; // [{ronda, canjes: [{hito, ganador, dia}], fechaInicio, fechaFin?}]
+    let rondaCanjes = []; // canjes de la ronda en curso
+    let rondaInicio = diasLaborables[0] || null;
+    let resetDespuesDe = null; // si está set, el día siguiente todos a 0
+
+    for (let i = 0; i <= idxUltimoDiaSim; i++) {
+      const dia = diasLaborables[i];
+
+      // Si hay reset programado y este día es DESPUÉS del último día de la ronda completada → reset
+      if (resetDespuesDe && dia > resetDespuesDe) {
+        // Guardar la ronda completada
+        ROUNDS.push({ ronda: rondaActual, canjes: rondaCanjes.slice(), fechaInicio: rondaInicio, fechaFin: resetDespuesDe });
+        // Reset
+        rondaActual++;
+        rondaCanjes = [];
+        rondaInicio = dia;
+        agentes.forEach(n => {
+          estadoAgente[n].racha = 0;
+          estadoAgente[n].hitosGanadosEnRonda = new Set();
+        });
+        resetDespuesDe = null;
+      }
+
+      // Actualizar rachas del día
+      agentes.forEach(n => {
+        if (fechasBOPorAgente[n].has(dia)) {
+          estadoAgente[n].racha++;
+        } else {
+          estadoAgente[n].racha = 0;
+          estadoAgente[n].hitosGanadosEnRonda = new Set(); // si rompe, pierde los hitos ganados? NO, conserva
+          // Realmente NO los pierde según la regla del usuario, pero la racha sí cae a 0
+          // Para volver a ganar un hito tendría que volver a llegar a ese hito desde 0 + ya estarían canjeados
+          // así que no hay riesgo. Reseteamos solo la racha.
+        }
+      });
+      // No reseteo hitosGanadosEnRonda al romper porque el agente conserva su premio
+      // y como los hitos son únicos por ronda, ya están "canjeados" globalmente
+
+      // Verificar si alguien canjea un hito hoy
+      // Orden por racha desc para que el de mayor racha gane primero (estable por nombre)
+      const ordenDelDia = agentes
+        .map(n => ({ nombre: n, racha: estadoAgente[n].racha }))
+        .sort((a, b) => b.racha - a.racha || a.nombre.localeCompare(b.nombre));
+
+      HITOS_DEF.forEach(h => {
+        // ¿Este hito YA está canjeado en esta ronda?
+        const yaCanjeado = rondaCanjes.find(c => c.hito === h.dias);
+        if (yaCanjeado) return;
+        // El primero del orden con racha >= hito y que aún no ganó ESTE hito en esta ronda lo canjea
+        const ganador = ordenDelDia.find(o => {
+          if (o.racha < h.dias) return false;
+          return !estadoAgente[o.nombre].hitosGanadosEnRonda.has(h.dias);
+        });
+        if (ganador) {
+          rondaCanjes.push({ hito: h.dias, premio: h.premio, icon: h.icon, ganador: ganador.nombre, dia: dia });
+          estadoAgente[ganador.nombre].hitosGanadosEnRonda.add(h.dias);
+          estadoAgente[ganador.nombre].premiosGanadosHistorial.push({ ronda: rondaActual, hito: h.dias, dia: dia });
+        }
+      });
+
+      // Si se canjearon los 5 hitos en esta ronda, marcar reset para el día siguiente
+      if (rondaCanjes.length === HITOS_DEF.length && !resetDespuesDe) {
+        resetDespuesDe = dia;
+      }
+    }
+
+    // Guardar la ronda actual (en curso o completada)
+    ROUNDS.push({
+      ronda: rondaActual,
+      canjes: rondaCanjes.slice(),
+      fechaInicio: rondaInicio,
+      fechaFin: resetDespuesDe || null,
+      enCurso: !resetDespuesDe
+    });
+
+    // 5. Armar el resultado por agente
+    let arrRacha = agentes.map(n => {
+      const a = { ...agentInfo[n] };
+      a.rachaActual = estadoAgente[n].racha;
+      a.premiosGanadosHistorial = estadoAgente[n].premiosGanadosHistorial;
+      a._rachaNum = a.rachaActual;
+      a.metric = a.rachaActual + (a.rachaActual === 1 ? ' día' : ' días');
+      // Récord histórico desde el inicio del programa (todas las rondas)
+      const fechasSet = fechasBOPorAgente[n];
+      let record = 0, temp = 0;
+      for (let i = 0; i <= idxUltimoDiaSim; i++) {
+        if (fechasSet.has(diasLaborables[i])) { temp++; if (temp > record) record = temp; }
+        else temp = 0;
+      }
+      a.rachaRecord = record;
+      return a;
+    });
+
+    // Aplicar filtros UI (centro / supervisor)
+    if (state.centro) arrRacha = arrRacha.filter(a => a.centro === state.centro);
+    if (state.supervisor) arrRacha = arrRacha.filter(a => a.supervisor === state.supervisor);
+    arrRacha.sort((a, b) => b._rachaNum - a._rachaNum || b.rachaRecord - a.rachaRecord);
+    asignarRangos(arrRacha, a => a._rachaNum);
+
+    // Guardar rondas y agentes en state para que el render las use
+    state._rachaRounds = ROUNDS;
+    state._rachaEsPreview = esPreview;
+    state._rachaProgramaInicio = PROGRAMA_INICIO;
+    state._rachaHitosDef = HITOS_DEF;
+
+    return arrRacha;
   }
 
   // 'diario' y resto: ordenar por ventas
@@ -3385,17 +3971,31 @@ function render() {
   } else if (state.topId === 'supMeta') {
     titleText = `RANKING POR % META${state.centro ? ' · ' + state.centro : ''}`;
     kickerText = 'EXPERTCELL · CUMPLIMIENTO DE META';
-  } else if (usaCantidad) {
-    // Título dinámico para Top Global considerando filtros
+  } else if (state.topId === 'global') {
+    // Top Global puro
     let ambito = 'GLOBAL';
-    if (state.supervisor) {
-      ambito = state.supervisor.toUpperCase();
-    } else if (state.centro) {
-      ambito = state.centro === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ JV';
-    }
+    if (state.supervisor) ambito = state.supervisor.toUpperCase();
+    else if (state.centro) ambito = state.centro === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ JV';
     titleText = `TOP ${state.cantidad} ${ambito}`;
     kickerText = `EXPERTCELL · LOS ${state.cantidad} MEJORES`;
+  } else if (state.topId === 'racha') {
+    titleText = 'RACHA ACTIVA';
+    kickerText = '🔥 DÍAS CONSECUTIVOS PROGRAMANDO';
+  } else if (state.topId === 'revTop') {
+    titleText = `TOP ${state.cantidad} REVELACIONES`;
+    kickerText = '🚀 MEJORES NUEVOS DEL MES';
+  } else if (state.topId === 'crecTop') {
+    titleText = `TOP ${state.cantidad} CRECIMIENTOS`;
+    kickerText = '📈 MAYOR INCREMENTO VS MES ANTERIOR';
+  } else if (state.topId === 'ticketTop') {
+    titleText = `TOP ${state.cantidad} DEL TICKET`;
+    kickerText = '💎 MEJOR ARPU PROMEDIO';
+  } else if (state.topId === 'metaCarr') {
+    titleText = 'CARRERA A META';
+    kickerText = '🏁 QUIÉN LLEGÓ PRIMERO';
   } else {
+    // Tops "solo": rev, crec, ticket, meta — usar el label tal cual
+    titleText = top.label.toUpperCase();
     kickerText = `EXPERTCELL · ${top.icon} ${top.desc.toUpperCase()}`;
   }
 
@@ -3664,15 +4264,18 @@ function render() {
                           state.topId === 'crec' ? 'MAYOR CRECIMIENTO' :
                           state.topId === 'ticket' ? 'REY DEL TICKET' :
                           state.topId === 'meta' ? 'PRIMERO EN META' : 'CAMPEÓN DEL MES';
+      // Texto extra contextual por tipo
+      let extraTxt = '';
+      if (state.topId === 'crec') extraTxt = `${a.anterior} → ${a.ventas} ventas · +${a.crecPct || 0}%`;
+      else if (state.topId === 'ticket') extraTxt = `${a.ventas} ventas en el mes`;
+      else if (state.topId === 'meta') extraTxt = `${a.ventas} ventas · meta ${a.meta}`;
+      else if (state.topId === 'rev' && a.diasEnEmpresa !== undefined) extraTxt = `${a.diasEnEmpresa} días en empresa · ${a.ventas} ventas`;
+
       bodyHTML = `
-        <div class="trofeo-layout">
-          <div class="trofeo-placa">
-            <div class="trofeo-deco-top"></div>
-            <div class="trofeo-medalla">
-              <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
-                <circle cx="40" cy="40" r="36" fill="url(#gold-grad-solo)" stroke="rgba(0,0,0,0.2)" stroke-width="1.5"/>
-                <circle cx="40" cy="40" r="28" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1"/>
-                <text x="40" y="52" text-anchor="middle" font-family="Anton" font-size="32" fill="rgba(0,0,0,0.65)">1</text>
+        <div class="trofeo-solo-layout">
+          <div class="trofeo-solo-placa">
+            <div class="trofeo-solo-medalla">
+              <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;">
                 <defs>
                   <radialGradient id="gold-grad-solo" cx="30%" cy="30%">
                     <stop offset="0%" stop-color="var(--accent-1)"/>
@@ -3680,22 +4283,20 @@ function render() {
                     <stop offset="100%" stop-color="var(--accent-3)"/>
                   </radialGradient>
                 </defs>
+                <circle cx="50" cy="50" r="46" fill="url(#gold-grad-solo)" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
+                <circle cx="50" cy="50" r="36" fill="none" stroke="rgba(0,0,0,0.25)" stroke-width="1.5"/>
+                <text x="50" y="65" text-anchor="middle" font-family="Anton" font-size="42" fill="rgba(0,0,0,0.7)">1</text>
               </svg>
             </div>
-            <div class="trofeo-kicker">${labelKicker}</div>
-            <div class="trofeo-name">${a.nombre}</div>
-            <div class="trofeo-team">${a.centro || '—'} · ${a.supervisor || '—'}</div>
-            <div class="trofeo-divider">◆ ◆ ◆</div>
-            <div class="trofeo-val">
-              <span class="trofeo-num">${displayVal}</span>
-              <span class="trofeo-lbl">${metricLabel}</span>
+            <div class="trofeo-solo-kicker">${labelKicker}</div>
+            <div class="trofeo-solo-name">${a.nombre}</div>
+            <div class="trofeo-solo-team">${a.centro || '—'} · ${a.supervisor || '—'}</div>
+            <div class="trofeo-solo-divider">◆ ◆ ◆</div>
+            <div class="trofeo-solo-val-wrap">
+              <div class="trofeo-solo-num">${displayVal}</div>
+              <div class="trofeo-solo-lbl">${metricLabel}</div>
             </div>
-            ${metricSubtxt ? `<div class="trofeo-extra">${metricSubtxt}</div>` : ''}
-            ${state.topId === 'crec' ? `<div class="trofeo-extra">${a.anterior} → ${a.ventas} ventas</div>` : ''}
-            ${state.topId === 'ticket' ? `<div class="trofeo-extra">${a.ventas} ventas del mes</div>` : ''}
-            ${state.topId === 'meta' ? `<div class="trofeo-extra">${a.ventas} vtas / ${a.meta} meta</div>` : ''}
-            ${state.topId === 'rev' && a.diasEnEmpresa !== undefined ? `<div class="trofeo-extra">${a.diasEnEmpresa} días en empresa</div>` : ''}
-            <div class="trofeo-deco-bottom"></div>
+            ${extraTxt ? `<div class="trofeo-solo-extra">${extraTxt}</div>` : ''}
           </div>
         </div>
       `;
@@ -3969,6 +4570,20 @@ function render() {
       return a.ventas || 0;
     };
 
+    // Helper: subtítulo enriquecido por tipo de top (incluye dato extra como ventas)
+    const getSubtxtVisual = (a) => {
+      const parts = [a.centro, a.supervisor].filter(Boolean);
+      if (state.topId === 'ticketTop') {
+        if (a.ventas !== undefined) parts.push(`${a.ventas} vtas`);
+      } else if (state.topId === 'crecTop') {
+        if (a.anterior !== undefined) parts.push(`${a.anterior}→${a.ventas} vtas`);
+        if (a.crecPct !== undefined) parts.push(`+${a.crecPct}%`);
+      } else if (state.topId === 'revTop') {
+        if (a.diasEnEmpresa !== undefined) parts.push(`${a.diasEnEmpresa}d`);
+      }
+      return parts.join(' · ');
+    };
+
     // Helper común: iniciales para avatar
     const iniciales = (n) => {
       const parts = (n || '').trim().split(/\s+/);
@@ -3976,6 +4591,121 @@ function render() {
       if (parts.length === 1) return parts[0].substr(0, 2).toUpperCase();
       return (parts[0][0] + parts[1][0]).toUpperCase();
     };
+
+    // ============================================
+    // LAYOUT ESPECIAL: RACHA con hitos y premios
+    // Se usa para racha SIN importar el layout seleccionado (es su propio diseño)
+    // ============================================
+    if (state.topId === 'racha') {
+      const HITOS_DEF = state._rachaHitosDef || [
+        { dias: 10, premio: '$500',         icon: '💵' },
+        { dias: 15, premio: '$1,000',       icon: '💰' },
+        { dias: 20, premio: 'Audífonos',    icon: '🎧' },
+        { dias: 25, premio: '$2,000',       icon: '💎' },
+        { dias: 30, premio: 'Switch Lite',  icon: '🎮' },
+      ];
+      const rounds = state._rachaRounds || [];
+      const esPreview = state._rachaEsPreview === true;
+      const rondaActual = rounds.length > 0 ? rounds[rounds.length - 1] : { ronda: 1, canjes: [] };
+      // Mapa: hito → ganador (canje)
+      const canjesPorHito = {};
+      rondaActual.canjes.forEach(c => { canjesPorHito[c.hito] = c; });
+
+      // Para cada hito sin canjear, encontrar candidatos vivos (con racha > 0)
+      const ordenados = participantes.slice().sort((a, b) => (b.rachaActual || 0) - (a.rachaActual || 0));
+
+      // Encontrar el "hito en lucha" = el primer hito sin canjear
+      const hitoEnLuchaIdx = HITOS_DEF.findIndex(h => !canjesPorHito[h.dias]);
+      const hitoEnLucha = hitoEnLuchaIdx >= 0 ? HITOS_DEF[hitoEnLuchaIdx] : null;
+
+      // Renderizar timeline de hitos globales
+      const renderTimelineHitos = () => {
+        return `
+          <div class="racha-glob-timeline">
+            <div class="racha-glob-track"></div>
+            ${HITOS_DEF.map((h, idx) => {
+              const canje = canjesPorHito[h.dias];
+              const enLucha = !canje && hitoEnLucha && hitoEnLucha.dias === h.dias;
+              const futuro = !canje && !enLucha;
+              const pos = 6 + (idx / (HITOS_DEF.length - 1)) * 88;
+              return `
+                <div class="racha-glob-hito ${canje ? 'on' : ''} ${enLucha ? 'prox' : ''}" style="left:${pos}%">
+                  <div class="racha-glob-icon">${canje || enLucha ? h.icon : '🔒'}</div>
+                  <div class="racha-glob-dias">${h.dias}d</div>
+                  <div class="racha-glob-premio">${h.premio}</div>
+                  ${canje ? `
+                    <div class="racha-glob-canje">
+                      <div class="racha-glob-canje-name">${canje.ganador}</div>
+                      <div class="racha-glob-canje-fecha">${canje.dia.split('-').reverse().slice(0,2).join('/')}</div>
+                    </div>
+                  ` : enLucha ? `
+                    <div class="racha-glob-lucha">EN LUCHA</div>
+                  ` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      };
+
+      // Cards de candidatos top 3 (los que van por el próximo hito)
+      const renderCandidatoCard = (a, posIdx) => {
+        const racha = a.rachaActual || 0;
+        const faltan = hitoEnLucha ? Math.max(0, hitoEnLucha.dias - racha) : 0;
+        const proxStr = hitoEnLucha
+          ? (faltan === 0
+              ? `🔥 listo para canjear ${hitoEnLucha.premio} ${hitoEnLucha.icon}`
+              : `Faltan <strong>${faltan}</strong> ${faltan === 1 ? 'día' : 'días'} → <strong>${hitoEnLucha.premio}</strong> ${hitoEnLucha.icon}`)
+          : '🎉 ronda completa';
+        const premiosYaGanados = (a.premiosGanadosHistorial || [])
+          .filter(p => p.ronda === rondaActual.ronda)
+          .map(p => {
+            const h = HITOS_DEF.find(hh => hh.dias === p.hito);
+            return h ? h.icon : '';
+          }).join(' ');
+        return `
+          <div class="racha-cand-card ${posIdx === 0 ? 'racha-cand-main' : ''}">
+            <div class="racha-cand-rank">#${a.rank || (posIdx + 1)}</div>
+            <div class="racha-cand-info">
+              <div class="racha-cand-name">${a.nombre}</div>
+              <div class="racha-cand-team">${[a.centro, a.supervisor].filter(Boolean).join(' · ')}</div>
+            </div>
+            <div class="racha-cand-msg">
+              ${proxStr}
+              ${premiosYaGanados ? `<div class="racha-cand-premios">Ya ganó: ${premiosYaGanados}</div>` : ''}
+            </div>
+            <div class="racha-cand-num">
+              <span class="racha-cand-num-big">${racha}</span>
+              <span class="racha-cand-num-lbl">${racha === 1 ? 'DÍA' : 'DÍAS'} 🔥</span>
+            </div>
+          </div>
+        `;
+      };
+
+      // Estado de la ronda
+      const todosCanjeados = rondaActual.canjes.length === HITOS_DEF.length;
+      const rondaStatus = todosCanjeados
+        ? `🎉 RONDA ${rondaActual.ronda} COMPLETA — NUEVA RONDA EMPIEZA MAÑANA`
+        : `RONDA ${rondaActual.ronda} · ${rondaActual.canjes.length}/${HITOS_DEF.length} PREMIOS CANJEADOS`;
+
+      // Banner preview
+      const banner = esPreview
+        ? `<div class="racha-preview-banner">🚀 PREVIEW · El programa de premios oficial inicia el <strong>01/06/2026</strong>. Datos de mayo son solo demostración.</div>`
+        : '';
+
+      bodyHTML = `
+        <div class="racha-glob-layout">
+          ${banner}
+          <div class="racha-glob-status">${rondaStatus}</div>
+          ${renderTimelineHitos()}
+          <div class="racha-cand-list">
+            ${ordenados.slice(0, 3).map((a, i) => renderCandidatoCard(a, i)).join('') || '<div class="empty-state" style="padding:20px;">Sin candidatos vivos en esta ronda</div>'}
+          </div>
+        </div>
+      `;
+      canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+      return;
+    }
 
     // ============================================
     // LAYOUT: Stat Board (dashboard deportivo)
@@ -3998,7 +4728,7 @@ function render() {
                 </div>
                 <div class="stat-info">
                   <div class="stat-name">${a.nombre}</div>
-                  <div class="stat-team">${a.centro || '—'} · ${a.supervisor || '—'}</div>
+                  <div class="stat-team">${getSubtxtVisual(a) || '—'}</div>
                   <div class="stat-bar-wrap">
                     <div class="stat-bar" style="width:${pct}%;"></div>
                   </div>
@@ -4033,7 +4763,7 @@ function render() {
               <div class="cinema-glow"></div>
             </div>
             <div class="cinema-name">${principal.nombre}</div>
-            <div class="cinema-team">${principal.centro || '—'} · ${principal.supervisor || '—'}</div>
+            <div class="cinema-team">${getSubtxtVisual(principal) || '—'}</div>
             <div class="cinema-rating">
               <div class="cinema-rating-num">${valor1}</div>
               <div class="cinema-rating-lbl">${valLabel}</div>
@@ -4095,7 +4825,7 @@ function render() {
             </div>
             <div class="trofeo-kicker">CAMPEÓN DEL MES</div>
             <div class="trofeo-name">${principal.nombre}</div>
-            <div class="trofeo-team">${principal.centro || '—'} · ${principal.supervisor || '—'}</div>
+            <div class="trofeo-team">${getSubtxtVisual(principal) || '—'}</div>
             <div class="trofeo-divider">◆ ◆ ◆</div>
             <div class="trofeo-val">
               <span class="trofeo-num">${valor1}</span>
@@ -4146,9 +4876,7 @@ function render() {
                 <div class="player-card-avatar">${iniciales(a.nombre)}</div>
                 <div class="player-card-name">${a.nombre}</div>
                 <div class="player-card-stats">
-                  <span class="pc-stat">${a.centro || '—'}</span>
-                  <span class="pc-stat-sep">·</span>
-                  <span class="pc-stat">${a.supervisor || '—'}</span>
+                  <span class="pc-stat">${getSubtxtVisual(a) || '—'}</span>
                 </div>
                 <div class="player-card-label">${valLabel}</div>
               </div>
@@ -4175,7 +4903,7 @@ function render() {
     // Generar cards agrupadas por rank
     const renderSpot = (a, rank) => {
       const valor = getValor(a);
-      const subtxt = [a.centro, a.supervisor].filter(Boolean).join(' · ');
+      const subtxt = getSubtxtVisual(a);
       return `
         <div class="spot rank-${rank}">
           <div class="medal">${rank}</div>
