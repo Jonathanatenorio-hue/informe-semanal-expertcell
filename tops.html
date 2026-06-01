@@ -625,6 +625,111 @@
     box-shadow:0 4px 14px rgba(99,102,241,0.3);
   }
   .btn-presentar:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(99,102,241,0.45); }
+  .btn-imagenes {
+    background:linear-gradient(135deg, #0d9488, #14b8a6); color:#fff;
+    border:1px solid #0d9488;
+    width:100%; padding:12px 18px;
+    font-family:'Sora'; font-weight:700; font-size:13px;
+    border-radius:8px; cursor:pointer;
+    letter-spacing:0.5px; transition:all 0.2s;
+    box-shadow:0 4px 14px rgba(13,148,136,0.3);
+  }
+  .btn-imagenes:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(13,148,136,0.45); }
+
+  .imagenes-warning {
+    padding:10px 14px;
+    background:rgba(20,184,166,0.1);
+    border-left:3px solid #14b8a6;
+    border-radius:6px;
+    font-family:'Sora'; font-size:11px; color:#a7f3d0;
+    margin-bottom:14px; line-height:1.5;
+  }
+  .imagenes-warning strong { color:#fff; }
+  .imagen-item {
+    display:grid; grid-template-columns:60px 1fr auto;
+    gap:12px; align-items:center;
+    padding:10px 14px; margin-bottom:6px;
+    background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:8px;
+  }
+  .imagen-item.has-image { border-color:rgba(20,184,166,0.4); }
+  .imagen-item-thumb {
+    width:60px; height:36px;
+    background:rgba(0,0,0,0.4);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; overflow:hidden;
+  }
+  .imagen-item-thumb img { width:100%; height:100%; object-fit:cover; }
+  .imagen-item-info { min-width:0; }
+  .imagen-item-name { font-family:'Sora'; font-weight:700; font-size:12px; color:#fff; }
+  .imagen-item-status { font-family:'Sora'; font-size:10px; margin-top:2px; }
+  .imagen-item-status.cargada { color:#14b8a6; }
+  .imagen-item-status.vacia { color:#666; }
+  .imagen-item-actions { display:flex; gap:5px; }
+  .imagen-btn-sm {
+    padding:5px 10px; border-radius:5px; cursor:pointer;
+    font-family:'Sora'; font-size:10px; font-weight:700;
+    border:1px solid; background:transparent;
+  }
+  .imagen-btn-subir {
+    color:#14b8a6; border-color:rgba(20,184,166,0.4);
+    background:rgba(20,184,166,0.1);
+  }
+  .imagen-btn-subir:hover { background:rgba(20,184,166,0.22); }
+  .imagen-btn-borrar {
+    color:#ef4444; border-color:rgba(239,68,68,0.4);
+    background:transparent;
+  }
+  .imagen-btn-borrar:hover { background:rgba(239,68,68,0.12); }
+  .imagenes-uso {
+    margin-top:12px; padding:8px 12px;
+    background:rgba(255,255,255,0.04);
+    border-radius:6px;
+    font-family:'Sora'; font-size:10px; color:#999;
+    text-align:center;
+  }
+
+  /* Render de imagen en stage (presentación) */
+  .imagen-pantalla {
+    width:100%; height:100%;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    padding:0;
+  }
+  .imagen-pantalla img {
+    max-width:100%; max-height:100%;
+    object-fit:contain;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+    border-radius:8px;
+  }
+
+  /* Banner de período (Cierre Mayo / En Vivo Junio) */
+  .periodo-banner {
+    position:absolute; top:14px; left:50%;
+    transform:translateX(-50%);
+    background:linear-gradient(135deg, #94a3b8, #64748b);
+    color:#1a1a1a;
+    padding:6px 18px;
+    border-radius:20px;
+    font-family:'Sora'; font-weight:900; font-size:11px;
+    letter-spacing:2px;
+    box-shadow:0 4px 14px rgba(0,0,0,0.4);
+    z-index:50;
+    border:1.5px solid rgba(255,255,255,0.4);
+  }
+  .periodo-banner.periodo-junio {
+    background:linear-gradient(135deg, #10b981, #059669);
+    color:#fff;
+    border-color:rgba(255,255,255,0.5);
+    animation:periodo-pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes periodo-pulse {
+    0%, 100% { box-shadow:0 4px 14px rgba(16,185,129,0.4); }
+    50% { box-shadow:0 4px 22px rgba(16,185,129,0.7); }
+  }
   .btn-secondary {
     background:rgba(255,255,255,0.06); color:#ccc;
     border:1px solid rgba(255,255,255,0.15);
@@ -3525,6 +3630,11 @@ JENNY PEREZ TOME | 17 | JV"></textarea>
       <button class="btn btn-presentar" id="btn-presentar">🎬 Modo Presentación (TV)</button>
       <div class="small-help">Rota varias pantallas en pantalla completa. Ideal para TV de la operación.</div>
     </div>
+
+    <div class="section">
+      <button class="btn btn-imagenes" id="btn-imagenes">📷 Imágenes del Reporte</button>
+      <div class="small-help">Sube screenshots del reporte para incluir en la presentación. Se guardan localmente.</div>
+    </div>
   </div>
 
   <!-- ==================== PREVIEW ==================== -->
@@ -5681,7 +5791,7 @@ setTimeout(() => {
 // ========================================================================
 // MODO PRESENTACIÓN (TV / Proyector)
 // ========================================================================
-const PRESENTAR_KEY = 'expertcell_presentar_config_v3';
+const PRESENTAR_KEY = 'expertcell_presentar_config_v4';
 let presentarSkipLoad = false;
 let presentarConfig = {
   duracion: 60,
@@ -5712,58 +5822,121 @@ function getComboDelDia() {
 }
 
 // Generar pantallas según especificación del usuario
+// Fecha desde la cual se muestra Junio en vivo además de Mayo (cierre)
+const JUNIO_LIVE_DESDE = '2026-06-05';
+
+// Define si hoy es el día de mostrar también las pantallas en vivo de junio
+function debeMostrarJunioLive() {
+  const hoy = new Date();
+  const hoyStr = hoy.toISOString().slice(0, 10);
+  return hoyStr >= JUNIO_LIVE_DESDE;
+}
+
 function getPantallasDisponibles() {
   const result = [];
 
-  // === RECONOCIMIENTOS Y TOPS ===
-  result.push({ id: 'global::',         topId: 'global',   centro: '',    supervisor: '', icon: '🏆', label: 'Top 3 Global',                  desc: 'Los 3 mejores agentes del mes', grupo: 'Top 3 y Globales' });
-  result.push({ id: 'global::CC2::',    topId: 'global',   centro: 'CC2', supervisor: '', icon: '🏆', label: 'Top 3 · CC2 Antequera',         desc: 'Los 3 mejores de CC2',          grupo: 'Top 3 y Globales' });
-  result.push({ id: 'global::JV::',     topId: 'global',   centro: 'JV',  supervisor: '', icon: '🏆', label: 'Top 3 · Juárez Torre JV',       desc: 'Los 3 mejores de JV',           grupo: 'Top 3 y Globales' });
-  result.push({ id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales' });
+  // === TOPS BASE (sin periodo - usa state actual del UI por default) ===
+  // Estos son los tops "base" que también pueden tener variantes Mayo/Junio
+  const TOPS_BASE = [
+    // grupo: Top 3 y Globales
+    { id: 'global::',         topId: 'global',   centro: '',    supervisor: '', icon: '🏆', label: 'Top 3 Global',                  desc: 'Los 3 mejores del mes',         grupo: 'Top 3 y Globales',          variantable: true },
+    { id: 'global::CC2::',    topId: 'global',   centro: 'CC2', supervisor: '', icon: '🏆', label: 'Top 3 · CC2 Antequera',         desc: 'Los 3 mejores de CC2',          grupo: 'Top 3 y Globales',          variantable: true },
+    { id: 'global::JV::',     topId: 'global',   centro: 'JV',  supervisor: '', icon: '🏆', label: 'Top 3 · Juárez Torre JV',       desc: 'Los 3 mejores de JV',           grupo: 'Top 3 y Globales',          variantable: true },
+    { id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales',          variantable: true },
+    // Centros y supervisores
+    { id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por supervisor CC2',      grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por supervisor JV',       grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes',              grupo: 'Centros y Supervisores',    variantable: true },
+    // Revelación
+    { id: 'rev::',            topId: 'rev',      centro: '',    supervisor: '', icon: '🚀', label: 'Revelación del mes',            desc: 'Mejor agente nuevo',            grupo: 'Revelación',                variantable: true },
+    { id: 'revTop::CC2::',    topId: 'revTop',   centro: 'CC2', supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · CC2',      desc: 'Mejores nuevos CC2',            grupo: 'Revelación',                variantable: true },
+    { id: 'revTop::JV::',     topId: 'revTop',   centro: 'JV',  supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · JV',       desc: 'Mejores nuevos JV',             grupo: 'Revelación',                variantable: true },
+    // Crecimiento
+    { id: 'crec::',           topId: 'crec',     centro: '',    supervisor: '', icon: '📈', label: 'Mayor Crecimiento',             desc: 'Mayor incremento vs mes ant.',  grupo: 'Crecimiento',               variantable: true },
+    { id: 'crecTop::CC2::',   topId: 'crecTop',  centro: 'CC2', supervisor: '', icon: '📈', label: 'Top Crecimiento · CC2',         desc: 'Top crecimiento CC2',           grupo: 'Crecimiento',               variantable: true },
+    { id: 'crecTop::JV::',    topId: 'crecTop',  centro: 'JV',  supervisor: '', icon: '📈', label: 'Top Crecimiento · JV',          desc: 'Top crecimiento JV',            grupo: 'Crecimiento',               variantable: true },
+    // Ticket
+    { id: 'ticket::',         topId: 'ticket',   centro: '',    supervisor: '', icon: '💎', label: 'Rey del Ticket',                desc: 'Mejor ARPU global',             grupo: 'Ticket',                    variantable: true },
+    { id: 'ticketTop::CC2::', topId: 'ticketTop', centro: 'CC2', supervisor: '', icon: '💎', label: 'Top del Ticket · CC2',         desc: 'Top ARPU CC2',                  grupo: 'Ticket',                    variantable: true },
+    { id: 'ticketTop::JV::',  topId: 'ticketTop', centro: 'JV',  supervisor: '', icon: '💎', label: 'Top del Ticket · JV',          desc: 'Top ARPU JV',                   grupo: 'Ticket',                    variantable: true },
+    // Meta
+    { id: 'meta::',           topId: 'meta',     centro: '',    supervisor: '', icon: '🎯', label: 'Primero en Meta',               desc: 'Quien llegó primero',           grupo: 'Meta',                      variantable: true },
+    { id: 'metaCarr::CC2::',  topId: 'metaCarr', centro: 'CC2', supervisor: '', icon: '🏁', label: 'Carrera a Meta · CC2',          desc: 'Tabla CC2',                     grupo: 'Meta',                      variantable: true },
+    { id: 'metaCarr::JV::',   topId: 'metaCarr', centro: 'JV',  supervisor: '', icon: '🏁', label: 'Carrera a Meta · JV',           desc: 'Tabla JV',                      grupo: 'Meta',                      variantable: true },
+  ];
 
-  // === CENTROS Y SUPERVISORES ===
-  result.push({ id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores' });
-  result.push({ id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por cada supervisor CC2', grupo: 'Centros y Supervisores' });
-  result.push({ id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por cada supervisor JV',  grupo: 'Centros y Supervisores' });
-  result.push({ id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores' });
-  result.push({ id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores' });
-  result.push({ id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes en plantilla', grupo: 'Centros y Supervisores' });
+  const mostrarJunioLive = debeMostrarJunioLive();
 
-  // === REVELACIÓN ===
-  result.push({ id: 'rev::',            topId: 'rev',      centro: '',    supervisor: '', icon: '🚀', label: 'Revelación del mes',            desc: 'Mejor agente nuevo global',     grupo: 'Revelación' });
-  result.push({ id: 'revTop::CC2::',    topId: 'revTop',   centro: 'CC2', supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · CC2',      desc: 'Mejores nuevos CC2',            grupo: 'Revelación' });
-  result.push({ id: 'revTop::JV::',     topId: 'revTop',   centro: 'JV',  supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · JV',       desc: 'Mejores nuevos JV',             grupo: 'Revelación' });
+  // Generar variantes de cierre Mayo + variantes de junio en vivo
+  TOPS_BASE.forEach(base => {
+    if (!base.variantable) return;
+    // Mayo (cierre)
+    result.push({
+      id: 'mayo__' + base.id,
+      topId: base.topId,
+      centro: base.centro,
+      supervisor: base.supervisor,
+      periodo: 'mayo',
+      icon: '🥈',
+      label: 'CIERRE MAYO · ' + base.label,
+      desc: base.desc,
+      grupo: '🏆 CIERRE DE MAYO 2026'
+    });
+  });
 
-  // === CRECIMIENTO ===
-  result.push({ id: 'crec::',           topId: 'crec',     centro: '',    supervisor: '', icon: '📈', label: 'Mayor Crecimiento',             desc: 'Quien más creció vs mes anterior', grupo: 'Crecimiento' });
-  result.push({ id: 'crecTop::CC2::',   topId: 'crecTop',  centro: 'CC2', supervisor: '', icon: '📈', label: 'Top Crecimiento · CC2',         desc: 'Top crecimiento en CC2',        grupo: 'Crecimiento' });
-  result.push({ id: 'crecTop::JV::',    topId: 'crecTop',  centro: 'JV',  supervisor: '', icon: '📈', label: 'Top Crecimiento · JV',          desc: 'Top crecimiento en JV',         grupo: 'Crecimiento' });
-
-  // === TICKET ===
-  result.push({ id: 'ticket::',         topId: 'ticket',   centro: '',    supervisor: '', icon: '💎', label: 'Rey del Ticket',                desc: 'Mejor ARPU global',             grupo: 'Ticket' });
-  result.push({ id: 'ticketTop::CC2::', topId: 'ticketTop', centro: 'CC2', supervisor: '', icon: '💎', label: 'Top del Ticket · CC2',         desc: 'Top ARPU CC2',                  grupo: 'Ticket' });
-  result.push({ id: 'ticketTop::JV::',  topId: 'ticketTop', centro: 'JV',  supervisor: '', icon: '💎', label: 'Top del Ticket · JV',          desc: 'Top ARPU JV',                   grupo: 'Ticket' });
-
-  // === META ===
-  result.push({ id: 'meta::',           topId: 'meta',     centro: '',    supervisor: '', icon: '🎯', label: 'Primero en Meta',               desc: 'Quien llegó primero',           grupo: 'Meta' });
-  result.push({ id: 'metaCarr::CC2::',  topId: 'metaCarr', centro: 'CC2', supervisor: '', icon: '🏁', label: 'Carrera a Meta · CC2',          desc: 'Tabla CC2',                     grupo: 'Meta' });
-  result.push({ id: 'metaCarr::JV::',   topId: 'metaCarr', centro: 'JV',  supervisor: '', icon: '🏁', label: 'Carrera a Meta · JV',           desc: 'Tabla JV',                      grupo: 'Meta' });
-
-  // === RACHA ===
+  // Cómo funciona Racha (explicación) — independiente del período
   result.push({ id: 'com_racha_exp::',  topId: 'com_racha_exp', centro: '', supervisor: '', icon: '🔥', label: 'Cómo funciona Racha Activa', desc: 'Explicación de la dinámica',    grupo: 'Racha Activa' });
-  result.push({ id: 'racha::',          topId: 'racha',    centro: '',    supervisor: '', icon: '🔥', label: 'Racha Activa (ganadores)',      desc: 'Programa de premios',           grupo: 'Racha Activa' });
+  // Racha activa con datos en vivo (solo aplica a junio)
+  result.push({ id: 'racha::',          topId: 'racha',    centro: '',    supervisor: '', periodo: 'junio', icon: '🔥', label: 'Racha Activa (ganadores)',      desc: 'Programa de premios',           grupo: 'Racha Activa' });
 
-  // === GRÁFICAS DEL REPORTE ===
-  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '📊', label: 'Avance Mensual',           desc: 'Progress bar 919/1000',         grupo: 'Gráficas del Reporte' });
+  // Gráfica avance mensual
+  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '📊', label: 'Avance Mensual (calculado)',           desc: 'Progress bar del mes',         grupo: 'Avance' });
 
   // === DINÁMICAS MUNDIAL JUNIO 2026 ===
   result.push({ id: 'com_din_jun::',    topId: 'com_din_jun',    centro: '', supervisor: '', icon: '⚽', label: 'Dinámicas Junio 2026',     desc: 'Anuncio principal',             grupo: 'Mundial 2026' });
-  result.push({ id: 'com_tiendita::',   topId: 'com_tiendita',   centro: '', supervisor: '', icon: '🛒', label: 'Tiendita del Mundial',     desc: '15-20 jun · Articulos + rifa',  grupo: 'Mundial 2026' });
+  result.push({ id: 'com_tiendita::',   topId: 'com_tiendita',   centro: '', supervisor: '', icon: '🛒', label: 'Tiendita del Mundial',     desc: '15-20 jun · Artículos + rifa',  grupo: 'Mundial 2026' });
   result.push({ id: 'com_dia_tem::',    topId: 'com_dia_tem',    centro: '', supervisor: '', icon: '👕', label: 'Día Temático Mundial',     desc: 'Playera de tu selección',       grupo: 'Mundial 2026' });
   result.push({ id: 'com_quiniela::',   topId: 'com_quiniela',   centro: '', supervisor: '', icon: '🎫', label: 'Quiniela del Mundial',     desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
   result.push({ id: 'com_cine::',       topId: 'com_cine',       centro: '', supervisor: '', icon: '🎬', label: 'México te lleva al Cine',  desc: 'Rifa para staff que llegue a meta', grupo: 'Mundial 2026' });
   result.push({ id: 'com_fifa::',       topId: 'com_fifa',       centro: '', supervisor: '', icon: '🎮', label: 'Torneo de FIFA',           desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
   result.push({ id: 'com_comis::',      topId: 'com_comis',      centro: '', supervisor: '', icon: '💰', label: 'Nuevo Esquema Comisiones', desc: 'Aceleradores extra junio',      grupo: 'Mundial 2026' });
+
+  // === IMÁGENES DEL REPORTE (solo si están cargadas) ===
+  IMAGENES_DEF.forEach(d => {
+    if (imagenesData[d.id]) {
+      result.push({
+        id: 'img__' + d.id + '::',
+        topId: 'img_' + d.id,
+        centro: '',
+        supervisor: '',
+        icon: '🖼️',
+        label: d.label,
+        desc: 'Screenshot del reporte',
+        grupo: '🖼️ Imágenes del Reporte'
+      });
+    }
+  });
+
+  // === EN VIVO JUNIO (solo si ya estamos del 5 jun en adelante) ===
+  if (mostrarJunioLive) {
+    TOPS_BASE.forEach(base => {
+      if (!base.variantable) return;
+      result.push({
+        id: 'junio__' + base.id,
+        topId: base.topId,
+        centro: base.centro,
+        supervisor: base.supervisor,
+        periodo: 'junio',
+        icon: '🟢',
+        label: 'EN VIVO · ' + base.label,
+        desc: base.desc + ' (junio en curso)',
+        grupo: '🟢 EN VIVO JUNIO 2026'
+      });
+    });
+  }
 
   return result;
 }
@@ -5798,42 +5971,73 @@ function cargarConfigPresentar() {
 
 // Lista oficial de defaults EN EL ORDEN exacto que pidió el usuario
 function getPantallasDefault() {
-  return [
-    'global::',
-    'global::CC2::',
-    'global::JV::',
-    'top10::',
-    'centro::',
-    'resumenc::CC2::',
-    'resumenc::JV::',
-    'supVtas::',
-    'supMeta::',
-    'promAgente::',
-    'rev::',
-    'revTop::CC2::',
-    'revTop::JV::',
-    'crec::',
-    'crecTop::CC2::',
-    'crecTop::JV::',
-    'ticket::',
-    'ticketTop::CC2::',
-    'ticketTop::JV::',
-    'meta::',
-    'metaCarr::CC2::',
-    'metaCarr::JV::',
-    // PORTADA Mundial 2026 (separa el bloque)
+  const defaults = [
+    // === CIERRE DE MAYO 2026 ===
+    'mayo__global::',
+    'mayo__global::CC2::',
+    'mayo__global::JV::',
+    'mayo__top10::',
+    'mayo__centro::',
+    'mayo__resumenc::CC2::',
+    'mayo__resumenc::JV::',
+    'mayo__supVtas::',
+    'mayo__supMeta::',
+    'mayo__promAgente::',
+    'mayo__rev::',
+    'mayo__revTop::CC2::',
+    'mayo__revTop::JV::',
+    'mayo__crec::',
+    'mayo__crecTop::CC2::',
+    'mayo__crecTop::JV::',
+    'mayo__ticket::',
+    'mayo__ticketTop::CC2::',
+    'mayo__ticketTop::JV::',
+    'mayo__meta::',
+    'mayo__metaCarr::CC2::',
+    'mayo__metaCarr::JV::',
+    // === IMÁGENES DEL REPORTE (solo las cargadas) ===
+    ...IMAGENES_DEF.filter(d => imagenesData[d.id]).map(d => 'img__' + d.id + '::'),
+    // === MUNDIAL 2026 / DINÁMICAS JUNIO ===
     'com_din_jun::',
-    // Sección Racha
     'com_racha_exp::',
     'racha::',
-    // Resto de dinámicas mundial
     'com_tiendita::',
     'com_dia_tem::',
     'com_quiniela::',
     'com_cine::',
     'com_fifa::',
-    'com_comis::'
+    'com_comis::',
   ];
+
+  // Si ya estamos en o después del 5 de junio, agregar pantallas EN VIVO de junio
+  if (debeMostrarJunioLive()) {
+    defaults.push(
+      'junio__global::',
+      'junio__global::CC2::',
+      'junio__global::JV::',
+      'junio__top10::',
+      'junio__centro::',
+      'junio__resumenc::CC2::',
+      'junio__resumenc::JV::',
+      'junio__supVtas::',
+      'junio__supMeta::',
+      'junio__promAgente::',
+      'junio__rev::',
+      'junio__revTop::CC2::',
+      'junio__revTop::JV::',
+      'junio__crec::',
+      'junio__crecTop::CC2::',
+      'junio__crecTop::JV::',
+      'junio__ticket::',
+      'junio__ticketTop::CC2::',
+      'junio__ticketTop::JV::',
+      'junio__meta::',
+      'junio__metaCarr::CC2::',
+      'junio__metaCarr::JV::',
+    );
+  }
+
+  return defaults;
 }
 
 function restaurarPantallasDefault() {
@@ -6035,7 +6239,9 @@ function iniciarPresentacion() {
     cantidad: state.cantidad,
     centro: state.centro,
     supervisor: state.supervisor,
-    stickers: state.stickers
+    stickers: state.stickers,
+    mes: state.mes,
+    anio: state.anio
   };
 
   const combo = getComboDelDia();
@@ -6083,7 +6289,11 @@ function salirPresentacion() {
   document.removeEventListener('keydown', escapePresentar);
   document.getElementById('presentar-stage').style.display = 'none';
 
+  let mesAnioCambiado = false;
   if (presentarState.origState) {
+    if (state.mes !== presentarState.origState.mes || state.anio !== presentarState.origState.anio) {
+      mesAnioCambiado = true;
+    }
     Object.assign(state, presentarState.origState);
     presentarState.origState = null;
   }
@@ -6092,17 +6302,38 @@ function salirPresentacion() {
   else if (document.webkitFullscreenElement) document.webkitExitFullscreen();
 
   aplicarTema();
-  if (state.rawData) actualizarYRender();
-  else render();
+  // Si cambió el mes durante la presentación, recargar datos del mes original
+  if (mesAnioCambiado && db) {
+    cargarDesdeSupabase();
+  } else if (state.rawData) {
+    actualizarYRender();
+  } else {
+    render();
+  }
 }
 
 function parsearIdPantalla(id) {
-  // Formato: 'topId::centro::supervisor' (centro y supervisor pueden ser vacíos)
-  const parts = id.split('::');
+  // Formato: 'topId::centro::supervisor' o con prefijo de período:
+  //   'mayo__topId::centro::supervisor'   (mayo cierre)
+  //   'junio__topId::centro::supervisor'  (junio en vivo)
+  //   'img__rep_xxx::'                    (imagen del reporte)
+  let periodo = '';
+  let rest = id;
+  if (id.startsWith('mayo__')) { periodo = 'mayo'; rest = id.substring(6); }
+  else if (id.startsWith('junio__')) { periodo = 'junio'; rest = id.substring(7); }
+  else if (id.startsWith('img__')) {
+    // imagen del reporte: 'img__rep_xxx::'
+    const parts = id.split('::');
+    const imgId = parts[0].substring(5); // quitar 'img__'
+    return { topId: 'img_' + imgId, centro: '', supervisor: '', periodo: '', esImagen: true, imgId: imgId };
+  }
+  const parts = rest.split('::');
   return {
     topId: parts[0] || '',
     centro: parts[1] || '',
-    supervisor: parts[2] || ''
+    supervisor: parts[2] || '',
+    periodo: periodo,
+    esImagen: false
   };
 }
 
@@ -6561,7 +6792,76 @@ function mostrarPantallaPresentar() {
   const idPantalla = presentarConfig.pantallas[idx];
   const parsed = parsearIdPantalla(idPantalla);
 
-  // Tipos especiales que renderizan tarjetas custom (no son tops normales)
+  // ===== CASO 1: IMAGEN DEL REPORTE =====
+  if (parsed.esImagen) {
+    renderImagenPantalla(parsed.imgId);
+    setTimeout(() => copiarCanvasAStage(), 50);
+    document.querySelectorAll('.presentar-dot').forEach((d, i) => {
+      d.classList.toggle('active', i === idx);
+    });
+    clearTimeout(presentarState.timer);
+    presentarState.timer = setTimeout(() => {
+      if (!presentarState.activo) return;
+      siguientePantallaPresentar();
+    }, presentarConfig.duracion * 1000);
+    return;
+  }
+
+  // ===== CASO 2: PERÍODO MAYO O JUNIO - hardcodear el mes =====
+  const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
+  const targetAnio = (parsed.periodo === 'mayo' || parsed.periodo === 'junio') ? 2026 : null;
+  const necesitaCambioMes = targetMes !== null && (state.mes !== targetMes || state.anio !== targetAnio);
+
+  if (necesitaCambioMes) {
+    state.mes = targetMes;
+    state.anio = targetAnio;
+    // Verificar cache por mes
+    presentarState.cacheRawData = presentarState.cacheRawData || {};
+    const cacheKey = `${targetAnio}_${targetMes}`;
+    if (presentarState.cacheRawData[cacheKey]) {
+      // Usar cache
+      state.rawData = presentarState.cacheRawData[cacheKey];
+      const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
+      mostrarPantallaPresentarRender(parsed, idx, banner);
+    } else {
+      // Recargar
+      mostrarLoadingStage();
+      cargarDesdeSupabase().then(() => {
+        // Cachear
+        presentarState.cacheRawData[cacheKey] = state.rawData;
+        const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
+        mostrarPantallaPresentarRender(parsed, idx, banner);
+      }).catch((e) => {
+        console.warn('Error recargando datos', e);
+        const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
+        mostrarPantallaPresentarRender(parsed, idx, banner);
+      });
+    }
+    return;
+  }
+
+  // Si no hay período o ya estamos en el período correcto
+  const bannerTxt = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO'
+                  : parsed.periodo === 'junio' ? '🟢 EN VIVO JUNIO'
+                  : '';
+  mostrarPantallaPresentarRender(parsed, idx, bannerTxt);
+}
+
+function mostrarLoadingStage() {
+  const stageCanvas = document.getElementById('presentar-stage-canvas');
+  if (!stageCanvas) return;
+  stageCanvas.innerHTML = `
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; color:#d4af37;">
+      <div style="font-family:'Anton',sans-serif; font-size:42px; letter-spacing:3px;">⏳ CARGANDO</div>
+      <div style="font-family:'Sora'; font-size:14px; color:#999; letter-spacing:1px;">Actualizando datos del período...</div>
+    </div>
+  `;
+}
+
+function mostrarPantallaPresentarRender(parsed, idx, bannerTxt) {
+  if (!presentarState.activo) return;
+
+  // Tipos especiales
   const esComunicado = parsed.topId.startsWith('com_');
   const esGrafica = parsed.topId.startsWith('graf_');
   const esCustom = parsed.topId === 'promAgente' || esComunicado || esGrafica;
@@ -6588,6 +6888,21 @@ function mostrarPantallaPresentar() {
     if (state.rawData) state.agentes = procesarDatos();
     render();
   }
+
+  // Agregar banner de período si aplica
+  if (bannerTxt) {
+    const canvas = document.getElementById('canvas');
+    if (canvas) {
+      // Eliminar banner previo si lo hubiera
+      const prev = canvas.querySelector('.periodo-banner');
+      if (prev) prev.remove();
+      const banner = document.createElement('div');
+      banner.className = 'periodo-banner' + (parsed.periodo === 'junio' ? ' periodo-junio' : '');
+      banner.textContent = bannerTxt;
+      canvas.appendChild(banner);
+    }
+  }
+
   setTimeout(() => copiarCanvasAStage(), 50);
 
   document.querySelectorAll('.presentar-dot').forEach((d, i) => {
@@ -6599,6 +6914,26 @@ function mostrarPantallaPresentar() {
     if (!presentarState.activo) return;
     siguientePantallaPresentar();
   }, presentarConfig.duracion * 1000);
+}
+
+// Render de una imagen del reporte ocupando todo el canvas
+function renderImagenPantalla(imgId) {
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return;
+  const dataUrl = imagenesData[imgId];
+  if (!dataUrl) {
+    canvas.innerHTML = '<div class="empty-state">Imagen no encontrada</div>';
+    return;
+  }
+  // Limpiar clases para no aplicar fondo de tops
+  canvas.classList.remove('ratio-9x16', 'ratio-1x1');
+  canvas.classList.add('ratio-16x9');
+  canvas.classList.remove('tall-list');
+  canvas.innerHTML = `
+    <div class="imagen-pantalla">
+      <img src="${dataUrl}" alt="" />
+    </div>
+  `;
 }
 
 function copiarCanvasAStage() {
@@ -6646,6 +6981,168 @@ document.addEventListener('fullscreenchange', () => {
     salirPresentacion();
   }
 });
+
+// ========================================================================
+// IMÁGENES DEL REPORTE (guardadas en localStorage comprimidas)
+// ========================================================================
+const IMAGENES_KEY = 'expertcell_imagenes_reporte_v1';
+const IMAGENES_DEF = [
+  { id: 'rep_global',         icon: '📊', label: 'Avance Mensual Global',        desc: 'Tarjeta de meta del reporte' },
+  { id: 'rep_cc2',            icon: '🏢', label: 'Avance Mensual · CC2',         desc: 'Filtrado a CC2 Antequera' },
+  { id: 'rep_jv',             icon: '🏢', label: 'Avance Mensual · JV',          desc: 'Filtrado a Juárez Torre JV' },
+  { id: 'rep_tabla',          icon: '📋', label: 'Tabla Maestra de Agentes',     desc: 'Top agentes con detalles' },
+  { id: 'rep_tendencia',      icon: '📈', label: 'Tendencia del Mes',            desc: 'Gráfica de evolución' },
+  { id: 'rep_vista_diaria',   icon: '📅', label: 'Vista Diaria',                 desc: 'Gráfica día a día' },
+  { id: 'rep_vista_semanal',  icon: '📆', label: 'Vista Semanal',                desc: 'Gráfica semana a semana' },
+  { id: 'rep_flujo',          icon: '🔄', label: 'Distribución Flujo de Entrega', desc: 'BO → Activadas' },
+];
+
+let imagenesData = {}; // {id: 'data:image/jpeg;base64,...'}
+let imagenUploadingId = null;
+
+function cargarImagenes() {
+  try {
+    const saved = localStorage.getItem(IMAGENES_KEY);
+    if (saved) imagenesData = JSON.parse(saved);
+  } catch(e) {
+    console.warn('Error cargando imágenes', e);
+    imagenesData = {};
+  }
+}
+
+function guardarImagenes() {
+  try {
+    localStorage.setItem(IMAGENES_KEY, JSON.stringify(imagenesData));
+    return true;
+  } catch(e) {
+    console.warn('Error guardando imágenes (¿localStorage lleno?)', e);
+    alert('No se pudo guardar la imagen. Es posible que el almacenamiento esté lleno. Borra alguna imagen primero o reduce el tamaño.');
+    return false;
+  }
+}
+
+// Comprime una imagen redimensionándola y bajando calidad JPEG
+function comprimirImagen(file, maxWidth = 1400, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Calcular tamaño final
+        let w = img.width, h = img.height;
+        if (w > maxWidth) {
+          h = h * (maxWidth / w);
+          w = maxWidth;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        // Fondo blanco por si es PNG con transparencia (para JPEG)
+        ctx.fillStyle = '#0a0a14';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function abrirModalImagenes() {
+  cargarImagenes();
+  renderListaImagenes();
+  document.getElementById('imagenes-modal').style.display = 'flex';
+}
+
+function cerrarModalImagenes() {
+  document.getElementById('imagenes-modal').style.display = 'none';
+}
+
+function renderListaImagenes() {
+  const list = document.getElementById('imagenes-list');
+  list.innerHTML = IMAGENES_DEF.map(d => {
+    const cargada = !!imagenesData[d.id];
+    return `
+      <div class="imagen-item ${cargada ? 'has-image' : ''}">
+        <div class="imagen-item-thumb">
+          ${cargada ? `<img src="${imagenesData[d.id]}" alt="" />` : `<span>${d.icon}</span>`}
+        </div>
+        <div class="imagen-item-info">
+          <div class="imagen-item-name">${d.label}</div>
+          <div class="imagen-item-status ${cargada ? 'cargada' : 'vacia'}">
+            ${cargada ? '✓ Imagen cargada' : `· ${d.desc}`}
+          </div>
+        </div>
+        <div class="imagen-item-actions">
+          <button class="imagen-btn-sm imagen-btn-subir" data-id="${d.id}" onclick="iniciarUpload('${d.id}')">${cargada ? 'Reemplazar' : 'Subir'}</button>
+          ${cargada ? `<button class="imagen-btn-sm imagen-btn-borrar" onclick="borrarImagen('${d.id}')">🗑️</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Actualizar uso
+  const usoBytes = JSON.stringify(imagenesData).length;
+  const usoMB = (usoBytes / (1024 * 1024)).toFixed(2);
+  const cnt = Object.keys(imagenesData).length;
+  document.getElementById('imagenes-uso').textContent =
+    `${cnt} de ${IMAGENES_DEF.length} imágenes cargadas · ${usoMB} MB usados`;
+}
+
+function iniciarUpload(id) {
+  imagenUploadingId = id;
+  const input = document.getElementById('imagen-uploader');
+  input.value = '';
+  input.click();
+}
+
+async function manejarUpload(file) {
+  if (!imagenUploadingId || !file) return;
+  try {
+    const dataUrl = await comprimirImagen(file);
+    imagenesData[imagenUploadingId] = dataUrl;
+    if (guardarImagenes()) {
+      renderListaImagenes();
+    }
+  } catch(e) {
+    console.error(e);
+    alert('Error procesando la imagen. Intenta con otra.');
+  }
+  imagenUploadingId = null;
+}
+
+function borrarImagen(id) {
+  if (!confirm('¿Borrar esta imagen?')) return;
+  delete imagenesData[id];
+  guardarImagenes();
+  renderListaImagenes();
+}
+
+function borrarTodasImagenes() {
+  if (!confirm('¿Borrar TODAS las imágenes del reporte? Esta acción no se puede deshacer.')) return;
+  imagenesData = {};
+  localStorage.removeItem(IMAGENES_KEY);
+  renderListaImagenes();
+}
+
+// Wire del botón y del input
+document.getElementById('btn-imagenes').onclick = abrirModalImagenes;
+document.getElementById('imagen-uploader').onchange = (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) manejarUpload(file);
+};
+
+window.iniciarUpload = iniciarUpload;
+window.borrarImagen = borrarImagen;
+window.borrarTodasImagenes = borrarTodasImagenes;
+window.cerrarModalImagenes = cerrarModalImagenes;
+
+cargarImagenes(); // cargar al inicio
 
 window.cerrarModalPresentar = cerrarModalPresentar;
 window.iniciarPresentacion = iniciarPresentacion;
@@ -6739,6 +7236,34 @@ window.restaurarPantallasDefault = restaurarPantallasDefault;
   <div class="presentar-stage-day" id="presentar-stage-day"></div>
   <button class="presentar-stage-exit" onclick="salirPresentacion()">✕ Salir (ESC)</button>
 </div>
+
+<!-- ============ MODAL DE IMÁGENES DEL REPORTE ============ -->
+<div id="imagenes-modal" class="presentar-modal" style="display:none;">
+  <div class="presentar-modal-bg" onclick="cerrarModalImagenes()"></div>
+  <div class="presentar-modal-card">
+    <div class="presentar-modal-header">
+      <div>
+        <div class="presentar-modal-title">📷 Imágenes del Reporte</div>
+        <div class="presentar-modal-subtitle">Sube screenshots para incluirlos en la presentación</div>
+      </div>
+      <button class="presentar-modal-close" onclick="cerrarModalImagenes()">✕</button>
+    </div>
+    <div class="presentar-modal-body">
+      <div class="imagenes-warning">
+        ℹ️ Las imágenes se guardan en este navegador. Súbelas <strong>una vez al inicio del mes</strong> y se quedan hasta que las reemplaces. Tamaño máximo recomendado: <strong>5 MB total</strong>.
+      </div>
+      <div id="imagenes-list"></div>
+      <div class="imagenes-uso" id="imagenes-uso"></div>
+    </div>
+    <div class="presentar-modal-footer">
+      <button class="btn btn-secondary" onclick="borrarTodasImagenes()">🗑️ Borrar todas</button>
+      <button class="btn btn-gold" onclick="cerrarModalImagenes()">✓ Listo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Input oculto para upload -->
+<input type="file" id="imagen-uploader" accept="image/*" style="display:none;" />
 
 </body>
 </html>
