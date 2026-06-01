@@ -259,6 +259,361 @@
   }
   .preview-actions { display:flex; gap:10px; margin-top:20px; }
 
+  /* ==================== TARJETAS CUSTOM (PROMEDIO, GRÁFICAS, MUNDIAL) ==================== */
+
+  /* PROMEDIO VENTA POR AGENTE */
+  .prom-layout {
+    flex:1; display:grid; grid-template-columns:1.4fr 1fr; gap:18px;
+    padding:18px 32px 24px; z-index:2; position:relative;
+  }
+  .prom-hero {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.18), rgba(0,0,0,0.5));
+    border:2px solid var(--accent-1);
+    border-radius:14px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; gap:6px;
+    box-shadow:0 10px 30px rgba(var(--accent-rgb),0.2);
+  }
+  .prom-hero-num {
+    font-family:'Anton', sans-serif; font-size:140px; color:var(--accent-1);
+    line-height:0.85; letter-spacing:-3px;
+    text-shadow:0 0 30px rgba(var(--accent-rgb),0.5);
+  }
+  .prom-hero-lbl {
+    font-family:'Sora'; font-weight:800; font-size:13px; color:var(--accent-2);
+    letter-spacing:3px; text-transform:uppercase; margin-top:4px;
+  }
+  .prom-hero-detail {
+    font-family:'Sora'; font-size:13px; color:var(--text-soft); margin-top:2px;
+  }
+  .prom-grid { display:flex; flex-direction:column; gap:12px; }
+  .prom-card {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.08), rgba(0,0,0,0.4));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:12px; padding:14px 18px;
+    flex:1; display:flex; flex-direction:column; justify-content:center;
+  }
+  .prom-card-title {
+    font-family:'Sora'; font-weight:800; font-size:11px; color:var(--accent-2);
+    letter-spacing:2px; text-transform:uppercase;
+  }
+  .prom-card-num {
+    font-family:'Anton', sans-serif; font-size:60px; color:var(--accent-1);
+    line-height:0.9; margin-top:4px;
+  }
+  .prom-card-lbl {
+    font-family:'Sora'; font-size:10px; color:var(--text-soft);
+    letter-spacing:1px; margin-top:2px;
+  }
+  .prom-card-detail {
+    font-family:'Sora'; font-size:11px; color:#ccc; margin-top:4px;
+  }
+
+  /* GRÁFICA AVANCE MENSUAL */
+  .graf-avance-layout {
+    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px 60px; z-index:2; position:relative; gap:32px;
+  }
+  .graf-avance-big { text-align:center; }
+  .graf-avance-pct {
+    font-family:'Anton', sans-serif; font-size:130px; color:var(--accent-1);
+    line-height:0.9; letter-spacing:-2px;
+    text-shadow:0 0 28px rgba(var(--accent-rgb),0.5);
+  }
+  .graf-avance-vtas {
+    font-family:'Anton', sans-serif; font-size:48px; color:#fff;
+    line-height:1; margin-top:8px;
+  }
+  .graf-avance-restan {
+    font-family:'Sora'; font-weight:700; font-size:14px; color:var(--accent-2);
+    letter-spacing:2px; text-transform:uppercase; margin-top:10px;
+  }
+  .graf-avance-bar-wrap {
+    width:100%; position:relative; padding-bottom:30px;
+  }
+  .graf-avance-bar-wrap::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:18px;
+    background:rgba(255,255,255,0.06);
+    border-radius:10px;
+    border:1px solid rgba(255,255,255,0.1);
+  }
+  .graf-avance-bar {
+    position:absolute; top:0; left:0; height:18px;
+    background:linear-gradient(90deg, var(--accent-2), var(--accent-1));
+    border-radius:10px;
+    box-shadow:0 0 18px rgba(var(--accent-rgb),0.6);
+    transition:width 1s ease;
+  }
+  .graf-avance-bar-marks { position:relative; height:0; }
+  .graf-avance-bar-marks span {
+    position:absolute; top:22px;
+    transform:translateX(-50%);
+    font-family:'Sora'; font-size:9px; color:#888;
+    letter-spacing:1px;
+  }
+
+  /* GRÁFICA TENDENCIA 2026 */
+  .graf-tendencia-layout {
+    flex:1; display:flex; flex-direction:column;
+    padding:8px 48px 24px; z-index:2; position:relative; gap:14px;
+  }
+  .graf-tendencia-bars {
+    flex:1; display:grid; grid-template-columns:repeat(5, 1fr); gap:20px;
+    align-items:flex-end;
+    padding:10px 0;
+    position:relative;
+  }
+  .graf-tendencia-bars::before {
+    content:''; position:absolute; left:0; right:0; top:50%;
+    border-top:1px dashed rgba(var(--accent-rgb),0.3);
+  }
+  .graf-tendencia-bar-col {
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    height:100%; justify-content:flex-end;
+  }
+  .graf-tendencia-bar-val {
+    font-family:'Anton', sans-serif; font-size:18px; color:#fff;
+    line-height:1;
+  }
+  .graf-tendencia-bar-wrap {
+    width:60px; flex:1; display:flex; align-items:flex-end; max-height:200px;
+  }
+  .graf-tendencia-bar {
+    width:100%; border-radius:6px 6px 0 0;
+    box-shadow:inset 0 -8px 12px rgba(0,0,0,0.25);
+    transition:height 0.8s ease;
+  }
+  .graf-tendencia-verde { background:linear-gradient(180deg, #10b981, #047857); }
+  .graf-tendencia-oro { background:linear-gradient(180deg, var(--accent-1), var(--accent-3)); }
+  .graf-tendencia-amarillo { background:linear-gradient(180deg, #fbbf24, #b45309); }
+  .graf-tendencia-rojo { background:linear-gradient(180deg, #ef4444, #991b1b); }
+  .graf-tendencia-bar-mes {
+    font-family:'Sora'; font-weight:800; font-size:11px; color:var(--accent-2);
+    letter-spacing:2px; text-transform:uppercase;
+  }
+  .graf-tendencia-target {
+    text-align:center; font-family:'Sora'; font-size:10px; color:var(--text-soft);
+    letter-spacing:2px;
+  }
+
+  /* GRÁFICA ESTRUCTURA */
+  .graf-estructura-layout {
+    flex:1; display:grid; grid-template-columns:1fr 1.2fr; gap:18px;
+    padding:18px 32px 24px; z-index:2; position:relative;
+  }
+  .graf-estr-card {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.18), rgba(0,0,0,0.5));
+    border:2px solid var(--accent-1);
+    border-radius:14px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; gap:6px;
+  }
+  .graf-estr-num {
+    font-family:'Anton', sans-serif; font-size:140px; color:var(--accent-1);
+    line-height:0.85; letter-spacing:-3px;
+  }
+  .graf-estr-lbl {
+    font-family:'Sora'; font-weight:800; font-size:13px; color:var(--accent-2);
+    letter-spacing:3px; text-transform:uppercase;
+  }
+  .graf-estr-pct {
+    font-family:'Sora'; font-size:12px; color:var(--text-soft); margin-top:4px;
+  }
+  .graf-estr-cards { display:flex; flex-direction:column; gap:12px; }
+  .graf-estr-mini {
+    background:linear-gradient(135deg, rgba(var(--accent-rgb),0.08), rgba(0,0,0,0.4));
+    border:1px solid rgba(var(--accent-rgb),0.25);
+    border-radius:12px; padding:14px 18px;
+    flex:1;
+  }
+  .graf-estr-mini-title {
+    font-family:'Sora'; font-weight:800; font-size:11px; color:var(--accent-2);
+    letter-spacing:2px; text-transform:uppercase;
+  }
+  .graf-estr-mini-num {
+    font-family:'Anton', sans-serif; font-size:48px; color:var(--accent-1);
+    line-height:0.9; margin-top:3px;
+  }
+  .graf-estr-mini-bar {
+    height:6px; background:rgba(255,255,255,0.08); border-radius:3px;
+    margin-top:6px; overflow:hidden;
+  }
+  .graf-estr-mini-bar > div {
+    height:100%;
+    background:linear-gradient(90deg, var(--accent-2), var(--accent-1));
+    border-radius:3px;
+  }
+  .graf-estr-mini-lbl {
+    font-family:'Sora'; font-size:9px; color:#888;
+    letter-spacing:1px; margin-top:4px;
+  }
+
+  /* ==================== TARJETAS MUNDIAL 2026 ==================== */
+  .canvas-top.mundial-card {
+    background:linear-gradient(135deg, #006847 0%, #0d3c2e 50%, #1a1a1a 100%) !important;
+    border:2px solid #ce1126 !important;
+    aspect-ratio:auto !important; height:auto !important; min-height:495px !important; padding-bottom:24px !important;
+  }
+  .mundial-bg-pattern {
+    position:absolute; inset:0; z-index:1;
+    background-image:
+      radial-gradient(circle at 10% 20%, rgba(255,255,255,0.06) 1px, transparent 1px),
+      radial-gradient(circle at 80% 60%, rgba(206,17,38,0.08) 1px, transparent 1px),
+      linear-gradient(45deg, transparent 48%, rgba(255,255,255,0.025) 49%, rgba(255,255,255,0.025) 51%, transparent 52%);
+    background-size:60px 60px, 80px 80px, 40px 40px;
+    pointer-events:none;
+  }
+  .mundial-header {
+    text-align:center; padding:18px 32px 8px; position:relative; z-index:2;
+  }
+  .mundial-icon {
+    font-size:60px; line-height:1;
+    text-shadow:0 4px 14px rgba(0,0,0,0.5);
+    margin-bottom:4px;
+  }
+  .mundial-kicker {
+    font-family:'Sora'; font-weight:800; font-size:11px;
+    color:#ffd166; letter-spacing:3px; text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .mundial-title {
+    font-family:'Anton', sans-serif; font-size:48px; color:#fff;
+    letter-spacing:1px; line-height:0.95;
+    text-shadow:0 4px 18px rgba(0,0,0,0.4);
+  }
+  .mundial-subtitle {
+    font-family:'Sora'; font-size:13px; color:#a8d5ba;
+    margin-top:4px; letter-spacing:1px;
+  }
+  .mundial-body {
+    flex:1; padding:14px 40px; z-index:2; position:relative;
+    display:flex; flex-direction:column; gap:10px;
+    justify-content:center;
+  }
+  .mundial-list { display:flex; flex-direction:column; gap:8px; }
+  .mundial-item {
+    background:rgba(255,255,255,0.06);
+    border-left:3px solid #ce1126;
+    border-radius:6px;
+    padding:8px 14px;
+    font-family:'Sora'; font-size:14px; color:#fff;
+  }
+  .mundial-item strong { color:#ffd166; }
+  .mundial-bloque {
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:10px;
+    padding:12px 18px;
+  }
+  .mundial-bloque-bonus {
+    background:linear-gradient(135deg, rgba(206,17,38,0.18), rgba(0,104,71,0.12));
+    border-color:#ce1126;
+  }
+  .mundial-bloque-titulo {
+    font-family:'Sora'; font-weight:800; font-size:13px;
+    color:#ffd166; letter-spacing:1.5px; text-transform:uppercase;
+    margin-bottom:6px;
+  }
+  .mundial-bloque-text {
+    font-family:'Sora'; font-size:13px; color:#e5e5e5;
+    line-height:1.5;
+  }
+  .mundial-bloque-text strong { color:#ffd166; font-weight:700; }
+  .mundial-bloque-date {
+    text-align:center; padding:8px 12px;
+    background:rgba(255,209,102,0.12);
+    border:1px dashed #ffd166;
+    border-radius:8px;
+    font-family:'Sora'; font-size:12px; color:#ffd166;
+    letter-spacing:0.5px;
+  }
+  .mundial-bloque-date strong { color:#fff; }
+  .mundial-cta {
+    text-align:center; padding:12px 18px; margin:0 32px 4px;
+    background:linear-gradient(90deg, #ce1126, #006847);
+    border-radius:10px;
+    font-family:'Anton', sans-serif; font-size:20px; color:#fff;
+    letter-spacing:2px;
+    text-shadow:0 2px 6px rgba(0,0,0,0.4);
+    box-shadow:0 6px 20px rgba(206,17,38,0.3);
+    position:relative; z-index:2;
+  }
+  /* Banderas */
+  .mundial-banderas {
+    display:flex; justify-content:center; gap:18px;
+    margin-bottom:6px;
+  }
+  .mundial-banderas .bandera {
+    font-size:42px;
+    filter:drop-shadow(0 4px 8px rgba(0,0,0,0.5));
+  }
+  /* Premios */
+  .mundial-premios {
+    display:grid; grid-template-columns:repeat(3, 1fr); gap:10px;
+    margin:6px 0;
+  }
+  .mundial-premio {
+    text-align:center; padding:10px 8px;
+    background:rgba(0,0,0,0.3);
+    border:1px solid rgba(255,255,255,0.12);
+    border-radius:10px;
+  }
+  .mundial-premio-1 { border-color:#ffd166; background:linear-gradient(135deg, rgba(255,209,102,0.2), rgba(0,0,0,0.3)); }
+  .mundial-premio-2 { border-color:#c0c0c0; background:linear-gradient(135deg, rgba(192,192,192,0.15), rgba(0,0,0,0.3)); }
+  .mundial-premio-3 { border-color:#cd7f32; background:linear-gradient(135deg, rgba(205,127,50,0.15), rgba(0,0,0,0.3)); }
+  .mundial-premio-pos {
+    font-family:'Sora'; font-weight:800; font-size:14px; color:#fff;
+    letter-spacing:1px;
+  }
+  .mundial-premio-val {
+    font-family:'Anton', sans-serif; font-size:32px; color:#ffd166;
+    margin-top:3px; line-height:1;
+  }
+  .mundial-premio-mini {
+    display:inline-block;
+    padding:5px 11px;
+    background:rgba(255,255,255,0.08);
+    border:1px solid rgba(255,209,102,0.3);
+    border-radius:18px;
+    font-family:'Sora'; font-size:11px; color:#ffd166;
+    font-weight:700; margin:3px;
+  }
+  /* Aceleradores comisiones */
+  .mundial-aceleradores {
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:14px;
+  }
+  .mundial-acel {
+    text-align:center; padding:16px 12px;
+    background:linear-gradient(135deg, rgba(255,209,102,0.15), rgba(0,104,71,0.12));
+    border:2px solid #ffd166;
+    border-radius:12px;
+    box-shadow:0 6px 18px rgba(255,209,102,0.18);
+  }
+  .mundial-acel-icon { font-size:32px; line-height:1; }
+  .mundial-acel-rango {
+    font-family:'Sora'; font-weight:800; font-size:12px; color:#fff;
+    letter-spacing:1.5px; text-transform:uppercase; margin-top:6px;
+  }
+  .mundial-acel-bonus {
+    font-family:'Anton', sans-serif; font-size:48px; color:#ffd166;
+    line-height:1; margin-top:6px;
+    text-shadow:0 2px 12px rgba(255,209,102,0.5);
+  }
+  .mundial-acel-detalle {
+    font-family:'Sora'; font-size:10px; color:#a8d5ba;
+    letter-spacing:0.5px; margin-top:2px;
+  }
+  .mundial-frase {
+    text-align:center; padding:12px 18px;
+    background:rgba(0,0,0,0.35);
+    border-left:3px solid #ffd166;
+    border-right:3px solid #ce1126;
+    border-radius:6px;
+    font-family:'Sora'; font-style:italic; font-size:13px; color:#fff;
+    line-height:1.6;
+    margin-top:8px;
+  }
+
   /* ==================== BOTÓN PRESENTAR Y MODAL ==================== */
   .btn-presentar {
     background:linear-gradient(135deg, #6366f1, #8b5cf6); color:#fff;
@@ -4538,6 +4893,8 @@ function render() {
         </div>
       </div>
     `;
+    canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+    return;
   } else if (listaTops.includes(state.topId) || state.cantidad > 3) {
     // LISTA VERTICAL (siempre para "equipo", o cuando se piden 5+ para otros tops)
     // Para tops de SUPERVISORES, mostrar TODOS (no limitar a state.cantidad)
@@ -5277,108 +5634,67 @@ function getComboDelDia() {
   return COMBO_DEL_DIA[new Date().getDay()];
 }
 
-// Generar pantallas dinámicamente según supervisores disponibles
+// Generar pantallas según especificación del usuario
 function getPantallasDisponibles() {
-  // Tops base que aplican filtros
-  const TOPS_FILTRABLES = [
-    { topId: 'global', icon: '🏆', label: 'Top 3', short: 'Global' },
-    { topId: 'rev',    icon: '🚀', label: 'Revelación' },
-    { topId: 'crec',   icon: '📈', label: 'Mayor Crecimiento' },
-    { topId: 'racha',  icon: '🔥', label: 'Racha Activa' },
-    { topId: 'ticket', icon: '💎', label: 'Rey del Ticket' },
-    { topId: 'meta',   icon: '🎯', label: 'Primero en Meta' },
-  ];
-
-  // Tops únicos sin variantes (no aplica filtro de centro/sup)
-  const TOPS_UNICOS = [
-    { topId: 'centro',   icon: '🥇', label: 'Mejor Centro',     desc: 'Competencia CC2 vs JV' },
-    { topId: 'metaCarr', icon: '🏁', label: 'Carrera a Meta',   desc: 'Tabla de quien cumplió' },
-  ];
-
-  // Resumen y supervisores (aplica solo centro)
-  const TOPS_POR_CENTRO = [
-    { topId: 'resumenc', icon: '📋', label: 'Resumen' },
-    { topId: 'supVtas',  icon: '🎖️', label: 'Top Supervisores' },
-    { topId: 'supMeta',  icon: '📊', label: 'Sup. por % Meta' },
-  ];
-
   const result = [];
 
-  // 1. Tops filtrables - global, por centro y por supervisor
-  TOPS_FILTRABLES.forEach(t => {
-    // Global
-    result.push({
-      id: `${t.topId}::`,
-      topId: t.topId, centro: '', supervisor: '',
-      icon: t.icon, label: `${t.label} · Global`,
-      desc: 'De toda la operación',
-      grupo: t.label
-    });
-    // Por centro
-    ['CC2', 'JV'].forEach(c => {
-      result.push({
-        id: `${t.topId}::${c}::`,
-        topId: t.topId, centro: c, supervisor: '',
-        icon: t.icon, label: `${t.label} · ${c === 'CC2' ? 'CC2 Antequera' : 'Juárez Torre JV'}`,
-        desc: `Solo ${c === 'CC2' ? 'CC2 Antequera' : 'JV'}`,
-        grupo: t.label
-      });
-    });
-    // Por supervisor (los vigentes)
-    const sups = state.rawData && state.rawData.supsVigentes ? state.rawData.supsVigentes : [];
-    sups.forEach(s => {
-      const centroSup = state.rawData.mapaCentroSup[s] || '';
-      result.push({
-        id: `${t.topId}::${centroSup}::${s}`,
-        topId: t.topId, centro: '', supervisor: s,
-        icon: t.icon, label: `${t.label} · ${s}`,
-        desc: `Equipo de ${s}`,
-        grupo: t.label
-      });
-    });
-  });
+  // === RECONOCIMIENTOS Y TOPS ===
+  result.push({ id: 'global::',         topId: 'global',   centro: '',    supervisor: '', icon: '🏆', label: 'Top 3 Global',                  desc: 'Los 3 mejores agentes del mes', grupo: 'Top 3 y Globales' });
+  result.push({ id: 'global::CC2::',    topId: 'global',   centro: 'CC2', supervisor: '', icon: '🏆', label: 'Top 3 · CC2 Antequera',         desc: 'Los 3 mejores de CC2',          grupo: 'Top 3 y Globales' });
+  result.push({ id: 'global::JV::',     topId: 'global',   centro: 'JV',  supervisor: '', icon: '🏆', label: 'Top 3 · Juárez Torre JV',       desc: 'Los 3 mejores de JV',           grupo: 'Top 3 y Globales' });
+  result.push({ id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales' });
 
-  // 2. Tops únicos sin filtros
-  TOPS_UNICOS.forEach(t => {
-    result.push({
-      id: `${t.topId}::`,
-      topId: t.topId, centro: '', supervisor: '',
-      icon: t.icon, label: t.label,
-      desc: t.desc,
-      grupo: 'Especiales'
-    });
-  });
+  // === CENTROS Y SUPERVISORES ===
+  result.push({ id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores' });
+  result.push({ id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por cada supervisor CC2', grupo: 'Centros y Supervisores' });
+  result.push({ id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por cada supervisor JV',  grupo: 'Centros y Supervisores' });
+  result.push({ id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores' });
+  result.push({ id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores' });
+  result.push({ id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes en plantilla', grupo: 'Centros y Supervisores' });
 
-  // 3. Tops por centro únicamente (resumen, supervisores)
-  TOPS_POR_CENTRO.forEach(t => {
-    ['CC2', 'JV'].forEach(c => {
-      result.push({
-        id: `${t.topId}::${c}::`,
-        topId: t.topId, centro: c, supervisor: '',
-        icon: t.icon, label: `${t.label} · ${c === 'CC2' ? 'CC2 Antequera' : 'Juárez Torre JV'}`,
-        desc: '',
-        grupo: t.label
-      });
-    });
-  });
+  // === REVELACIÓN ===
+  result.push({ id: 'rev::',            topId: 'rev',      centro: '',    supervisor: '', icon: '🚀', label: 'Revelación del mes',            desc: 'Mejor agente nuevo global',     grupo: 'Revelación' });
+  result.push({ id: 'revTop::CC2::',    topId: 'revTop',   centro: 'CC2', supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · CC2',      desc: 'Mejores nuevos CC2',            grupo: 'Revelación' });
+  result.push({ id: 'revTop::JV::',     topId: 'revTop',   centro: 'JV',  supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · JV',       desc: 'Mejores nuevos JV',             grupo: 'Revelación' });
+
+  // === CRECIMIENTO ===
+  result.push({ id: 'crec::',           topId: 'crec',     centro: '',    supervisor: '', icon: '📈', label: 'Mayor Crecimiento',             desc: 'Quien más creció vs mes anterior', grupo: 'Crecimiento' });
+  result.push({ id: 'crecTop::CC2::',   topId: 'crecTop',  centro: 'CC2', supervisor: '', icon: '📈', label: 'Top Crecimiento · CC2',         desc: 'Top crecimiento en CC2',        grupo: 'Crecimiento' });
+  result.push({ id: 'crecTop::JV::',    topId: 'crecTop',  centro: 'JV',  supervisor: '', icon: '📈', label: 'Top Crecimiento · JV',          desc: 'Top crecimiento en JV',         grupo: 'Crecimiento' });
+
+  // === TICKET ===
+  result.push({ id: 'ticket::',         topId: 'ticket',   centro: '',    supervisor: '', icon: '💎', label: 'Rey del Ticket',                desc: 'Mejor ARPU global',             grupo: 'Ticket' });
+  result.push({ id: 'ticketTop::CC2::', topId: 'ticketTop', centro: 'CC2', supervisor: '', icon: '💎', label: 'Top del Ticket · CC2',         desc: 'Top ARPU CC2',                  grupo: 'Ticket' });
+  result.push({ id: 'ticketTop::JV::',  topId: 'ticketTop', centro: 'JV',  supervisor: '', icon: '💎', label: 'Top del Ticket · JV',          desc: 'Top ARPU JV',                   grupo: 'Ticket' });
+
+  // === META ===
+  result.push({ id: 'meta::',           topId: 'meta',     centro: '',    supervisor: '', icon: '🎯', label: 'Primero en Meta',               desc: 'Quien llegó primero',           grupo: 'Meta' });
+  result.push({ id: 'metaCarr::CC2::',  topId: 'metaCarr', centro: 'CC2', supervisor: '', icon: '🏁', label: 'Carrera a Meta · CC2',          desc: 'Tabla CC2',                     grupo: 'Meta' });
+  result.push({ id: 'metaCarr::JV::',   topId: 'metaCarr', centro: 'JV',  supervisor: '', icon: '🏁', label: 'Carrera a Meta · JV',           desc: 'Tabla JV',                      grupo: 'Meta' });
+
+  // === RACHA ===
+  result.push({ id: 'com_racha_exp::',  topId: 'com_racha_exp', centro: '', supervisor: '', icon: '🔥', label: 'Cómo funciona Racha Activa', desc: 'Explicación de la dinámica',    grupo: 'Racha Activa' });
+  result.push({ id: 'racha::',          topId: 'racha',    centro: '',    supervisor: '', icon: '🔥', label: 'Racha Activa (ganadores)',      desc: 'Programa de premios',           grupo: 'Racha Activa' });
+
+  // === GRÁFICAS DEL REPORTE ===
+  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '📊', label: 'Avance Mensual',           desc: 'Progress bar 919/1000',         grupo: 'Gráficas del Reporte' });
+  result.push({ id: 'graf_tendencia::', topId: 'graf_tendencia', centro: '', supervisor: '', icon: '📉', label: 'Tendencia 2026',           desc: 'Evolución mes a mes',           grupo: 'Gráficas del Reporte' });
+  result.push({ id: 'graf_estructura::',topId: 'graf_estructura',centro: '', supervisor: '', icon: '🏗️', label: 'Estructura vs Objetivo',  desc: 'Equipos vs meta',               grupo: 'Gráficas del Reporte' });
+
+  // === DINÁMICAS MUNDIAL JUNIO 2026 ===
+  result.push({ id: 'com_din_jun::',    topId: 'com_din_jun',    centro: '', supervisor: '', icon: '⚽', label: 'Dinámicas Junio 2026',     desc: 'Anuncio principal',             grupo: 'Mundial 2026' });
+  result.push({ id: 'com_tiendita::',   topId: 'com_tiendita',   centro: '', supervisor: '', icon: '🛒', label: 'Tiendita del Mundial',     desc: '15-20 jun · Articulos + rifa',  grupo: 'Mundial 2026' });
+  result.push({ id: 'com_dia_tem::',    topId: 'com_dia_tem',    centro: '', supervisor: '', icon: '👕', label: 'Día Temático Mundial',     desc: 'Playera de tu selección',       grupo: 'Mundial 2026' });
+  result.push({ id: 'com_quiniela::',   topId: 'com_quiniela',   centro: '', supervisor: '', icon: '🎫', label: 'Quiniela del Mundial',     desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
+  result.push({ id: 'com_cine::',       topId: 'com_cine',       centro: '', supervisor: '', icon: '🎬', label: 'México te lleva al Cine',  desc: 'Rifa para staff que llegue a meta', grupo: 'Mundial 2026' });
+  result.push({ id: 'com_fifa::',       topId: 'com_fifa',       centro: '', supervisor: '', icon: '🎮', label: 'Torneo de FIFA',           desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
+  result.push({ id: 'com_comis::',      topId: 'com_comis',      centro: '', supervisor: '', icon: '💰', label: 'Nuevo Esquema Comisiones', desc: 'Aceleradores extra junio',      grupo: 'Mundial 2026' });
 
   return result;
 }
 
-// Mantener compatibilidad con código previo si hace referencia (solo no se usa más para render)
-const PANTALLAS_DISPONIBLES = [
-  { topId: 'global',   icon: '🏆', label: 'Top 3 Global',        desc: 'Los 3 mejores agentes del mes' },
-  { topId: 'centro',   icon: '🥇', label: 'Mejor Centro',         desc: 'Competencia entre CC2 y JV' },
-  { topId: 'resumenc', icon: '📋', label: 'Resumen Centro',       desc: 'Top 3 por cada supervisor' },
-  { topId: 'supVtas',  icon: '🎖️', label: 'Top Supervisores',    desc: 'Por ventas totales' },
-  { topId: 'supMeta',  icon: '📊', label: 'Sup. por % Meta',      desc: 'Por cumplimiento' },
-  { topId: 'rev',      icon: '🚀', label: 'Revelación del mes',   desc: 'El mejor agente nuevo' },
-  { topId: 'crec',     icon: '📈', label: 'Mayor Crecimiento',    desc: 'Quien más creció vs mes anterior' },
-  { topId: 'racha',    icon: '🔥', label: 'Racha Activa',          desc: 'Programa de premios' },
-  { topId: 'ticket',   icon: '💎', label: 'Rey del Ticket',       desc: 'Mejor ARPU' },
-  { topId: 'meta',     icon: '🎯', label: 'Primero en Meta',      desc: 'Quien llegó primero' },
-  { topId: 'metaCarr', icon: '🏁', label: 'Carrera a Meta',       desc: 'Tabla de quien cumplió' }
-];
+// Compatibilidad (sin uso real)
+const PANTALLAS_DISPONIBLES = [];
 
 function cargarConfigPresentar() {
   try {
@@ -5401,12 +5717,39 @@ function abrirModalPresentar() {
   const pantallas = getPantallasDisponibles();
 
   if (presentarConfig.pantallas.length === 0) {
-    // Defaults: las globales principales
+    // Defaults: la lista completa que pidió el usuario
     presentarConfig.pantallas = [
-      'global::', 'global::CC2::', 'global::JV::',
-      'centro::', 'racha::',
-      'supVtas::CC2::', 'supVtas::JV::',
-      'rev::', 'crec::', 'ticket::'
+      'global::',
+      'global::CC2::',
+      'global::JV::',
+      'top10::',
+      'centro::',
+      'resumenc::CC2::',
+      'resumenc::JV::',
+      'supVtas::',
+      'supMeta::',
+      'promAgente::',
+      'rev::',
+      'revTop::CC2::',
+      'revTop::JV::',
+      'crec::',
+      'crecTop::CC2::',
+      'crecTop::JV::',
+      'ticket::',
+      'ticketTop::CC2::',
+      'ticketTop::JV::',
+      'meta::',
+      'metaCarr::CC2::',
+      'metaCarr::JV::',
+      'com_din_jun::',
+      'com_racha_exp::',
+      'racha::',
+      'com_tiendita::',
+      'com_dia_tem::',
+      'com_quiniela::',
+      'com_cine::',
+      'com_fifa::',
+      'com_comis::'
     ];
   }
 
@@ -5442,6 +5785,7 @@ function abrirModalPresentar() {
             return `
               <div class="presentar-pantalla-item ${activo ? 'active' : ''}" data-id="${p.id}">
                 <div class="presentar-pantalla-check">${activo ? '✓' : ''}</div>
+                <div class="presentar-pantalla-icon">${p.icon}</div>
                 <div class="presentar-pantalla-info">
                   <div class="presentar-pantalla-name">${p.label}</div>
                   ${p.desc ? `<div class="presentar-pantalla-desc">${p.desc}</div>` : ''}
@@ -5484,8 +5828,16 @@ function abrirModalPresentar() {
         }
       });
       btn.textContent = todasActivas ? 'Todas' : 'Ninguna';
-      // Re-render
-      abrirModalPresentar();
+      // Actualizar visualmente los items del grupo
+      grupo.forEach(p => {
+        const el = list.querySelector(`.presentar-pantalla-item[data-id="${CSS.escape(p.id)}"]`);
+        if (el) {
+          const activo = presentarConfig.pantallas.includes(p.id);
+          el.classList.toggle('active', activo);
+          el.querySelector('.presentar-pantalla-check').textContent = activo ? '✓' : '';
+        }
+      });
+      actualizarContador();
     };
   });
 
@@ -5593,23 +5945,487 @@ function parsearIdPantalla(id) {
   };
 }
 
+// ========================================================================
+// RENDERS CUSTOM: tarjetas que no son tops normales (comunicados, gráficas, promedio)
+// ========================================================================
+function renderCustomPantalla(topId) {
+  const canvas = document.getElementById('canvas');
+  if (!canvas) return;
+  // Establecer ratio para que sea 16:9
+  canvas.classList.remove('ratio-9x16', 'ratio-1x1');
+  canvas.classList.add('ratio-16x9');
+  // Quitar tall-list si existe
+  canvas.classList.remove('tall-list');
+
+  // Limpiar canvas con un placeholder para que :has aplique
+  canvas.innerHTML = '';
+
+  // Footer común
+  const footer = `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
+  const corners = `<div class="corner-tl"></div><div class="corner-tr"></div><div class="corner-bl"></div><div class="corner-br"></div>`;
+
+  if (topId === 'promAgente') {
+    // === PROMEDIO VENTA POR AGENTE ===
+    let totalVtas = 0, totalAgentes = 0;
+    let cc2Vtas = 0, cc2Agentes = 0;
+    let jvVtas = 0, jvAgentes = 0;
+    if (state.rawData) {
+      const { ventas, plantilla, supsVigentes, mapaCentroSup } = state.rawData;
+      // Contar ventas (activadas estimadas = ventas con fecha_activacion)
+      ventas.forEach(v => {
+        if (!supsVigentes.includes(v.supervisor)) return;
+        if (supsVigentes.includes(v.ejecutivo)) return;
+        if (!v.fecha_activacion) return;
+        totalVtas++;
+        let centro = '';
+        if (plantilla[v.ejecutivo] && plantilla[v.ejecutivo].centro) centro = plantilla[v.ejecutivo].centro;
+        else centro = mapaCentroSup[v.supervisor] || '';
+        centro = String(centro).trim().toUpperCase();
+        if (centro === 'CC2') cc2Vtas++;
+        else if (centro === 'JV') jvVtas++;
+      });
+      // Contar agentes en plantilla del mes (rol agente, vigentes)
+      Object.keys(plantilla).forEach(nombre => {
+        const p = plantilla[nombre];
+        if (!p) return;
+        // Solo rol agente, no supervisores
+        if (supsVigentes.includes(nombre)) return;
+        // Vigente: que no esté de baja antes del mes
+        totalAgentes++;
+        const c = String(p.centro || '').trim().toUpperCase();
+        if (c === 'CC2') cc2Agentes++;
+        else if (c === 'JV') jvAgentes++;
+      });
+    }
+    const promGlob = totalAgentes > 0 ? (totalVtas / totalAgentes) : 0;
+    const promCC2 = cc2Agentes > 0 ? (cc2Vtas / cc2Agentes) : 0;
+    const promJV = jvAgentes > 0 ? (jvVtas / jvAgentes) : 0;
+
+    canvas.innerHTML = `
+      ${corners}
+      <div class="top-header">
+        <div class="top-kicker">EXPERTCELL · 📐 EFICIENCIA POR AGENTE</div>
+        <div class="top-title">PROMEDIO VENTA POR AGENTE</div>
+        <div class="top-subtitle">${meses[state.mes - 1]} ${state.anio}</div>
+      </div>
+      <div class="prom-layout">
+        <div class="prom-hero">
+          <div class="prom-hero-num">${promGlob.toFixed(1)}</div>
+          <div class="prom-hero-lbl">VENTAS POR AGENTE · GLOBAL</div>
+          <div class="prom-hero-detail">${totalVtas} ventas ÷ ${totalAgentes} agentes</div>
+        </div>
+        <div class="prom-grid">
+          <div class="prom-card prom-card-cc2">
+            <div class="prom-card-title">CC2 ANTEQUERA</div>
+            <div class="prom-card-num">${promCC2.toFixed(1)}</div>
+            <div class="prom-card-lbl">vtas/agente</div>
+            <div class="prom-card-detail">${cc2Vtas} ÷ ${cc2Agentes}</div>
+          </div>
+          <div class="prom-card prom-card-jv">
+            <div class="prom-card-title">JUÁREZ TORRE JV</div>
+            <div class="prom-card-num">${promJV.toFixed(1)}</div>
+            <div class="prom-card-lbl">vtas/agente</div>
+            <div class="prom-card-detail">${jvVtas} ÷ ${jvAgentes}</div>
+          </div>
+        </div>
+      </div>
+      ${footer}
+    `;
+    return;
+  }
+
+  // === GRÁFICAS DEL REPORTE ===
+  if (topId === 'graf_avance') {
+    let totVtas = 0, totMeta = 1000;
+    if (state.rawData) {
+      const { ventas, supsVigentes, metasSup } = state.rawData;
+      ventas.forEach(v => {
+        if (!supsVigentes.includes(v.supervisor)) return;
+        if (supsVigentes.includes(v.ejecutivo)) return;
+        if (v.fecha_activacion) totVtas++;
+      });
+      if (metasSup && metasSup.length > 0) {
+        totMeta = metasSup.reduce((s, m) => s + (Number(m.meta_activadas) || 0), 0) || 1000;
+      }
+    }
+    const pct = totMeta > 0 ? (totVtas / totMeta * 100) : 0;
+    const restan = Math.max(0, totMeta - totVtas);
+    canvas.innerHTML = `
+      ${corners}
+      <div class="top-header">
+        <div class="top-kicker">EXPERTCELL · 📊 AVANCE DEL MES</div>
+        <div class="top-title">AVANCE MENSUAL</div>
+        <div class="top-subtitle">${meses[state.mes - 1]} ${state.anio}</div>
+      </div>
+      <div class="graf-avance-layout">
+        <div class="graf-avance-big">
+          <div class="graf-avance-pct">${pct.toFixed(1)}%</div>
+          <div class="graf-avance-vtas">${totVtas} <span style="opacity:0.5;">/ ${totMeta}</span></div>
+          <div class="graf-avance-restan">${restan === 0 ? '¡META CUMPLIDA!' : 'Faltan ' + restan + ' ventas'}</div>
+        </div>
+        <div class="graf-avance-bar-wrap">
+          <div class="graf-avance-bar" style="width:${Math.min(100, pct)}%"></div>
+          <div class="graf-avance-bar-marks">
+            ${[0, 25, 50, 75, 100].map(m => `<span style="left:${m}%">${m}%</span>`).join('')}
+          </div>
+        </div>
+      </div>
+      ${footer}
+    `;
+    return;
+  }
+
+  if (topId === 'graf_tendencia') {
+    // Datos: Ene 75%, Feb 98%, Mar 99%, Abr ~94, May actual
+    let mayPct = 0;
+    if (state.rawData) {
+      const { ventas, supsVigentes, metasSup } = state.rawData;
+      let totVtas = 0, totMeta = 1000;
+      ventas.forEach(v => {
+        if (!supsVigentes.includes(v.supervisor)) return;
+        if (supsVigentes.includes(v.ejecutivo)) return;
+        if (v.fecha_activacion) totVtas++;
+      });
+      if (metasSup && metasSup.length > 0) {
+        totMeta = metasSup.reduce((s, m) => s + (Number(m.meta_activadas) || 0), 0) || 1000;
+      }
+      mayPct = totMeta > 0 ? (totVtas / totMeta * 100) : 0;
+    }
+    const datos = [
+      { mes: 'ENE', pct: 75 },
+      { mes: 'FEB', pct: 98 },
+      { mes: 'MAR', pct: 99 },
+      { mes: 'ABR', pct: 94 },
+      { mes: 'MAY', pct: mayPct },
+    ];
+    const maxBar = 100;
+    canvas.innerHTML = `
+      ${corners}
+      <div class="top-header">
+        <div class="top-kicker">EXPERTCELL · 📉 EVOLUCIÓN DEL AÑO</div>
+        <div class="top-title">TENDENCIA 2026</div>
+        <div class="top-subtitle">Cumplimiento mes a mes</div>
+      </div>
+      <div class="graf-tendencia-layout">
+        <div class="graf-tendencia-bars">
+          ${datos.map(d => {
+            const h = (d.pct / maxBar) * 100;
+            const colorClass = d.pct >= 100 ? 'verde' : d.pct >= 95 ? 'oro' : d.pct >= 80 ? 'amarillo' : 'rojo';
+            return `
+              <div class="graf-tendencia-bar-col">
+                <div class="graf-tendencia-bar-val">${d.pct.toFixed(0)}%</div>
+                <div class="graf-tendencia-bar-wrap">
+                  <div class="graf-tendencia-bar graf-tendencia-${colorClass}" style="height:${h}%"></div>
+                </div>
+                <div class="graf-tendencia-bar-mes">${d.mes}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="graf-tendencia-target">⎯⎯⎯ META 100% ⎯⎯⎯</div>
+      </div>
+      ${footer}
+    `;
+    return;
+  }
+
+  if (topId === 'graf_estructura') {
+    // Estructura vs objetivo: agentes activos vs meta de agentes
+    let totAgentes = 0, metaAgentes = 160;
+    let cc2Agentes = 0, jvAgentes = 0;
+    if (state.rawData) {
+      const { plantilla, supsVigentes } = state.rawData;
+      Object.keys(plantilla).forEach(n => {
+        const p = plantilla[n];
+        if (!p) return;
+        if (supsVigentes.includes(n)) return;
+        totAgentes++;
+        const c = String(p.centro || '').trim().toUpperCase();
+        if (c === 'CC2') cc2Agentes++;
+        else if (c === 'JV') jvAgentes++;
+      });
+    }
+    const pctTot = (totAgentes / metaAgentes * 100).toFixed(1);
+    canvas.innerHTML = `
+      ${corners}
+      <div class="top-header">
+        <div class="top-kicker">EXPERTCELL · 🏗️ ESTRUCTURA</div>
+        <div class="top-title">ESTRUCTURA VS OBJETIVO</div>
+        <div class="top-subtitle">${totAgentes} agentes de ${metaAgentes} meta</div>
+      </div>
+      <div class="graf-estructura-layout">
+        <div class="graf-estr-card">
+          <div class="graf-estr-num">${totAgentes}</div>
+          <div class="graf-estr-lbl">AGENTES ACTIVOS</div>
+          <div class="graf-estr-pct">${pctTot}% de la meta de ${metaAgentes}</div>
+        </div>
+        <div class="graf-estr-cards">
+          <div class="graf-estr-mini cc2">
+            <div class="graf-estr-mini-title">CC2 ANTEQUERA</div>
+            <div class="graf-estr-mini-num">${cc2Agentes}</div>
+            <div class="graf-estr-mini-bar"><div style="width:${Math.min(100, cc2Agentes / 80 * 100)}%"></div></div>
+            <div class="graf-estr-mini-lbl">de 80 meta</div>
+          </div>
+          <div class="graf-estr-mini jv">
+            <div class="graf-estr-mini-title">JUÁREZ TORRE JV</div>
+            <div class="graf-estr-mini-num">${jvAgentes}</div>
+            <div class="graf-estr-mini-bar"><div style="width:${Math.min(100, jvAgentes / 80 * 100)}%"></div></div>
+            <div class="graf-estr-mini-lbl">de 80 meta</div>
+          </div>
+        </div>
+      </div>
+      ${footer}
+    `;
+    return;
+  }
+
+  // === COMUNICADOS / TARJETAS INFORMATIVAS ===
+  if (topId.startsWith('com_')) {
+    const tarjeta = TARJETAS_COMUNICADO[topId];
+    if (!tarjeta) {
+      canvas.innerHTML = `${corners}<div class="empty-state">Comunicado no encontrado: ${topId}</div>${footer}`;
+      return;
+    }
+    canvas.classList.add('mundial-card');
+    canvas.innerHTML = `
+      ${corners}
+      <div class="mundial-bg-pattern"></div>
+      <div class="mundial-header">
+        <div class="mundial-icon">${tarjeta.icon}</div>
+        <div class="mundial-kicker">${tarjeta.kicker || 'MUNDIAL 2026'}</div>
+        <div class="mundial-title">${tarjeta.title}</div>
+        ${tarjeta.subtitle ? `<div class="mundial-subtitle">${tarjeta.subtitle}</div>` : ''}
+      </div>
+      <div class="mundial-body">
+        ${tarjeta.body}
+      </div>
+      ${tarjeta.cta ? `<div class="mundial-cta">${tarjeta.cta}</div>` : ''}
+      ${footer}
+    `;
+    return;
+  }
+}
+
+// Definición de tarjetas comunicado (mundial 2026)
+const TARJETAS_COMUNICADO = {
+  com_din_jun: {
+    icon: '⚽',
+    kicker: 'JUNIO 2026',
+    title: 'DINÁMICAS DEL MES',
+    subtitle: 'Tema: Mundial 2026',
+    body: `
+      <div class="mundial-list">
+        <div class="mundial-item">🛒 <strong>Tiendita del Mundial</strong> · 15-20 jun</div>
+        <div class="mundial-item">👕 <strong>Día Temático</strong> · Playera de tu selección</div>
+        <div class="mundial-item">🎫 <strong>Quiniela del Mundial</strong> · $50 inscripción · 48 lugares</div>
+        <div class="mundial-item">🎬 <strong>México te lleva al Cine</strong> · Si tu equipo llega a meta</div>
+        <div class="mundial-item">🎮 <strong>Torneo de FIFA</strong> · $50 inscripción · 48 lugares</div>
+        <div class="mundial-item">💰 <strong>Nuevo Esquema</strong> · +$50 a +$75 por venta extra</div>
+      </div>
+    `,
+    cta: '⚽ ¡VIVE EL MUNDIAL CON EXPERTCELL!'
+  },
+  com_tiendita: {
+    icon: '🛒',
+    kicker: 'DINÁMICA · 15 AL 20 DE JUNIO',
+    title: 'TIENDITA DEL MUNDIAL',
+    body: `
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-titulo">🎁 ¿Cómo funciona?</div>
+        <div class="mundial-bloque-text">Por cada <strong>venta programada</strong> podrás tomar un artículo de nuestra tiendita: dulces, galletas, bebidas, botanas y más.</div>
+      </div>
+      <div class="mundial-bloque mundial-bloque-bonus">
+        <div class="mundial-bloque-titulo">🎟️ BONUS · Rifa de playeras México</div>
+        <div class="mundial-bloque-text">Por cada <strong>2 ventas activadas</strong> de las que te dieron artículo, recibes <strong>1 boleto</strong> para la rifa de playeras de la Selección Mexicana.</div>
+      </div>
+      <div class="mundial-bloque-date">📅 Rifa antes del partido de México del <strong>24 de junio</strong></div>
+    `,
+    cta: '⚽ ¡VENDE Y GANA PREMIOS!'
+  },
+  com_dia_tem: {
+    icon: '👕',
+    kicker: 'DÍA TEMÁTICO',
+    title: 'CONTÁGIATE DE LA FIEBRE',
+    subtitle: 'Asiste con la playera de tu selección favorita',
+    body: `
+      <div class="mundial-banderas">
+        <div class="bandera">🇲🇽</div>
+        <div class="bandera">🇦🇷</div>
+        <div class="bandera">🇧🇷</div>
+        <div class="bandera">🇺🇸</div>
+        <div class="bandera">🇪🇸</div>
+        <div class="bandera">🇫🇷</div>
+      </div>
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-text" style="text-align:center; font-size:18px;">
+          Que el contact center se contagie de la fiebre mundialista.<br>
+          <strong>¡Trae puesta tu camiseta y demuéstralo!</strong>
+        </div>
+      </div>
+    `,
+    cta: '🌎 TODAS LAS SELECCIONES, UN SOLO EQUIPO'
+  },
+  com_quiniela: {
+    icon: '🎫',
+    kicker: 'QUINIELA DEL MUNDIAL',
+    title: '$50 DE INSCRIPCIÓN',
+    subtitle: 'Solo 48 lugares · Si se llena hacemos 2 grupos',
+    body: `
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-titulo">🎲 ¿Cómo funciona?</div>
+        <div class="mundial-bloque-text">Sorteo al azar: te tocará una selección del mundial. Si tu selección es la <strong>CAMPEONA</strong>, te llevas el primer premio. </div>
+      </div>
+      <div class="mundial-premios">
+        <div class="mundial-premio mundial-premio-1">
+          <div class="mundial-premio-pos">🥇 1°</div>
+          <div class="mundial-premio-val">$1,400</div>
+        </div>
+        <div class="mundial-premio mundial-premio-2">
+          <div class="mundial-premio-pos">🥈 2°</div>
+          <div class="mundial-premio-val">$700</div>
+        </div>
+        <div class="mundial-premio mundial-premio-3">
+          <div class="mundial-premio-pos">🥉 3°</div>
+          <div class="mundial-premio-val">$300</div>
+        </div>
+      </div>
+      <div class="mundial-bloque-date">📅 Entrega del premio el día siguiente de la <strong>final del mundial</strong></div>
+    `,
+    cta: '🏆 ¿CUÁL TE TOCARÁ?'
+  },
+  com_cine: {
+    icon: '🎬',
+    kicker: 'DINÁMICA POR EQUIPO',
+    title: 'MÉXICO TE LLEVA AL CINE',
+    subtitle: 'Salida para todo el staff a ver a México en 16avos',
+    body: `
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-titulo">⚽ ¿Cómo participa tu equipo?</div>
+        <div class="mundial-bloque-text">El equipo (centro) debe haber <strong>llegado a meta</strong>. Fecha límite: <strong>27 de junio</strong>.</div>
+      </div>
+      <div class="mundial-bloque mundial-bloque-bonus">
+        <div class="mundial-bloque-titulo">🎯 Un solo equipo gana</div>
+        <div class="mundial-bloque-text">Participan ambos centros (CC2 y JV) y el primero en cumplir meta se lleva el viaje al cine para TODO el staff.</div>
+      </div>
+    `,
+    cta: '🎬 ¡LLEGUEN A META Y AL CINE TODOS!'
+  },
+  com_fifa: {
+    icon: '🎮',
+    kicker: 'TORNEO DE FIFA',
+    title: '$50 DE INSCRIPCIÓN',
+    subtitle: '48 lugares · Inscripciones hasta el 20 de junio',
+    body: `
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-titulo">🎮 ¿Cómo funciona?</div>
+        <div class="mundial-bloque-text">Tu equipo es <strong>al azar</strong>, igual que la quiniela. Avanzas hasta donde tu skill te lleve.</div>
+      </div>
+      <div class="mundial-premios">
+        <div class="mundial-premio mundial-premio-1">
+          <div class="mundial-premio-pos">🥇 1°</div>
+          <div class="mundial-premio-val">$1,400</div>
+        </div>
+        <div class="mundial-premio mundial-premio-2">
+          <div class="mundial-premio-pos">🥈 2°</div>
+          <div class="mundial-premio-val">$700</div>
+        </div>
+        <div class="mundial-premio mundial-premio-3">
+          <div class="mundial-premio-pos">🥉 3°</div>
+          <div class="mundial-premio-val">$300</div>
+        </div>
+      </div>
+    `,
+    cta: '🎮 INSCRÍBETE ANTES DEL 20 DE JUNIO'
+  },
+  com_comis: {
+    icon: '💰',
+    kicker: 'NUEVO ESQUEMA · JUNIO',
+    title: 'MÁS COMISIONES POR TU ESFUERZO',
+    subtitle: 'Gracias a los resultados de mayo, agregamos 2 aceleradores extra',
+    body: `
+      <div class="mundial-aceleradores">
+        <div class="mundial-acel mundial-acel-1">
+          <div class="mundial-acel-icon">🚀</div>
+          <div class="mundial-acel-rango">12 a 15 activaciones</div>
+          <div class="mundial-acel-bonus">+$50</div>
+          <div class="mundial-acel-detalle">por venta · adicional al esquema</div>
+        </div>
+        <div class="mundial-acel mundial-acel-2">
+          <div class="mundial-acel-icon">🔥</div>
+          <div class="mundial-acel-rango">16 a 19 activaciones</div>
+          <div class="mundial-acel-bonus">+$75</div>
+          <div class="mundial-acel-detalle">por venta · adicional al esquema</div>
+        </div>
+      </div>
+      <div class="mundial-frase">
+        "TU ESFUERZO VALE, Y AHORA VALE MÁS.<br>
+        ROMPE TUS LÍMITES Y LLEVA TUS COMISIONES AL SIGUIENTE NIVEL."
+      </div>
+    `,
+    cta: '💪 ¡EL MES QUE TODOS VAN POR MÁS!'
+  },
+  com_racha_exp: {
+    icon: '🔥',
+    kicker: 'DINÁMICA · ARRANCA 1 DE JUNIO',
+    title: 'CÓMO FUNCIONA RACHA ACTIVA',
+    subtitle: 'Programa de premios globales por días consecutivos',
+    body: `
+      <div class="mundial-bloque">
+        <div class="mundial-bloque-titulo">📋 La regla es simple</div>
+        <div class="mundial-bloque-text">
+          Cada <strong>día laborable</strong> que <strong>programes al menos 1 venta</strong>, tu racha sube +1.<br>
+          Si dejas pasar UN día sin programar, tu racha cae a 0.
+        </div>
+      </div>
+      <div class="mundial-bloque mundial-bloque-bonus">
+        <div class="mundial-bloque-titulo">🏆 Premios GLOBALES (primero en llegar gana)</div>
+        <div class="mundial-premios" style="margin-top:8px;">
+          <div class="mundial-premio-mini">10d · 💵 $500</div>
+          <div class="mundial-premio-mini">15d · 💰 $1,000</div>
+          <div class="mundial-premio-mini">20d · 🎧 Audífonos</div>
+          <div class="mundial-premio-mini">25d · 💎 $2,000</div>
+          <div class="mundial-premio-mini">30d · 🎮 Switch Lite</div>
+        </div>
+      </div>
+      <div class="mundial-bloque-date">🔄 Cuando se canjean los 5 premios → se reinicia y todos empiezan de cero. </div>
+    `,
+    cta: '🔥 ¡MANTÉN TU RACHA VIVA!'
+  }
+};
+
 function mostrarPantallaPresentar() {
   if (!presentarState.activo) return;
   const idx = presentarState.indice;
   const idPantalla = presentarConfig.pantallas[idx];
   const parsed = parsearIdPantalla(idPantalla);
 
+  // Tipos especiales que renderizan tarjetas custom (no son tops normales)
+  const esComunicado = parsed.topId.startsWith('com_');
+  const esGrafica = parsed.topId.startsWith('graf_');
+  const esCustom = parsed.topId === 'promAgente' || esComunicado || esGrafica;
+
   state.topId = parsed.topId;
   state.centro = parsed.centro;
   state.supervisor = parsed.supervisor;
 
-  const soloTops = ['rev','crec','ticket','meta'];
-  if (soloTops.includes(parsed.topId)) state.cantidad = 1;
-  else state.cantidad = 3;
+  // top10 = global con cantidad 10
+  if (parsed.topId === 'top10') {
+    state.topId = 'global';
+    state.cantidad = 10;
+  } else {
+    const soloTops = ['rev','crec','ticket','meta'];
+    if (soloTops.includes(parsed.topId)) state.cantidad = 1;
+    else state.cantidad = 3;
+  }
 
   aplicarTema();
-  if (state.rawData) state.agentes = procesarDatos();
-  render();
+
+  if (esCustom) {
+    renderCustomPantalla(parsed.topId);
+  } else {
+    if (state.rawData) state.agentes = procesarDatos();
+    render();
+  }
   setTimeout(() => copiarCanvasAStage(), 50);
 
   document.querySelectorAll('.presentar-dot').forEach((d, i) => {
