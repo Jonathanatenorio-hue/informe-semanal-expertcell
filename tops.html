@@ -3930,7 +3930,11 @@ function setStatus(on, msg) {
 }
 
 async function cargarDesdeSupabase() {
-  if (!db) return alert('Sistema no conectado');
+  console.log('[cargarDesdeSupabase] inicio');
+  if (!db) {
+    console.error('[cargarDesdeSupabase] db no existe');
+    return alert('Sistema no conectado');
+  }
   const btn = document.getElementById('btn-cargar');
   btn.disabled = true; btn.textContent = '⏳ Cargando...';
 
@@ -4058,9 +4062,10 @@ async function cargarDesdeSupabase() {
 
     // Calcular agentes según tipo de top
     state.agentes = procesarDatos();
+    console.log('[cargarDesdeSupabase] OK - agentes:', state.agentes.length);
     render();
   } catch(e) {
-    console.error(e);
+    console.error('[cargarDesdeSupabase] ERROR:', e);
     alert('Error al cargar: ' + (e.message || e));
   } finally {
     btn.disabled = false; btn.textContent = '⚡ Cargar datos del sistema';
