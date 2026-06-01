@@ -348,6 +348,34 @@
   .presentar-pantalla-icon { font-size:18px; }
   .presentar-pantalla-name { font-family:'Sora'; font-weight:700; font-size:13px; color:#fff; }
   .presentar-pantalla-desc { font-family:'Sora'; font-size:10px; color:#888; margin-top:1px; }
+
+  /* Grupos de pantallas */
+  .presentar-grupo { margin-bottom:14px; }
+  .presentar-grupo-titulo {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:6px 4px 6px 0; margin-bottom:4px;
+    font-family:'Sora'; font-weight:800; font-size:11px;
+    color:#d4af37; letter-spacing:1.5px; text-transform:uppercase;
+    border-bottom:1px solid rgba(212,175,55,0.15);
+  }
+  .presentar-grupo-toggle {
+    background:rgba(212,175,55,0.12); color:#d4af37;
+    border:1px solid rgba(212,175,55,0.3);
+    padding:3px 10px; border-radius:6px;
+    font-family:'Sora'; font-size:9px; font-weight:700;
+    letter-spacing:0.5px; cursor:pointer;
+    text-transform:none;
+  }
+  .presentar-grupo-toggle:hover { background:rgba(212,175,55,0.22); }
+  .presentar-grupo-items { display:flex; flex-direction:column; gap:3px; }
+  .presentar-contador {
+    margin-top:12px; padding:8px 12px;
+    background:rgba(212,175,55,0.08);
+    border:1px solid rgba(212,175,55,0.25);
+    border-radius:6px;
+    font-family:'Sora'; font-size:11px; color:#d4af37;
+    text-align:center; letter-spacing:0.5px;
+  }
   .presentar-style-preview {
     display:flex; gap:12px; align-items:center;
     padding:12px 16px;
@@ -472,6 +500,13 @@
   .ratio-16x9.tall-list { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:30px; }
   .ratio-1x1.tall-list { aspect-ratio:auto; width:720px; height:auto; min-height:720px; padding-bottom:30px; }
   .ratio-9x16.tall-list { aspect-ratio:auto; width:495px; height:auto; min-height:880px; padding-bottom:30px; }
+  /* Cuando hay contenido grande (racha global, trofeo solo, cinema con detalles) → permitir crecer */
+  .ratio-16x9:has(.racha-glob-layout) { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:24px; }
+  .ratio-16x9:has(.trofeo-solo-layout) { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:24px; }
+  .ratio-16x9:has(.solo) { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:24px; }
+  .ratio-16x9:has(.cinema-layout) { aspect-ratio:auto; width:880px; height:auto; min-height:495px; padding-bottom:24px; }
+  /* En modo presentación, el canvas no se ata al aspect ratio fijo */
+  .presentar-stage-canvas .canvas-top { aspect-ratio:auto !important; height:auto !important; }
   /* Resumen Centro siempre con buen padding inferior para que el ranking respire */
   .ratio-16x9.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
   .ratio-1x1.tall-list:has(.resumen-wrap) { padding-bottom:40px; }
@@ -1688,7 +1723,7 @@
     border:2px solid var(--accent-2);
     border-radius:16px; padding:20px 22px 24px;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
-    position:relative; overflow:hidden;
+    position:relative;
     box-shadow:0 16px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
     min-height:0; height:100%;
   }
@@ -5242,6 +5277,95 @@ function getComboDelDia() {
   return COMBO_DEL_DIA[new Date().getDay()];
 }
 
+// Generar pantallas dinámicamente según supervisores disponibles
+function getPantallasDisponibles() {
+  // Tops base que aplican filtros
+  const TOPS_FILTRABLES = [
+    { topId: 'global', icon: '🏆', label: 'Top 3', short: 'Global' },
+    { topId: 'rev',    icon: '🚀', label: 'Revelación' },
+    { topId: 'crec',   icon: '📈', label: 'Mayor Crecimiento' },
+    { topId: 'racha',  icon: '🔥', label: 'Racha Activa' },
+    { topId: 'ticket', icon: '💎', label: 'Rey del Ticket' },
+    { topId: 'meta',   icon: '🎯', label: 'Primero en Meta' },
+  ];
+
+  // Tops únicos sin variantes (no aplica filtro de centro/sup)
+  const TOPS_UNICOS = [
+    { topId: 'centro',   icon: '🥇', label: 'Mejor Centro',     desc: 'Competencia CC2 vs JV' },
+    { topId: 'metaCarr', icon: '🏁', label: 'Carrera a Meta',   desc: 'Tabla de quien cumplió' },
+  ];
+
+  // Resumen y supervisores (aplica solo centro)
+  const TOPS_POR_CENTRO = [
+    { topId: 'resumenc', icon: '📋', label: 'Resumen' },
+    { topId: 'supVtas',  icon: '🎖️', label: 'Top Supervisores' },
+    { topId: 'supMeta',  icon: '📊', label: 'Sup. por % Meta' },
+  ];
+
+  const result = [];
+
+  // 1. Tops filtrables - global, por centro y por supervisor
+  TOPS_FILTRABLES.forEach(t => {
+    // Global
+    result.push({
+      id: `${t.topId}::`,
+      topId: t.topId, centro: '', supervisor: '',
+      icon: t.icon, label: `${t.label} · Global`,
+      desc: 'De toda la operación',
+      grupo: t.label
+    });
+    // Por centro
+    ['CC2', 'JV'].forEach(c => {
+      result.push({
+        id: `${t.topId}::${c}::`,
+        topId: t.topId, centro: c, supervisor: '',
+        icon: t.icon, label: `${t.label} · ${c === 'CC2' ? 'CC2 Antequera' : 'Juárez Torre JV'}`,
+        desc: `Solo ${c === 'CC2' ? 'CC2 Antequera' : 'JV'}`,
+        grupo: t.label
+      });
+    });
+    // Por supervisor (los vigentes)
+    const sups = state.rawData && state.rawData.supsVigentes ? state.rawData.supsVigentes : [];
+    sups.forEach(s => {
+      const centroSup = state.rawData.mapaCentroSup[s] || '';
+      result.push({
+        id: `${t.topId}::${centroSup}::${s}`,
+        topId: t.topId, centro: '', supervisor: s,
+        icon: t.icon, label: `${t.label} · ${s}`,
+        desc: `Equipo de ${s}`,
+        grupo: t.label
+      });
+    });
+  });
+
+  // 2. Tops únicos sin filtros
+  TOPS_UNICOS.forEach(t => {
+    result.push({
+      id: `${t.topId}::`,
+      topId: t.topId, centro: '', supervisor: '',
+      icon: t.icon, label: t.label,
+      desc: t.desc,
+      grupo: 'Especiales'
+    });
+  });
+
+  // 3. Tops por centro únicamente (resumen, supervisores)
+  TOPS_POR_CENTRO.forEach(t => {
+    ['CC2', 'JV'].forEach(c => {
+      result.push({
+        id: `${t.topId}::${c}::`,
+        topId: t.topId, centro: c, supervisor: '',
+        icon: t.icon, label: `${t.label} · ${c === 'CC2' ? 'CC2 Antequera' : 'Juárez Torre JV'}`,
+        desc: '',
+        grupo: t.label
+      });
+    });
+  });
+
+  return result;
+}
+
+// Mantener compatibilidad con código previo si hace referencia (solo no se usa más para render)
 const PANTALLAS_DISPONIBLES = [
   { topId: 'global',   icon: '🏆', label: 'Top 3 Global',        desc: 'Los 3 mejores agentes del mes' },
   { topId: 'centro',   icon: '🥇', label: 'Mejor Centro',         desc: 'Competencia entre CC2 y JV' },
@@ -5273,8 +5397,17 @@ function guardarConfigPresentar() {
 
 function abrirModalPresentar() {
   cargarConfigPresentar();
+  // Lista dinámica con globales + centros + supervisores
+  const pantallas = getPantallasDisponibles();
+
   if (presentarConfig.pantallas.length === 0) {
-    presentarConfig.pantallas = ['global', 'centro', 'racha', 'supVtas', 'rev', 'crec', 'ticket'];
+    // Defaults: las globales principales
+    presentarConfig.pantallas = [
+      'global::', 'global::CC2::', 'global::JV::',
+      'centro::', 'racha::',
+      'supVtas::CC2::', 'supVtas::JV::',
+      'rev::', 'crec::', 'ticket::'
+    ];
   }
 
   document.querySelectorAll('#presentar-duracion-chips .chip').forEach(c => {
@@ -5286,30 +5419,77 @@ function abrirModalPresentar() {
     };
   });
 
+  // Agrupar pantallas por grupo para mostrar en secciones
+  const grupos = {};
+  pantallas.forEach(p => {
+    if (!grupos[p.grupo]) grupos[p.grupo] = [];
+    grupos[p.grupo].push(p);
+  });
+
+  // Pintar lista con secciones colapsables
   const list = document.getElementById('presentar-pantallas-list');
-  list.innerHTML = PANTALLAS_DISPONIBLES.map(p => {
-    const activo = presentarConfig.pantallas.includes(p.topId);
+  list.innerHTML = Object.keys(grupos).map(grupoNombre => {
+    const items = grupos[grupoNombre];
     return `
-      <div class="presentar-pantalla-item ${activo ? 'active' : ''}" data-topid="${p.topId}">
-        <div class="presentar-pantalla-check">${activo ? '✓' : ''}</div>
-        <div class="presentar-pantalla-icon">${p.icon}</div>
-        <div class="presentar-pantalla-info">
-          <div class="presentar-pantalla-name">${p.label}</div>
-          <div class="presentar-pantalla-desc">${p.desc}</div>
+      <div class="presentar-grupo">
+        <div class="presentar-grupo-titulo">
+          <span>${items[0].icon} ${grupoNombre}</span>
+          <button class="presentar-grupo-toggle" data-grupo="${grupoNombre}">Todas</button>
+        </div>
+        <div class="presentar-grupo-items">
+          ${items.map(p => {
+            const activo = presentarConfig.pantallas.includes(p.id);
+            return `
+              <div class="presentar-pantalla-item ${activo ? 'active' : ''}" data-id="${p.id}">
+                <div class="presentar-pantalla-check">${activo ? '✓' : ''}</div>
+                <div class="presentar-pantalla-info">
+                  <div class="presentar-pantalla-name">${p.label}</div>
+                  ${p.desc ? `<div class="presentar-pantalla-desc">${p.desc}</div>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `;
   }).join('');
+
+  // Toggle individual
   list.querySelectorAll('.presentar-pantalla-item').forEach(el => {
     el.onclick = () => {
-      const id = el.dataset.topid;
+      const id = el.dataset.id;
       const idx = presentarConfig.pantallas.indexOf(id);
       if (idx >= 0) presentarConfig.pantallas.splice(idx, 1);
       else presentarConfig.pantallas.push(id);
       el.classList.toggle('active');
       el.querySelector('.presentar-pantalla-check').textContent = presentarConfig.pantallas.includes(id) ? '✓' : '';
+      actualizarContador();
     };
   });
+
+  // Toggle por grupo
+  list.querySelectorAll('.presentar-grupo-toggle').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const grupoNombre = btn.dataset.grupo;
+      const grupo = grupos[grupoNombre];
+      // Si todas están activas, desmarcar todas; si no, marcar todas
+      const todasActivas = grupo.every(p => presentarConfig.pantallas.includes(p.id));
+      grupo.forEach(p => {
+        const idx = presentarConfig.pantallas.indexOf(p.id);
+        if (todasActivas) {
+          if (idx >= 0) presentarConfig.pantallas.splice(idx, 1);
+        } else {
+          if (idx < 0) presentarConfig.pantallas.push(p.id);
+        }
+      });
+      btn.textContent = todasActivas ? 'Todas' : 'Ninguna';
+      // Re-render
+      abrirModalPresentar();
+    };
+  });
+
+  actualizarContador();
 
   const combo = getComboDelDia();
   const nombreTema = { gold: 'DORADO LUXURY', neon: 'NEÓN ESPORTS', editorial: 'EDITORIAL', gradient: 'GRADIENT AT&T' };
@@ -5319,6 +5499,14 @@ function abrirModalPresentar() {
     `${nombreTema[combo.tema] || combo.tema} · ${nombreLayout[combo.layout] || combo.layout}`;
 
   document.getElementById('presentar-modal').style.display = 'flex';
+}
+
+function actualizarContador() {
+  let cnt = document.getElementById('presentar-contador');
+  if (!cnt) return;
+  const n = presentarConfig.pantallas.length;
+  const totalMin = (n * presentarConfig.duracion) / 60;
+  cnt.textContent = `${n} pantalla${n === 1 ? '' : 's'} seleccionada${n === 1 ? '' : 's'} · duración total ${totalMin.toFixed(1)} min`;
 }
 
 function cerrarModalPresentar() {
@@ -5337,7 +5525,9 @@ function iniciarPresentacion() {
     topId: state.topId,
     layout: state.layout,
     tema: state.tema,
-    cantidad: state.cantidad
+    cantidad: state.cantidad,
+    centro: state.centro,
+    supervisor: state.supervisor
   };
 
   const combo = getComboDelDia();
@@ -5393,14 +5583,28 @@ function salirPresentacion() {
   else render();
 }
 
+function parsearIdPantalla(id) {
+  // Formato: 'topId::centro::supervisor' (centro y supervisor pueden ser vacíos)
+  const parts = id.split('::');
+  return {
+    topId: parts[0] || '',
+    centro: parts[1] || '',
+    supervisor: parts[2] || ''
+  };
+}
+
 function mostrarPantallaPresentar() {
   if (!presentarState.activo) return;
   const idx = presentarState.indice;
-  const topId = presentarConfig.pantallas[idx];
-  state.topId = topId;
+  const idPantalla = presentarConfig.pantallas[idx];
+  const parsed = parsearIdPantalla(idPantalla);
+
+  state.topId = parsed.topId;
+  state.centro = parsed.centro;
+  state.supervisor = parsed.supervisor;
 
   const soloTops = ['rev','crec','ticket','meta'];
-  if (soloTops.includes(topId)) state.cantidad = 1;
+  if (soloTops.includes(parsed.topId)) state.cantidad = 1;
   else state.cantidad = 3;
 
   aplicarTema();
@@ -5427,18 +5631,25 @@ function copiarCanvasAStage() {
   clon.id = 'canvas-stage-' + Date.now();
   clon.classList.add('presentar-fading-in');
 
-  const rect = canvas.getBoundingClientRect();
-  const winW = window.innerWidth;
-  const winH = window.innerHeight - 60;
-  const scale = Math.min(winW / rect.width, winH / rect.height) * 0.95;
-  clon.style.transform = `scale(${scale})`;
-
+  // Quitar el anterior con fadeout
   const previo = stageCanvas.querySelector('.canvas-top');
   if (previo) {
     previo.classList.add('presentar-fading-out');
     setTimeout(() => previo.remove(), 600);
   }
   stageCanvas.appendChild(clon);
+
+  // Tras un frame, medir y escalar para llenar pantalla manteniendo proporción
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const w = clon.offsetWidth || 880;
+      const h = clon.offsetHeight || 495;
+      const winW = window.innerWidth;
+      const winH = window.innerHeight - 40;
+      const scale = Math.min(winW / w, winH / h) * 0.93;
+      clon.style.transform = `scale(${scale})`;
+    });
+  });
 }
 
 function siguientePantallaPresentar() {
@@ -5489,6 +5700,7 @@ window.salirPresentacion = salirPresentacion;
         <div class="presentar-section-title">📊 Pantallas a mostrar</div>
         <div class="small-help" style="margin-bottom:8px;">Marca las que quieres. Se rotan en el orden que aparecen.</div>
         <div id="presentar-pantallas-list"></div>
+        <div id="presentar-contador" class="presentar-contador">0 pantallas seleccionadas</div>
       </div>
 
       <div class="presentar-section">
