@@ -310,48 +310,104 @@
     font-family:'Sora'; font-size:11px; color:#ccc; margin-top:4px;
   }
 
-  /* GRÁFICA AVANCE MENSUAL */
-  .graf-avance-layout {
-    flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-    padding:24px 60px; z-index:2; position:relative; gap:32px;
+  /* TARJETA CELEBRATORIA CIERRE MAYO (Avance Mensual) */
+  .celebra-bg-pattern {
+    position:absolute; inset:0; z-index:1;
+    background-image:
+      radial-gradient(circle at 15% 25%, rgba(212,175,55,0.18) 2px, transparent 3px),
+      radial-gradient(circle at 85% 75%, rgba(212,175,55,0.12) 2px, transparent 3px),
+      radial-gradient(circle at 50% 50%, rgba(251,191,36,0.08), transparent 60%);
+    background-size:120px 120px, 180px 180px, 100% 100%;
+    pointer-events:none;
   }
-  .graf-avance-big { text-align:center; }
-  .graf-avance-pct {
-    font-family:'Anton', sans-serif; font-size:130px; color:var(--accent-1);
+  .celebra-layout {
+    flex:1; display:grid; grid-template-columns:1fr 1.2fr; gap:20px;
+    padding:8px 36px 28px; z-index:2; position:relative; align-items:center;
+  }
+  .celebra-medalla {
+    display:flex; align-items:center; justify-content:center;
+    padding:8px;
+  }
+  .celebra-medalla-borde {
+    width:240px; height:240px;
+    border-radius:50%;
+    background:conic-gradient(from 90deg, #fbbf24, #d4af37, #fde68a, #fbbf24, #d4af37, #92400e, #fbbf24);
+    padding:6px;
+    box-shadow:0 0 50px rgba(212,175,55,0.5), inset 0 0 20px rgba(0,0,0,0.3);
+    animation:celebra-rotate 18s linear infinite;
+  }
+  @keyframes celebra-rotate {
+    from { transform:rotate(0deg); }
+    to { transform:rotate(360deg); }
+  }
+  .celebra-medalla-inner {
+    width:100%; height:100%;
+    border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #1a1a24, #0a0a14);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border:2px solid rgba(255,255,255,0.08);
+    animation:celebra-rotate-cancel 18s linear infinite reverse;
+  }
+  @keyframes celebra-rotate-cancel {
+    from { transform:rotate(0deg); }
+    to { transform:rotate(-360deg); }
+  }
+  .celebra-medalla-pct {
+    font-family:'Anton', sans-serif; font-size:64px;
+    background:linear-gradient(180deg, #fbbf24, #d4af37, #92400e);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
     line-height:0.9; letter-spacing:-2px;
-    text-shadow:0 0 28px rgba(var(--accent-rgb),0.5);
   }
-  .graf-avance-vtas {
-    font-family:'Anton', sans-serif; font-size:48px; color:#fff;
-    line-height:1; margin-top:8px;
+  .celebra-medalla-lbl {
+    font-family:'Sora'; font-weight:800; font-size:11px;
+    color:#fbbf24; letter-spacing:3px; margin-top:6px;
   }
-  .graf-avance-restan {
-    font-family:'Sora'; font-weight:700; font-size:14px; color:var(--accent-2);
-    letter-spacing:2px; text-transform:uppercase; margin-top:10px;
+  .celebra-info {
+    display:flex; flex-direction:column; gap:14px;
   }
-  .graf-avance-bar-wrap {
-    width:100%; position:relative; padding-bottom:30px;
+  .celebra-stat-big {
+    background:linear-gradient(135deg, rgba(212,175,55,0.2), rgba(0,0,0,0.4));
+    border:2px solid #d4af37;
+    border-radius:14px;
+    padding:18px 22px;
+    text-align:center;
+    box-shadow:0 8px 24px rgba(212,175,55,0.25);
   }
-  .graf-avance-bar-wrap::before {
-    content:''; position:absolute; top:0; left:0; right:0; height:18px;
-    background:rgba(255,255,255,0.06);
-    border-radius:10px;
+  .celebra-stat-big .celebra-stat-val {
+    font-family:'Anton', sans-serif; font-size:90px; color:#fbbf24;
+    line-height:0.85; letter-spacing:-2px;
+    text-shadow:0 0 30px rgba(251,191,36,0.5);
+  }
+  .celebra-stat-big .celebra-stat-lbl {
+    font-family:'Sora'; font-weight:800; font-size:12px;
+    color:#fff; letter-spacing:3px; margin-top:6px;
+  }
+  .celebra-stat-row {
+    display:grid; grid-template-columns:1fr 1fr; gap:12px;
+  }
+  .celebra-stat-row .celebra-stat {
+    background:rgba(255,255,255,0.04);
     border:1px solid rgba(255,255,255,0.1);
-  }
-  .graf-avance-bar {
-    position:absolute; top:0; left:0; height:18px;
-    background:linear-gradient(90deg, var(--accent-2), var(--accent-1));
     border-radius:10px;
-    box-shadow:0 0 18px rgba(var(--accent-rgb),0.6);
-    transition:width 1s ease;
+    padding:10px;
+    text-align:center;
   }
-  .graf-avance-bar-marks { position:relative; height:0; }
-  .graf-avance-bar-marks span {
-    position:absolute; top:22px;
-    transform:translateX(-50%);
-    font-family:'Sora'; font-size:9px; color:#888;
-    letter-spacing:1px;
+  .celebra-stat-val-mini {
+    font-family:'Anton', sans-serif; font-size:32px; color:#fff;
+    line-height:1;
   }
+  .celebra-stat-lbl-mini {
+    font-family:'Sora'; font-size:9px; color:#ccc;
+    letter-spacing:1.5px; text-transform:uppercase; margin-top:4px;
+  }
+  .celebra-mensaje {
+    text-align:center;
+    font-family:'Sora'; font-size:13px; color:#fde68a;
+    line-height:1.5; padding:8px;
+    font-style:italic;
+  }
+  .celebra-mensaje strong { color:#fbbf24; font-weight:800; font-style:normal; }
 
   /* GRÁFICA TENDENCIA 2026 */
   .graf-tendencia-layout {
@@ -626,86 +682,6 @@
     box-shadow:0 4px 14px rgba(99,102,241,0.3);
   }
   .btn-presentar:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(99,102,241,0.45); }
-  .btn-imagenes {
-    background:linear-gradient(135deg, #0d9488, #14b8a6); color:#fff;
-    border:1px solid #0d9488;
-    width:100%; padding:12px 18px;
-    font-family:'Sora'; font-weight:700; font-size:13px;
-    border-radius:8px; cursor:pointer;
-    letter-spacing:0.5px; transition:all 0.2s;
-    box-shadow:0 4px 14px rgba(13,148,136,0.3);
-  }
-  .btn-imagenes:hover { transform:translateY(-1px); box-shadow:0 6px 18px rgba(13,148,136,0.45); }
-
-  .imagenes-warning {
-    padding:10px 14px;
-    background:rgba(20,184,166,0.1);
-    border-left:3px solid #14b8a6;
-    border-radius:6px;
-    font-family:'Sora'; font-size:11px; color:#a7f3d0;
-    margin-bottom:14px; line-height:1.5;
-  }
-  .imagenes-warning strong { color:#fff; }
-  .imagen-item {
-    display:grid; grid-template-columns:60px 1fr auto;
-    gap:12px; align-items:center;
-    padding:10px 14px; margin-bottom:6px;
-    background:rgba(255,255,255,0.04);
-    border:1px solid rgba(255,255,255,0.08);
-    border-radius:8px;
-  }
-  .imagen-item.has-image { border-color:rgba(20,184,166,0.4); }
-  .imagen-item-thumb {
-    width:60px; height:36px;
-    background:rgba(0,0,0,0.4);
-    border:1px solid rgba(255,255,255,0.1);
-    border-radius:6px;
-    display:flex; align-items:center; justify-content:center;
-    font-size:20px; overflow:hidden;
-  }
-  .imagen-item-thumb img { width:100%; height:100%; object-fit:cover; }
-  .imagen-item-info { min-width:0; }
-  .imagen-item-name { font-family:'Sora'; font-weight:700; font-size:12px; color:#fff; }
-  .imagen-item-status { font-family:'Sora'; font-size:10px; margin-top:2px; }
-  .imagen-item-status.cargada { color:#14b8a6; }
-  .imagen-item-status.vacia { color:#666; }
-  .imagen-item-actions { display:flex; gap:5px; }
-  .imagen-btn-sm {
-    padding:5px 10px; border-radius:5px; cursor:pointer;
-    font-family:'Sora'; font-size:10px; font-weight:700;
-    border:1px solid; background:transparent;
-  }
-  .imagen-btn-subir {
-    color:#14b8a6; border-color:rgba(20,184,166,0.4);
-    background:rgba(20,184,166,0.1);
-  }
-  .imagen-btn-subir:hover { background:rgba(20,184,166,0.22); }
-  .imagen-btn-borrar {
-    color:#ef4444; border-color:rgba(239,68,68,0.4);
-    background:transparent;
-  }
-  .imagen-btn-borrar:hover { background:rgba(239,68,68,0.12); }
-  .imagenes-uso {
-    margin-top:12px; padding:8px 12px;
-    background:rgba(255,255,255,0.04);
-    border-radius:6px;
-    font-family:'Sora'; font-size:10px; color:#999;
-    text-align:center;
-  }
-
-  /* Render de imagen en stage (presentación) */
-  .imagen-pantalla {
-    width:100%; height:100%;
-    background:#000;
-    display:flex; align-items:center; justify-content:center;
-    padding:0;
-  }
-  .imagen-pantalla img {
-    max-width:100%; max-height:100%;
-    object-fit:contain;
-    box-shadow:0 20px 60px rgba(0,0,0,0.5);
-    border-radius:8px;
-  }
 
   /* Banner de período como etiqueta desprendida esquina superior derecha */
   .periodo-banner {
@@ -3699,11 +3675,6 @@ JENNY PEREZ TOME | 17 | JV"></textarea>
       <button class="btn btn-presentar" id="btn-presentar">🎬 Modo Presentación (TV)</button>
       <div class="small-help">Rota varias pantallas en pantalla completa. Ideal para TV de la operación.</div>
     </div>
-
-    <div class="section">
-      <button class="btn btn-imagenes" id="btn-imagenes">📷 Imágenes del Reporte</button>
-      <div class="small-help">Sube screenshots del reporte para incluir en la presentación. Se guardan localmente.</div>
-    </div>
   </div>
 
   <!-- ==================== PREVIEW ==================== -->
@@ -5861,7 +5832,7 @@ setTimeout(() => {
 // ========================================================================
 // MODO PRESENTACIÓN (TV / Proyector)
 // ========================================================================
-const PRESENTAR_KEY = 'expertcell_presentar_config_v4';
+const PRESENTAR_KEY = 'expertcell_presentar_config_v5';
 let presentarSkipLoad = false;
 let presentarConfig = {
   duracion: 60,
@@ -5963,7 +5934,7 @@ function getPantallasDisponibles() {
   result.push({ id: 'racha::',          topId: 'racha',    centro: '',    supervisor: '', periodo: 'junio', icon: '🔥', label: 'Racha Activa (ganadores)',      desc: 'Programa de premios',           grupo: 'Racha Activa' });
 
   // Gráfica avance mensual
-  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '📊', label: 'Avance Mensual (calculado)',           desc: 'Progress bar del mes',         grupo: 'Avance' });
+  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '🎉', label: 'Cierre Mayo · ¡Meta Superada!', desc: '1,007 / 1,000 ventas',         grupo: '🏆 CIERRE DE MAYO 2026' });
 
   // === DINÁMICAS MUNDIAL JUNIO 2026 ===
   result.push({ id: 'com_din_jun::',    topId: 'com_din_jun',    centro: '', supervisor: '', icon: '⚽', label: 'Dinámicas Junio 2026',     desc: 'Anuncio principal',             grupo: 'Mundial 2026' });
@@ -5973,22 +5944,6 @@ function getPantallasDisponibles() {
   result.push({ id: 'com_cine::',       topId: 'com_cine',       centro: '', supervisor: '', icon: '🎬', label: 'México te lleva al Cine',  desc: 'Rifa para staff que llegue a meta', grupo: 'Mundial 2026' });
   result.push({ id: 'com_fifa::',       topId: 'com_fifa',       centro: '', supervisor: '', icon: '🎮', label: 'Torneo de FIFA',           desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
   result.push({ id: 'com_comis::',      topId: 'com_comis',      centro: '', supervisor: '', icon: '💰', label: 'Nuevo Esquema Comisiones', desc: 'Aceleradores extra junio',      grupo: 'Mundial 2026' });
-
-  // === IMÁGENES DEL REPORTE (solo si están cargadas) ===
-  IMAGENES_DEF.forEach(d => {
-    if (imagenesData[d.id]) {
-      result.push({
-        id: 'img__' + d.id + '::',
-        topId: 'img_' + d.id,
-        centro: '',
-        supervisor: '',
-        icon: '🖼️',
-        label: d.label,
-        desc: 'Screenshot del reporte',
-        grupo: '🖼️ Imágenes del Reporte'
-      });
-    }
-  });
 
   // === EN VIVO JUNIO (solo si ya estamos del 5 jun en adelante) ===
   if (mostrarJunioLive) {
@@ -6042,7 +5997,8 @@ function cargarConfigPresentar() {
 // Lista oficial de defaults EN EL ORDEN exacto que pidió el usuario
 function getPantallasDefault() {
   const defaults = [
-    // === CIERRE DE MAYO 2026 ===
+    // === CIERRE DE MAYO 2026 (con celebración al inicio) ===
+    'graf_avance::',
     'mayo__global::',
     'mayo__global::CC2::',
     'mayo__global::JV::',
@@ -6065,8 +6021,6 @@ function getPantallasDefault() {
     'mayo__meta::',
     'mayo__metaCarr::CC2::',
     'mayo__metaCarr::JV::',
-    // === IMÁGENES DEL REPORTE (solo las cargadas) ===
-    ...IMAGENES_DEF.filter(d => imagenesData[d.id]).map(d => 'img__' + d.id + '::'),
     // === MUNDIAL 2026 / DINÁMICAS JUNIO ===
     'com_din_jun::',
     'com_racha_exp::',
@@ -6386,24 +6340,16 @@ function parsearIdPantalla(id) {
   // Formato: 'topId::centro::supervisor' o con prefijo de período:
   //   'mayo__topId::centro::supervisor'   (mayo cierre)
   //   'junio__topId::centro::supervisor'  (junio en vivo)
-  //   'img__rep_xxx::'                    (imagen del reporte)
   let periodo = '';
   let rest = id;
   if (id.startsWith('mayo__')) { periodo = 'mayo'; rest = id.substring(6); }
   else if (id.startsWith('junio__')) { periodo = 'junio'; rest = id.substring(7); }
-  else if (id.startsWith('img__')) {
-    // imagen del reporte: 'img__rep_xxx::'
-    const parts = id.split('::');
-    const imgId = parts[0].substring(5); // quitar 'img__'
-    return { topId: 'img_' + imgId, centro: '', supervisor: '', periodo: '', esImagen: true, imgId: imgId };
-  }
   const parts = rest.split('::');
   return {
     topId: parts[0] || '',
     centro: parts[1] || '',
     supervisor: parts[2] || '',
-    periodo: periodo,
-    esImagen: false
+    periodo: periodo
   };
 }
 
@@ -6499,37 +6445,46 @@ function renderCustomPantalla(topId) {
 
   // === GRÁFICAS DEL REPORTE ===
   if (topId === 'graf_avance') {
-    let totVtas = 0, totMeta = 1000;
-    if (state.rawData) {
-      const { ventas, supsVigentes, metasSup } = state.rawData;
-      ventas.forEach(v => {
-        if (!supsVigentes.includes(v.supervisor)) return;
-        if (supsVigentes.includes(v.ejecutivo)) return;
-        if (v.fecha_activacion) totVtas++;
-      });
-      if (metasSup && metasSup.length > 0) {
-        totMeta = metasSup.reduce((s, m) => s + (Number(m.meta_activadas) || 0), 0) || 1000;
-      }
-    }
-    const pct = totMeta > 0 ? (totVtas / totMeta * 100) : 0;
-    const restan = Math.max(0, totMeta - totVtas);
+    // Tarjeta CELEBRATORIA del cierre de mayo (datos fijos para presumir el resultado)
+    const VTAS = 1007;
+    const META = 1000;
+    const PCT = (VTAS / META * 100);
+    const SOBRE = VTAS - META;
     canvas.innerHTML = `
       ${corners}
-      <div class="top-header">
-        <div class="top-kicker">EXPERTCELL · 📊 AVANCE DEL MES</div>
-        <div class="top-title">AVANCE MENSUAL</div>
-        <div class="top-subtitle">${meses[state.mes - 1]} ${state.anio}</div>
+      <div class="celebra-bg-pattern"></div>
+      <div class="top-header" style="padding-bottom:6px;">
+        <div class="top-kicker">🎉 EXPERTCELL · CIERRE DE MAYO 2026</div>
+        <div class="top-title">¡META SUPERADA!</div>
+        <div class="top-subtitle" style="color:#fbbf24; font-weight:700;">Resultados del mes</div>
       </div>
-      <div class="graf-avance-layout">
-        <div class="graf-avance-big">
-          <div class="graf-avance-pct">${pct.toFixed(1)}%</div>
-          <div class="graf-avance-vtas">${totVtas} <span style="opacity:0.5;">/ ${totMeta}</span></div>
-          <div class="graf-avance-restan">${restan === 0 ? '¡META CUMPLIDA!' : 'Faltan ' + restan + ' ventas'}</div>
+      <div class="celebra-layout">
+        <div class="celebra-medalla">
+          <div class="celebra-medalla-borde">
+            <div class="celebra-medalla-inner">
+              <div class="celebra-medalla-pct">${PCT.toFixed(1)}%</div>
+              <div class="celebra-medalla-lbl">DE LA META</div>
+            </div>
+          </div>
         </div>
-        <div class="graf-avance-bar-wrap">
-          <div class="graf-avance-bar" style="width:${Math.min(100, pct)}%"></div>
-          <div class="graf-avance-bar-marks">
-            ${[0, 25, 50, 75, 100].map(m => `<span style="left:${m}%">${m}%</span>`).join('')}
+        <div class="celebra-info">
+          <div class="celebra-stat celebra-stat-big">
+            <div class="celebra-stat-val">${VTAS.toLocaleString('es-MX')}</div>
+            <div class="celebra-stat-lbl">VENTAS ACTIVADAS</div>
+          </div>
+          <div class="celebra-stat-row">
+            <div class="celebra-stat">
+              <div class="celebra-stat-val-mini">${META.toLocaleString('es-MX')}</div>
+              <div class="celebra-stat-lbl-mini">META MENSUAL</div>
+            </div>
+            <div class="celebra-stat">
+              <div class="celebra-stat-val-mini" style="color:#10b981;">+${SOBRE}</div>
+              <div class="celebra-stat-lbl-mini">VENTAS EXTRA</div>
+            </div>
+          </div>
+          <div class="celebra-mensaje">
+            ¡Gracias al esfuerzo de todo el equipo!<br>
+            <strong>Juntos rompimos la meta</strong>
           </div>
         </div>
       </div>
@@ -6863,22 +6818,7 @@ function mostrarPantallaPresentar() {
   const idPantalla = presentarConfig.pantallas[idx];
   const parsed = parsearIdPantalla(idPantalla);
 
-  // ===== CASO 1: IMAGEN DEL REPORTE =====
-  if (parsed.esImagen) {
-    renderImagenPantalla(parsed.imgId);
-    setTimeout(() => copiarCanvasAStage(), 50);
-    document.querySelectorAll('.presentar-dot').forEach((d, i) => {
-      d.classList.toggle('active', i === idx);
-    });
-    clearTimeout(presentarState.timer);
-    presentarState.timer = setTimeout(() => {
-      if (!presentarState.activo) return;
-      siguientePantallaPresentar();
-    }, presentarConfig.duracion * 1000);
-    return;
-  }
-
-  // ===== CASO 2: PERÍODO MAYO O JUNIO - hardcodear el mes =====
+  // ===== PERÍODO MAYO O JUNIO - hardcodear el mes =====
   const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
   const targetAnio = (parsed.periodo === 'mayo' || parsed.periodo === 'junio') ? 2026 : null;
   const necesitaCambioMes = targetMes !== null && (state.mes !== targetMes || state.anio !== targetAnio);
@@ -6985,26 +6925,6 @@ function mostrarPantallaPresentarRender(parsed, idx, bannerTxt) {
     if (!presentarState.activo) return;
     siguientePantallaPresentar();
   }, presentarConfig.duracion * 1000);
-}
-
-// Render de una imagen del reporte ocupando todo el canvas
-function renderImagenPantalla(imgId) {
-  const canvas = document.getElementById('canvas');
-  if (!canvas) return;
-  const dataUrl = imagenesData[imgId];
-  if (!dataUrl) {
-    canvas.innerHTML = '<div class="empty-state">Imagen no encontrada</div>';
-    return;
-  }
-  // Limpiar clases para no aplicar fondo de tops
-  canvas.classList.remove('ratio-9x16', 'ratio-1x1');
-  canvas.classList.add('ratio-16x9');
-  canvas.classList.remove('tall-list');
-  canvas.innerHTML = `
-    <div class="imagen-pantalla">
-      <img src="${dataUrl}" alt="" />
-    </div>
-  `;
 }
 
 function copiarCanvasAStage() {
@@ -7115,16 +7035,6 @@ async function exportarSlideshow() {
       document.getElementById('export-status').textContent = `Procesando: ${idPantalla}`;
       document.getElementById('export-counter').textContent = `${i + 1} / ${presentarConfig.pantallas.length}`;
       document.getElementById('export-bar').style.width = `${((i) / presentarConfig.pantallas.length * 100)}%`;
-
-      // === IMAGEN del reporte: usar la imagen guardada directamente ===
-      if (parsed.esImagen) {
-        const dataUrl = imagenesData[parsed.imgId];
-        if (dataUrl) {
-          const b64 = dataUrl.split(',')[1];
-          zip.file(fileName.replace('.png', '.jpg'), b64, { base64: true });
-        }
-        continue;
-      }
 
       // === Cambiar período si aplica ===
       const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
@@ -7264,261 +7174,6 @@ document.addEventListener('fullscreenchange', () => {
   }
 });
 
-// ========================================================================
-// IMÁGENES DEL REPORTE (guardadas en localStorage comprimidas)
-// ========================================================================
-const IMAGENES_KEY = 'expertcell_imagenes_reporte_v1';
-const IMAGENES_DEF = [
-  { id: 'rep_global',         icon: '📊', label: 'Avance Mensual Global',        desc: 'Tarjeta de meta del reporte' },
-  { id: 'rep_cc2',            icon: '🏢', label: 'Avance Mensual · CC2',         desc: 'Filtrado a CC2 Antequera' },
-  { id: 'rep_jv',             icon: '🏢', label: 'Avance Mensual · JV',          desc: 'Filtrado a Juárez Torre JV' },
-  { id: 'rep_tabla',          icon: '📋', label: 'Tabla Maestra de Agentes',     desc: 'Top agentes con detalles' },
-  { id: 'rep_tendencia',      icon: '📈', label: 'Tendencia del Mes',            desc: 'Gráfica de evolución' },
-  { id: 'rep_vista_diaria',   icon: '📅', label: 'Vista Diaria',                 desc: 'Gráfica día a día' },
-  { id: 'rep_vista_semanal',  icon: '📆', label: 'Vista Semanal',                desc: 'Gráfica semana a semana' },
-  { id: 'rep_flujo',          icon: '🔄', label: 'Distribución Flujo de Entrega', desc: 'BO → Activadas' },
-];
-
-let imagenesData = {}; // {id: 'data:image/jpeg;base64,...'}
-let imagenUploadingId = null;
-
-function cargarImagenes() {
-  try {
-    const saved = localStorage.getItem(IMAGENES_KEY);
-    if (saved) imagenesData = JSON.parse(saved);
-  } catch(e) {
-    console.warn('Error cargando imágenes', e);
-    imagenesData = {};
-  }
-}
-
-function guardarImagenes() {
-  try {
-    localStorage.setItem(IMAGENES_KEY, JSON.stringify(imagenesData));
-    return true;
-  } catch(e) {
-    console.warn('Error guardando imágenes (¿localStorage lleno?)', e);
-    alert('No se pudo guardar la imagen. Es posible que el almacenamiento esté lleno. Borra alguna imagen primero o reduce el tamaño.');
-    return false;
-  }
-}
-
-// Comprime una imagen redimensionándola y bajando calidad JPEG
-function comprimirImagen(file, maxWidth = 1200, quality = 0.7) {
-  return new Promise((resolve, reject) => {
-    if (!file) { reject(new Error('No file')); return; }
-    if (!file.type.startsWith('image/')) { reject(new Error('No es imagen')); return; }
-    console.log('[comprimirImagen] iniciando', { name: file.name, size: file.size, type: file.type, maxWidth, quality });
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = () => {
-        console.log('[comprimirImagen] imagen decodificada', img.width, 'x', img.height);
-        try {
-          let w = img.width, h = img.height;
-          if (w > maxWidth) {
-            h = h * (maxWidth / w);
-            w = maxWidth;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(w);
-          canvas.height = Math.round(h);
-          const ctx = canvas.getContext('2d');
-          if (!ctx) { reject(new Error('No se pudo crear contexto 2D')); return; }
-          ctx.fillStyle = '#0a0a14';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          let dataUrl;
-          try {
-            dataUrl = canvas.toDataURL('image/jpeg', quality);
-          } catch(err) {
-            reject(new Error('toDataURL falló: ' + err.message));
-            return;
-          }
-          if (!dataUrl || dataUrl === 'data:,') {
-            reject(new Error('toDataURL devolvió vacío'));
-            return;
-          }
-          console.log('[comprimirImagen] OK, tamaño dataUrl:', (dataUrl.length / 1024).toFixed(0), 'KB');
-          resolve(dataUrl);
-        } catch(err) { reject(err); }
-      };
-      img.onerror = () => reject(new Error('Error decodificando imagen (formato no soportado?)'));
-      img.src = e.target.result;
-    };
-    reader.onerror = () => reject(new Error('Error leyendo archivo'));
-    reader.readAsDataURL(file);
-  });
-}
-
-// Estimar el tamaño en MB de un data URL
-function tamanoMBData(dataUrl) {
-  // base64 = 4/3 del tamaño binario, restamos cabecera
-  const b64 = dataUrl.split(',')[1] || '';
-  return (b64.length * 0.75) / (1024 * 1024);
-}
-
-// Comprimir progresivamente bajando calidad hasta caber en límite
-async function comprimirAdaptativo(file) {
-  // Estrategia: probar tamaños/calidades progresivos hasta que el data URL pese < 800 KB
-  const configs = [
-    { w: 1400, q: 0.8 },
-    { w: 1200, q: 0.75 },
-    { w: 1000, q: 0.7 },
-    { w: 900,  q: 0.65 },
-    { w: 800,  q: 0.6 },
-    { w: 700,  q: 0.55 },
-  ];
-  const TARGET_MB = 0.8;
-  let last = null;
-  for (const c of configs) {
-    const url = await comprimirImagen(file, c.w, c.q);
-    last = url;
-    const mb = tamanoMBData(url);
-    if (mb < TARGET_MB) return url;
-  }
-  return last; // devolver el más comprimido aunque exceda
-}
-
-function abrirModalImagenes() {
-  cargarImagenes();
-  renderListaImagenes();
-  document.getElementById('imagenes-modal').style.display = 'flex';
-}
-
-function cerrarModalImagenes() {
-  document.getElementById('imagenes-modal').style.display = 'none';
-}
-
-function renderListaImagenes() {
-  const list = document.getElementById('imagenes-list');
-  list.innerHTML = IMAGENES_DEF.map(d => {
-    const cargada = !!imagenesData[d.id];
-    return `
-      <div class="imagen-item ${cargada ? 'has-image' : ''}">
-        <div class="imagen-item-thumb">
-          ${cargada ? `<img src="${imagenesData[d.id]}" alt="" />` : `<span>${d.icon}</span>`}
-        </div>
-        <div class="imagen-item-info">
-          <div class="imagen-item-name">${d.label}</div>
-          <div class="imagen-item-status ${cargada ? 'cargada' : 'vacia'}">
-            ${cargada ? '✓ Imagen cargada' : `· ${d.desc}`}
-          </div>
-        </div>
-        <div class="imagen-item-actions">
-          <button class="imagen-btn-sm imagen-btn-subir" data-id="${d.id}" onclick="iniciarUpload('${d.id}')">${cargada ? 'Reemplazar' : 'Subir'}</button>
-          ${cargada ? `<button class="imagen-btn-sm imagen-btn-borrar" onclick="borrarImagen('${d.id}')">🗑️</button>` : ''}
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  // Actualizar uso
-  const usoBytes = JSON.stringify(imagenesData).length;
-  const usoMB = (usoBytes / (1024 * 1024)).toFixed(2);
-  const cnt = Object.keys(imagenesData).length;
-  document.getElementById('imagenes-uso').textContent =
-    `${cnt} de ${IMAGENES_DEF.length} imágenes cargadas · ${usoMB} MB usados`;
-}
-
-function iniciarUpload(id) {
-  imagenUploadingId = id;
-  const input = document.getElementById('imagen-uploader');
-  input.value = '';
-  input.click();
-}
-
-async function manejarUpload(file) {
-  console.log('[Imagen] manejarUpload llamado', { file, imagenUploadingId });
-  if (!imagenUploadingId) {
-    alert('Error: no hay slot seleccionado para subir. Cierra el modal y vuelve a intentar.');
-    return;
-  }
-  if (!file) {
-    alert('Error: no se recibió archivo.');
-    return;
-  }
-  const idGuardado = imagenUploadingId;
-  imagenUploadingId = null;
-
-  // Mostrar indicador en el item
-  const allBtns = document.querySelectorAll('.imagen-btn-subir');
-  let btnEl = null;
-  allBtns.forEach(b => { if (b.dataset.id === idGuardado) btnEl = b; });
-  const originalText = btnEl ? btnEl.textContent : '';
-  if (btnEl) {
-    btnEl.textContent = '⏳';
-    btnEl.disabled = true;
-  }
-
-  try {
-    if (!file.type || !file.type.startsWith('image/')) {
-      throw new Error('El archivo no es una imagen válida (debe ser JPG, PNG, etc.)');
-    }
-    if (file.size > 30 * 1024 * 1024) {
-      throw new Error(`La imagen pesa ${(file.size/1024/1024).toFixed(1)} MB. Máximo: 30 MB.`);
-    }
-
-    console.log('[Imagen] Procesando', file.name, file.size, 'bytes', file.type);
-    const dataUrl = await comprimirAdaptativo(file);
-    const mbFinal = tamanoMBData(dataUrl);
-    console.log('[Imagen] Tamaño comprimido:', mbFinal.toFixed(2), 'MB');
-
-    // Guardar en memoria primero
-    const previo = imagenesData[idGuardado];
-    imagenesData[idGuardado] = dataUrl;
-
-    // Intentar persistir
-    try {
-      localStorage.setItem(IMAGENES_KEY, JSON.stringify(imagenesData));
-    } catch(storageErr) {
-      // Revertir
-      if (previo) imagenesData[idGuardado] = previo;
-      else delete imagenesData[idGuardado];
-      const total = (JSON.stringify(imagenesData).length / (1024 * 1024)).toFixed(1);
-      throw new Error(`Almacenamiento del navegador lleno (${total} MB usado). Borra alguna imagen primero.`);
-    }
-
-    console.log('[Imagen] ✓ Guardada como', idGuardado);
-    renderListaImagenes(); // re-render completo
-  } catch(e) {
-    console.error('[Imagen] Error:', e);
-    alert('❌ ' + (e.message || e.toString()));
-    if (btnEl) {
-      btnEl.textContent = originalText;
-      btnEl.disabled = false;
-    }
-  }
-}
-
-function borrarImagen(id) {
-  if (!confirm('¿Borrar esta imagen?')) return;
-  delete imagenesData[id];
-  guardarImagenes();
-  renderListaImagenes();
-}
-
-function borrarTodasImagenes() {
-  if (!confirm('¿Borrar TODAS las imágenes del reporte? Esta acción no se puede deshacer.')) return;
-  imagenesData = {};
-  localStorage.removeItem(IMAGENES_KEY);
-  renderListaImagenes();
-}
-
-// Wire del botón y del input
-document.getElementById('btn-imagenes').onclick = abrirModalImagenes;
-document.getElementById('imagen-uploader').onchange = (e) => {
-  const file = e.target.files && e.target.files[0];
-  if (file) manejarUpload(file);
-};
-
-window.iniciarUpload = iniciarUpload;
-window.borrarImagen = borrarImagen;
-window.borrarTodasImagenes = borrarTodasImagenes;
-window.cerrarModalImagenes = cerrarModalImagenes;
-
-cargarImagenes(); // cargar al inicio
-
 window.cerrarModalPresentar = cerrarModalPresentar;
 window.iniciarPresentacion = iniciarPresentacion;
 window.salirPresentacion = salirPresentacion;
@@ -7612,34 +7267,6 @@ window.restaurarPantallasDefault = restaurarPantallasDefault;
   <div class="presentar-stage-day" id="presentar-stage-day"></div>
   <button class="presentar-stage-exit" onclick="salirPresentacion()">✕ Salir (ESC)</button>
 </div>
-
-<!-- ============ MODAL DE IMÁGENES DEL REPORTE ============ -->
-<div id="imagenes-modal" class="presentar-modal" style="display:none;">
-  <div class="presentar-modal-bg" onclick="cerrarModalImagenes()"></div>
-  <div class="presentar-modal-card">
-    <div class="presentar-modal-header">
-      <div>
-        <div class="presentar-modal-title">📷 Imágenes del Reporte</div>
-        <div class="presentar-modal-subtitle">Sube screenshots para incluirlos en la presentación</div>
-      </div>
-      <button class="presentar-modal-close" onclick="cerrarModalImagenes()">✕</button>
-    </div>
-    <div class="presentar-modal-body">
-      <div class="imagenes-warning">
-        ℹ️ Las imágenes se guardan en este navegador. Súbelas <strong>una vez al inicio del mes</strong> y se quedan hasta que las reemplaces. Tamaño máximo recomendado: <strong>5 MB total</strong>.
-      </div>
-      <div id="imagenes-list"></div>
-      <div class="imagenes-uso" id="imagenes-uso"></div>
-    </div>
-    <div class="presentar-modal-footer">
-      <button class="btn btn-secondary" onclick="borrarTodasImagenes()">🗑️ Borrar todas</button>
-      <button class="btn btn-gold" onclick="cerrarModalImagenes()">✓ Listo</button>
-    </div>
-  </div>
-</div>
-
-<!-- Input oculto para upload -->
-<input type="file" id="imagen-uploader" accept="image/*" style="display:none;" />
 
 </body>
 </html>
