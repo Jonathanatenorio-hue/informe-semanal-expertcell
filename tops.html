@@ -744,6 +744,40 @@
     white-space:nowrap;
   }
   .presentar-restaurar-btn:hover { background:rgba(99,102,241,0.22); color:#fff; }
+
+  /* Chips de estilo en modal */
+  .presentar-estilo-row {
+    display:flex; align-items:center; gap:10px;
+    margin-bottom:8px;
+  }
+  .presentar-estilo-lbl {
+    font-family:'Sora'; font-size:11px; color:#999;
+    font-weight:600; letter-spacing:0.5px;
+    min-width:90px;
+  }
+  .presentar-estilo-chips {
+    display:flex; gap:5px; flex-wrap:wrap; flex:1;
+  }
+  .chip-small {
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(255,255,255,0.1);
+    color:#aaa;
+    padding:4px 9px;
+    border-radius:14px;
+    font-family:'Sora'; font-size:10px; font-weight:600;
+    cursor:pointer;
+    transition:all 0.15s;
+    user-select:none;
+  }
+  .chip-small:hover {
+    border-color:rgba(212,175,55,0.4);
+    color:#fff;
+  }
+  .chip-small.active {
+    background:rgba(212,175,55,0.18);
+    border-color:#d4af37;
+    color:#d4af37;
+  }
   .presentar-style-preview {
     display:flex; gap:12px; align-items:center;
     padding:12px 16px;
@@ -4097,9 +4131,21 @@ function procesarDatos() {
         metric: `+${crec} (${pct >= 0 ? '+' : ''}${pct}%)`
       };
     }).filter(a => a.ventas > a.anterior && a.anterior > 0); // crecimiento real (no nuevos)
-    arr.sort((a, b) => (b.ventas - b.anterior) - (a.ventas - a.anterior));
-    asignarRangos(arr, a => a.crecAbs);
-    return arr;
+    // Aplicar filtros UI
+    let arrCrec = arr;
+    if (state.centro) {
+      arrCrec = arrCrec.filter(a => {
+        if (a.centro === state.centro) return true;
+        if (mapaCentroSup[a.supervisor] === state.centro) return true;
+        return false;
+      });
+    }
+    if (state.supervisor) {
+      arrCrec = arrCrec.filter(a => a.supervisor === state.supervisor);
+    }
+    arrCrec.sort((a, b) => (b.ventas - b.anterior) - (a.ventas - a.anterior));
+    asignarRangos(arrCrec, a => a.crecAbs);
+    return arrCrec;
   }
 
   // ============================================================
@@ -4128,12 +4174,22 @@ function procesarDatos() {
           metric: '$' + Math.round(a.sum / a.count).toLocaleString('es-MX')
         };
       });
-    arr.sort((a, b) => (b.metric.length === a.metric.length ? b.metric.localeCompare(a.metric) : b.metric.length - a.metric.length));
-    // Mejor: ordenar por valor numérico
-    arr.sort((a, b) => parseFloat(b.metric.replace(/[^0-9.]/g, '')) - parseFloat(a.metric.replace(/[^0-9.]/g, '')));
-    // Asignar ranks por valor numérico del ARPU
-    asignarRangos(arr, a => parseFloat(String(a.metric).replace(/[^0-9.]/g, '')) || 0);
-    return arr;
+    // Aplicar filtros UI
+    let arrTicket = arr;
+    if (state.centro) {
+      arrTicket = arrTicket.filter(a => {
+        if (a.centro === state.centro) return true;
+        if (mapaCentroSup[a.supervisor] === state.centro) return true;
+        return false;
+      });
+    }
+    if (state.supervisor) {
+      arrTicket = arrTicket.filter(a => a.supervisor === state.supervisor);
+    }
+    // Ordenar por valor numérico del ARPU
+    arrTicket.sort((a, b) => parseFloat(b.metric.replace(/[^0-9.]/g, '')) - parseFloat(a.metric.replace(/[^0-9.]/g, '')));
+    asignarRangos(arrTicket, a => parseFloat(String(a.metric).replace(/[^0-9.]/g, '')) || 0);
+    return arrTicket;
   }
 
   // ============================================================
@@ -4628,7 +4684,10 @@ function render() {
 
   // ========== CASO ESPECIAL: Carrera a Meta (tabla) ==========
   if (state.topId === 'metaCarr') {
-    const arr = (state.agentes || []).filter(a => a.fechaCumplio);
+    const arrFull = (state.agentes || []).filter(a => a.fechaCumplio);
+    // Limitar a 15 para que no se vuelva una lista enorme
+    const arr = arrFull.slice(0, 15);
+    const hayMas = arrFull.length > 15;
     if (arr.length === 0) {
       bodyHTML = `
         <div class="empty-state">
@@ -4674,6 +4733,7 @@ function render() {
             `;
           }).join('')}
         </div>
+        ${hayMas ? `<div style="text-align:center; padding-top:8px; font-family:'Sora'; font-size:11px; color:var(--accent-2); letter-spacing:1px;">+ ${arrFull.length - 15} agentes más que también cumplieron meta</div>` : ''}
       </div>
     `;
     canvas.innerHTML = headerHTML + bodyHTML + `<div class="top-footer">⬢ EXPERTCELL · DISTRIBUIDOR AUTORIZADO AT&T</div>`;
@@ -5390,7 +5450,7 @@ function render() {
       const ordenados = participantes.slice().sort((a, b) => (a.rank || 99) - (b.rank || 99));
       const principal = ordenados[0];
       const resto = ordenados.slice(1);
-      const valor1 = usaRacha ? (principal._rachaNum || 0) : principal.ventas;
+      const valor1 = getValor(principal);
       bodyHTML = `
         <div class="trofeo-layout">
           <div class="trofeo-placa">
@@ -5621,11 +5681,14 @@ setTimeout(() => {
 // ========================================================================
 // MODO PRESENTACIÓN (TV / Proyector)
 // ========================================================================
-const PRESENTAR_KEY = 'expertcell_presentar_config_v2';
+const PRESENTAR_KEY = 'expertcell_presentar_config_v3';
 let presentarSkipLoad = false;
 let presentarConfig = {
   duracion: 60,
-  pantallas: []
+  pantallas: [],
+  tema: 'auto',     // auto / gold / neon / editorial / gradient
+  layout: 'auto',   // auto / podio / cards / stat / cinema / trofeo
+  stickers: 'off'   // off / on
 };
 let presentarState = {
   activo: false,
@@ -5692,8 +5755,6 @@ function getPantallasDisponibles() {
 
   // === GRÁFICAS DEL REPORTE ===
   result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '📊', label: 'Avance Mensual',           desc: 'Progress bar 919/1000',         grupo: 'Gráficas del Reporte' });
-  result.push({ id: 'graf_tendencia::', topId: 'graf_tendencia', centro: '', supervisor: '', icon: '📉', label: 'Tendencia 2026',           desc: 'Evolución mes a mes',           grupo: 'Gráficas del Reporte' });
-  result.push({ id: 'graf_estructura::',topId: 'graf_estructura',centro: '', supervisor: '', icon: '🏗️', label: 'Estructura vs Objetivo',  desc: 'Equipos vs meta',               grupo: 'Gráficas del Reporte' });
 
   // === DINÁMICAS MUNDIAL JUNIO 2026 ===
   result.push({ id: 'com_din_jun::',    topId: 'com_din_jun',    centro: '', supervisor: '', icon: '⚽', label: 'Dinámicas Junio 2026',     desc: 'Anuncio principal',             grupo: 'Mundial 2026' });
@@ -5717,10 +5778,19 @@ function cargarConfigPresentar() {
     if (saved) {
       const cfg = JSON.parse(saved);
       presentarConfig.duracion = cfg.duracion || 60;
+      presentarConfig.tema = cfg.tema || 'auto';
+      presentarConfig.layout = cfg.layout || 'auto';
+      presentarConfig.stickers = cfg.stickers || 'off';
       // Filtrar pantallas que ya no existen en la lista oficial
       const idsValidos = new Set(getPantallasDisponibles().map(p => p.id));
-      presentarConfig.pantallas = (cfg.pantallas || []).filter(id => idsValidos.has(id));
-      // Reordenar según la lista oficial para asegurar consistencia
+      // Eliminar duplicados y filtrar inválidos
+      const vistos = new Set();
+      presentarConfig.pantallas = (cfg.pantallas || []).filter(id => {
+        if (!idsValidos.has(id)) return false;
+        if (vistos.has(id)) return false;
+        vistos.add(id);
+        return true;
+      });
       ordenarPantallasSegunLista();
     }
   } catch(e) { console.warn(e); }
@@ -5751,9 +5821,12 @@ function getPantallasDefault() {
     'meta::',
     'metaCarr::CC2::',
     'metaCarr::JV::',
+    // PORTADA Mundial 2026 (separa el bloque)
     'com_din_jun::',
+    // Sección Racha
     'com_racha_exp::',
     'racha::',
+    // Resto de dinámicas mundial
     'com_tiendita::',
     'com_dia_tem::',
     'com_quiniela::',
@@ -5896,14 +5969,43 @@ function abrirModalPresentar() {
 
   actualizarContador();
 
+  // Wire de chips de estilo (tema, layout, stickers)
+  const wireChips = (containerId, key) => {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('.chip-small').forEach(c => {
+      c.classList.toggle('active', c.dataset.val === presentarConfig[key]);
+      c.onclick = () => {
+        presentarConfig[key] = c.dataset.val;
+        container.querySelectorAll('.chip-small').forEach(x => x.classList.remove('active'));
+        c.classList.add('active');
+        actualizarPreviewEstilo();
+      };
+    });
+  };
+  wireChips('presentar-tema-chips', 'tema');
+  wireChips('presentar-layout-chips', 'layout');
+  wireChips('presentar-stickers-chips', 'stickers');
+
+  actualizarPreviewEstilo();
+
+  document.getElementById('presentar-modal').style.display = 'flex';
+}
+
+function actualizarPreviewEstilo() {
   const combo = getComboDelDia();
   const nombreTema = { gold: 'DORADO LUXURY', neon: 'NEÓN ESPORTS', editorial: 'EDITORIAL', gradient: 'GRADIENT AT&T' };
   const nombreLayout = { podio: 'Podio clásico', cards: 'Cards estilo NBA', stat: 'Stat Board deportivo', cinema: 'Cinema con menciones', trofeo: 'Trofeo formal' };
-  document.querySelector('#presentar-style-preview .presentar-style-day').textContent = combo.dia;
-  document.querySelector('#presentar-style-preview .presentar-style-combo').textContent =
-    `${nombreTema[combo.tema] || combo.tema} · ${nombreLayout[combo.layout] || combo.layout}`;
+  const previewDay = document.querySelector('#presentar-style-preview .presentar-style-day');
+  const previewCombo = document.querySelector('#presentar-style-preview .presentar-style-combo');
+  if (!previewDay || !previewCombo) return;
 
-  document.getElementById('presentar-modal').style.display = 'flex';
+  const temaFinal = presentarConfig.tema === 'auto' ? combo.tema : presentarConfig.tema;
+  const layoutFinal = presentarConfig.layout === 'auto' ? combo.layout : presentarConfig.layout;
+  const stickersFinal = presentarConfig.stickers === 'on' ? 'CON STICKERS' : 'SIN STICKERS';
+
+  previewDay.textContent = (presentarConfig.tema === 'auto' || presentarConfig.layout === 'auto') ? combo.dia : 'PERSONALIZADO';
+  previewCombo.textContent = `${nombreTema[temaFinal]} · ${nombreLayout[layoutFinal]} · ${stickersFinal}`;
 }
 
 function actualizarContador() {
@@ -5932,17 +6034,23 @@ function iniciarPresentacion() {
     tema: state.tema,
     cantidad: state.cantidad,
     centro: state.centro,
-    supervisor: state.supervisor
+    supervisor: state.supervisor,
+    stickers: state.stickers
   };
 
   const combo = getComboDelDia();
-  state.tema = combo.tema;
-  state.layout = combo.layout;
+  // Si está en auto, usa combo del día. Si no, usa el seleccionado por el usuario.
+  state.tema = presentarConfig.tema === 'auto' ? combo.tema : presentarConfig.tema;
+  state.layout = presentarConfig.layout === 'auto' ? combo.layout : presentarConfig.layout;
+  state.stickers = presentarConfig.stickers; // 'on' o 'off'
   state.cantidad = 3;
 
   const stage = document.getElementById('presentar-stage');
   stage.style.display = 'flex';
-  document.getElementById('presentar-stage-day').textContent = `${combo.dia} · ${combo.tema.toUpperCase()} · ${combo.layout.toUpperCase()}`;
+  document.getElementById('presentar-stage-day').textContent =
+    (presentarConfig.tema === 'auto' || presentarConfig.layout === 'auto')
+      ? `${combo.dia} · ${state.tema.toUpperCase()} · ${state.layout.toUpperCase()}`
+      : `PERSONALIZADO · ${state.tema.toUpperCase()} · ${state.layout.toUpperCase()}`;
 
   const dotsEl = document.getElementById('presentar-stage-dots');
   dotsEl.innerHTML = presentarConfig.pantallas.map((_, i) =>
@@ -6354,14 +6462,14 @@ const TARJETAS_COMUNICADO = {
     body: `
       <div class="mundial-bloque">
         <div class="mundial-bloque-titulo">⚽ ¿Cómo participa tu equipo?</div>
-        <div class="mundial-bloque-text">El equipo (centro) debe haber <strong>llegado a meta</strong>. Fecha límite: <strong>27 de junio</strong>.</div>
+        <div class="mundial-bloque-text">Los equipos (centros) que <strong>lleguen a meta a más tardar el 27 de junio</strong> entran a una <strong>rifa</strong>.</div>
       </div>
       <div class="mundial-bloque mundial-bloque-bonus">
         <div class="mundial-bloque-titulo">🎯 Un solo equipo gana</div>
-        <div class="mundial-bloque-text">Participan ambos centros (CC2 y JV) y el primero en cumplir meta se lleva el viaje al cine para TODO el staff.</div>
+        <div class="mundial-bloque-text">Participan ambos centros (CC2 y JV). De los que califiquen se rifa quién se lleva el viaje al cine para TODO el staff. <strong>Solo gana uno en total</strong>, no uno por centro.</div>
       </div>
     `,
-    cta: '🎬 ¡LLEGUEN A META Y AL CINE TODOS!'
+    cta: '🎬 ¡LLEGUEN A META Y ENTREN A LA RIFA!'
   },
   com_fifa: {
     icon: '🎮',
@@ -6387,6 +6495,7 @@ const TARJETAS_COMUNICADO = {
           <div class="mundial-premio-val">$300</div>
         </div>
       </div>
+      <div class="mundial-bloque-date">📅 La <strong>fecha del torneo está por definirse</strong> · Te avisaremos pronto</div>
     `,
     cta: '🎮 INSCRÍBETE ANTES DEL 20 DE JUNIO'
   },
@@ -6577,12 +6686,43 @@ window.restaurarPantallasDefault = restaurarPantallasDefault;
       </div>
 
       <div class="presentar-section">
-        <div class="presentar-section-title">🎨 Estilo del día</div>
-        <div class="presentar-style-preview" id="presentar-style-preview">
+        <div class="presentar-section-title">🎨 Estilo Visual</div>
+
+        <div class="presentar-estilo-row">
+          <div class="presentar-estilo-lbl">Tema:</div>
+          <div class="presentar-estilo-chips" id="presentar-tema-chips">
+            <div class="chip-small active" data-val="auto">🔄 Auto por día</div>
+            <div class="chip-small" data-val="gold">🥇 Dorado</div>
+            <div class="chip-small" data-val="neon">⚡ Neón</div>
+            <div class="chip-small" data-val="editorial">📰 Editorial</div>
+            <div class="chip-small" data-val="gradient">🌈 AT&T</div>
+          </div>
+        </div>
+
+        <div class="presentar-estilo-row">
+          <div class="presentar-estilo-lbl">Diseño:</div>
+          <div class="presentar-estilo-chips" id="presentar-layout-chips">
+            <div class="chip-small active" data-val="auto">🔄 Auto por día</div>
+            <div class="chip-small" data-val="podio">🏆 Podio</div>
+            <div class="chip-small" data-val="cards">🃏 Cards</div>
+            <div class="chip-small" data-val="stat">📊 Stat Board</div>
+            <div class="chip-small" data-val="cinema">🎬 Cinema</div>
+            <div class="chip-small" data-val="trofeo">🥇 Trofeo</div>
+          </div>
+        </div>
+
+        <div class="presentar-estilo-row">
+          <div class="presentar-estilo-lbl">Celebraciones:</div>
+          <div class="presentar-estilo-chips" id="presentar-stickers-chips">
+            <div class="chip-small active" data-val="off">Sin stickers</div>
+            <div class="chip-small" data-val="on">✨ Con stickers</div>
+          </div>
+        </div>
+
+        <div class="presentar-style-preview" id="presentar-style-preview" style="margin-top:10px;">
           <div class="presentar-style-day"></div>
           <div class="presentar-style-combo"></div>
         </div>
-        <div class="small-help" style="margin-top:6px;">El tema y diseño cambian automáticamente cada día (lunes/martes/etc.)</div>
       </div>
     </div>
     <div class="presentar-modal-footer">
