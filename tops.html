@@ -3727,6 +3727,25 @@ const TOPS = [
 // ====================================================================
 // STATE
 // ====================================================================
+// Por default, si estamos en los primeros 4 días del mes, mostramos el mes anterior
+// (porque el mes actual aún no tiene suficientes datos para los tops)
+function getMesAnioDefault() {
+  const hoy = new Date();
+  const dia = hoy.getDate();
+  if (dia <= 4) {
+    // Retroceder al mes anterior
+    const mesAnt = hoy.getMonth(); // getMonth ya es 0-indexed, así que si es junio=5, queremos mes 5 (mayo)
+    if (mesAnt === 0) {
+      // Si estamos en enero, retroceder a diciembre del año anterior
+      return { mes: 12, anio: hoy.getFullYear() - 1 };
+    }
+    return { mes: mesAnt, anio: hoy.getFullYear() };
+  }
+  return { mes: hoy.getMonth() + 1, anio: hoy.getFullYear() };
+}
+
+const _defMes = getMesAnioDefault();
+
 let state = {
   topId: 'global',
   format: '16x9',
@@ -3735,8 +3754,8 @@ let state = {
   layout: 'podio', // podio | cards | stat | cinema | trofeo (para Top 3)
   listLayout: 'clasica', // clasica | barrace | hexagon | mixta (para Top 5/10)
   stickers: 'off',
-  mes: new Date().getMonth() + 1,
-  anio: new Date().getFullYear(),
+  mes: _defMes.mes,
+  anio: _defMes.anio,
   modo: 'mes',
   fecha: new Date().toISOString().split('T')[0],
   fechaInicio: '', fechaFin: '',
@@ -3959,12 +3978,16 @@ async function cargarDesdeSupabase() {
     const hoyStr = new Date().toISOString().split('T')[0];
     // Para top de mes pasado, usamos el último día del mes como referencia de "vigencia"
     const refSupStr = fechaFin > hoyStr ? hoyStr : fechaFin;
-    const { data: supConfig } = await db.from('supervisores_config').select('*');
+    console.log('[cargarDesdeSupabase] refSupStr para filtrar supervisores:', refSupStr);
+    const { data: supConfig, error: supErr } = await db.from('supervisores_config').select('*');
+    if (supErr) console.error('[cargarDesdeSupabase] error supervisores_config:', supErr);
+    console.log('[cargarDesdeSupabase] supConfig total:', (supConfig || []).length, 'registros');
     const supsVigentes = (supConfig || []).filter(s => {
       const ini = s.fecha_inicio || '1900-01-01';
       const fin = s.fecha_fin || '9999-12-31';
       return ini <= refSupStr && fin >= refSupStr;
     }).map(s => s.supervisor);
+    console.log('[cargarDesdeSupabase] supsVigentes a la fecha:', supsVigentes);
 
     // ============================================================
     // 2. Cargar VENTAS (igual que reporte semanal: trae todo, filtra en cliente)
@@ -4039,12 +4062,33 @@ async function cargarDesdeSupabase() {
 
     // ============================================================
     // 8. Cargar CALENDARIO_DIAS (días hábiles, festivos) para racha activa
+    //    OPCIONAL: si falla, simplemente no se usa (no rompe los tops)
     // ============================================================
-    const { data: calData } = await db.from('calendario_dias')
-      .select('fecha, peso')
-      .gte('fecha', fechaIni).lte('fecha', fechaFin);
     const calendario = {};
-    (calData || []).forEach(r => { calendario[r.fecha] = Number(r.peso); });
+    try {
+      // Intentar columna 'factor' (nombre usado en reporte semanal)
+      let calData = null;
+      let calErr = null;
+      const resp1 = await db.from('calendario_dias')
+        .select('fecha, factor')
+        .gte('fecha', fechaIni).lte('fecha', fechaFin);
+      if (resp1.error) {
+        // Si falla con 'factor', intentar con 'peso'
+        const resp2 = await db.from('calendario_dias')
+          .select('fecha, peso')
+          .gte('fecha', fechaIni).lte('fecha', fechaFin);
+        calData = resp2.data;
+        calErr = resp2.error;
+      } else {
+        calData = resp1.data;
+      }
+      (calData || []).forEach(r => {
+        calendario[r.fecha] = Number(r.factor !== undefined ? r.factor : r.peso);
+      });
+      if (calErr) console.warn('[calendario_dias] error en ambas queries:', calErr);
+    } catch(e) {
+      console.warn('[calendario_dias] excepción:', e.message);
+    }
 
     state.rawData = {
       ventas: allVentas,
@@ -4060,9 +4104,21 @@ async function cargarDesdeSupabase() {
     };
     state.manual = false;
 
+    console.log('[cargarDesdeSupabase] rawData OK:', {
+      ventas: allVentas.length,
+      plantilla: Object.keys(mapaPlantilla).length,
+      supsVigentes: supsVigentes.length,
+      supsVigentesList: supsVigentes,
+      metas: (metas || []).length,
+      fechaIni, fechaFin
+    });
+
     // Calcular agentes según tipo de top
     state.agentes = procesarDatos();
-    console.log('[cargarDesdeSupabase] OK - agentes:', state.agentes.length);
+    console.log('[cargarDesdeSupabase] OK - agentes:', state.agentes.length, 'topId:', state.topId);
+    if (state.agentes.length === 0) {
+      console.warn('[cargarDesdeSupabase] ¡agentes vacío! Cambia el topId o revisa los filtros.');
+    }
     render();
   } catch(e) {
     console.error('[cargarDesdeSupabase] ERROR:', e);
