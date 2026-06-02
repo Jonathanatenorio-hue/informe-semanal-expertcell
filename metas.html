@@ -887,7 +887,31 @@ async function procesar() {
         continue;
       }
 
-      const supCorto = SUPERVISORES_MAP[supLargo];
+      // Buscar supervisor de forma flexible:
+      // 1. Por nombre largo exacto (formato esperado original)
+      // 2. Por nombre corto (si el Excel ya viene con nombres cortos)
+      // 3. Búsqueda case-insensitive trim
+      let supCorto = SUPERVISORES_MAP[supLargo];
+      if (!supCorto) {
+        // Verificar si supLargo ya ES un nombre corto válido
+        const supCortosValidos = new Set(Object.values(SUPERVISORES_MAP));
+        if (supCortosValidos.has(supLargo)) {
+          supCorto = supLargo;
+        } else {
+          // Búsqueda case-insensitive y trim por si hay diferencias menores
+          const supBuscar = String(supLargo).trim().toUpperCase();
+          // Buscar en claves (nombres largos)
+          for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
+            if (k.trim().toUpperCase() === supBuscar) { supCorto = v; break; }
+          }
+          // Buscar en valores (nombres cortos)
+          if (!supCorto) {
+            for (const v of supCortosValidos) {
+              if (String(v).trim().toUpperCase() === supBuscar) { supCorto = v; break; }
+            }
+          }
+        }
+      }
       if (!supCorto) {
         sinSupervisor.push({ ejecutivo, supervisor: supLargo });
         continue;
@@ -1172,10 +1196,28 @@ async function procesarPlant() {
     function resolverRecursivo(jefe, visitados) {
       if (!jefe || visitados.has(jefe)) return null;
       visitados.add(jefe);
-      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
+      // Búsqueda flexible: nombre largo, corto, case-insensitive
+      const buscar = (n) => {
+        if (!n) return null;
+        if (SUPERVISORES_MAP[n]) return SUPERVISORES_MAP[n];
+        const cortosValidos = new Set(Object.values(SUPERVISORES_MAP));
+        if (cortosValidos.has(n)) return n;
+        const target = String(n).trim().toUpperCase();
+        for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
+          if (k.trim().toUpperCase() === target) return v;
+        }
+        for (const v of cortosValidos) {
+          if (String(v).trim().toUpperCase() === target) return v;
+        }
+        return null;
+      };
+      let resultado = buscar(jefe);
+      if (resultado) return resultado;
       const reasig = { 'MARIA FERNANDA MARTINEZ BISTRAIN': 'MARIA LUISA MEZA GOEL', 'TOMAS ROSAS ROJAS': 'MARIA LUISA MEZA GOEL' };
-      if (reasig[jefe]) jefe = reasig[jefe];
-      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
+      if (reasig[jefe]) {
+        resultado = buscar(reasig[jefe]);
+        if (resultado) return resultado;
+      }
       const jefeSig = mapaTodos[jefe];
       if (jefeSig) return resolverRecursivo(jefeSig, visitados);
       return null;
