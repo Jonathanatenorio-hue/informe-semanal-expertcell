@@ -4422,6 +4422,99 @@ function renderDetalleAgentesConMes(mesKey) {
     });
   });
 
+  // ============================================================
+  // AGENTES HUÉRFANOS: con ventas pero sin meta_agente para el mes
+  // (típicamente: nuevos ingresos posteriores a la carga de metas,
+  //  o bajas tempranas que nunca tuvieron meta asignada)
+  // ============================================================
+  const ejecutivosConMeta = new Set(metasDelMes.map(m => m.ejecutivo));
+  const ejecutivosHuerfanos = new Set();
+  // Agentes con activadas
+  Object.keys(actPorAgente).forEach(e => {
+    if (!ejecutivosConMeta.has(e) && actPorAgente[e] > 0) ejecutivosHuerfanos.add(e);
+  });
+  // Agentes con programadas (aunque no hayan activado)
+  Object.keys(progPorAgente).forEach(e => {
+    if (!ejecutivosConMeta.has(e) && progPorAgente[e] > 0) ejecutivosHuerfanos.add(e);
+  });
+
+  ejecutivosHuerfanos.forEach(eje => {
+    // Determinar supervisor del agente. Prioridad:
+    // 1) Plantilla (supervisor actual)
+    // 2) Supervisor de las activadas (mayoritario)
+    // 3) Supervisor de las programadas (mayoritario)
+    const plant = plantMap[eje];
+    let supAsignado = plant ? plant.supervisor : null;
+    if (!supAsignado || !SUPERVISORES.includes(supAsignado)) {
+      // Buscar supervisor mayoritario en las ventas
+      const supCount = {};
+      ventasData.forEach(r => {
+        if (r.ejecutivo !== eje) return;
+        const dentroDelMes = (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) ||
+                             (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr);
+        if (!dentroDelMes) return;
+        const sup = r.supervisor || r.supervisor_bo;
+        if (sup && SUPERVISORES.includes(sup)) {
+          supCount[sup] = (supCount[sup] || 0) + 1;
+        }
+      });
+      const supMayoritario = Object.keys(supCount).sort((a, b) => supCount[b] - supCount[a])[0];
+      if (supMayoritario) supAsignado = supMayoritario;
+    }
+    if (!supAsignado || !SUPERVISORES.includes(supAsignado)) return;
+
+    // Determinar si está de baja
+    let estaDeBajaH = false;
+    let bajaEnMesH = false;
+    let fechaBajaH = null;
+    if (plant && plant.fecha_baja) {
+      fechaBajaH = plant.fecha_baja;
+      if (fechaBajaH < iniMesStr) return; // Baja antes del mes: no cuenta
+      estaDeBajaH = true;
+      if (fechaBajaH >= iniMesStr && fechaBajaH <= finMesStr) bajaEnMesH = true;
+    }
+
+    const avanceH = actPorAgente[eje] || 0;
+    const programadasH = progPorAgente[eje] || 0;
+    const canceladasH = cancPorAgente[eje] || 0;
+    const diasActivosH = diasActivosPorAgente[eje] ? diasActivosPorAgente[eje].size : 0;
+    const ultActH = ultActPorAgente[eje] || null;
+    const ultProgH = ultProgPorAgente[eje] || null;
+    const arpuInfoH = arpuPorAgente[eje];
+    const arpuH = arpuInfoH && arpuInfoH.count > 0 ? arpuInfoH.sum / arpuInfoH.count : 0;
+    const fechaIngH = plant ? plant.fecha_ingreso : null;
+    const cortePara_diasH = estaDeBajaH ? fechaBajaH : fechaCorteStr;
+    const refActStrH = ultActH || fechaIngH;
+    const refProgStrH = ultProgH || fechaIngH;
+    const diasSinActH = refActStrH ? diasHabilesEntre(refActStrH, cortePara_diasH) : null;
+    const diasSinProgH = refProgStrH ? diasHabilesEntre(refProgStrH, cortePara_diasH) : null;
+    const ritmoActualH = diasTranscurridos > 0 ? avanceH / diasTranscurridos : 0;
+    const proyeccionH = Math.round(ritmoActualH * (diasTranscurridos + diasRestantes));
+
+    if (!agentesPorSup[supAsignado]) agentesPorSup[supAsignado] = [];
+    agentesPorSup[supAsignado].push({
+      ejecutivo: eje,
+      meta: 0,
+      avance: avanceH,
+      programadas: programadasH,
+      canceladas: canceladasH,
+      diasActivos: diasActivosH,
+      transito: transitoPorAgente[eje] || 0,
+      arpu: arpuH,
+      pct: 0, ritmoActual: ritmoActualH, proyeccion: proyeccionH, ritmoNecesario: 0,
+      esperadoHoy: 0, gap: avanceH, pctEsperado: avanceH > 0 ? 100 : 0,
+      tipo: estaDeBajaH ? 'baja' : 'sin_meta',
+      tipoMetaOriginal: 'sin_meta',
+      esBaja: estaDeBajaH,
+      bajaEnMesActual: bajaEnMesH,
+      fechaBaja: fechaBajaH,
+      diasSinAct: diasSinActH, diasSinProg: diasSinProgH,
+      nuncaActivo: !ultActH, nuncaProgramo: !ultProgH,
+      ultAct: ultActH, ultProg: ultProgH
+    });
+  });
+  // ============================================================
+
   window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel };
 
   const inactivosPorSup = {};
