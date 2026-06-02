@@ -676,31 +676,19 @@ const SUPERVISORES_MAP_REASIGNACIONES = {
 };
 
 async function actualizarSupervisoresMap() {
-  // Mantener defaults como base
-  const DEFAULT_MAP = {
-    'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
-    'ALFREDO CABRERA PADRON': 'Alfred',
-    'CARLOS ALBERTO AGUILAR CANO': 'Carlos',
-    'JORGE MIGUEL UREÑA ZARATE': 'Jorge',
-    'MARIA LUISA MEZA GOEL': 'Luisa',
-    'REYNA LIZZETTE MARTINEZ GARCIA': 'Reyna',
-  };
   try {
     const { data } = await db.from('supervisores_config').select('supervisor, nombre_completo');
-    SUPERVISORES_MAP = { ...DEFAULT_MAP };
     if (data && data.length > 0) {
+      SUPERVISORES_MAP = {};
       data.forEach(s => {
         if (s.nombre_completo) SUPERVISORES_MAP[s.nombre_completo] = s.supervisor;
-        // También agregar el supervisor corto como clave (autoreferencia) para match directo
-        if (s.supervisor) SUPERVISORES_MAP[s.supervisor] = s.supervisor;
+      });
+      Object.entries(SUPERVISORES_MAP_REASIGNACIONES).forEach(([k, v]) => {
+        SUPERVISORES_MAP[k] = v;
       });
     }
-    Object.entries(SUPERVISORES_MAP_REASIGNACIONES).forEach(([k, v]) => {
-      SUPERVISORES_MAP[k] = v;
-    });
   } catch (e) {
     console.warn('No se pudo cargar SUPERVISORES_MAP desde Supabase, usando default', e);
-    SUPERVISORES_MAP = { ...DEFAULT_MAP };
   }
 }
 
@@ -856,9 +844,6 @@ async function procesar() {
   log('Iniciando procesamiento...', 'info');
   await actualizarSupervisoresMap();
   log(`Mapeo de supervisores cargado: ${Object.keys(SUPERVISORES_MAP).length} entradas`, 'info');
-  // DEBUG: mostrar nombres cortos disponibles
-  const cortosDispUnique = [...new Set(Object.values(SUPERVISORES_MAP))];
-  log(`Supervisores activos: ${cortosDispUnique.join(', ')}`, 'info');
 
   try {
     const buf = await state.file.arrayBuffer();
@@ -902,50 +887,7 @@ async function procesar() {
         continue;
       }
 
-      // Buscar supervisor de forma flexible:
-      // 1. Por nombre largo exacto
-      // 2. Por nombre corto exacto
-      // 3. Case-insensitive con trim
-      // 4. Por primera palabra del nombre largo (ej: "Alfred" matchea "ALFREDO CABRERA PADRON")
-      let supCorto = SUPERVISORES_MAP[supLargo];
-      if (!supCorto) {
-        const supCortosValidos = new Set(Object.values(SUPERVISORES_MAP));
-        if (supCortosValidos.has(supLargo)) {
-          supCorto = supLargo;
-        } else {
-          const supBuscar = String(supLargo).trim().toUpperCase();
-          // Buscar en claves (nombres largos) case-insensitive
-          for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
-            if (k.trim().toUpperCase() === supBuscar) { supCorto = v; break; }
-          }
-          // Buscar en valores (nombres cortos) case-insensitive
-          if (!supCorto) {
-            for (const v of supCortosValidos) {
-              if (String(v).trim().toUpperCase() === supBuscar) { supCorto = v; break; }
-            }
-          }
-          // Match por primera palabra del nombre largo (Alfred ↔ ALFREDO ↔ ALFREDO CABRERA)
-          if (!supCorto) {
-            const primeraPalabraBuscada = supBuscar.split(/\s+/)[0];
-            for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
-              const primeraPalabraMap = k.trim().toUpperCase().split(/\s+/)[0];
-              // Match si una empieza con la otra (Alfred ↔ Alfredo)
-              if (primeraPalabraMap === primeraPalabraBuscada ||
-                  primeraPalabraMap.startsWith(primeraPalabraBuscada) ||
-                  primeraPalabraBuscada.startsWith(primeraPalabraMap)) {
-                supCorto = v; break;
-              }
-            }
-          }
-          // Match por nombre corto (Alfred ↔ Alfred, Ana Paola ↔ Ana Paola)
-          if (!supCorto) {
-            for (const v of supCortosValidos) {
-              const cortoUpper = String(v).trim().toUpperCase();
-              if (cortoUpper === supBuscar) { supCorto = v; break; }
-            }
-          }
-        }
-      }
+      const supCorto = SUPERVISORES_MAP[supLargo];
       if (!supCorto) {
         sinSupervisor.push({ ejecutivo, supervisor: supLargo });
         continue;
@@ -1230,28 +1172,10 @@ async function procesarPlant() {
     function resolverRecursivo(jefe, visitados) {
       if (!jefe || visitados.has(jefe)) return null;
       visitados.add(jefe);
-      // Búsqueda flexible: nombre largo, corto, case-insensitive
-      const buscar = (n) => {
-        if (!n) return null;
-        if (SUPERVISORES_MAP[n]) return SUPERVISORES_MAP[n];
-        const cortosValidos = new Set(Object.values(SUPERVISORES_MAP));
-        if (cortosValidos.has(n)) return n;
-        const target = String(n).trim().toUpperCase();
-        for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
-          if (k.trim().toUpperCase() === target) return v;
-        }
-        for (const v of cortosValidos) {
-          if (String(v).trim().toUpperCase() === target) return v;
-        }
-        return null;
-      };
-      let resultado = buscar(jefe);
-      if (resultado) return resultado;
+      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
       const reasig = { 'MARIA FERNANDA MARTINEZ BISTRAIN': 'MARIA LUISA MEZA GOEL', 'TOMAS ROSAS ROJAS': 'MARIA LUISA MEZA GOEL' };
-      if (reasig[jefe]) {
-        resultado = buscar(reasig[jefe]);
-        if (resultado) return resultado;
-      }
+      if (reasig[jefe]) jefe = reasig[jefe];
+      if (SUPERVISORES_MAP[jefe]) return SUPERVISORES_MAP[jefe];
       const jefeSig = mapaTodos[jefe];
       if (jefeSig) return resolverRecursivo(jefeSig, visitados);
       return null;
