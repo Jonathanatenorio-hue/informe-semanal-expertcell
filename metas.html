@@ -676,19 +676,31 @@ const SUPERVISORES_MAP_REASIGNACIONES = {
 };
 
 async function actualizarSupervisoresMap() {
+  // Mantener defaults como base
+  const DEFAULT_MAP = {
+    'ALAN UZIEL SALAZAR AGUILAR': 'Alan',
+    'ALFREDO CABRERA PADRON': 'Alfred',
+    'CARLOS ALBERTO AGUILAR CANO': 'Carlos',
+    'JORGE MIGUEL UREÑA ZARATE': 'Jorge',
+    'MARIA LUISA MEZA GOEL': 'Luisa',
+    'REYNA LIZZETTE MARTINEZ GARCIA': 'Reyna',
+  };
   try {
     const { data } = await db.from('supervisores_config').select('supervisor, nombre_completo');
+    SUPERVISORES_MAP = { ...DEFAULT_MAP };
     if (data && data.length > 0) {
-      SUPERVISORES_MAP = {};
       data.forEach(s => {
         if (s.nombre_completo) SUPERVISORES_MAP[s.nombre_completo] = s.supervisor;
-      });
-      Object.entries(SUPERVISORES_MAP_REASIGNACIONES).forEach(([k, v]) => {
-        SUPERVISORES_MAP[k] = v;
+        // También agregar el supervisor corto como clave (autoreferencia) para match directo
+        if (s.supervisor) SUPERVISORES_MAP[s.supervisor] = s.supervisor;
       });
     }
+    Object.entries(SUPERVISORES_MAP_REASIGNACIONES).forEach(([k, v]) => {
+      SUPERVISORES_MAP[k] = v;
+    });
   } catch (e) {
     console.warn('No se pudo cargar SUPERVISORES_MAP desde Supabase, usando default', e);
+    SUPERVISORES_MAP = { ...DEFAULT_MAP };
   }
 }
 
@@ -844,6 +856,9 @@ async function procesar() {
   log('Iniciando procesamiento...', 'info');
   await actualizarSupervisoresMap();
   log(`Mapeo de supervisores cargado: ${Object.keys(SUPERVISORES_MAP).length} entradas`, 'info');
+  // DEBUG: mostrar nombres cortos disponibles
+  const cortosDispUnique = [...new Set(Object.values(SUPERVISORES_MAP))];
+  log(`Supervisores activos: ${cortosDispUnique.join(', ')}`, 'info');
 
   try {
     const buf = await state.file.arrayBuffer();
@@ -888,26 +903,45 @@ async function procesar() {
       }
 
       // Buscar supervisor de forma flexible:
-      // 1. Por nombre largo exacto (formato esperado original)
-      // 2. Por nombre corto (si el Excel ya viene con nombres cortos)
-      // 3. Búsqueda case-insensitive trim
+      // 1. Por nombre largo exacto
+      // 2. Por nombre corto exacto
+      // 3. Case-insensitive con trim
+      // 4. Por primera palabra del nombre largo (ej: "Alfred" matchea "ALFREDO CABRERA PADRON")
       let supCorto = SUPERVISORES_MAP[supLargo];
       if (!supCorto) {
-        // Verificar si supLargo ya ES un nombre corto válido
         const supCortosValidos = new Set(Object.values(SUPERVISORES_MAP));
         if (supCortosValidos.has(supLargo)) {
           supCorto = supLargo;
         } else {
-          // Búsqueda case-insensitive y trim por si hay diferencias menores
           const supBuscar = String(supLargo).trim().toUpperCase();
-          // Buscar en claves (nombres largos)
+          // Buscar en claves (nombres largos) case-insensitive
           for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
             if (k.trim().toUpperCase() === supBuscar) { supCorto = v; break; }
           }
-          // Buscar en valores (nombres cortos)
+          // Buscar en valores (nombres cortos) case-insensitive
           if (!supCorto) {
             for (const v of supCortosValidos) {
               if (String(v).trim().toUpperCase() === supBuscar) { supCorto = v; break; }
+            }
+          }
+          // Match por primera palabra del nombre largo (Alfred ↔ ALFREDO ↔ ALFREDO CABRERA)
+          if (!supCorto) {
+            const primeraPalabraBuscada = supBuscar.split(/\s+/)[0];
+            for (const [k, v] of Object.entries(SUPERVISORES_MAP)) {
+              const primeraPalabraMap = k.trim().toUpperCase().split(/\s+/)[0];
+              // Match si una empieza con la otra (Alfred ↔ Alfredo)
+              if (primeraPalabraMap === primeraPalabraBuscada ||
+                  primeraPalabraMap.startsWith(primeraPalabraBuscada) ||
+                  primeraPalabraBuscada.startsWith(primeraPalabraMap)) {
+                supCorto = v; break;
+              }
+            }
+          }
+          // Match por nombre corto (Alfred ↔ Alfred, Ana Paola ↔ Ana Paola)
+          if (!supCorto) {
+            for (const v of supCortosValidos) {
+              const cortoUpper = String(v).trim().toUpperCase();
+              if (cortoUpper === supBuscar) { supCorto = v; break; }
             }
           }
         }
