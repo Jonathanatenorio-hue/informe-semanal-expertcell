@@ -4116,8 +4116,26 @@ async function cargarDesdeSupabase() {
     // Calcular agentes según tipo de top
     state.agentes = procesarDatos();
     console.log('[cargarDesdeSupabase] OK - agentes:', state.agentes.length, 'topId:', state.topId);
+
+    // ⚠️ Diagnóstico visible en pantalla si algo va mal
+    const diagnostico = [
+      `📊 DIAGNÓSTICO DE CARGA`,
+      ``,
+      `Período: ${fechaIni} a ${fechaFin}`,
+      `Ventas cargadas: ${allVentas.length}`,
+      `Plantilla: ${Object.keys(mapaPlantilla).length} agentes`,
+      `Supervisores config total: ${(supConfig || []).length}`,
+      `Supervisores vigentes a ${refSupStr}: ${supsVigentes.length}`,
+      `Lista vigentes: ${supsVigentes.join(', ') || '(VACÍO!)'}`,
+      `Metas agente: ${(metas || []).length}`,
+      `Metas supervisor: ${(metasSup || []).length}`,
+      `Top seleccionado: ${state.topId}`,
+      `Agentes procesados: ${state.agentes.length}`,
+    ].join('\n');
+
     if (state.agentes.length === 0) {
-      console.warn('[cargarDesdeSupabase] ¡agentes vacío! Cambia el topId o revisa los filtros.');
+      console.warn(diagnostico);
+      alert('⚠️ Los tops están vacíos. Detalles:\n\n' + diagnostico + '\n\nRevisa la consola (F12) para más info.');
     }
     render();
   } catch(e) {
