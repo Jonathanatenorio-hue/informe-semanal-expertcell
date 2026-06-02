@@ -5908,21 +5908,16 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
   const activosArr = ordenados.filter(a => !a.esBaja);
   const bajasArr = ordenados.filter(a => a.esBaja);
   const totalActivos = activosArr.length;
-  const totalAvance = activosArr.reduce((s, a) => s + (a.avance || 0), 0);
-  const totalMeta = activosArr.reduce((s, a) => s + (a.meta || 0), 0);
-  const totalProg = activosArr.reduce((s, a) => s + (a.programadas || 0), 0);
-  const totalCanc = activosArr.reduce((s, a) => s + (a.canceladas || 0), 0);
-  const totalEsperado = activosArr.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+  // === CAMBIO: totales incluyen a TODOS (activos + bajas) para que coincida con reporte oficial ===
+  const totalAvance = ordenados.reduce((s, a) => s + (a.avance || 0), 0);
+  const totalMeta = ordenados.reduce((s, a) => s + (a.meta || 0), 0);
+  const totalProg = ordenados.reduce((s, a) => s + (a.programadas || 0), 0);
+  const totalCanc = ordenados.reduce((s, a) => s + (a.canceladas || 0), 0);
+  const totalEsperado = ordenados.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+  // ===========================================================================================
   const gapTotal = totalAvance - totalEsperado;
   const pctMesEquipo = totalMeta > 0 ? (totalAvance / totalMeta * 100) : 0;
-  // === NUEVO: Stats incluyendo bajas (vista total del mes) ===
-  const totalAvanceConBajas = ordenados.reduce((s, a) => s + (a.avance || 0), 0);
-  const totalMetaConBajas = ordenados.reduce((s, a) => s + (a.meta || 0), 0);
-  const totalEsperadoConBajas = ordenados.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
-  const gapConBajas = totalAvanceConBajas - totalEsperadoConBajas;
-  const pctMesConBajas = totalMetaConBajas > 0 ? (totalAvanceConBajas / totalMetaConBajas * 100) : 0;
   const hayBajas = bajasArr.length > 0;
-  // ============================================================
   // Detectar si el mes seleccionado es el mes en curso (para usar pctEsperado en evaluación)
   const esMesActualXlsx = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
   const evalPctXlsx = (a) => esMesActualXlsx ? (a.pctEsperado ?? 0) : (a.pct ?? 0);
@@ -6001,12 +5996,15 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
     aoa.push([`📊 DASHBOARD · EQUIPO ${supervisor.toUpperCase()}`, '', '', '', '', '']);
     merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } });
 
-    aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte}`, '', '', '', '', '']);
+    const subtituloEquipo = hayBajas
+      ? `${mesLabel} ${anio} · Corte: ${fechaCorte} · ${agentes.length} agentes (${totalActivos} activos · ${bajasArr.length} bajas)`
+      : `${mesLabel} ${anio} · Corte: ${fechaCorte}`;
+    aoa.push([subtituloEquipo, '', '', '', '', '']);
     merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 5 } });
 
     aoa.push(['', '', '', '', '', '']);
 
-    // KPIs principales: Avance / Meta / Gap
+    // KPIs principales: Avance / Meta / % / Gap
     aoa.push(['AVANCE', '', 'META', '', 'GAP', '']);
     merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
     merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
@@ -6017,39 +6015,19 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
     merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
     merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
 
-    // Etiqueta % cumplimiento equipo actual
-    const lblEquipoActual = hayBajas
-      ? `EQUIPO ACTUAL (${totalActivos} activos) · ${pctMesEquipo.toFixed(1)}% cumplimiento`
-      : `${pctMesEquipo.toFixed(1)}% cumplimiento`;
-    aoa.push([lblEquipoActual, '', barraPctLoc(pctMesEquipo, 30), '', '', '']);
+    // Subtítulo % cumplimiento + barra
+    aoa.push([`${pctMesEquipo.toFixed(1)}% cumplimiento`, '', barraPctLoc(pctMesEquipo, 30), '', '', '']);
     merges.push({ s: { r: 5, c: 0 }, e: { r: 5, c: 1 } });
     merges.push({ s: { r: 5, c: 2 }, e: { r: 5, c: 5 } });
-
-    // === NUEVO: Si hay bajas, agregar TOTAL DEL MES ===
-    let extraRowsKPI = 0;
-    if (hayBajas) {
-      aoa.push(['', '', '', '', '', '']);
-      aoa.push([totalAvanceConBajas, '', totalMetaConBajas, '', (gapConBajas >= 0 ? '+' : '') + gapConBajas, '']);
-      merges.push({ s: { r: 7, c: 0 }, e: { r: 7, c: 1 } });
-      merges.push({ s: { r: 7, c: 2 }, e: { r: 7, c: 3 } });
-      merges.push({ s: { r: 7, c: 4 }, e: { r: 7, c: 5 } });
-
-      const lblTotal = `TOTAL DEL MES (${agentes.length} agentes · incluye ${bajasArr.length} bajas) · ${pctMesConBajas.toFixed(1)}% cumplimiento`;
-      aoa.push([lblTotal, '', barraPctLoc(pctMesConBajas, 30), '', '', '']);
-      merges.push({ s: { r: 8, c: 0 }, e: { r: 8, c: 1 } });
-      merges.push({ s: { r: 8, c: 2 }, e: { r: 8, c: 5 } });
-      extraRowsKPI = 3;
-    }
-    // ============================================================
 
     aoa.push(['', '', '', '', '', '']);
 
     // Salud del equipo
     aoa.push(['🩺 SALUD DEL EQUIPO', '', '', '', '', '']);
-    merges.push({ s: { r: 7 + extraRowsKPI + 1, c: 0 }, e: { r: 7 + extraRowsKPI + 1, c: 5 } });
+    merges.push({ s: { r: 7, c: 0 }, e: { r: 7, c: 5 } });
 
     aoa.push(['Métrica', 'Cantidad', '% del equipo', 'Visual', '', '']);
-    merges.push({ s: { r: 8 + extraRowsKPI + 1, c: 3 }, e: { r: 8 + extraRowsKPI + 1, c: 5 } });
+    merges.push({ s: { r: 8, c: 3 }, e: { r: 8, c: 5 } });
 
     const saludRows = [
       { label: '🟢 Cumplidos (≥100%)', n: cumplidos, color: '16A34A' },
@@ -6102,17 +6080,12 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
       { hpt: 20 }, // subtítulo
       { hpt: 8 },
       { hpt: 22 }, // labels KPI
-      { hpt: 45 }, // valores KPI equipo actual
-      { hpt: 22 }, // % cumplimiento equipo actual
+      { hpt: 50 }, // valores KPI
+      { hpt: 28 }, // % cumplimiento + barra
+      { hpt: 8 },
+      { hpt: 24 }, // sección salud
+      { hpt: 22 }, // headers
     ];
-    if (hayBajas) {
-      rows.push({ hpt: 8 });    // separador
-      rows.push({ hpt: 38 });   // valores KPI total
-      rows.push({ hpt: 22 });   // % cumplimiento total
-    }
-    rows.push({ hpt: 8 });
-    rows.push({ hpt: 24 }); // sección salud
-    rows.push({ hpt: 22 }); // headers
     for (let i = 0; i < saludRows.length; i++) rows.push({ hpt: 22 });
     rows.push({ hpt: 8 });
     rows.push({ hpt: 24 }); // sección top
@@ -6173,57 +6146,25 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
             }
           };
         } else if (R === 5) {
-          // % cumplimiento EQUIPO ACTUAL + barra
+          // % cumplimiento label + barra
           if (C === 0 || C === 1) {
             ws[ref].s = {
-              font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
+              font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
               alignment: { horizontal: 'center', vertical: 'center' }
             };
           } else {
             ws[ref].s = {
-              font: { name: 'Consolas', sz: 12, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
+              font: { name: 'Consolas', sz: 14, bold: true, color: { rgb: colorPct(pctMesEquipo) } },
               alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
             };
           }
-        } else if (hayBajas && R === 7) {
-          // KPI valores TOTAL DEL MES
-          let bg = 'EFF6FF', fg = '00A8E0';
-          if (C === 2 || C === 3) { bg = 'F0F9FF'; fg = '0077A8'; }
-          else if (C === 4 || C === 5) {
-            if (gapConBajas >= 0) { bg = 'F0FDF4'; fg = '16A34A'; }
-            else { bg = 'FEF2F2'; fg = 'DC2626'; }
-          }
-          ws[ref].s = {
-            fill: { fgColor: { rgb: bg } },
-            font: { name: 'Calibri', sz: 26, bold: true, color: { rgb: fg } },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: {
-              top: { style: 'medium', color: { rgb: fg } },
-              bottom: { style: 'medium', color: { rgb: fg } },
-              left: { style: 'medium', color: { rgb: fg } },
-              right: { style: 'medium', color: { rgb: fg } }
-            }
-          };
-        } else if (hayBajas && R === 8) {
-          // % cumplimiento TOTAL DEL MES + barra
-          if (C === 0 || C === 1) {
-            ws[ref].s = {
-              font: { name: 'Calibri', sz: 12, bold: true, color: { rgb: colorPct(pctMesConBajas) } },
-              alignment: { horizontal: 'center', vertical: 'center' }
-            };
-          } else {
-            ws[ref].s = {
-              font: { name: 'Consolas', sz: 12, bold: true, color: { rgb: colorPct(pctMesConBajas) } },
-              alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
-            };
-          }
-        } else if (R === (7 + extraRowsKPI + 1) || R === topStart || R === botStart) {
+        } else if (R === 7 || R === topStart || R === botStart) {
           ws[ref].s = {
             fill: { fgColor: { rgb: '002B5C' } },
             font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } },
             alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
           };
-        } else if (R === (8 + extraRowsKPI + 1) || R === topStart + 1 || R === botStart + 1) {
+        } else if (R === 8 || R === topStart + 1 || R === botStart + 1) {
           // Headers de tablas
           ws[ref].s = {
             fill: { fgColor: { rgb: '0077A8' } },
@@ -6844,25 +6785,22 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
   const stats = supervisores.map(sup => {
     const ags = (agentesPorSup[sup] || []);
     const activos = ags.filter(a => !a.esBaja);
-    const meta = activos.reduce((s, a) => s + (a.meta || 0), 0);
-    const avance = activos.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperado = activos.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
-    const programadas = activos.reduce((s, a) => s + (a.programadas || 0), 0);
-    const canceladas = activos.reduce((s, a) => s + (a.canceladas || 0), 0);
+    // === Totales INCLUYENDO bajas (para que coincida con reporte oficial) ===
+    const meta = ags.reduce((s, a) => s + (a.meta || 0), 0);
+    const avance = ags.reduce((s, a) => s + (a.avance || 0), 0);
+    const esperado = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    const programadas = ags.reduce((s, a) => s + (a.programadas || 0), 0);
+    const canceladas = ags.reduce((s, a) => s + (a.canceladas || 0), 0);
+    // ====================================================================
     const cumplidos = activos.filter(a => a.meta > 0 && evalPct(a) >= 100).length;
     const enRiesgo = activos.filter(a => a.meta > 0 && evalPct(a) >= 50 && evalPct(a) < 85).length;
     const criticos = activos.filter(a => a.meta > 0 && evalPct(a) < 50).length;
     const sinVenta = activos.filter(a => a.avance === 0).length;
-    // Stats incluyendo bajas
-    const metaConBajas = ags.reduce((s, a) => s + (a.meta || 0), 0);
-    const avanceConBajas = ags.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperadoConBajas = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
     return {
       sup, totalActivos: activos.length, bajas: ags.length - activos.length,
       meta, avance, esperado, gap: avance - esperado,
       pctMes: meta > 0 ? avance / meta * 100 : 0,
-      programadas, canceladas, cumplidos, enRiesgo, criticos, sinVenta,
-      metaConBajas, avanceConBajas, esperadoConBajas
+      programadas, canceladas, cumplidos, enRiesgo, criticos, sinVenta
     };
   }).sort((a, b) => b.pctMes - a.pctMes);
 
@@ -6870,16 +6808,9 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
   const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
   const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
   const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
+  const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
   const totalGap = totalAvance - totalEsperado;
   const pctMesGlobal = totalMeta > 0 ? totalAvance / totalMeta * 100 : 0;
-  // === Totales con bajas ===
-  const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
-  const totalAvanceConBajas = stats.reduce((s, x) => s + x.avanceConBajas, 0);
-  const totalMetaConBajas = stats.reduce((s, x) => s + x.metaConBajas, 0);
-  const totalEsperadoConBajas = stats.reduce((s, x) => s + x.esperadoConBajas, 0);
-  const totalGapConBajas = totalAvanceConBajas - totalEsperadoConBajas;
-  const pctMesGlobalConBajas = totalMetaConBajas > 0 ? totalAvanceConBajas / totalMetaConBajas * 100 : 0;
-  const hayBajas = totalBajas > 0;
 
   const aoa = [];
   const merges = [];
@@ -6887,11 +6818,14 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
   // Banner
   aoa.push([`📊 DASHBOARD COORDINADOR · ${coord.toUpperCase()}`, '', '', '', '', '', '', '']);
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
-  aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos`, '', '', '', '', '', '', '']);
+  const subCoord = totalBajas > 0
+    ? `${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos + totalBajas} agentes (${totalActivos} activos · ${totalBajas} bajas)`
+    : `${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos`;
+  aoa.push([subCoord, '', '', '', '', '', '', '']);
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } });
   aoa.push(['', '', '', '', '', '', '', '']);
 
-  // KPIs - Equipo actual (solo activos)
+  // KPIs
   aoa.push(['AVANCE TOTAL', '', 'META TOTAL', '', 'GAP', '', '% CUMPLIMIENTO', '']);
   merges.push({ s: { r: 3, c: 0 }, e: { r: 3, c: 1 } });
   merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
@@ -6903,25 +6837,6 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
   merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
   merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
   merges.push({ s: { r: 4, c: 6 }, e: { r: 4, c: 7 } });
-
-  // Etiqueta EQUIPO ACTUAL
-  const lblEquipoActualCoord = hayBajas
-    ? `EQUIPO ACTUAL (${totalActivos} activos)`
-    : '';
-  if (hayBajas) {
-    aoa.push([lblEquipoActualCoord, '', '', '', '', '', '', '']);
-    merges.push({ s: { r: 5, c: 0 }, e: { r: 5, c: 7 } });
-    // Fila TOTAL DEL MES
-    aoa.push([totalAvanceConBajas, '', totalMetaConBajas, '', (totalGapConBajas >= 0 ? '+' : '') + totalGapConBajas, '', pctMesGlobalConBajas.toFixed(1) + '%', '']);
-    merges.push({ s: { r: 6, c: 0 }, e: { r: 6, c: 1 } });
-    merges.push({ s: { r: 6, c: 2 }, e: { r: 6, c: 3 } });
-    merges.push({ s: { r: 6, c: 4 }, e: { r: 6, c: 5 } });
-    merges.push({ s: { r: 6, c: 6 }, e: { r: 6, c: 7 } });
-    // Etiqueta TOTAL DEL MES
-    const lblTotalCoord = `TOTAL DEL MES (incluye ${totalBajas} bajas con sus metas y ventas)`;
-    aoa.push([lblTotalCoord, '', '', '', '', '', '', '']);
-    merges.push({ s: { r: 7, c: 0 }, e: { r: 7, c: 7 } });
-  }
 
   aoa.push(['', '', '', '', '', '', '', '']);
 
@@ -6982,21 +6897,6 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
           else { bg = 'FEF2F2'; fg = 'DC2626'; }
         } else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobal); bg = 'FFFFFF'; }
         ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 28, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
-      } else if (hayBajas && R === 5) {
-        // Etiqueta EQUIPO ACTUAL
-        ws[ref].s = { fill: { fgColor: { rgb: 'E0F2FE' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: '0C4A6E' } }, alignment: { horizontal: 'center', vertical: 'center' } };
-      } else if (hayBajas && R === 6) {
-        // Valores TOTAL DEL MES
-        let bg = 'F0F9FF', fg = '0EA5E9';
-        if (C === 2 || C === 3) { bg = 'EFF6FF'; fg = '0077A8'; }
-        else if (C === 4 || C === 5) {
-          if (totalGapConBajas >= 0) { bg = 'F0FDF4'; fg = '16A34A'; }
-          else { bg = 'FEF2F2'; fg = 'DC2626'; }
-        } else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobalConBajas); bg = 'FFFFFF'; }
-        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 22, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
-      } else if (hayBajas && R === 7) {
-        // Etiqueta TOTAL DEL MES
-        ws[ref].s = { fill: { fgColor: { rgb: 'E0F2FE' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: '0C4A6E' } }, alignment: { horizontal: 'center', vertical: 'center' } };
       } else if (R === tablaStartRow || R === saludStart) {
         ws[ref].s = { fill: { fgColor: { rgb: '0C4A6E' } }, font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
       } else if (R === tablaStartRow + 1 || R === saludStart + 1) {
@@ -7068,14 +6968,11 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
   const stats = supervisores.map(sup => {
     const ags = (agentesPorSup[sup] || []);
     const activos = ags.filter(a => !a.esBaja);
-    const meta = activos.reduce((s, a) => s + (a.meta || 0), 0);
-    const avance = activos.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperado = activos.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
-    // Stats con bajas
-    const metaConBajas = ags.reduce((s, a) => s + (a.meta || 0), 0);
-    const avanceConBajas = ags.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperadoConBajas = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
-    return { sup, coord: mapa[sup] || '—', totalActivos: activos.length, bajas: ags.length - activos.length, meta, avance, esperado, gap: avance - esperado, pctMes: meta > 0 ? avance / meta * 100 : 0, metaConBajas, avanceConBajas, esperadoConBajas };
+    // Totales INCLUYENDO bajas (para que coincida con reporte oficial)
+    const meta = ags.reduce((s, a) => s + (a.meta || 0), 0);
+    const avance = ags.reduce((s, a) => s + (a.avance || 0), 0);
+    const esperado = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    return { sup, coord: mapa[sup] || '—', totalActivos: activos.length, bajas: ags.length - activos.length, meta, avance, esperado, gap: avance - esperado, pctMes: meta > 0 ? avance / meta * 100 : 0 };
   });
 
   // Agrupar por coordinador
@@ -7094,23 +6991,19 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
   const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
   const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
   const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
+  const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
   const totalGap = totalAvance - totalEsperado;
   const pctMesGlobal = totalMeta > 0 ? totalAvance / totalMeta * 100 : 0;
-  // === Totales con bajas ===
-  const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
-  const totalAvanceConBajas = stats.reduce((s, x) => s + x.avanceConBajas, 0);
-  const totalMetaConBajas = stats.reduce((s, x) => s + x.metaConBajas, 0);
-  const totalEsperadoConBajas = stats.reduce((s, x) => s + x.esperadoConBajas, 0);
-  const totalGapConBajas = totalAvanceConBajas - totalEsperadoConBajas;
-  const pctMesGlobalConBajas = totalMetaConBajas > 0 ? totalAvanceConBajas / totalMetaConBajas * 100 : 0;
-  const hayBajas = totalBajas > 0;
 
   const aoa = [];
   const merges = [];
 
   aoa.push(['🌐 DASHBOARD GLOBAL · TODOS LOS SUPERVISORES', '', '', '', '', '', '', '']);
   merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
-  aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos · ${coordArr.length} coordinadores`, '', '', '', '', '', '', '']);
+  const subGlobal = totalBajas > 0
+    ? `${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos + totalBajas} agentes (${totalActivos} activos · ${totalBajas} bajas) · ${coordArr.length} coordinadores`
+    : `${mesLabel} ${anio} · Corte: ${fechaCorte} · ${supervisores.length} supervisores · ${totalActivos} agentes activos · ${coordArr.length} coordinadores`;
+  aoa.push([subGlobal, '', '', '', '', '', '', '']);
   merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 7 } });
   aoa.push(['', '', '', '', '', '', '', '']);
 
@@ -7125,18 +7018,6 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
   merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
   merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
   merges.push({ s: { r: 4, c: 6 }, e: { r: 4, c: 7 } });
-
-  if (hayBajas) {
-    aoa.push([`EQUIPO ACTUAL (${totalActivos} activos)`, '', '', '', '', '', '', '']);
-    merges.push({ s: { r: 5, c: 0 }, e: { r: 5, c: 7 } });
-    aoa.push([totalAvanceConBajas, '', totalMetaConBajas, '', (totalGapConBajas >= 0 ? '+' : '') + totalGapConBajas, '', pctMesGlobalConBajas.toFixed(1) + '%', '']);
-    merges.push({ s: { r: 6, c: 0 }, e: { r: 6, c: 1 } });
-    merges.push({ s: { r: 6, c: 2 }, e: { r: 6, c: 3 } });
-    merges.push({ s: { r: 6, c: 4 }, e: { r: 6, c: 5 } });
-    merges.push({ s: { r: 6, c: 6 }, e: { r: 6, c: 7 } });
-    aoa.push([`TOTAL DEL MES (incluye ${totalBajas} bajas con sus metas y ventas)`, '', '', '', '', '', '', '']);
-    merges.push({ s: { r: 7, c: 0 }, e: { r: 7, c: 7 } });
-  }
 
   aoa.push(['', '', '', '', '', '', '', '']);
 
@@ -7195,16 +7076,6 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
         else if (C === 4 || C === 5) { if (totalGap >= 0) { bg = 'F0FDF4'; fg = '16A34A'; } else { bg = 'FEF2F2'; fg = 'DC2626'; } }
         else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobal); bg = 'FFFFFF'; }
         ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 28, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
-      } else if (hayBajas && R === 5) {
-        ws[ref].s = { fill: { fgColor: { rgb: 'F5F3FF' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: '4C1D95' } }, alignment: { horizontal: 'center', vertical: 'center' } };
-      } else if (hayBajas && R === 6) {
-        let bg = 'F5F3FF', fg = '7C3AED';
-        if (C === 2 || C === 3) { bg = 'EFF6FF'; fg = '0077A8'; }
-        else if (C === 4 || C === 5) { if (totalGapConBajas >= 0) { bg = 'F0FDF4'; fg = '16A34A'; } else { bg = 'FEF2F2'; fg = 'DC2626'; } }
-        else if (C === 6 || C === 7) { fg = colorPct(pctMesGlobalConBajas); bg = 'FFFFFF'; }
-        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 22, bold: true, color: { rgb: fg } }, alignment: { horizontal: 'center', vertical: 'center' }, border: { top: { style: 'medium', color: { rgb: fg } }, bottom: { style: 'medium', color: { rgb: fg } }, left: { style: 'medium', color: { rgb: fg } }, right: { style: 'medium', color: { rgb: fg } } } };
-      } else if (hayBajas && R === 7) {
-        ws[ref].s = { fill: { fgColor: { rgb: 'F5F3FF' } }, font: { name: 'Calibri', sz: 11, italic: true, color: { rgb: '4C1D95' } }, alignment: { horizontal: 'center', vertical: 'center' } };
       } else if (R === coordStart || R === rankStart) {
         ws[ref].s = { fill: { fgColor: { rgb: '4C1D95' } }, font: { name: 'Calibri', sz: 13, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
       } else if (R === coordStart + 1 || R === rankStart + 1) {
