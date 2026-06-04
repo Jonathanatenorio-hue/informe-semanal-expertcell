@@ -3727,12 +3727,12 @@ const TOPS = [
 // ====================================================================
 // STATE
 // ====================================================================
-// Por default, si estamos en los primeros 4 días del mes, mostramos el mes anterior
-// (porque el mes actual aún no tiene suficientes datos para los tops)
+// Por default, solo el día 1 del mes mostramos el mes anterior (aún sin datos).
+// Del día 2 en adelante ya abrimos en el mes en curso.
 function getMesAnioDefault() {
   const hoy = new Date();
   const dia = hoy.getDate();
-  if (dia <= 4) {
+  if (dia <= 1) {
     // Retroceder al mes anterior
     const mesAnt = hoy.getMonth(); // getMonth ya es 0-indexed, así que si es junio=5, queremos mes 5 (mayo)
     if (mesAnt === 0) {
@@ -4267,8 +4267,18 @@ function procesarDatos() {
       const agentesSup = Object.values(ventasPorAgente).filter(a => a.supervisor === sup);
       agentesSup.sort((a, b) => b.ventas - a.ventas);
       asignarRangos(agentesSup, a => a.ventas);
-      // Top 3 con empates
-      const top3 = agentesSup.filter(a => a.rank && a.rank <= 3);
+      // Top 3 lugares (con empates), pero LIMITADO a un máximo de agentes por equipo.
+      // Si un grupo empatado hace que se rebase el tope, se descarta ese grupo COMPLETO
+      // (no se muestran empates parciales, sería injusto). Se va quitando el grupo de
+      // menor venta hasta caber. Ej: 2 con 3 vtas + 7 con 2 vtas -> solo los 2 primeros.
+      const MAX_AGENTES_EQUIPO = 5; // <-- cambia este número para mostrar más/menos por equipo
+      let top3 = agentesSup.filter(a => a.rank && a.rank <= 3);
+      while (top3.length > MAX_AGENTES_EQUIPO) {
+        const rangoMasBajo = Math.max(...top3.map(a => a.rank));
+        const recorte = top3.filter(a => a.rank !== rangoMasBajo);
+        if (recorte.length === 0) break; // nunca dejar el equipo vacío (empate enorme en 1er lugar)
+        top3 = recorte;
+      }
       const vtasSup = ventasPorSup[sup] || 0;
       const metaSup = mapaMetaSup[sup] || 0;
       const pctSup = metaSup > 0 ? Math.round(vtasSup / metaSup * 100) : 0;
@@ -5943,7 +5953,7 @@ function getComboDelDia() {
 
 // Generar pantallas según especificación del usuario
 // Fecha desde la cual se muestra Junio en vivo además de Mayo (cierre)
-const JUNIO_LIVE_DESDE = '2026-06-05';
+const JUNIO_LIVE_DESDE = '2026-06-01';
 
 // Define si hoy es el día de mostrar también las pantallas en vivo de junio
 function debeMostrarJunioLive() {
@@ -6069,6 +6079,22 @@ function cargarConfigPresentar() {
         return true;
       });
       ordenarPantallasSegunLista();
+
+      // Migración única: la config guardada se creó antes de que existieran las
+      // pantallas EN VIVO de junio. Al activarse junio, las sembramos en la config
+      // guardada (sin tocar las selecciones de mayo). Se hace una sola vez para
+      // respetar futuros ajustes manuales del usuario.
+      if (debeMostrarJunioLive() && !localStorage.getItem('presentar_junio_seed_v1')) {
+        const idsValidos2 = new Set(getPantallasDisponibles().map(p => p.id));
+        getPantallasDefault().forEach(id => {
+          if (id.startsWith('junio__') && idsValidos2.has(id) && !presentarConfig.pantallas.includes(id)) {
+            presentarConfig.pantallas.push(id);
+          }
+        });
+        ordenarPantallasSegunLista();
+        guardarConfigPresentar();
+        localStorage.setItem('presentar_junio_seed_v1', '1');
+      }
     }
   } catch(e) { console.warn(e); }
 }
