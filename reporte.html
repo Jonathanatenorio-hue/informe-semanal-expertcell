@@ -3583,14 +3583,23 @@ function _renderAvanceMensualImpl(wActual) {
   let transitoTotal = 0;
 
   // Mapa rápido de plantilla para resolver supervisor actual del agente
-  // (necesario para tránsito: ventas viejas pueden tener r.supervisor obsoleto)
   const plantMapTmp = {};
   plantillaData.forEach(p => { plantMapTmp[p.nombre] = p; });
 
+  // Mapa AGENTE → SUPERVISOR del mes vigente, basado en metas_agente.
+  // Esta es la fuente más confiable: si un agente tiene meta para el mes con
+  // supervisor X, sus ventas (incluido el tránsito) deben atribuirse a X.
+  const supDelMesPorAgente = {};
+  metasAgeData
+    .filter(m => m.anio === anioSel && m.mes === mesSel && SUPERVISORES.includes(m.supervisor))
+    .forEach(m => { supDelMesPorAgente[m.ejecutivo] = m.supervisor; });
+
   function esVentaDelFiltro(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
-    // Para ventas en tránsito: si r.supervisor es obsoleto, usar supervisor actual del agente
+    // Para ventas en tránsito: si r.supervisor es obsoleto, usar supervisor
+    // de metas del mes o plantilla actual
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.ejecutivo) {
+      if (supDelMesPorAgente[r.ejecutivo]) return true;
       const plant = plantMapTmp[r.ejecutivo];
       if (plant && plant.supervisor && SUPERVISORES.includes(plant.supervisor)) return true;
     }
@@ -3621,14 +3630,20 @@ function _renderAvanceMensualImpl(wActual) {
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
-      // Para tránsito: usar supervisor actual del agente desde plantilla,
-      // ya que r.supervisor puede estar obsoleto (mes anterior).
-      // Si no encontramos en plantilla, caer en r.supervisor.
+      // Prioridad para asignar supervisor a una venta en tránsito:
+      // 1. Supervisor del agente en metas_agente del mes actual (la verdad oficial)
+      // 2. Supervisor actual de plantilla (si no hay meta cargada para ese agente)
+      // 3. Supervisor original de la venta (último fallback)
       let supTransito = null;
-      if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
+      if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
+        supTransito = supDelMesPorAgente[r.ejecutivo];
+      } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
         supTransito = plantMapTmp[r.ejecutivo].supervisor;
-      } else if (tieneSup) {
-        supTransito = r.supervisor;
+      } else {
+        const supOriginal = r.supervisor_bo || r.supervisor;
+        if (supOriginal && SUPERVISORES.includes(supOriginal)) {
+          supTransito = supOriginal;
+        }
       }
       if (supTransito) transitoPorSup[supTransito]++;
       transitoTotal++;
