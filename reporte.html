@@ -3591,7 +3591,7 @@ function _renderAvanceMensualImpl(wActual) {
   // supervisor X, sus ventas (incluido el tránsito) deben atribuirse a X.
   const supDelMesPorAgente = {};
   metasAgeData
-    .filter(m => m.anio === anioSel && m.mes === mesSel && SUPERVISORES.includes(m.supervisor))
+    .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
     .forEach(m => { supDelMesPorAgente[m.ejecutivo] = m.supervisor; });
 
   function esVentaDelFiltro(r) {
