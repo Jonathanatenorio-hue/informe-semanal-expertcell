@@ -1995,9 +1995,11 @@ function esPlanBajoCheck(plan) {
 function calcularPesoVenta(r) {
   // Si no es plan bajo → vale 1.0 siempre
   if (!r.es_plan_bajo) return 1.0;
-  // Es plan bajo: depende de la fecha de la venta
-  // Se determina por la fecha más temprana disponible (fecha_bo si existe, sino fecha_activacion)
-  const fechaRef = r.fecha_bo || r.fecha_activacion || r.fecha_cancelacion;
+  // Es plan bajo: vale 0.5 si la venta se REALIZÓ (activó) desde junio 2026.
+  // Priorizamos fecha_activacion porque las activadas son el conteo principal
+  // y el ajuste debe aplicar al MES en que la activación se contabiliza.
+  // Si aún no se activó (en tránsito), usamos fecha_bo como referencia.
+  const fechaRef = r.fecha_activacion || r.fecha_bo || r.fecha_cancelacion;
   if (!fechaRef) return 1.0; // No tenemos fecha, default conservador
   if (fechaRef >= FECHA_INICIO_PLANES_BAJOS) return 0.5;
   return 1.0; // Antes de junio 2026: vale 1.0 (no aplica el ajuste)
@@ -4170,14 +4172,12 @@ function renderAvanceUI() {
   document.getElementById('avance-tabla').innerHTML = `
     <thead>
       <tr class="group-row">
-        <th colspan="1" class="group-cell"></th>
-        <th colspan="2" class="group-cell group-equipo">👥 EQUIPO</th>
+        <th colspan="3" class="group-cell group-equipo">👥 EQUIPO</th>
         <th colspan="2" class="group-cell group-meta">🎯 META</th>
         <th colspan="4" class="group-cell group-volumen">📊 VOLUMEN MES</th>
-        <th colspan="2" class="group-cell group-productividad">⚡ PRODUCTIVIDAD</th>
+        <th colspan="3" class="group-cell group-productividad">⚡ PRODUCTIVIDAD</th>
         <th colspan="2" class="group-cell group-transito">🟠 TRÁNSITO</th>
-        <th colspan="2" class="group-cell group-cierre">🏁 CIERRE</th>
-        <th colspan="1" class="group-cell"></th>
+        <th colspan="3" class="group-cell group-cierre">🏁 CIERRE</th>
       </tr>
       <tr>
         <th>Supervisor</th>
