@@ -1903,6 +1903,29 @@ const MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Ju
 const W1_INICIO = new Date('2025-12-29T00:00:00');
 const DIAS_NOMBRE = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
+// ============================================================
+// PLANES BAJOS: valen 0.5 ventas (a partir de junio 2026)
+// ============================================================
+const PLANES_BAJOS = new Set(['ATT LITE 1', 'ATT AZUL', 'ATT AZUL 1']);
+const FECHA_INICIO_PLANES_BAJOS = '2026-06-01'; // Aplica desde esta fecha en adelante
+
+function esPlanBajoCheck(plan) {
+  if (!plan) return false;
+  const p = String(plan).trim().toUpperCase();
+  return PLANES_BAJOS.has(p);
+}
+
+function calcularPesoVenta(r) {
+  // Si no es plan bajo → vale 1.0 siempre
+  if (!r.es_plan_bajo) return 1.0;
+  // Es plan bajo: depende de la fecha de la venta
+  // Se determina por la fecha más temprana disponible (fecha_bo si existe, sino fecha_activacion)
+  const fechaRef = r.fecha_bo || r.fecha_activacion || r.fecha_cancelacion;
+  if (!fechaRef) return 1.0; // No tenemos fecha, default conservador
+  if (fechaRef >= FECHA_INICIO_PLANES_BAJOS) return 0.5;
+  return 1.0; // Antes de junio 2026: vale 1.0 (no aplica el ajuste)
+}
+
 let ventasData = [];
 let plantillaData = [];
 let calendarioData = [];
@@ -2088,6 +2111,13 @@ async function cargarDatos() {
     } else if (r.estatus === 'cancelada' && r.supervisor_can) {
       r.supervisor = r.supervisor_can;
     }
+    // ============================================================
+    // PLANES BAJOS: ATT LITE 1, ATT AZUL, ATT AZUL 1 valen 0.5
+    // Aplica desde junio 2026 en adelante.
+    // Se determina por fecha_bo (cuándo fue tomada la venta).
+    // ============================================================
+    r.es_plan_bajo = esPlanBajoCheck(r.plan);
+    r.peso_venta = calcularPesoVenta(r);
   });
   document.getElementById('loader-msg').textContent = `${allData.length} ventas cargadas. Cargando plantilla...`;
 
@@ -2309,25 +2339,28 @@ function agregarPorTipoAgente(inicioStr, finStr, agentesPorSup) {
     }
 
     if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
-      resultado[r.supervisor].total.prog++;
-      if (ejecNuevo) resultado[r.supervisor].nuevos.prog++;
-      else if (ejecExp) resultado[r.supervisor].experimentados.prog++;
-      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.prog++;
-      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.prog++;
+      const peso = r.peso_venta || 1;
+      resultado[r.supervisor].total.prog += peso;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.prog += peso;
+      else if (ejecExp) resultado[r.supervisor].experimentados.prog += peso;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.prog += peso;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.prog += peso;
     }
     if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
-      resultado[r.supervisor].total.act++;
-      if (ejecNuevo) resultado[r.supervisor].nuevos.act++;
-      else if (ejecExp) resultado[r.supervisor].experimentados.act++;
-      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.act++;
-      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.act++;
+      const peso = r.peso_venta || 1;
+      resultado[r.supervisor].total.act += peso;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.act += peso;
+      else if (ejecExp) resultado[r.supervisor].experimentados.act += peso;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.act += peso;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.act += peso;
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
-      resultado[r.supervisor].total.canc++;
-      if (ejecNuevo) resultado[r.supervisor].nuevos.canc++;
-      else if (ejecExp) resultado[r.supervisor].experimentados.canc++;
-      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.canc++;
-      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.canc++;
+      const peso = r.peso_venta || 1;
+      resultado[r.supervisor].total.canc += peso;
+      if (ejecNuevo) resultado[r.supervisor].nuevos.canc += peso;
+      else if (ejecExp) resultado[r.supervisor].experimentados.canc += peso;
+      else if (clasifFallback === 'nuevo') resultado[r.supervisor].nuevos.canc += peso;
+      else if (clasifFallback === 'experimentado') resultado[r.supervisor].experimentados.canc += peso;
     }
   });
 
@@ -2360,18 +2393,19 @@ function agregarPorFechaDeActividad(inicioStr, finStr) {
   ventasData.forEach(r => {
     if (!aplica(r)) return;
     const tieneSup = r.supervisor && porSup[r.supervisor];
+    const peso = r.peso_venta || 1;
 
     if (r.fecha_bo >= inicioStr && r.fecha_bo <= finStr) {
-      if (tieneSup) porSup[r.supervisor].prog++;
-      totProg++;
+      if (tieneSup) porSup[r.supervisor].prog += peso;
+      totProg += peso;
     }
     if (r.fecha_activacion && r.fecha_activacion >= inicioStr && r.fecha_activacion <= finStr) {
-      if (tieneSup) porSup[r.supervisor].act++;
-      totAct++;
+      if (tieneSup) porSup[r.supervisor].act += peso;
+      totAct += peso;
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= inicioStr && r.fecha_cancelacion <= finStr) {
-      if (tieneSup) porSup[r.supervisor].canc++;
-      totCanc++;
+      if (tieneSup) porSup[r.supervisor].canc += peso;
+      totCanc += peso;
     }
   });
 
@@ -2408,12 +2442,13 @@ function agregarPorBloqueBO(inicioStr, finStr) {
     const supBO = r.supervisor_bo || r.supervisor;
     const tieneSupBO = supBO && porSup[supBO];
     const tieneSup = r.supervisor && porSup[r.supervisor];
+    const peso = r.peso_venta || 1;
 
-    if (tieneSupBO) porSup[supBO].prog++;
-    totProg++;
-    if (r.estatus === 'activada') { if (tieneSup) porSup[r.supervisor].act++; totAct++; }
-    else if (r.estatus === 'cancelada') { if (tieneSup) porSup[r.supervisor].canc++; totCanc++; }
-    else { if (tieneSup) porSup[r.supervisor].pend++; totPend++; }
+    if (tieneSupBO) porSup[supBO].prog += peso;
+    totProg += peso;
+    if (r.estatus === 'activada') { if (tieneSup) porSup[r.supervisor].act += peso; totAct += peso; }
+    else if (r.estatus === 'cancelada') { if (tieneSup) porSup[r.supervisor].canc += peso; totCanc += peso; }
+    else { if (tieneSup) porSup[r.supervisor].pend += peso; totPend += peso; }
   });
 
   return { porSup, totales: { prog: totProg, act: totAct, canc: totCanc, pend: totPend } };
@@ -3561,17 +3596,18 @@ function _renderAvanceMensualImpl(wActual) {
     if (!esVentaDelFiltro(r)) return;
 
     const tieneSup = r.supervisor && SUPERVISORES.includes(r.supervisor);
+    const peso = r.peso_venta || 1;
 
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
       if (tieneSup) {
-        avancesPorSup[r.supervisor]++;
-        avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + 1;
+        avancesPorSup[r.supervisor] += peso;
+        avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + peso;
       }
     }
 
     if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
-      if (tieneSup) avancesProgPorSup[r.supervisor]++;
-      avanceProgTotal++;
+      if (tieneSup) avancesProgPorSup[r.supervisor] += peso;
+      avanceProgTotal += peso;
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
@@ -3586,7 +3622,7 @@ function _renderAvanceMensualImpl(wActual) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return;
     if (!esVentaDelFiltro(r)) return;
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-      avanceTotal++;
+      avanceTotal += (r.peso_venta || 1);
     }
   });
 
@@ -3612,10 +3648,11 @@ function _renderAvanceMensualImpl(wActual) {
     if (!r.fecha_activacion) return;
     if (r.fecha_activacion < iniSemStr || r.fecha_activacion > finSemStr) return;
     if (!esVentaDelFiltro(r)) return;
+    const peso = r.peso_venta || 1;
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
-      avancesSemanaPorSup[r.supervisor]++;
+      avancesSemanaPorSup[r.supervisor] += peso;
     }
-    avanceUltSem++;
+    avanceUltSem += peso;
   });
 
   function proyectar(avanceSup, avanceSem, modo, diasTrans, diasRest, diasSem) {
@@ -4117,7 +4154,7 @@ function renderTendenciaMes() {
     if (!r.fecha_activacion) return;
     if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
     if (!SUPERVISORES.includes(r.supervisor)) return;
-    activadasPorFecha[r.fecha_activacion] = (activadasPorFecha[r.fecha_activacion] || 0) + 1;
+    activadasPorFecha[r.fecha_activacion] = (activadasPorFecha[r.fecha_activacion] || 0) + (r.peso_venta || 1);
   });
 
   const metaDiaria = estadoTotal.meta / estadoTotal.diasHabilesTotales;
@@ -4243,7 +4280,7 @@ function renderDetalleAgentesConMes(mesKey) {
       let avance = 0;
       ventasData.forEach(r => {
         if (r.estatus === 'activada' && r.supervisor === m.supervisor && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-          avance++;
+          avance += (r.peso_venta || 1);
         }
       });
       const pctCumpl = m.meta_activadas > 0 ? (avance / m.meta_activadas * 100) : 0;
@@ -4265,6 +4302,10 @@ function renderDetalleAgentesConMes(mesKey) {
   const actPorAgente = {};
   const progPorAgente = {};
   const cancPorAgente = {};
+  const actAltosPorAgente = {};
+  const actBajosPorAgente = {};
+  const progAltosPorAgente = {};
+  const progBajosPorAgente = {};
   const transitoPorAgente = {};
   const diasActivosPorAgente = {};
   const ultActPorAgente = {};
@@ -4273,8 +4314,17 @@ function renderDetalleAgentesConMes(mesKey) {
 
   ventasData.forEach(r => {
     if (!r.ejecutivo) return;
+    const peso = r.peso_venta || 1;
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-      actPorAgente[r.ejecutivo] = (actPorAgente[r.ejecutivo] || 0) + 1;
+      actPorAgente[r.ejecutivo] = (actPorAgente[r.ejecutivo] || 0) + peso;
+      // Tracking de altos/bajos por agente
+      if (!actAltosPorAgente[r.ejecutivo]) actAltosPorAgente[r.ejecutivo] = 0;
+      if (!actBajosPorAgente[r.ejecutivo]) actBajosPorAgente[r.ejecutivo] = 0;
+      if (r.es_plan_bajo && peso < 1) {
+        actBajosPorAgente[r.ejecutivo]++;
+      } else {
+        actAltosPorAgente[r.ejecutivo]++;
+      }
       if (r.precio && r.precio > 0) {
         if (!arpuPorAgente[r.ejecutivo]) arpuPorAgente[r.ejecutivo] = { sum: 0, count: 0 };
         arpuPorAgente[r.ejecutivo].sum += r.precio;
@@ -4282,12 +4332,19 @@ function renderDetalleAgentesConMes(mesKey) {
       }
     }
     if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
-      progPorAgente[r.ejecutivo] = (progPorAgente[r.ejecutivo] || 0) + 1;
+      progPorAgente[r.ejecutivo] = (progPorAgente[r.ejecutivo] || 0) + peso;
+      if (!progAltosPorAgente[r.ejecutivo]) progAltosPorAgente[r.ejecutivo] = 0;
+      if (!progBajosPorAgente[r.ejecutivo]) progBajosPorAgente[r.ejecutivo] = 0;
+      if (r.es_plan_bajo && peso < 1) {
+        progBajosPorAgente[r.ejecutivo]++;
+      } else {
+        progAltosPorAgente[r.ejecutivo]++;
+      }
       if (!diasActivosPorAgente[r.ejecutivo]) diasActivosPorAgente[r.ejecutivo] = new Set();
       diasActivosPorAgente[r.ejecutivo].add(r.fecha_bo);
     }
     if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
-      cancPorAgente[r.ejecutivo] = (cancPorAgente[r.ejecutivo] || 0) + 1;
+      cancPorAgente[r.ejecutivo] = (cancPorAgente[r.ejecutivo] || 0) + peso;
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
@@ -4408,6 +4465,10 @@ function renderDetalleAgentesConMes(mesKey) {
       ejecutivo: m.ejecutivo,
       meta: m.meta_activadas,
       avance, programadas, canceladas, diasActivos,
+      actAltos: actAltosPorAgente[m.ejecutivo] || 0,
+      actBajos: actBajosPorAgente[m.ejecutivo] || 0,
+      progAltos: progAltosPorAgente[m.ejecutivo] || 0,
+      progBajos: progBajosPorAgente[m.ejecutivo] || 0,
       transito: transitoPorAgente[m.ejecutivo] || 0,
       arpu,
       pct, ritmoActual, proyeccion, ritmoNecesario,
@@ -4499,6 +4560,10 @@ function renderDetalleAgentesConMes(mesKey) {
       programadas: programadasH,
       canceladas: canceladasH,
       diasActivos: diasActivosH,
+      actAltos: actAltosPorAgente[eje] || 0,
+      actBajos: actBajosPorAgente[eje] || 0,
+      progAltos: progAltosPorAgente[eje] || 0,
+      progBajos: progBajosPorAgente[eje] || 0,
       transito: transitoPorAgente[eje] || 0,
       arpu: arpuH,
       pct: 0, ritmoActual: ritmoActualH, proyeccion: proyeccionH, ritmoNecesario: 0,
@@ -4880,15 +4945,15 @@ function renderDetalleAgentesConMes(mesKey) {
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinAct, a.nuncaActivo)}</td>
-                    <td class="num" style="text-align:center;">${a.programadas}</td>
+                    <td class="num" style="text-align:center;"><strong>${(a.programadas % 1 === 0) ? a.programadas : a.programadas.toFixed(1)}</strong>${(a.progBajos || 0) > 0 ? `<div style="font-size:9px;color:var(--text-soft);font-weight:500;line-height:1;margin-top:2px;">${a.progAltos}A·${a.progBajos}B</div>` : ''}</td>
                     <td class="num" style="text-align:center; color: var(--amber); font-weight: 700;">${a.transito || '—'}</td>
-                    <td class="num" style="text-align:center;"><strong>${a.avance}</strong></td>
-                    <td class="num" style="text-align:center; color:var(--red);">${a.canceladas}</td>
+                    <td class="num" style="text-align:center;"><strong>${(a.avance % 1 === 0) ? a.avance : a.avance.toFixed(1)}</strong>${(a.actBajos || 0) > 0 ? `<div style="font-size:9px;color:var(--text-soft);font-weight:500;line-height:1;margin-top:2px;">${a.actAltos}A·${a.actBajos}B</div>` : ''}</td>
+                    <td class="num" style="text-align:center; color:var(--red);">${(a.canceladas % 1 === 0) ? a.canceladas : a.canceladas.toFixed(1)}</td>
                     <td class="num" style="text-align:center; font-weight: 600;">${a.arpu > 0 ? '$' + Math.round(a.arpu) : '—'}</td>
                     <td class="num" style="text-align:center;">${a.meta}</td>
                     <td class="num" style="text-align:center; color:var(--text-soft);">${a.meta > 0 ? a.esperadoHoy : '—'}</td>
                     <td class="num" style="text-align:center; font-weight:700; color:${a.meta === 0 ? 'var(--text-soft)' : (a.gap >= 0 ? 'var(--green)' : 'var(--red)')};">
-                      ${a.meta > 0 ? (a.gap >= 0 ? `+${a.gap}` : `${a.gap}`) : '—'}
+                      ${a.meta > 0 ? (a.gap >= 0 ? `+${(a.gap % 1 === 0) ? a.gap : a.gap.toFixed(1)}` : `${(a.gap % 1 === 0) ? a.gap : a.gap.toFixed(1)}`) : '—'}
                     </td>
                     <td class="num" style="text-align:center; color:${colorPct}; font-weight:700;">${a.meta > 0 ? a.pct.toFixed(0) + '%' : '—'}</td>
                     <td class="num" style="text-align:center;">${a.ritmoActual.toFixed(1)}</td>
@@ -4988,20 +5053,21 @@ function mostrarHistoricoAgente(ejecutivo, supervisorActual) {
 
   const porMes = {};
   ventasAgente.forEach(r => {
+    const peso = r.peso_venta || 1;
     if (r.fecha_bo) {
       const mesKey = r.fecha_bo.substring(0, 7);
       if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
-      porMes[mesKey].prog++;
+      porMes[mesKey].prog += peso;
     }
     if (r.fecha_activacion) {
       const mesKey = r.fecha_activacion.substring(0, 7);
       if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
-      porMes[mesKey].act++;
+      porMes[mesKey].act += peso;
     }
     if (r.fecha_cancelacion) {
       const mesKey = r.fecha_cancelacion.substring(0, 7);
       if (!porMes[mesKey]) porMes[mesKey] = { mes: mesKey, prog: 0, act: 0, canc: 0, transito: 0, supervisor: r.supervisor };
-      porMes[mesKey].canc++;
+      porMes[mesKey].canc += peso;
     }
   });
 
@@ -6103,7 +6169,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
     merges.push({ s: { r: 3, c: 2 }, e: { r: 3, c: 3 } });
     merges.push({ s: { r: 3, c: 4 }, e: { r: 3, c: 5 } });
 
-    aoa.push([totalAvance, '', totalMeta, '', (gapTotal >= 0 ? '+' : '') + gapTotal, '']);
+    aoa.push([Number((totalAvance || 0).toFixed(1)), '', totalMeta, '', (gapTotal >= 0 ? '+' : '') + Number((gapTotal || 0).toFixed(1)), '']);
     merges.push({ s: { r: 4, c: 0 }, e: { r: 4, c: 1 } });
     merges.push({ s: { r: 4, c: 2 }, e: { r: 4, c: 3 } });
     merges.push({ s: { r: 4, c: 4 }, e: { r: 4, c: 5 } });
@@ -6367,7 +6433,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
     // Columnas igualadas al "Detalle General" del Excel global (sin la columna Supervisor
     // porque ya es del propio sup), pero conservando Avance visual al final.
     const cols = ['#','Agente','Centro','Tipo','Estatus','Días act.','Sin prog.','Sin act.',
-                  'Última prog.','Última act.','Prog','Act','Canc','En tránsito','ARPU',
+                  'Última prog.','Última act.','Prog','Prog A','Prog B','Act','Act A','Act B','Canc','En tránsito','ARPU',
                   'Meta','Esperado hoy','Gap','% Mes','Avance visual','Ritmo actual','Ritmo nec.','Proyección'];
     const filas = ordenados.map((a, idx) => {
       const pctEval = evalPctXlsx(a);
@@ -6383,14 +6449,18 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
         'Sin act.': a.diasSinAct !== null ? Number(a.diasSinAct.toFixed(1)) : null,
         'Última prog.': a.ultProg || '—',
         'Última act.': a.ultAct || '—',
-        'Prog': a.programadas,
-        'Act': a.avance,
-        'Canc': a.canceladas,
+        'Prog': Number((a.programadas || 0).toFixed(1)),
+        'Prog A': a.progAltos || 0,
+        'Prog B': a.progBajos || 0,
+        'Act': Number((a.avance || 0).toFixed(1)),
+        'Act A': a.actAltos || 0,
+        'Act B': a.actBajos || 0,
+        'Canc': Number((a.canceladas || 0).toFixed(1)),
         'En tránsito': a.transito || 0,
         'ARPU': a.arpu > 0 ? Math.round(a.arpu) : null,
         'Meta': a.meta,
-        'Esperado hoy': a.meta > 0 ? a.esperadoHoy : null,
-        'Gap': a.meta > 0 ? a.gap : null,
+        'Esperado hoy': a.meta > 0 ? Number((a.esperadoHoy || 0).toFixed(1)) : null,
+        'Gap': a.meta > 0 ? Number((a.gap || 0).toFixed(1)) : null,
         '% Mes': a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
         'Avance visual': barraPctLoc(a.meta > 0 ? a.pct : 0, 10),
         'Ritmo actual': Number(a.ritmoActual.toFixed(2)),
@@ -6422,7 +6492,11 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
       { wch: 12 },  // Última prog.
       { wch: 12 },  // Última act.
       { wch: 7 },   // Prog
+      { wch: 7 },   // Prog A
+      { wch: 7 },   // Prog B
       { wch: 7 },   // Act
+      { wch: 7 },   // Act A
+      { wch: 7 },   // Act B
       { wch: 7 },   // Canc
       { wch: 11 },  // En tránsito
       { wch: 9 },   // ARPU
@@ -6684,7 +6758,8 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
 
   const cols = ['#', 'Supervisor', 'Agente', 'Centro', 'Tipo', 'Estatus', 'Días act.',
                 'Sin prog.', 'Sin act.', 'Última prog.', 'Última act.',
-                'Programadas', 'Activadas', 'Canceladas', 'En tránsito', 'ARPU',
+                'Programadas', 'Prog. altas', 'Prog. bajas', 'Activadas', 'Act. altas', 'Act. bajas',
+                'Canceladas', 'En tránsito', 'ARPU',
                 'Meta', 'Esperado hoy', 'Gap', '% Mes', 'Ritmo actual', 'Ritmo nec.', 'Proyección'];
 
   const aoa = [
@@ -6708,14 +6783,18 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
       a.diasSinAct !== null && a.diasSinAct !== undefined ? Number(a.diasSinAct.toFixed(1)) : null,
       a.ultProg || '—',
       a.ultAct || '—',
-      a.programadas,
-      a.avance,
-      a.canceladas || 0,
+      Number((a.programadas || 0).toFixed(1)),
+      a.progAltos || 0,
+      a.progBajos || 0,
+      Number((a.avance || 0).toFixed(1)),
+      a.actAltos || 0,
+      a.actBajos || 0,
+      Number((a.canceladas || 0).toFixed(1)),
       a.transito || 0,
       a.arpu && a.arpu > 0 ? Math.round(a.arpu) : null,
       a.meta,
-      a.meta > 0 ? a.esperadoHoy : null,
-      a.meta > 0 ? a.gap : null,
+      a.meta > 0 ? Number((a.esperadoHoy || 0).toFixed(1)) : null,
+      a.meta > 0 ? Number((a.gap || 0).toFixed(1)) : null,
       a.meta > 0 ? Number(a.pct.toFixed(1)) : null,
       Number((a.ritmoActual || 0).toFixed(2)),
       a.meta > 0 ? Number((a.ritmoNecesario || 0).toFixed(2)) : null,
@@ -6729,10 +6808,33 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
     { s: { r: 1, c: 0 }, e: { r: 1, c: cols.length - 1 } }
   ];
   ws['!cols'] = [
-    { wch: 5 }, { wch: 14 }, { wch: 32 }, { wch: 9 }, { wch: 14 }, { wch: 11 }, { wch: 9 },
-    { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
-    { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }, { wch: 9 },
-    { wch: 7 }, { wch: 12 }, { wch: 8 }, { wch: 9 }, { wch: 12 }, { wch: 11 }, { wch: 11 }
+    { wch: 5 },   // #
+    { wch: 14 },  // Supervisor
+    { wch: 32 },  // Agente
+    { wch: 9 },   // Centro
+    { wch: 14 },  // Tipo
+    { wch: 11 },  // Estatus
+    { wch: 9 },   // Días act.
+    { wch: 10 },  // Sin prog.
+    { wch: 10 },  // Sin act.
+    { wch: 12 },  // Última prog.
+    { wch: 12 },  // Última act.
+    { wch: 12 },  // Programadas
+    { wch: 9 },   // Prog. altas
+    { wch: 9 },   // Prog. bajas
+    { wch: 11 },  // Activadas
+    { wch: 9 },   // Act. altas
+    { wch: 9 },   // Act. bajas
+    { wch: 11 },  // Canceladas
+    { wch: 11 },  // En tránsito
+    { wch: 9 },   // ARPU
+    { wch: 7 },   // Meta
+    { wch: 12 },  // Esperado hoy
+    { wch: 8 },   // Gap
+    { wch: 9 },   // % Mes
+    { wch: 12 },  // Ritmo actual
+    { wch: 11 },  // Ritmo nec.
+    { wch: 11 }   // Proyección
   ];
   const rows = [{ hpt: 30 }, { hpt: 20 }, { hpt: 32 }];
   for (let i = 0; i < todos.length; i++) rows.push({ hpt: 20 });
@@ -10925,7 +11027,7 @@ function renderSanityCheck() {
     if (r.estatus !== 'activada') return;
     const mesKey = r.fecha_activacion.substring(0, 7);
     if (!actPorAgenteMes[r.ejecutivo]) actPorAgenteMes[r.ejecutivo] = {};
-    actPorAgenteMes[r.ejecutivo][mesKey] = (actPorAgenteMes[r.ejecutivo][mesKey] || 0) + 1;
+    actPorAgenteMes[r.ejecutivo][mesKey] = (actPorAgenteMes[r.ejecutivo][mesKey] || 0) + (r.peso_venta || 1);
   });
 
   const plantMap = {};
