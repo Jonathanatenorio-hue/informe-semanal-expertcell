@@ -948,6 +948,83 @@
   #avance-tabla.hide-transito .col-transito { display: none; }
   #btn-toggle-transito:hover { background:#F1F5F9; border-color:var(--att-blue); }
   #btn-toggle-transito.activo { background:#FEF3C7; border-color:#D97706; color:#92400E; }
+
+  /* === Fila de grupos (header superior) === */
+  #avance-tabla thead tr.group-row th {
+    background: #FFFFFF !important;
+    color: var(--att-navy);
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.6px;
+    padding: 7px 6px 5px 6px;
+    border-bottom: 2px solid #E5E7EB;
+    text-align: center;
+    text-transform: uppercase;
+    vertical-align: middle;
+  }
+  #avance-tabla thead tr.group-row th.group-cell {
+    border-radius: 6px 6px 0 0;
+    margin: 0 2px;
+  }
+  /* Colores suaves por grupo */
+  #avance-tabla thead tr.group-row th.group-equipo {
+    background: linear-gradient(180deg, #ECFEFF 0%, #CFFAFE 100%) !important;
+    color: #0E7490;
+    border-bottom: 2px solid #06B6D4;
+  }
+  #avance-tabla thead tr.group-row th.group-meta {
+    background: linear-gradient(180deg, #EFF6FF 0%, #DBEAFE 100%) !important;
+    color: #1E3A8A;
+    border-bottom: 2px solid #3B82F6;
+  }
+  #avance-tabla thead tr.group-row th.group-volumen {
+    background: linear-gradient(180deg, #F0F9FF 0%, #BAE6FD 100%) !important;
+    color: #075985;
+    border-bottom: 2px solid #0EA5E9;
+  }
+  #avance-tabla thead tr.group-row th.group-productividad {
+    background: linear-gradient(180deg, #F0FDF4 0%, #BBF7D0 100%) !important;
+    color: #166534;
+    border-bottom: 2px solid #22C55E;
+  }
+  #avance-tabla thead tr.group-row th.group-transito {
+    background: linear-gradient(180deg, #FFFBEB 0%, #FED7AA 100%) !important;
+    color: #9A3412;
+    border-bottom: 2px solid #F97316;
+  }
+  #avance-tabla thead tr.group-row th.group-cierre {
+    background: linear-gradient(180deg, #FAF5FF 0%, #E9D5FF 100%) !important;
+    color: #6B21A8;
+    border-bottom: 2px solid #A855F7;
+  }
+  /* Tintes muy sutiles en celdas de cada grupo */
+  #avance-tabla tbody td.col-equipo {
+    background: rgba(6, 182, 212, 0.04);
+  }
+  #avance-tabla tbody td.col-prod {
+    background: rgba(34, 197, 94, 0.05);
+    font-weight: 700;
+    color: #15803D;
+  }
+  /* Subtexto pequeño en celdas (ej: "10A·2B") */
+  #avance-tabla tbody td .sub-line {
+    font-size: 10px;
+    color: var(--text-soft);
+    font-weight: 500;
+    line-height: 1;
+    margin-top: 3px;
+    letter-spacing: 0.2px;
+  }
+  #avance-tabla tbody td .sub-inline {
+    font-size: 11px;
+    color: var(--text-soft);
+    font-weight: 500;
+    margin-left: 2px;
+  }
+  /* Borde de cabecera principal ajustado */
+  #avance-tabla thead tr:not(.group-row) th {
+    border-top: 0;
+  }
 </style>
 </head>
 <body>
@@ -3713,6 +3790,50 @@ function _renderAvanceMensualImpl(wActual) {
     avanceProg: avanceProgTotal
   };
 
+  // ============================================================
+  // Métricas extra por supervisor: agentes activos, bajas, cumplidos
+  // ============================================================
+  const metasDelMesParaTabla = metasAgeData.filter(m =>
+    m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor)
+  );
+  const plantParaTabla = {};
+  plantillaData.forEach(p => { plantParaTabla[p.nombre] = p; });
+  const iniMesStrTabla = `${anio}-${String(mes).padStart(2,'0')}-01`;
+  const ultDiaMesTabla = new Date(anio, mes, 0).getDate();
+  const finMesStrTabla = `${anio}-${String(mes).padStart(2,'0')}-${String(ultDiaMesTabla).padStart(2,'0')}`;
+
+  // Contadores por supervisor: { activos, bajas, cumplidos }
+  const extraPorSup = {};
+  SUPERVISORES.forEach(s => { extraPorSup[s] = { activos: 0, bajas: 0, cumplidos: 0 }; });
+
+  // Calcular avance por agente del mes (sin afectar otros scopes)
+  const actPorAgenteTabla = {};
+  ventasData.forEach(r => {
+    if (!r.ejecutivo || !r.fecha_activacion) return;
+    if (r.fecha_activacion < iniMesStrTabla || r.fecha_activacion > finMesStrTabla) return;
+    actPorAgenteTabla[r.ejecutivo] = (actPorAgenteTabla[r.ejecutivo] || 0) + (r.peso_venta || 1);
+  });
+
+  metasDelMesParaTabla.forEach(m => {
+    const plant = plantParaTabla[m.ejecutivo];
+    let esBaja = false;
+    if (plant && plant.fecha_baja) {
+      const fb = plant.fecha_baja;
+      if (fb < iniMesStrTabla) return; // baja antes del mes: no cuenta
+      if (fb >= iniMesStrTabla && fb <= finMesStrTabla) esBaja = true;
+    }
+    if (esBaja) {
+      extraPorSup[m.supervisor].bajas++;
+    } else {
+      extraPorSup[m.supervisor].activos++;
+    }
+    // Cumplido: agente activo con meta > 0 y avance >= meta
+    if (!esBaja && m.meta_activadas > 0) {
+      const avanceAg = actPorAgenteTabla[m.ejecutivo] || 0;
+      if (avanceAg >= m.meta_activadas) extraPorSup[m.supervisor].cumplidos++;
+    }
+  });
+
   const supervisoresData = metasSupMes.map(m => {
     const avance = avancesPorSup[m.supervisor] || 0;
     const avanceSem = avancesSemanaPorSup[m.supervisor] || 0;
@@ -3778,7 +3899,13 @@ function _renderAvanceMensualImpl(wActual) {
       metaProgFija,
       metaProgDinamica,
       tasaHist: tasaHist * 100,
-      tasaMes: tasaMes * 100
+      tasaMes: tasaMes * 100,
+      // Extras nuevos
+      agentesActivos: extraPorSup[m.supervisor].activos,
+      agentesBajas: extraPorSup[m.supervisor].bajas,
+      cumplidos: extraPorSup[m.supervisor].cumplidos,
+      promPorAgente: extraPorSup[m.supervisor].activos > 0 ? avance / extraPorSup[m.supervisor].activos : 0,
+      promPorDia: diasTranscurridos > 0 ? avance / diasTranscurridos : 0
     };
   }).sort((a, b) => b.pctEsperado - a.pctEsperado);
 
@@ -4042,17 +4169,31 @@ function renderAvanceUI() {
 
   document.getElementById('avance-tabla').innerHTML = `
     <thead>
+      <tr class="group-row">
+        <th colspan="1" class="group-cell"></th>
+        <th colspan="2" class="group-cell group-equipo">👥 EQUIPO</th>
+        <th colspan="2" class="group-cell group-meta">🎯 META</th>
+        <th colspan="4" class="group-cell group-volumen">📊 VOLUMEN MES</th>
+        <th colspan="2" class="group-cell group-productividad">⚡ PRODUCTIVIDAD</th>
+        <th colspan="2" class="group-cell group-transito">🟠 TRÁNSITO</th>
+        <th colspan="2" class="group-cell group-cierre">🏁 CIERRE</th>
+        <th colspan="1" class="group-cell"></th>
+      </tr>
       <tr>
         <th>Supervisor</th>
+        <th title="Agentes activos · Bajas del mes">Agentes</th>
+        <th title="Agentes que alcanzaron 100% de su meta">Cumpl.</th>
         <th title="Meta del mes completo">Meta</th>
         <th title="Meta diaria que necesita el equipo (Meta total ÷ días hábiles del mes)">Meta/día</th>
         <th class="col-relevante col-sep-left" title="Activadas en el mes hasta el día actual">Avance</th>
-        <th class="col-relevante" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mensual</th>
-        <th class="col-relevante" title="Cuántas activadas debería llevar al día de hoy (Meta × días transcurridos / días totales)">Esperado<br><span class="header-sub">hoy</span></th>
+        <th class="col-relevante" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mes</th>
+        <th class="col-relevante" title="Cuántas activadas debería llevar al día de hoy">Esperado<br><span class="header-sub">hoy</span></th>
         <th class="col-relevante" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
+        <th title="Promedio de ventas por agente activo en el mes">Prom/<br><span class="header-sub">agente</span></th>
+        <th title="Promedio de ventas por día hábil transcurrido">Prom/<br><span class="header-sub">día</span></th>
         <th class="col-relevante" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
-        <th class="col-transito col-sep-left" title="Ventas programadas en BO que aún no se activan (en proceso de activación AT&T)">Tránsito</th>
-        <th class="col-transito col-relevante" title="Dif + Tránsito · Cómo quedaría si TODAS las ventas en tránsito llegaran a activarse. NO es certeza, es proyección optimista.">Gap potencial<span class="header-sub">si tránsito activa</span></th>
+        <th class="col-transito col-sep-left" title="Ventas programadas en BO que aún no se activan">Tránsito</th>
+        <th class="col-transito col-relevante" title="Dif + Tránsito · Cómo quedaría si TODAS las ventas en tránsito llegaran a activarse">Gap pot.<span class="header-sub">si tránsito activa</span></th>
         <th class="col-sep-left" title="Activadas por día que necesita lograr de aquí al cierre">Ritmo<br><span class="header-sub">necesario</span></th>
         <th class="col-relevante" title="Estimación del cierre del mes basada en el ritmo actual">Proyección</th>
         <th>Estatus</th>
@@ -4082,17 +4223,25 @@ function renderAvanceUI() {
         const gapPotVerde = d.meta * 0.10;
         const gapPotColor = gapPot >= gapPotVerde ? 'var(--green)'
           : gapPot >= 0 ? 'var(--amber)' : 'var(--red)';
+        const totalAgs = d.agentesActivos + d.agentesBajas;
+        const cumpDen = d.agentesActivos;
+        const promAgFmt = (d.promPorAgente % 1 === 0) ? d.promPorAgente.toFixed(0) : d.promPorAgente.toFixed(1);
+        const promDiaFmt = (d.promPorDia % 1 === 0) ? d.promPorDia.toFixed(0) : d.promPorDia.toFixed(1);
         return `<tr>
           <td><strong>${d.sup}</strong></td>
+          <td class="col-equipo"><strong>${totalAgs}</strong>${d.agentesBajas > 0 ? `<div class="sub-line">${d.agentesActivos}A·${d.agentesBajas}B</div>` : ''}</td>
+          <td class="col-equipo"><strong style="color: ${d.cumplidos >= cumpDen * 0.7 ? 'var(--green)' : d.cumplidos >= cumpDen * 0.4 ? 'var(--amber)' : 'var(--text)'};">${d.cumplidos}</strong><span class="sub-inline">/${cumpDen}</span></td>
           <td>${d.meta}</td>
           <td style="color: var(--att-blue); font-weight: 700;">${metaDia.toFixed(1)}</td>
-          <td class="col-relevante"><strong style="font-size:14px;">${d.avance}</strong></td>
+          <td class="col-relevante"><strong style="font-size:14px;">${(d.avance % 1 === 0) ? d.avance : d.avance.toFixed(1)}</strong></td>
           <td class="col-relevante">${d.pctCumpl.toFixed(1)}%</td>
           <td class="col-relevante">${d.esperado}</td>
           <td class="col-relevante" style="color: ${colorPctDiario}; font-weight: 700;">${d.pctEsperado.toFixed(1)}%</td>
-          <td class="col-relevante ${diffClase}">${diffSign}${d.diff}</td>
+          <td class="col-prod"><strong>${promAgFmt}</strong></td>
+          <td class="col-prod"><strong>${promDiaFmt}</strong></td>
+          <td class="col-relevante ${diffClase}">${diffSign}${(d.diff % 1 === 0) ? d.diff : d.diff.toFixed(1)}</td>
           <td class="col-transito" style="color: ${transitoColor}; font-weight: 700;">${d.transito || 0}</td>
-          <td class="col-transito col-relevante" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${gapPot}</td>
+          <td class="col-transito col-relevante" style="color: ${gapPotColor}; font-weight: 700;">${gapPotSign}${(gapPot % 1 === 0) ? gapPot : gapPot.toFixed(1)}</td>
           <td style="font-weight: 700;">${d.ritmoNecesario.toFixed(1)}</td>
           <td class="col-relevante" style="color: ${proyColor}; font-weight: 700;">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
           <td><span class="estatus-chip ${d.estado}">${emoji} ${d.estado.toUpperCase()}</span></td>
@@ -4101,6 +4250,11 @@ function renderAvanceUI() {
       <tr class="fila-total">
         ${(() => {
           const transitoTotal = supervisoresData.reduce((s, d) => s + (d.transito || 0), 0);
+          const totalActivosTabla = supervisoresData.reduce((s, d) => s + (d.agentesActivos || 0), 0);
+          const totalBajasTabla = supervisoresData.reduce((s, d) => s + (d.agentesBajas || 0), 0);
+          const totalCumplidosTabla = supervisoresData.reduce((s, d) => s + (d.cumplidos || 0), 0);
+          const totalPromAgTabla = totalActivosTabla > 0 ? estadoTotal.avance / totalActivosTabla : 0;
+          const totalPromDiaTabla = diasTranscurridos > 0 ? estadoTotal.avance / diasTranscurridos : 0;
           const difTotal = estadoTotal.avance - estadoTotal.esperado;
           const gapPotTotal = difTotal + transitoTotal;
           const gapPotTotalSign = gapPotTotal >= 0 ? '+' : '';
@@ -4116,15 +4270,19 @@ function renderAvanceUI() {
           const colorPctEspTotal = pctEspTotal >= 100 ? 'var(--green)' : pctEspTotal >= 85 ? 'var(--amber)' : 'var(--red)';
           return `
         <td><strong>TOTAL</strong></td>
+        <td class="col-equipo"><strong>${totalActivosTabla + totalBajasTabla}</strong>${totalBajasTabla > 0 ? `<div class="sub-line">${totalActivosTabla}A·${totalBajasTabla}B</div>` : ''}</td>
+        <td class="col-equipo"><strong>${totalCumplidosTabla}</strong><span class="sub-inline">/${totalActivosTabla}</span></td>
         <td>${estadoTotal.meta}</td>
         <td style="color: var(--att-blue);">${estadoTotal.diasHabilesTotales > 0 ? (estadoTotal.meta / estadoTotal.diasHabilesTotales).toFixed(1) : '—'}</td>
-        <td class="col-relevante"><strong style="font-size:14px;">${estadoTotal.avance}</strong></td>
+        <td class="col-relevante"><strong style="font-size:14px;">${(estadoTotal.avance % 1 === 0) ? estadoTotal.avance : estadoTotal.avance.toFixed(1)}</strong></td>
         <td class="col-relevante">${estadoTotal.pctCumplimiento.toFixed(1)}%</td>
         <td class="col-relevante">${estadoTotal.esperado}</td>
         <td class="col-relevante" style="color: ${colorPctEspTotal};">${pctEspTotal.toFixed(1)}%</td>
-        <td class="col-relevante ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${difTotal}</td>
+        <td class="col-prod"><strong>${(totalPromAgTabla % 1 === 0) ? totalPromAgTabla.toFixed(0) : totalPromAgTabla.toFixed(1)}</strong></td>
+        <td class="col-prod"><strong>${(totalPromDiaTabla % 1 === 0) ? totalPromDiaTabla.toFixed(0) : totalPromDiaTabla.toFixed(1)}</strong></td>
+        <td class="col-relevante ${difTotal >= 0 ? 'delta-pos' : 'delta-neg'}">${difTotal >= 0 ? '+' : ''}${(difTotal % 1 === 0) ? difTotal : difTotal.toFixed(1)}</td>
         <td class="col-transito" style="color: ${transitoTotalColor}; font-weight:700;">${transitoTotal}</td>
-        <td class="col-transito col-relevante" style="color: ${gapPotTotalColor};">${gapPotTotalSign}${gapPotTotal}</td>
+        <td class="col-transito col-relevante" style="color: ${gapPotTotalColor};">${gapPotTotalSign}${(gapPotTotal % 1 === 0) ? gapPotTotal : gapPotTotal.toFixed(1)}</td>
         <td>${ritmoNecesarioTotal.toFixed(1)}</td>
         <td class="col-relevante">${proy} <span style="font-size:11px; opacity:0.75;">(${pctProy.toFixed(0)}%)</span></td>
         <td>${estadoProy}</td>
