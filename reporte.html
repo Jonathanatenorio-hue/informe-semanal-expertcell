@@ -3582,8 +3582,18 @@ function _renderAvanceMensualImpl(wActual) {
   SUPERVISORES.forEach(s => { transitoPorSup[s] = 0; });
   let transitoTotal = 0;
 
+  // Mapa rápido de plantilla para resolver supervisor actual del agente
+  // (necesario para tránsito: ventas viejas pueden tener r.supervisor obsoleto)
+  const plantMapTmp = {};
+  plantillaData.forEach(p => { plantMapTmp[p.nombre] = p; });
+
   function esVentaDelFiltro(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
+    // Para ventas en tránsito: si r.supervisor es obsoleto, usar supervisor actual del agente
+    if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.ejecutivo) {
+      const plant = plantMapTmp[r.ejecutivo];
+      if (plant && plant.supervisor && SUPERVISORES.includes(plant.supervisor)) return true;
+    }
     if (!r.supervisor && r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
@@ -3611,7 +3621,16 @@ function _renderAvanceMensualImpl(wActual) {
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
-      if (tieneSup) transitoPorSup[r.supervisor]++;
+      // Para tránsito: usar supervisor actual del agente desde plantilla,
+      // ya que r.supervisor puede estar obsoleto (mes anterior).
+      // Si no encontramos en plantilla, caer en r.supervisor.
+      let supTransito = null;
+      if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
+        supTransito = plantMapTmp[r.ejecutivo].supervisor;
+      } else if (tieneSup) {
+        supTransito = r.supervisor;
+      }
+      if (supTransito) transitoPorSup[supTransito]++;
       transitoTotal++;
     }
   });
