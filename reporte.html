@@ -2981,6 +2981,41 @@ function renderProductividadEquipos() {
       </div>
     `;
 
+    // ============================================================
+    // Vista 3: Análisis Anual por Supervisor (12 meses · todas las métricas)
+    // ============================================================
+    const aniosDisponibles = (function() {
+      const set = new Set();
+      ventasData.forEach(r => {
+        if (r.fecha_activacion) set.add(r.fecha_activacion.substring(0, 4));
+      });
+      return [...set].sort().reverse();
+    })();
+    const anioActual = anio || (new Date()).getFullYear();
+    const supDefault = SUPERVISORES[0];
+    html += `
+      <div style="margin-top:32px; padding-top:24px; border-top:2px dashed #E5E7EB;">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
+          <div>
+            <div style="font-weight:700; color:var(--att-navy); font-size:14px;">📅 Análisis Anual por Supervisor</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Vista completa de los 12 meses del año con todas las métricas clave para análisis directivo.</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <select id="aas-sup-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+              ${SUPERVISORES.map(s => `<option value="${s}" ${s === supDefault ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+            <select id="aas-anio-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
+              ${aniosDisponibles.map(a => `<option value="${a}" ${parseInt(a) === anioActual ? 'selected' : ''}>${a}</option>`).join('')}
+            </select>
+            <button id="aas-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
+            <button id="aas-btn-png" style="padding:6px 14px; background:var(--att-blue); color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">🖼️ PNG</button>
+          </div>
+        </div>
+        <div id="aas-contenido"></div>
+      </div>
+    `;
+    // ============================================================
+
     cont.innerHTML = html;
 
     // Wire up del selector de mes
@@ -2991,6 +3026,20 @@ function renderProductividadEquipos() {
         renderProductividadEquipos();
       };
     }
+
+    // Wire-up del Análisis Anual por Supervisor
+    const aasSup = document.getElementById('aas-sup-select');
+    const aasAnio = document.getElementById('aas-anio-select');
+    const aasBtnExcel = document.getElementById('aas-btn-excel');
+    const aasBtnPng = document.getElementById('aas-btn-png');
+    function renderAAS() {
+      if (aasSup && aasAnio) renderAnalisisAnualSupervisor(aasSup.value, parseInt(aasAnio.value));
+    }
+    if (aasSup) aasSup.onchange = renderAAS;
+    if (aasAnio) aasAnio.onchange = renderAAS;
+    if (aasBtnExcel) aasBtnExcel.onclick = () => exportarAnalisisAnualExcel(aasSup.value, parseInt(aasAnio.value));
+    if (aasBtnPng) aasBtnPng.onclick = () => exportarAnalisisAnualPNG(aasSup.value, parseInt(aasAnio.value));
+    renderAAS();
   } catch (e) {
     // Si algo falla, mostrar el error en la sección pero NO romper el render principal
     console.error('[renderProductividadEquipos] Error:', e);
@@ -3002,6 +3051,418 @@ function renderProductividadEquipos() {
       </div>
     `;
   }
+}
+
+// =====================================================================
+// ANÁLISIS ANUAL POR SUPERVISOR · 12 meses con todas las métricas
+// =====================================================================
+const MESES_CORTOS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+function _calcularAnalisisAnualSupervisor(sup, anio) {
+  // Para cada mes del año, calcular todas las métricas del supervisor
+  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyAnio = (new Date()).getFullYear();
+  const hoyMes = (new Date()).getMonth() + 1;
+
+  // Mapa de plantilla para detectar nuevos/maduros y bajas
+  const plantMap = {};
+  plantillaData.forEach(p => { plantMap[p.nombre] = p; });
+
+  // Días hábiles por mes desde calendario_dias
+  const diasHabilesPorMes = {};
+  for (let m = 1; m <= 12; m++) diasHabilesPorMes[m] = 0;
+  calendarioData.forEach(d => {
+    if (!d.fecha) return;
+    if (d.fecha.substring(0, 4) !== String(anio)) return;
+    const mes = parseInt(d.fecha.substring(5, 7));
+    const factor = parseFloat(d.factor_dia || 0);
+    if (factor > 0) diasHabilesPorMes[mes] += factor;
+  });
+
+  const filas = [];
+
+  for (let mes = 1; mes <= 12; mes++) {
+    const iniMesStr = `${anio}-${String(mes).padStart(2, '0')}-01`;
+    const ultDia = new Date(anio, mes, 0).getDate();
+    const finMesStr = `${anio}-${String(mes).padStart(2, '0')}-${String(ultDia).padStart(2, '0')}`;
+
+    // Días transcurridos en mes actual (parcial) o todos los días si mes ya cerró
+    const esMesEnCurso = (anio === hoyAnio && mes === hoyMes);
+    const esMesFuturo = (anio > hoyAnio) || (anio === hoyAnio && mes > hoyMes);
+    if (esMesFuturo) {
+      filas.push({ mes, esMesFuturo: true });
+      continue;
+    }
+    const cortePara = esMesEnCurso ? hoyStr : finMesStr;
+    let diasTrans = 0;
+    calendarioData.forEach(d => {
+      if (!d.fecha) return;
+      if (d.fecha < iniMesStr || d.fecha > cortePara) return;
+      diasTrans += parseFloat(d.factor_dia || 0);
+    });
+
+    // Meta del supervisor (suma de metas_agente para sus agentes ese mes)
+    const metasMesSup = metasAgeData.filter(m => m.anio === anio && m.mes === mes && m.supervisor === sup);
+    const metaSupTotal = metasMesSup.reduce((s, m) => s + (m.meta_activadas || 0), 0);
+
+    // Agente → tipo (nuevo/maduro) según días al 1ro
+    // Usamos el mismo criterio que tabla maestra: ≤42 = nuevo, ≥43 = maduro
+    const tipoPorAgente = {};
+    metasMesSup.forEach(m => {
+      const dias = m.dias_activo_al_1ro || 0;
+      if (dias <= 42) tipoPorAgente[m.ejecutivo] = 'nuevo';
+      else tipoPorAgente[m.ejecutivo] = 'maduro';
+    });
+
+    // Contar agentes (incluye los que estuvieron aunque sea parte del mes)
+    let totalAgentes = 0, agentesNuevos = 0, agentesMaduros = 0, agentesCumplidos = 0;
+    metasMesSup.forEach(m => {
+      const plant = plantMap[m.ejecutivo];
+      // Excluir si fecha_baja es ANTES del inicio del mes
+      if (plant && plant.fecha_baja && plant.fecha_baja < iniMesStr) return;
+      totalAgentes++;
+      if (tipoPorAgente[m.ejecutivo] === 'nuevo') agentesNuevos++;
+      else agentesMaduros++;
+    });
+
+    // Ventas del supervisor en el mes (filtrar por supervisor actual de la venta)
+    let ventas = 0, ventasNuevos = 0, ventasMaduros = 0;
+    ventasData.forEach(r => {
+      if (!r.fecha_activacion) return;
+      if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return;
+      if (r.supervisor !== sup) return;
+      const peso = r.peso_venta || 1;
+      ventas += peso;
+      // Clasificar por tipo de agente
+      const tipo = tipoPorAgente[r.ejecutivo];
+      if (tipo === 'nuevo') ventasNuevos += peso;
+      else if (tipo === 'maduro') ventasMaduros += peso;
+    });
+
+    // Agentes cumplidos (con meta > 0 y avance >= meta)
+    const ventasPorAg = {};
+    ventasData.forEach(r => {
+      if (!r.fecha_activacion || !r.ejecutivo) return;
+      if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return;
+      if (r.supervisor !== sup) return;
+      ventasPorAg[r.ejecutivo] = (ventasPorAg[r.ejecutivo] || 0) + (r.peso_venta || 1);
+    });
+    metasMesSup.forEach(m => {
+      if (m.meta_activadas > 0 && (ventasPorAg[m.ejecutivo] || 0) >= m.meta_activadas) {
+        agentesCumplidos++;
+      }
+    });
+
+    const pctLogro = metaSupTotal > 0 ? (ventas / metaSupTotal * 100) : 0;
+    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes : 0;
+    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos : 0;
+    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros : 0;
+    const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
+    const diasHabilesMes = diasHabilesPorMes[mes] || 0;
+
+    filas.push({
+      mes,
+      esMesEnCurso,
+      meta: metaSupTotal,
+      ventas,
+      ventasNuevos,
+      ventasMaduros,
+      pctLogro,
+      totalAgentes,
+      agentesNuevos,
+      agentesMaduros,
+      agentesCumplidos,
+      prodGeneral,
+      prodNuevos,
+      prodMaduros,
+      promDia,
+      diasHabilesMes,
+      diasTrans
+    });
+  }
+
+  return filas;
+}
+
+function _fmtNum(n, dec) {
+  if (n === null || n === undefined) return '—';
+  if (n === 0) return '—';
+  if (dec === undefined) dec = 1;
+  return Number(n).toFixed(dec).replace(/\.0$/, '');
+}
+
+function renderAnalisisAnualSupervisor(sup, anio) {
+  const cont = document.getElementById('aas-contenido');
+  if (!cont) return;
+  const filas = _calcularAnalisisAnualSupervisor(sup, anio);
+
+  // Estructura de la tabla: grupos de filas
+  const grupos = [
+    {
+      titulo: '🎯 META Y LOGRO',
+      color: '#DBEAFE',
+      colorBorde: '#3B82F6',
+      colorTexto: '#1E3A8A',
+      filas: [
+        { label: 'Meta', key: 'meta', fmt: v => v > 0 ? v : '—' },
+        { label: 'Ventas', key: 'ventas', fmt: v => _fmtNum(v) },
+        { label: '% Logro', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS POR TIPO',
+      color: '#BAE6FD',
+      colorBorde: '#0EA5E9',
+      colorTexto: '#075985',
+      filas: [
+        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) }
+      ]
+    },
+    {
+      titulo: '👥 EQUIPO',
+      color: '#CFFAFE',
+      colorBorde: '#06B6D4',
+      colorTexto: '#0E7490',
+      filas: [
+        { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '⚡ PRODUCTIVIDAD',
+      color: '#BBF7D0',
+      colorBorde: '#22C55E',
+      colorTexto: '#166534',
+      filas: [
+        { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
+        { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
+        { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
+        { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: v => v > 0 ? v.toFixed(1) : '—' }
+      ]
+    }
+  ];
+
+  let html = `
+    <div id="aas-tabla-wrap" style="background:white; border-radius:10px; padding:16px; border:1px solid var(--border); overflow-x:auto;">
+      <div style="font-weight:800; font-size:16px; color:var(--att-navy); margin-bottom:4px;">${sup} · ${anio}</div>
+      <div style="font-size:11px; color:var(--text-soft); margin-bottom:14px;">Análisis anual completo · Mes en curso marcado con * (parcial al día de hoy)</div>
+      <table style="width:100%; border-collapse:separate; border-spacing:0; font-size:12px; min-width:780px;">
+        <thead>
+          <tr>
+            <th style="text-align:left; padding:8px 10px; background:var(--att-navy); color:white; font-size:11px; font-weight:700; text-transform:uppercase; border-radius:6px 0 0 0;">Métrica</th>
+            ${filas.map(f => {
+              const lbl = MESES_CORTOS[f.mes - 1] + (f.esMesEnCurso ? '*' : '');
+              const bgMes = f.esMesEnCurso ? '#FEF3C7' : (f.esMesFuturo ? '#F1F5F9' : 'var(--att-navy)');
+              const colorMes = f.esMesEnCurso ? '#92400E' : (f.esMesFuturo ? '#94A3B8' : 'white');
+              return `<th style="text-align:center; padding:8px 6px; background:${bgMes}; color:${colorMes}; font-size:11px; font-weight:700;">${lbl}</th>`;
+            }).join('')}
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  grupos.forEach(g => {
+    // Fila del grupo (header de sección)
+    html += `<tr>
+      <td colspan="${filas.length + 1}" style="padding:8px 10px; background:${g.color}; color:${g.colorTexto}; font-weight:800; font-size:11px; letter-spacing:0.5px; border-top:2px solid ${g.colorBorde};">${g.titulo}</td>
+    </tr>`;
+    g.filas.forEach((rowDef, idx) => {
+      const bgFila = idx % 2 === 0 ? 'white' : '#FAFBFC';
+      html += `<tr style="background:${bgFila};">
+        <td style="padding:7px 10px; font-weight:600; color:#334155; border-bottom:1px solid #F1F5F9;">${rowDef.label}</td>`;
+      filas.forEach(f => {
+        if (f.esMesFuturo) {
+          html += `<td style="padding:7px 6px; text-align:center; color:#CBD5E1; border-bottom:1px solid #F1F5F9;">—</td>`;
+        } else {
+          const v = f[rowDef.key];
+          const txt = rowDef.fmt(v, f);
+          const color = rowDef.color ? rowDef.color(v, f) : '#1E293B';
+          html += `<td style="padding:7px 6px; text-align:center; font-weight:700; color:${color}; border-bottom:1px solid #F1F5F9;">${txt}</td>`;
+        }
+      });
+      html += `</tr>`;
+    });
+  });
+
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  cont.innerHTML = html;
+}
+
+function exportarAnalisisAnualExcel(sup, anio) {
+  const filas = _calcularAnalisisAnualSupervisor(sup, anio);
+  const wb = XLSX.utils.book_new();
+  const aoa = [];
+  const merges = [];
+
+  // Banner
+  aoa.push([`📅 ANÁLISIS ANUAL · ${sup.toUpperCase()} · ${anio}`, '', '', '', '', '', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } });
+  aoa.push([`Generado: ${new Date().toISOString().split('T')[0]} · Mes con * = parcial al día actual`, '', '', '', '', '', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 12 } });
+  aoa.push(new Array(13).fill(''));
+
+  // Header de meses
+  const headerMeses = ['Métrica'];
+  filas.forEach(f => {
+    headerMeses.push(MESES_CORTOS[f.mes - 1] + (f.esMesEnCurso ? '*' : ''));
+  });
+  aoa.push(headerMeses);
+
+  const grupos = [
+    {
+      titulo: '🎯 META Y LOGRO',
+      filas: [
+        { label: 'Meta', key: 'meta', tipo: 'num' },
+        { label: 'Ventas', key: 'ventas', tipo: 'num' },
+        { label: '% Logro', key: 'pctLogro', tipo: 'pct' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS POR TIPO',
+      filas: [
+        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' }
+      ]
+    },
+    {
+      titulo: '👥 EQUIPO',
+      filas: [
+        { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
+        { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
+        { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+        { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
+      ]
+    },
+    {
+      titulo: '⚡ PRODUCTIVIDAD',
+      filas: [
+        { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
+        { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
+        { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+        { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
+      ]
+    }
+  ];
+
+  grupos.forEach(g => {
+    const rGrupo = aoa.length;
+    aoa.push([g.titulo, ...new Array(12).fill('')]);
+    merges.push({ s: { r: rGrupo, c: 0 }, e: { r: rGrupo, c: 12 } });
+    g.filas.forEach(rowDef => {
+      const fila = [rowDef.label];
+      filas.forEach(f => {
+        if (f.esMesFuturo) {
+          fila.push(null);
+        } else {
+          const v = f[rowDef.key];
+          if (v === null || v === undefined || v === 0) {
+            fila.push(null);
+          } else if (rowDef.tipo === 'pct') {
+            fila.push(Number(v.toFixed(1)));
+          } else if (rowDef.tipo === 'dec') {
+            fila.push(Number(v.toFixed(2)));
+          } else {
+            fila.push(Number(Number(v).toFixed(1)));
+          }
+        }
+      });
+      aoa.push(fila);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = [{ wch: 26 }, ...new Array(12).fill({ wch: 9 })];
+  const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 8 }, { hpt: 22 }];
+  for (let i = 0; i < aoa.length - 4; i++) rows.push({ hpt: 18 });
+  ws['!rows'] = rows;
+
+  // Estilos
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = 0; R <= range.e.r; R++) {
+    for (let C = 0; C <= range.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) continue;
+      if (R === 0) {
+        ws[ref].s = { fill: { fgColor: { rgb: '002B5C' } }, font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === 1) {
+        ws[ref].s = { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '64748B' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === 3) {
+        // Header de meses
+        const fLabel = filas[C - 1];
+        let bg = '002B5C', fg = 'FFFFFF';
+        if (C > 0 && fLabel && fLabel.esMesEnCurso) { bg = 'FEF3C7'; fg = '92400E'; }
+        else if (C > 0 && fLabel && fLabel.esMesFuturo) { bg = 'F1F5F9'; fg = '94A3B8'; }
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: fg } }, alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center', indent: C === 0 ? 1 : 0 } };
+      }
+    }
+  }
+
+  // Estilos para filas de grupos y datos
+  let rIdx = 4;
+  const colorGrupos = [
+    { bg: 'DBEAFE', fg: '1E3A8A' },
+    { bg: 'BAE6FD', fg: '075985' },
+    { bg: 'CFFAFE', fg: '0E7490' },
+    { bg: 'BBF7D0', fg: '166534' }
+  ];
+  grupos.forEach((g, gi) => {
+    const ref = XLSX.utils.encode_cell({ r: rIdx, c: 0 });
+    if (ws[ref]) {
+      ws[ref].s = { fill: { fgColor: { rgb: colorGrupos[gi].bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorGrupos[gi].fg } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+    }
+    // Pintar fondo del resto de la fila del grupo
+    for (let c = 1; c <= 12; c++) {
+      const cref = XLSX.utils.encode_cell({ r: rIdx, c });
+      if (!ws[cref]) ws[cref] = { v: '', t: 's' };
+      ws[cref].s = { fill: { fgColor: { rgb: colorGrupos[gi].bg } } };
+    }
+    rIdx++;
+    g.filas.forEach((rowDef, fi) => {
+      const bgFila = fi % 2 === 0 ? 'FFFFFF' : 'FAFBFC';
+      for (let c = 0; c <= 12; c++) {
+        const cref = XLSX.utils.encode_cell({ r: rIdx, c });
+        if (!ws[cref]) ws[cref] = { v: '', t: 's' };
+        ws[cref].s = {
+          fill: { fgColor: { rgb: bgFila } },
+          font: { name: 'Calibri', sz: 10, bold: c === 0, color: { rgb: '1E293B' } },
+          alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center', indent: c === 0 ? 1 : 0 },
+          border: { bottom: { style: 'thin', color: { rgb: 'F1F5F9' } } },
+          numFmt: rowDef.tipo === 'pct' ? '0.0"%"' : (rowDef.tipo === 'dec' ? '0.0' : '0.0')
+        };
+      }
+      rIdx++;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, `${sup}_${anio}`.substring(0, 31));
+  XLSX.writeFile(wb, `analisis_anual_${sup}_${anio}.xlsx`);
+}
+
+function exportarAnalisisAnualPNG(sup, anio) {
+  const wrap = document.getElementById('aas-tabla-wrap');
+  if (!wrap || typeof html2canvas === 'undefined') {
+    alert('No se puede exportar PNG: html2canvas no está disponible');
+    return;
+  }
+  html2canvas(wrap, { scale: 2, backgroundColor: '#FFFFFF', useCORS: true })
+    .then(canvas => {
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `analisis_anual_${sup}_${anio}.png`;
+      a.click();
+    })
+    .catch(err => { console.error(err); alert('Error al exportar PNG'); });
 }
 
 // =====================================================================
