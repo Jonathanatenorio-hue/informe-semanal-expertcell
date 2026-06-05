@@ -3105,11 +3105,23 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     const metasMesSup = metasAgeData.filter(m => m.anio === anio && m.mes === mes && m.supervisor === sup);
     const metaSupTotal = metasMesSup.reduce((s, m) => s + (m.meta_activadas || 0), 0);
 
-    // Agente → tipo (nuevo/maduro) según días al 1ro
-    // Usamos el mismo criterio que tabla maestra: ≤42 = nuevo, ≥43 = maduro
+    // Agente → tipo (nuevo/maduro) según días al 1ro del mes
+    // Calculado a partir de fecha_ingreso de plantilla (no del campo de metas)
+    // porque el campo de metas refleja el ingreso del mes actual, no el histórico.
+    // Criterio: ≤42 días = nuevo, ≥43 días = maduro
     const tipoPorAgente = {};
+    const iniMesDate = new Date(iniMesStr + 'T00:00:00');
     metasMesSup.forEach(m => {
-      const dias = m.dias_activo_al_1ro || 0;
+      const plant = plantMap[m.ejecutivo];
+      let dias = 0;
+      if (plant && plant.fecha_ingreso) {
+        const ingDate = new Date(plant.fecha_ingreso + 'T00:00:00');
+        dias = Math.floor((iniMesDate - ingDate) / (1000 * 60 * 60 * 24));
+        if (dias < 0) dias = 0; // por si fecha_ingreso es posterior al inicio del mes
+      } else {
+        // Fallback: usar el campo de metas si no hay fecha_ingreso en plantilla
+        dias = m.dias_activo_al_1ro || 0;
+      }
       if (dias <= 42) tipoPorAgente[m.ejecutivo] = 'nuevo';
       else tipoPorAgente[m.ejecutivo] = 'maduro';
     });
