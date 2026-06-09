@@ -3137,15 +3137,32 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       else agentesMaduros++;
     });
 
-    // Ventas del supervisor en el mes (filtrar por supervisor actual de la venta)
+    // Mapa AGENTE → SUPERVISOR del mes según metas_agente (fuente de verdad)
+    // Esto resuelve el caso de agentes reasignados: la venta cuenta para el supervisor
+    // que el agente tenía en ese mes específico, no el de la fecha de activación.
+    const supDelMesPorAgenteSup = {};
+    metasAgeData
+      .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
+      .forEach(m => { supDelMesPorAgenteSup[m.ejecutivo] = m.supervisor; });
+
+    // Función helper: determinar si una venta pertenece al supervisor
+    function ventaPerteneceASup(r) {
+      // 1. Si el agente tiene meta cargada en el mes, usar ese supervisor
+      if (r.ejecutivo && supDelMesPorAgenteSup[r.ejecutivo]) {
+        return supDelMesPorAgenteSup[r.ejecutivo] === sup;
+      }
+      // 2. Fallback: usar el supervisor que tenía la venta al activarse
+      return r.supervisor === sup;
+    }
+
+    // Ventas del supervisor en el mes
     let ventas = 0, ventasNuevos = 0, ventasMaduros = 0;
     ventasData.forEach(r => {
       if (!r.fecha_activacion) return;
       if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return;
-      if (r.supervisor !== sup) return;
+      if (!ventaPerteneceASup(r)) return;
       const peso = r.peso_venta || 1;
       ventas += peso;
-      // Clasificar por tipo de agente
       const tipo = tipoPorAgente[r.ejecutivo];
       if (tipo === 'nuevo') ventasNuevos += peso;
       else if (tipo === 'maduro') ventasMaduros += peso;
@@ -3156,7 +3173,7 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     ventasData.forEach(r => {
       if (!r.fecha_activacion || !r.ejecutivo) return;
       if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return;
-      if (r.supervisor !== sup) return;
+      if (!ventaPerteneceASup(r)) return;
       ventasPorAg[r.ejecutivo] = (ventasPorAg[r.ejecutivo] || 0) + (r.peso_venta || 1);
     });
     metasMesSup.forEach(m => {
