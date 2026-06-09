@@ -3145,6 +3145,31 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
       .forEach(m => { supDelMesPorAgenteSup[m.ejecutivo] = m.supervisor; });
 
+    // DEBUG: log para investigar agentes reasignados
+    if (mes === (new Date()).getMonth() + 1 && anio === (new Date()).getFullYear() && (sup === 'Jorge' || sup === 'Angeles')) {
+      console.log(`[AAS-DEBUG] ${sup} ${anio}-${mes}:`);
+      // Buscar ventas de agentes que se llamen "Maria" o "Hurtado"
+      const ventasSospechosas = ventasData.filter(r => {
+        if (!r.fecha_activacion) return false;
+        if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return false;
+        if (!r.ejecutivo) return false;
+        const e = r.ejecutivo.toUpperCase();
+        return e.includes('HURTADO') || e.includes('MARIA H');
+      });
+      console.log(`  Ventas de María/Hurtado en el mes:`, ventasSospechosas.map(r => ({
+        ejecutivo: r.ejecutivo,
+        fecha_act: r.fecha_activacion,
+        r_supervisor: r.supervisor,
+        supervisor_act: r.supervisor_act,
+        supervisor_bo: r.supervisor_bo,
+        sup_segun_metas: supDelMesPorAgenteSup[r.ejecutivo] || 'NO TIENE META',
+        estatus: r.estatus
+      })));
+      console.log(`  Metas en metas_agente con HURTADO:`, metasAgeData
+        .filter(m => m.anio === anio && m.mes === mes && m.ejecutivo && m.ejecutivo.toUpperCase().includes('HURTADO'))
+        .map(m => ({ ejecutivo: m.ejecutivo, supervisor: m.supervisor, meta: m.meta_activadas })));
+    }
+
     // Función helper: determinar si una venta pertenece al supervisor
     function ventaPerteneceASup(r) {
       // 1. Si el agente tiene meta cargada en el mes, usar ese supervisor
