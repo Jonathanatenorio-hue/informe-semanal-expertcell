@@ -3145,31 +3145,6 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
       .forEach(m => { supDelMesPorAgenteSup[m.ejecutivo] = m.supervisor; });
 
-    // DEBUG: log para investigar agentes reasignados
-    if (mes === (new Date()).getMonth() + 1 && anio === (new Date()).getFullYear() && (sup === 'Jorge' || sup === 'Angeles')) {
-      console.log(`[AAS-DEBUG] ${sup} ${anio}-${mes}:`);
-      // Buscar ventas de agentes que se llamen "Maria" o "Hurtado"
-      const ventasSospechosas = ventasData.filter(r => {
-        if (!r.fecha_activacion) return false;
-        if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return false;
-        if (!r.ejecutivo) return false;
-        const e = r.ejecutivo.toUpperCase();
-        return e.includes('HURTADO') || e.includes('MARIA H');
-      });
-      console.log(`  Ventas de María/Hurtado en el mes:`, ventasSospechosas.map(r => ({
-        ejecutivo: r.ejecutivo,
-        fecha_act: r.fecha_activacion,
-        r_supervisor: r.supervisor,
-        supervisor_act: r.supervisor_act,
-        supervisor_bo: r.supervisor_bo,
-        sup_segun_metas: supDelMesPorAgenteSup[r.ejecutivo] || 'NO TIENE META',
-        estatus: r.estatus
-      })));
-      console.log(`  Metas en metas_agente con HURTADO:`, metasAgeData
-        .filter(m => m.anio === anio && m.mes === mes && m.ejecutivo && m.ejecutivo.toUpperCase().includes('HURTADO'))
-        .map(m => ({ ejecutivo: m.ejecutivo, supervisor: m.supervisor, meta: m.meta_activadas })));
-    }
-
     // Función helper: determinar si una venta pertenece al supervisor
     function ventaPerteneceASup(r) {
       // 1. Si el agente tiene meta cargada en el mes, usar ese supervisor
@@ -3178,6 +3153,47 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       }
       // 2. Fallback: usar el supervisor que tenía la venta al activarse
       return r.supervisor === sup;
+    }
+
+    // DEBUG: log para investigar agentes reasignados
+    if (mes === (new Date()).getMonth() + 1 && anio === (new Date()).getFullYear() && (sup === 'Jorge' || sup === 'Angeles')) {
+      console.log(`========== [AAS-DEBUG] ${sup} ${anio}-${mes} ==========`);
+      const ventasSospechosas = ventasData.filter(r => {
+        if (!r.fecha_activacion) return false;
+        if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return false;
+        if (!r.ejecutivo) return false;
+        const e = r.ejecutivo.toUpperCase();
+        return e.includes('HURTADO') || e.includes('MARIA H');
+      });
+      ventasSospechosas.forEach((r, i) => {
+        console.log(`VENTA ${i+1}:`);
+        console.log(`  ejecutivo: "${r.ejecutivo}"`);
+        console.log(`  ejecutivo.length: ${r.ejecutivo.length}`);
+        console.log(`  fecha_act: ${r.fecha_activacion}`);
+        console.log(`  r.supervisor: ${r.supervisor}`);
+        console.log(`  supervisor_act: ${r.supervisor_act}`);
+        console.log(`  supervisor_bo: ${r.supervisor_bo}`);
+        console.log(`  sup según metas: ${supDelMesPorAgenteSup[r.ejecutivo] || 'NO COINCIDE EN MAP'}`);
+        console.log(`  ¿pertenece a ${sup}?: ${ventaPerteneceASup(r)}`);
+      });
+      const metasHurtado = metasAgeData.filter(m => m.anio === anio && m.mes === mes && m.ejecutivo && m.ejecutivo.toUpperCase().includes('HURTADO'));
+      metasHurtado.forEach((m, i) => {
+        console.log(`META ${i+1}:`);
+        console.log(`  ejecutivo: "${m.ejecutivo}"`);
+        console.log(`  ejecutivo.length: ${m.ejecutivo.length}`);
+        console.log(`  supervisor: ${m.supervisor}`);
+        console.log(`  meta_activadas: ${m.meta_activadas}`);
+      });
+      if (ventasSospechosas.length > 0 && metasHurtado.length > 0) {
+        const ventaName = ventasSospechosas[0].ejecutivo;
+        const metaName = metasHurtado[0].ejecutivo;
+        console.log(`COMPARACION:`);
+        console.log(`  venta:  "${ventaName}" (len=${ventaName.length})`);
+        console.log(`  meta:   "${metaName}" (len=${metaName.length})`);
+        console.log(`  exact match: ${ventaName === metaName}`);
+        console.log(`  upper match: ${ventaName.toUpperCase() === metaName.toUpperCase()}`);
+        console.log(`  trim match: ${ventaName.trim() === metaName.trim()}`);
+      }
     }
 
     // Ventas del supervisor en el mes
