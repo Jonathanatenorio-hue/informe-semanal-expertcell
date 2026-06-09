@@ -2992,17 +2992,33 @@ function renderProductividadEquipos() {
       return [...set].sort().reverse();
     })();
     const anioActual = anio || (new Date()).getFullYear();
+    // Obtener lista de coordinadores únicos
+    const coordinadoresUnicos = [];
+    if (Array.isArray(coordinadoresData)) {
+      coordinadoresData.forEach(c => {
+        if (c && c.nombre && !coordinadoresUnicos.find(x => x.nombre === c.nombre)) {
+          coordinadoresUnicos.push({ nombre: c.nombre, centro: c.centro });
+        }
+      });
+    }
     const supDefault = SUPERVISORES[0];
     html += `
       <div style="margin-top:32px; padding-top:24px; border-top:2px dashed #E5E7EB;">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
           <div>
-            <div style="font-weight:700; color:var(--att-navy); font-size:14px;">📅 Análisis Anual por Supervisor</div>
+            <div style="font-weight:700; color:var(--att-navy); font-size:14px;">📅 Análisis Anual por Supervisor o Coordinador</div>
             <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Vista completa de los 12 meses del año con todas las métricas clave para análisis directivo.</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-            <select id="aas-sup-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
-              ${SUPERVISORES.map(s => `<option value="${s}" ${s === supDefault ? 'selected' : ''}>${s}</option>`).join('')}
+            <select id="aas-target-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:200px;">
+              <optgroup label="👤 Supervisores">
+                ${SUPERVISORES.map(s => `<option value="sup:${s}" ${s === supDefault ? 'selected' : ''}>${s}</option>`).join('')}
+              </optgroup>
+              ${coordinadoresUnicos.length > 0 ? `
+              <optgroup label="🏢 Coordinadores (centro completo)">
+                ${coordinadoresUnicos.map(c => `<option value="coord:${c.nombre}">${c.nombre}${c.centro ? ` (${c.centro})` : ''}</option>`).join('')}
+              </optgroup>
+              ` : ''}
             </select>
             <select id="aas-anio-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;">
               ${aniosDisponibles.map(a => `<option value="${a}" ${parseInt(a) === anioActual ? 'selected' : ''}>${a}</option>`).join('')}
@@ -3027,18 +3043,38 @@ function renderProductividadEquipos() {
       };
     }
 
-    // Wire-up del Análisis Anual por Supervisor
-    const aasSup = document.getElementById('aas-sup-select');
+    // Wire-up del Análisis Anual por Supervisor o Coordinador
+    const aasTarget = document.getElementById('aas-target-select');
     const aasAnio = document.getElementById('aas-anio-select');
     const aasBtnExcel = document.getElementById('aas-btn-excel');
     const aasBtnPng = document.getElementById('aas-btn-png');
-    function renderAAS() {
-      if (aasSup && aasAnio) renderAnalisisAnualSupervisor(aasSup.value, parseInt(aasAnio.value));
+    function _parseAasTarget() {
+      const v = aasTarget ? aasTarget.value : `sup:${SUPERVISORES[0]}`;
+      const sep = v.indexOf(':');
+      const tipo = sep > 0 ? v.substring(0, sep) : 'sup';
+      const nombre = sep > 0 ? v.substring(sep + 1) : v;
+      return { tipo, nombre };
     }
-    if (aasSup) aasSup.onchange = renderAAS;
+    function renderAAS() {
+      if (!aasTarget || !aasAnio) return;
+      const t = _parseAasTarget();
+      const anioVal = parseInt(aasAnio.value);
+      if (t.tipo === 'coord') renderAnalisisAnualCoordinador(t.nombre, anioVal);
+      else renderAnalisisAnualSupervisor(t.nombre, anioVal);
+    }
+    if (aasTarget) aasTarget.onchange = renderAAS;
     if (aasAnio) aasAnio.onchange = renderAAS;
-    if (aasBtnExcel) aasBtnExcel.onclick = () => exportarAnalisisAnualExcel(aasSup.value, parseInt(aasAnio.value));
-    if (aasBtnPng) aasBtnPng.onclick = () => exportarAnalisisAnualPNG(aasSup.value, parseInt(aasAnio.value));
+    if (aasBtnExcel) aasBtnExcel.onclick = () => {
+      const t = _parseAasTarget();
+      const anioVal = parseInt(aasAnio.value);
+      if (t.tipo === 'coord') exportarAnalisisAnualCoordinadorExcel(t.nombre, anioVal);
+      else exportarAnalisisAnualExcel(t.nombre, anioVal);
+    };
+    if (aasBtnPng) aasBtnPng.onclick = () => {
+      const t = _parseAasTarget();
+      const anioVal = parseInt(aasAnio.value);
+      exportarAnalisisAnualPNG(t.nombre, anioVal);
+    };
     renderAAS();
   } catch (e) {
     // Si algo falla, mostrar el error en la sección pero NO romper el render principal
@@ -3153,47 +3189,6 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       }
       // 2. Fallback: usar el supervisor que tenía la venta al activarse
       return r.supervisor === sup;
-    }
-
-    // DEBUG: log para investigar agentes reasignados
-    if (mes === (new Date()).getMonth() + 1 && anio === (new Date()).getFullYear() && (sup === 'Jorge' || sup === 'Angeles')) {
-      console.log(`========== [AAS-DEBUG] ${sup} ${anio}-${mes} ==========`);
-      const ventasSospechosas = ventasData.filter(r => {
-        if (!r.fecha_activacion) return false;
-        if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return false;
-        if (!r.ejecutivo) return false;
-        const e = r.ejecutivo.toUpperCase();
-        return e.includes('HURTADO') || e.includes('MARIA H');
-      });
-      ventasSospechosas.forEach((r, i) => {
-        console.log(`VENTA ${i+1}:`);
-        console.log(`  ejecutivo: "${r.ejecutivo}"`);
-        console.log(`  ejecutivo.length: ${r.ejecutivo.length}`);
-        console.log(`  fecha_act: ${r.fecha_activacion}`);
-        console.log(`  r.supervisor: ${r.supervisor}`);
-        console.log(`  supervisor_act: ${r.supervisor_act}`);
-        console.log(`  supervisor_bo: ${r.supervisor_bo}`);
-        console.log(`  sup según metas: ${supDelMesPorAgenteSup[r.ejecutivo] || 'NO COINCIDE EN MAP'}`);
-        console.log(`  ¿pertenece a ${sup}?: ${ventaPerteneceASup(r)}`);
-      });
-      const metasHurtado = metasAgeData.filter(m => m.anio === anio && m.mes === mes && m.ejecutivo && m.ejecutivo.toUpperCase().includes('HURTADO'));
-      metasHurtado.forEach((m, i) => {
-        console.log(`META ${i+1}:`);
-        console.log(`  ejecutivo: "${m.ejecutivo}"`);
-        console.log(`  ejecutivo.length: ${m.ejecutivo.length}`);
-        console.log(`  supervisor: ${m.supervisor}`);
-        console.log(`  meta_activadas: ${m.meta_activadas}`);
-      });
-      if (ventasSospechosas.length > 0 && metasHurtado.length > 0) {
-        const ventaName = ventasSospechosas[0].ejecutivo;
-        const metaName = metasHurtado[0].ejecutivo;
-        console.log(`COMPARACION:`);
-        console.log(`  venta:  "${ventaName}" (len=${ventaName.length})`);
-        console.log(`  meta:   "${metaName}" (len=${metaName.length})`);
-        console.log(`  exact match: ${ventaName === metaName}`);
-        console.log(`  upper match: ${ventaName.toUpperCase() === metaName.toUpperCase()}`);
-        console.log(`  trim match: ${ventaName.trim() === metaName.trim()}`);
-      }
     }
 
     // Ventas del supervisor en el mes
@@ -3533,6 +3528,311 @@ function exportarAnalisisAnualPNG(sup, anio) {
       a.click();
     })
     .catch(err => { console.error(err); alert('Error al exportar PNG'); });
+}
+
+// =====================================================================
+// ANÁLISIS ANUAL POR COORDINADOR · suma de todos sus supervisores
+// =====================================================================
+function _supervisoresDelCoordinador(coordNombre, anio, mes) {
+  // Determina qué supervisores pertenecen al coordinador en un mes específico
+  // según coordinador_supervisor con fecha vigente.
+  if (!Array.isArray(coordSupData) || !Array.isArray(coordinadoresData)) return [];
+  const coord = coordinadoresData.find(c => c.nombre === coordNombre);
+  if (!coord) return [];
+  const refStr = `${anio}-${String(mes).padStart(2, '0')}-15`; // medio del mes como referencia
+  const supsDelCoord = coordSupData
+    .filter(cs => cs.coordinador_id === coord.id)
+    .filter(cs => {
+      const ini = cs.fecha_inicio || '0000-01-01';
+      const fin = cs.fecha_fin || '9999-12-31';
+      return refStr >= ini && refStr <= fin;
+    })
+    .map(cs => cs.supervisor)
+    .filter(s => SUPERVISORES.includes(s));
+  return [...new Set(supsDelCoord)];
+}
+
+function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
+  // Para cada mes: agregar las métricas de TODOS los supervisores del coordinador
+  const filas = [];
+  for (let mes = 1; mes <= 12; mes++) {
+    const supsDelMes = _supervisoresDelCoordinador(coordNombre, anio, mes);
+    if (supsDelMes.length === 0) {
+      // Sin supervisores ese mes: marcar como vacío
+      filas.push({ mes, esMesFuturo: true });
+      continue;
+    }
+    // Calcular para cada supervisor y agregar
+    const filasSups = supsDelMes.map(sup => {
+      const arr = _calcularAnalisisAnualSupervisor(sup, anio);
+      return arr.find(f => f.mes === mes);
+    }).filter(Boolean);
+
+    // Si todos son futuro → futuro
+    if (filasSups.every(f => f.esMesFuturo)) {
+      filas.push({ mes, esMesFuturo: true });
+      continue;
+    }
+    const filasReales = filasSups.filter(f => !f.esMesFuturo);
+    if (filasReales.length === 0) {
+      filas.push({ mes, esMesFuturo: true });
+      continue;
+    }
+
+    // Suma de métricas absolutas
+    const meta = filasReales.reduce((s, f) => s + (f.meta || 0), 0);
+    const ventas = filasReales.reduce((s, f) => s + (f.ventas || 0), 0);
+    const ventasNuevos = filasReales.reduce((s, f) => s + (f.ventasNuevos || 0), 0);
+    const ventasMaduros = filasReales.reduce((s, f) => s + (f.ventasMaduros || 0), 0);
+    const totalAgentes = filasReales.reduce((s, f) => s + (f.totalAgentes || 0), 0);
+    const agentesNuevos = filasReales.reduce((s, f) => s + (f.agentesNuevos || 0), 0);
+    const agentesMaduros = filasReales.reduce((s, f) => s + (f.agentesMaduros || 0), 0);
+    const agentesCumplidos = filasReales.reduce((s, f) => s + (f.agentesCumplidos || 0), 0);
+    const diasHabilesMes = filasReales[0].diasHabilesMes || 0; // Igual para todos
+    const diasTrans = filasReales[0].diasTrans || 0; // Igual para todos
+    const esMesEnCurso = filasReales.some(f => f.esMesEnCurso);
+
+    // Recalcular derivados
+    const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
+    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes : 0;
+    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos : 0;
+    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros : 0;
+    const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
+
+    filas.push({
+      mes, esMesEnCurso,
+      meta, ventas, ventasNuevos, ventasMaduros, pctLogro,
+      totalAgentes, agentesNuevos, agentesMaduros, agentesCumplidos,
+      prodGeneral, prodNuevos, prodMaduros, promDia,
+      diasHabilesMes, diasTrans
+    });
+  }
+  return filas;
+}
+
+function renderAnalisisAnualCoordinador(coordNombre, anio) {
+  const cont = document.getElementById('aas-contenido');
+  if (!cont) return;
+  const filas = _calcularAnalisisAnualCoordinador(coordNombre, anio);
+  const coord = (coordinadoresData || []).find(c => c.nombre === coordNombre);
+  const centroLabel = coord && coord.centro ? coord.centro : '';
+
+  // Reutilizar la misma estructura visual (grupos)
+  const grupos = [
+    {
+      titulo: '🎯 META Y LOGRO',
+      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
+      filas: [
+        { label: 'Meta', key: 'meta', fmt: v => v > 0 ? v : '—' },
+        { label: 'Ventas', key: 'ventas', fmt: v => _fmtNum(v) },
+        { label: '% Logro', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS POR TIPO',
+      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
+      filas: [
+        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) }
+      ]
+    },
+    {
+      titulo: '👥 EQUIPO',
+      color: '#CFFAFE', colorBorde: '#06B6D4', colorTexto: '#0E7490',
+      filas: [
+        { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '⚡ PRODUCTIVIDAD',
+      color: '#BBF7D0', colorBorde: '#22C55E', colorTexto: '#166534',
+      filas: [
+        { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
+        { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
+        { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
+        { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: v => v > 0 ? v.toFixed(1) : '—' }
+      ]
+    }
+  ];
+
+  let html = `
+    <div id="aas-tabla-wrap" style="background:white; border-radius:10px; padding:16px; border:1px solid var(--border); overflow-x:auto;">
+      <div style="font-weight:800; font-size:16px; color:var(--att-navy); margin-bottom:4px;">🏢 ${coordNombre}${centroLabel ? ` · ${centroLabel}` : ''} · ${anio}</div>
+      <div style="font-size:11px; color:var(--text-soft); margin-bottom:14px;">Análisis anual del coordinador (suma de todos sus supervisores del mes) · Mes en curso marcado con * (parcial al día de hoy)</div>
+      <table style="width:100%; border-collapse:separate; border-spacing:0; font-size:12px; min-width:780px;">
+        <thead>
+          <tr>
+            <th style="text-align:left; padding:8px 10px; background:var(--att-navy); color:white; font-size:11px; font-weight:700; text-transform:uppercase; border-radius:6px 0 0 0;">Métrica</th>
+            ${filas.map(f => {
+              const lbl = MESES_CORTOS[f.mes - 1] + (f.esMesEnCurso ? '*' : '');
+              const bgMes = f.esMesEnCurso ? '#FEF3C7' : (f.esMesFuturo ? '#F1F5F9' : 'var(--att-navy)');
+              const colorMes = f.esMesEnCurso ? '#92400E' : (f.esMesFuturo ? '#94A3B8' : 'white');
+              return `<th style="text-align:center; padding:8px 6px; background:${bgMes}; color:${colorMes}; font-size:11px; font-weight:700;">${lbl}</th>`;
+            }).join('')}
+          </tr>
+        </thead>
+        <tbody>
+  `;
+  grupos.forEach(g => {
+    html += `<tr>
+      <td colspan="${filas.length + 1}" style="padding:8px 10px; background:${g.color}; color:${g.colorTexto}; font-weight:800; font-size:11px; letter-spacing:0.5px; border-top:2px solid ${g.colorBorde};">${g.titulo}</td>
+    </tr>`;
+    g.filas.forEach((rowDef, idx) => {
+      const bgFila = idx % 2 === 0 ? 'white' : '#FAFBFC';
+      html += `<tr style="background:${bgFila};">
+        <td style="padding:7px 10px; font-weight:600; color:#334155; border-bottom:1px solid #F1F5F9;">${rowDef.label}</td>`;
+      filas.forEach(f => {
+        if (f.esMesFuturo) {
+          html += `<td style="padding:7px 6px; text-align:center; color:#CBD5E1; border-bottom:1px solid #F1F5F9;">—</td>`;
+        } else {
+          const v = f[rowDef.key];
+          const txt = rowDef.fmt(v, f);
+          const color = rowDef.color ? rowDef.color(v, f) : '#1E293B';
+          html += `<td style="padding:7px 6px; text-align:center; font-weight:700; color:${color}; border-bottom:1px solid #F1F5F9;">${txt}</td>`;
+        }
+      });
+      html += `</tr>`;
+    });
+  });
+  html += `
+        </tbody>
+      </table>
+    </div>
+  `;
+  cont.innerHTML = html;
+}
+
+function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
+  const filas = _calcularAnalisisAnualCoordinador(coordNombre, anio);
+  const coord = (coordinadoresData || []).find(c => c.nombre === coordNombre);
+  const centroLabel = coord && coord.centro ? coord.centro : '';
+  const wb = XLSX.utils.book_new();
+  const aoa = [];
+  const merges = [];
+
+  aoa.push([`🏢 ANÁLISIS ANUAL · ${coordNombre.toUpperCase()}${centroLabel ? ' · ' + centroLabel : ''} · ${anio}`, '', '', '', '', '', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 12 } });
+  aoa.push([`Generado: ${new Date().toISOString().split('T')[0]} · Suma de todos los supervisores del coordinador · Mes con * = parcial al día actual`, '', '', '', '', '', '', '', '', '', '', '', '']);
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: 12 } });
+  aoa.push(new Array(13).fill(''));
+
+  const headerMeses = ['Métrica'];
+  filas.forEach(f => { headerMeses.push(MESES_CORTOS[f.mes - 1] + (f.esMesEnCurso ? '*' : '')); });
+  aoa.push(headerMeses);
+
+  const grupos = [
+    { titulo: '🎯 META Y LOGRO', filas: [
+      { label: 'Meta', key: 'meta', tipo: 'num' },
+      { label: 'Ventas', key: 'ventas', tipo: 'num' },
+      { label: '% Logro', key: 'pctLogro', tipo: 'pct' }
+    ]},
+    { titulo: '💰 VENTAS POR TIPO', filas: [
+      { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
+      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' }
+    ]},
+    { titulo: '👥 EQUIPO', filas: [
+      { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
+      { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
+      { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
+    ]},
+    { titulo: '⚡ PRODUCTIVIDAD', filas: [
+      { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
+      { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
+      { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+      { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
+      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
+    ]}
+  ];
+
+  grupos.forEach(g => {
+    const rGrupo = aoa.length;
+    aoa.push([g.titulo, ...new Array(12).fill('')]);
+    merges.push({ s: { r: rGrupo, c: 0 }, e: { r: rGrupo, c: 12 } });
+    g.filas.forEach(rowDef => {
+      const fila = [rowDef.label];
+      filas.forEach(f => {
+        if (f.esMesFuturo) { fila.push(null); }
+        else {
+          const v = f[rowDef.key];
+          if (v === null || v === undefined || v === 0) fila.push(null);
+          else if (rowDef.tipo === 'pct') fila.push(Number(v.toFixed(1)));
+          else if (rowDef.tipo === 'dec') fila.push(Number(v.toFixed(2)));
+          else fila.push(Number(Number(v).toFixed(1)));
+        }
+      });
+      aoa.push(fila);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!merges'] = merges;
+  ws['!cols'] = [{ wch: 26 }, ...new Array(12).fill({ wch: 9 })];
+  const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 8 }, { hpt: 22 }];
+  for (let i = 0; i < aoa.length - 4; i++) rows.push({ hpt: 18 });
+  ws['!rows'] = rows;
+
+  // Estilos
+  const range = XLSX.utils.decode_range(ws['!ref']);
+  for (let R = 0; R <= range.e.r; R++) {
+    for (let C = 0; C <= range.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      if (!ws[ref]) continue;
+      if (R === 0) {
+        ws[ref].s = { fill: { fgColor: { rgb: '002B5C' } }, font: { name: 'Calibri', sz: 16, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === 1) {
+        ws[ref].s = { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '64748B' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+      } else if (R === 3) {
+        const fLabel = filas[C - 1];
+        let bg = '002B5C', fg = 'FFFFFF';
+        if (C > 0 && fLabel && fLabel.esMesEnCurso) { bg = 'FEF3C7'; fg = '92400E'; }
+        else if (C > 0 && fLabel && fLabel.esMesFuturo) { bg = 'F1F5F9'; fg = '94A3B8'; }
+        ws[ref].s = { fill: { fgColor: { rgb: bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: fg } }, alignment: { horizontal: C === 0 ? 'left' : 'center', vertical: 'center', indent: C === 0 ? 1 : 0 } };
+      }
+    }
+  }
+
+  let rIdx = 4;
+  const colorGrupos = [
+    { bg: 'DBEAFE', fg: '1E3A8A' },
+    { bg: 'BAE6FD', fg: '075985' },
+    { bg: 'CFFAFE', fg: '0E7490' },
+    { bg: 'BBF7D0', fg: '166534' }
+  ];
+  grupos.forEach((g, gi) => {
+    const ref = XLSX.utils.encode_cell({ r: rIdx, c: 0 });
+    if (ws[ref]) {
+      ws[ref].s = { fill: { fgColor: { rgb: colorGrupos[gi].bg } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: colorGrupos[gi].fg } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+    }
+    for (let c = 1; c <= 12; c++) {
+      const cref = XLSX.utils.encode_cell({ r: rIdx, c });
+      if (!ws[cref]) ws[cref] = { v: '', t: 's' };
+      ws[cref].s = { fill: { fgColor: { rgb: colorGrupos[gi].bg } } };
+    }
+    rIdx++;
+    g.filas.forEach((rowDef, fi) => {
+      const bgFila = fi % 2 === 0 ? 'FFFFFF' : 'FAFBFC';
+      for (let c = 0; c <= 12; c++) {
+        const cref = XLSX.utils.encode_cell({ r: rIdx, c });
+        if (!ws[cref]) ws[cref] = { v: '', t: 's' };
+        ws[cref].s = {
+          fill: { fgColor: { rgb: bgFila } },
+          font: { name: 'Calibri', sz: 10, bold: c === 0, color: { rgb: '1E293B' } },
+          alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center', indent: c === 0 ? 1 : 0 },
+          border: { bottom: { style: 'thin', color: { rgb: 'F1F5F9' } } },
+          numFmt: rowDef.tipo === 'pct' ? '0.0"%"' : (rowDef.tipo === 'dec' ? '0.0' : '0.0')
+        };
+      }
+      rIdx++;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws, `Coord_${coordNombre}_${anio}`.substring(0, 31));
+  XLSX.writeFile(wb, `analisis_anual_coord_${coordNombre}_${anio}.xlsx`);
 }
 
 // =====================================================================
@@ -4224,18 +4524,31 @@ function _renderAvanceMensualImpl(wActual) {
   ventasData.forEach(r => {
     if (!esVentaDelFiltro(r)) return;
 
-    const tieneSup = r.supervisor && SUPERVISORES.includes(r.supervisor);
     const peso = r.peso_venta || 1;
 
+    // Determinar el supervisor que se le atribuye la venta (el actual del agente en el mes):
+    // 1. Si el agente tiene meta cargada en el mes, ese supervisor manda
+    // 2. Si no, usar plantilla actual
+    // 3. Si no, el supervisor original de la venta
+    let supVenta = null;
+    if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
+      supVenta = supDelMesPorAgente[r.ejecutivo];
+    } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
+      supVenta = plantMapTmp[r.ejecutivo].supervisor;
+    } else if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
+      supVenta = r.supervisor;
+    }
+    const tieneSupVenta = !!supVenta;
+
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-      if (tieneSup) {
-        avancesPorSup[r.supervisor] += peso;
+      if (tieneSupVenta) {
+        avancesPorSup[supVenta] += peso;
         avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + peso;
       }
     }
 
     if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
-      if (tieneSup) avancesProgPorSup[r.supervisor] += peso;
+      if (tieneSupVenta) avancesProgPorSup[supVenta] += peso;
       avanceProgTotal += peso;
     }
 
