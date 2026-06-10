@@ -46,11 +46,20 @@ const HOY = new Date().toLocaleDateString('es-MX', {
   timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric',
 });
 const HOY_ARCHIVO = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+const ANIO = parseInt(HOY_ARCHIVO.slice(0, 4), 10);
+// getDay() sobre la fecha local de CDMX: 1 = lunes
+const ES_LUNES = new Date(new Date().toLocaleString('en-US', { timeZone: TZ })).getDay() === 1;
 
 // MODO PRUEBA: si existe el secret MODO_PRUEBA (cualquier valor), TODOS los correos
 // se redirigen unicamente a Jonathan (CC_SIEMPRE). Los coordinadores NO reciben nada.
 // Para volver al envio normal, basta con borrar ese secret.
 const MODO_PRUEBA = !!process.env.MODO_PRUEBA;
+
+// ENVIAR_SUPERVISORES: si existe el secret (cualquier valor), ADEMAS de los
+// coordinadores se le manda a cada supervisor su propio detalle de equipo,
+// usando el correo guardado en supervisores_config.email (Supabase).
+// Si no existe el secret, solo se envia a coordinadores (comportamiento base).
+const ENVIAR_SUPERVISORES = !!process.env.ENVIAR_SUPERVISORES;
 
 // ---------- HELPERS ----------
 function clasificarCentro(raw) {
@@ -60,10 +69,13 @@ function clasificarCentro(raw) {
   return null;
 }
 
-function construirCuerpo(nombreCoord, etiquetaCentro, hayInact) {
+function construirCuerpo(nombreCoord, etiquetaCentro, hayInact, hayTarjeta, hayAnual) {
   const inactLinea = hayInact
     ? 'Excel de inactividad del centro (agentes con dias sin activar / sin programar).'
     : 'Hoy no hubo agentes en alerta de inactividad. \u2705';
+  const anualLinea = hayAnual
+    ? '\n- Análisis Anual de cada supervisor del centro (adjunto, envío de los lunes).'
+    : '';
   const text =
 `Hola ${nombreCoord},
 
@@ -71,19 +83,52 @@ Adjunto el reporte operativo de hoy (${HOY}) para ${etiquetaCentro}:
 
 - Excel del centro: dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.
 - Tabla maestra del centro (Excel).
-- ${inactLinea}
+- ${inactLinea}${anualLinea}
 
 Saludos,
 Reportes ExpertCell (envio automatico)`;
 
+  const imgTarjeta = hayTarjeta
+    ? `<p style="margin:6px 0 16px;"><img src="cid:tarjeta-resumen" alt="Resumen del centro" style="max-width:100%;border-radius:10px;"></p>`
+    : '';
+  const anualHtml = hayAnual
+    ? `<li><strong>Análisis Anual</strong> de cada supervisor del centro (adjunto, env&iacute;o de los lunes).</li>`
+    : '';
   const html =
 `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
   <p>Hola ${nombreCoord},</p>
-  <p>Adjunto el reporte operativo de hoy (<strong>${HOY}</strong>) para <strong>${etiquetaCentro}</strong>:</p>
+  <p>Resumen del centro <strong>${etiquetaCentro}</strong> al ${HOY}:</p>
+  ${imgTarjeta}
+  <p>Adjuntos:</p>
   <ul>
     <li><strong>Excel del centro:</strong> dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.</li>
     <li><strong>Tabla maestra</strong> del centro (Excel adjunto).</li>
     <li>${inactLinea}</li>
+    ${anualHtml}
+  </ul>
+  <p style="color:#6b7280;font-size:12px;margin-top:18px">Reportes ExpertCell &middot; env&iacute;o autom&aacute;tico</p>
+</div>`;
+  return { text, html };
+}
+
+function construirCuerpoSupervisor(nombreSup, hayAnual) {
+  const anualT = hayAnual ? '\n- Tu Análisis Anual (envío de los lunes).' : '';
+  const anualH = hayAnual ? '<li>Tu <strong>Análisis Anual</strong> (env&iacute;o de los lunes).</li>' : '';
+  const text =
+`Hola ${nombreSup},
+
+Adjunto tu reporte de equipo de hoy (${HOY}): dashboard de tu equipo y el detalle
+de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).${anualT}
+
+Saludos,
+Reportes ExpertCell (envio automatico)`;
+  const html =
+`<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
+  <p>Hola ${nombreSup},</p>
+  <p>Adjunto tu reporte de equipo de hoy (<strong>${HOY}</strong>):</p>
+  <ul>
+    <li>Dashboard de tu equipo y el detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).</li>
+    ${anualH}
   </ul>
   <p style="color:#6b7280;font-size:12px;margin-top:18px">Reportes ExpertCell &middot; env&iacute;o autom&aacute;tico</p>
 </div>`;
@@ -225,6 +270,35 @@ async function main() {
       const capMaestra = await page.evaluate(() => window.__captured.slice());
       const archMaestra = capMaestra.find((x) => x.b64) || null;
 
+      // 4) Imagen de la tarjeta principal del centro (para el cuerpo del correo)
+      let pngTarjeta = null;
+      try {
+        const elTarjeta = page.locator('#avance-tarjeta-principal');
+        if ((await elTarjeta.count()) > 0) {
+          await elTarjeta.first().scrollIntoViewIfNeeded().catch(() => {});
+          pngTarjeta = await elTarjeta.first().screenshot();
+        }
+      } catch (e) { /* la tarjeta es opcional */ }
+
+      // Lista de supervisores del centro con datos (para anual de lunes y envio a supervisores)
+      const centroSups = await page.evaluate(() => {
+        const d = window.__detalleAgentesData;
+        if (!d || !d.agentesPorSup) return [];
+        return Object.keys(d.agentesPorSup).filter((s) => (d.agentesPorSup[s] || []).length > 0);
+      });
+
+      // 5) LUNES: Analisis Anual de cada supervisor del centro (para el coordinador)
+      const anualesCoord = [];
+      if (ES_LUNES) {
+        for (const sup of centroSups) {
+          await page.evaluate(() => { window.__captured = []; });
+          await page.evaluate((s, a) => { try { exportarAnalisisAnualExcel(s, a); } catch (e) {} }, sup, ANIO);
+          const cap = await page.evaluate(() => window.__captured.slice());
+          const arch = cap.find((x) => x.b64) || null;
+          if (arch) anualesCoord.push({ filename: `Anual_${sup}_${ANIO}.xlsx`, content: Buffer.from(arch.b64, 'base64') });
+        }
+      }
+
       // Validacion: sin Excel de coordinador o sin maestra, NO se envia.
       if (!archCoord || !archMaestra) {
         incidencias.push(
@@ -250,8 +324,13 @@ async function main() {
           content: Buffer.from(archInact.b64, 'base64'),
         });
       }
+      anualesCoord.forEach((a) => attachments.push(a));
+      // Imagen de la tarjeta incrustada en el cuerpo
+      if (pngTarjeta) {
+        attachments.push({ filename: 'resumen.png', content: pngTarjeta, cid: 'tarjeta-resumen' });
+      }
 
-      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact);
+      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact, !!pngTarjeta, ES_LUNES && anualesCoord.length > 0);
 
       // En MODO PRUEBA todo va solo a Jonathan; en normal, al coordinador con copia.
       const destinoTo = MODO_PRUEBA ? CC_SIEMPRE : ruta.para;
@@ -270,6 +349,72 @@ async function main() {
 
       enviados++;
       console.log(`Enviado a ${destinoTo} (${ruta.etiqueta})${MODO_PRUEBA ? ' [PRUEBA]' : ''}.`);
+
+      // ---- Envio a cada SUPERVISOR de este centro (opcional) ----
+      if (ENVIAR_SUPERVISORES) {
+        // El filtro del centro ya esta aplicado, asi que agentesPorSup trae solo
+        // los supervisores de este centro. Leemos sus nombres + email de Supabase.
+        const sups = await page.evaluate(() => {
+          const d = window.__detalleAgentesData;
+          const emails = window.__emailsSupervisores || {};
+          if (!d || !d.agentesPorSup) return [];
+          return Object.keys(d.agentesPorSup)
+            .filter((s) => (d.agentesPorSup[s] || []).length > 0)
+            .map((s) => ({ sup: s, email: emails[s] || null }));
+        });
+
+        for (const s of sups) {
+          if (!s.email && !MODO_PRUEBA) {
+            incidencias.push(`Supervisor "${s.sup}" (${ruta.etiqueta}) sin email en supervisores_config; no se le envio su detalle.`);
+            continue;
+          }
+          try {
+            await page.evaluate(() => { window.__captured = []; });
+            await page.evaluate((nom) => { descargarEquipoExcel(nom); }, s.sup);
+            const capEq = await page.evaluate(() => window.__captured.slice());
+            const archEq = capEq.find((x) => x.b64) || null;
+            if (!archEq) {
+              incidencias.push(`No se genero el Excel de "${s.sup}" (${ruta.etiqueta}); no se le envio.`);
+              continue;
+            }
+
+            const supTo = MODO_PRUEBA ? CC_SIEMPRE : s.email;
+            const supCc = MODO_PRUEBA ? undefined : CC_SIEMPRE;
+            const supPref = MODO_PRUEBA ? '[PRUEBA] ' : '';
+
+            const supAttachments = [
+              { filename: `Equipo_${s.sup}_${HOY_ARCHIVO}.xlsx`, content: Buffer.from(archEq.b64, 'base64') },
+            ];
+            // LUNES: anexar su Analisis Anual
+            let supHayAnual = false;
+            if (ES_LUNES) {
+              await page.evaluate(() => { window.__captured = []; });
+              await page.evaluate((nom, a) => { try { exportarAnalisisAnualExcel(nom, a); } catch (e) {} }, s.sup, ANIO);
+              const capAn = await page.evaluate(() => window.__captured.slice());
+              const archAn = capAn.find((x) => x.b64) || null;
+              if (archAn) {
+                supAttachments.push({ filename: `Anual_${s.sup}_${ANIO}.xlsx`, content: Buffer.from(archAn.b64, 'base64') });
+                supHayAnual = true;
+              }
+            }
+            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual);
+
+            await transporter.sendMail({
+              from: REMITENTE,
+              to: supTo,
+              cc: supCc,
+              subject: `${supPref}Reporte diario ExpertCell \u00B7 Equipo ${s.sup} \u00B7 ${HOY}`,
+              text: cuerpoSup.text,
+              html: cuerpoSup.html,
+              attachments: supAttachments,
+            });
+            enviados++;
+            console.log(`Enviado a ${supTo} (equipo ${s.sup})${MODO_PRUEBA ? ' [PRUEBA]' : ''}.`);
+          } catch (e) {
+            incidencias.push(`Error con supervisor "${s.sup}" (${ruta.etiqueta}): ${e.message}.`);
+          }
+        }
+      }
     } catch (e) {
       incidencias.push(`Error con "${nombre}" (${ruta.etiqueta}): ${e.message}. NO se le envio.`);
     }
