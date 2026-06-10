@@ -79,14 +79,14 @@ function clasificarCentro(raw) {
 
 function resumenHtml(resumen) {
   if (!resumen) return '';
-  const eq = (resumen.equipos || []);
+  const md = (resumen.modelos || []);
   const pl = (resumen.planes || []);
-  if (!eq.length && !pl.length) return '';
+  if (!md.length && !pl.length) return '';
   const dineroMx = (n) => '$' + Number(n || 0).toLocaleString('es-MX');
   let h = '<div style="background:#F5F8FB;border-radius:10px;padding:12px 16px;margin:8px 0 16px;">';
-  if (eq.length) {
-    h += '<p style="margin:0 0 6px;"><strong>Equipos que más venden este mes:</strong></p><ol style="margin:0 0 10px;padding-left:20px;">';
-    eq.forEach((e) => { h += `<li>${e.sup} — <strong>${e.avance}</strong> activadas</li>`; });
+  if (md.length) {
+    h += '<p style="margin:0 0 6px;"><strong>Modelos que más se venden este mes:</strong></p><ol style="margin:0 0 10px;padding-left:20px;">';
+    md.forEach((m) => { h += `<li>${m.modelo} — <strong>${m.count}</strong></li>`; });
     h += '</ol>';
   }
   if (pl.length) {
@@ -100,16 +100,16 @@ function resumenHtml(resumen) {
 
 function resumenText(resumen) {
   if (!resumen) return '';
-  const eq = (resumen.equipos || []);
+  const md = (resumen.modelos || []);
   const pl = (resumen.planes || []);
-  if (!eq.length && !pl.length) return '';
+  if (!md.length && !pl.length) return '';
   let t = '';
-  if (eq.length) t += '\nEquipos que más venden este mes: ' + eq.map((e) => `${e.sup} (${e.avance})`).join(', ') + '.';
+  if (md.length) t += '\nModelos que más se venden este mes: ' + md.map((m) => `${m.modelo} (${m.count})`).join(', ') + '.';
   if (pl.length) t += '\nPlanes que más se venden: ' + pl.map((p) => `${p.plan} (${p.count}${p.arpu ? `, ARPU $${p.arpu}` : ''})`).join(', ') + '.';
   return t;
 }
 
-function construirCuerpo(nombreCoord, etiquetaCentro, hayInact, hayTarjeta, hayAnual, resumen) {
+function construirCuerpo(nombreCoord, etiquetaCentro, hayInact, hayTarjeta, hayAnual, resumen, hayVista) {
   const inactLinea = hayInact
     ? 'Excel de inactividad del centro (agentes con dias sin activar / sin programar).'
     : 'Hoy no hubo agentes en alerta de inactividad. \u2705';
@@ -134,6 +134,9 @@ Jonathan`;
   const imgTarjeta = hayTarjeta
     ? `<p style="margin:6px 0 16px;"><img src="cid:tarjeta-resumen" alt="Resumen del centro" style="max-width:100%;border-radius:10px;"></p>`
     : '';
+  const imgVista = hayVista
+    ? `<p style="margin:14px 0 6px;"><strong>Venta diaria del mes:</strong></p><p style="margin:0 0 16px;"><img src="cid:vista-diaria" alt="Vista diaria del centro" style="max-width:100%;border-radius:10px;border:1px solid #E5E7EB;"></p>`
+    : '';
   const anualHtml = hayAnual
     ? `<li>El <strong>Análisis Anual</strong> de cada uno de tus supervisores (te lo mando los lunes).</li>`
     : '';
@@ -143,6 +146,7 @@ Jonathan`;
   <p>Te comparto el resumen de <strong>${etiquetaCentro}</strong> al ${HOY}.</p>
   ${imgTarjeta}
   ${resumenHtml(resumen)}
+  ${imgVista}
   <p>Te dejo adjunto:</p>
   <ul>
     <li>El <strong>Excel del centro</strong>: dashboard, una hoja de detalle por cada supervisor y el detalle general.</li>
@@ -156,7 +160,7 @@ Jonathan`;
   return { text, html };
 }
 
-function construirCuerpoSupervisor(nombreSup, hayAnual, resumen) {
+function construirCuerpoSupervisor(nombreSup, hayAnual, resumen, hayVista) {
   const anualT = hayAnual ? '\nTambién te mando tu Análisis Anual (te lo paso los lunes).' : '';
   const anualH = hayAnual ? '<p>También te mando tu <strong>Análisis Anual</strong> (te lo paso los lunes).</p>' : '';
   const text =
@@ -168,11 +172,15 @@ Te paso tu reporte de equipo de hoy: el dashboard de tu equipo y el detalle de c
 
 Saludos,
 Jonathan`;
+  const imgVista = hayVista
+    ? `<p style="margin:14px 0 6px;"><strong>Tu venta diaria del mes:</strong></p><p style="margin:0 0 16px;"><img src="cid:vista-diaria" alt="Vista diaria del equipo" style="max-width:100%;border-radius:10px;border:1px solid #E5E7EB;"></p>`
+    : '';
   const html =
 `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
   <p>Hola ${nombreSup},</p>
   <p>Te paso tu reporte de equipo de hoy: el <strong>dashboard de tu equipo</strong> y el <strong>detalle de cada uno de tus agentes</strong> (avance, meta, % de cumplimiento e inactividad).</p>
   ${resumenHtml(resumen)}
+  ${imgVista}
   ${anualH}
   <p>Échale un ojo y cualquier duda me buscas.</p>
   <p style="margin-top:16px;">Saludos,<br>Jonathan</p>
@@ -325,6 +333,23 @@ async function main() {
         }
       } catch (e) { /* la tarjeta es opcional */ }
 
+      // 4b) Imagen de la vista diaria del centro (respeta el filtro de centro = vista Global)
+      let pngVista = null;
+      try {
+        await page.evaluate(() => {
+          const sec = document.getElementById('sec-vista-tiempo');
+          if (sec) sec.classList.add('abierto');
+          const btnGlobal = document.querySelector('.vt-view-btn[data-vt-view="total"]');
+          if (btnGlobal) btnGlobal.click(); // vista Global (respeta el centro del filtro de arriba)
+        });
+        await page.waitForTimeout(1600);
+        const elChart = page.locator('#chart-vt');
+        if ((await elChart.count()) > 0) {
+          await elChart.first().scrollIntoViewIfNeeded().catch(() => {});
+          pngVista = await elChart.first().screenshot();
+        }
+      } catch (e) { /* vista diaria opcional */ }
+
       // Lista de supervisores del centro con datos (para anual de lunes y envio a supervisores)
       const centroSups = await page.evaluate(() => {
         const d = window.__detalleAgentesData;
@@ -332,9 +357,13 @@ async function main() {
         return Object.keys(d.agentesPorSup).filter((s) => (d.agentesPorSup[s] || []).length > 0);
       });
 
-      // Resumen de equipos y planes que mas venden en el centro (para el cuerpo)
-      const resumenCentro = await page.evaluate(() => {
-        try { return window.__resumenVentas(); } catch (e) { return null; }
+      // Resumen de modelos y planes que mas venden en el centro (para el cuerpo)
+      const resumenCentro = await page.evaluate(async () => {
+        try {
+          const v = window.__resumenVentas() || {};
+          const modelos = await window.__resumenModelos();
+          return { planes: v.planes || [], modelos: modelos || [] };
+        } catch (e) { return null; }
       });
 
       // 5) LUNES: Analisis Anual de cada supervisor del centro (para el coordinador)
@@ -375,12 +404,15 @@ async function main() {
         });
       }
       anualesCoord.forEach((a) => attachments.push(a));
-      // Imagen de la tarjeta incrustada en el cuerpo
+      // Imagenes incrustadas en el cuerpo
       if (pngTarjeta) {
         attachments.push({ filename: 'resumen.png', content: pngTarjeta, cid: 'tarjeta-resumen' });
       }
+      if (pngVista) {
+        attachments.push({ filename: 'vista-diaria.png', content: pngVista, cid: 'vista-diaria' });
+      }
 
-      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact, !!pngTarjeta, ES_LUNES && anualesCoord.length > 0, resumenCentro);
+      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact, !!pngTarjeta, ES_LUNES && anualesCoord.length > 0, resumenCentro, !!pngVista);
 
       // En MODO PRUEBA todo va solo a Jonathan; en normal, al coordinador con copia.
       const destinoTo = ES_PRUEBA ? CC_SIEMPRE : ruta.para;
@@ -447,9 +479,38 @@ async function main() {
                 supHayAnual = true;
               }
             }
-            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual, await page.evaluate((nom) => {
-              try { return window.__resumenVentas(nom); } catch (e) { return null; }
-            }, s.sup));
+            // Vista diaria del supervisor (vista "Por supervisor" + su selector)
+            let pngVistaSup = null;
+            try {
+              await page.evaluate((nom) => {
+                const sec = document.getElementById('sec-vista-tiempo');
+                if (sec) sec.classList.add('abierto');
+                const btnSup = document.querySelector('.vt-view-btn[data-vt-view="supervisor"]');
+                if (btnSup) btnSup.click();
+                const sel = document.getElementById('vt-filtro-extra');
+                if (sel) { sel.value = nom; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+              }, s.sup);
+              await page.waitForTimeout(1600);
+              const elChart = page.locator('#chart-vt');
+              if ((await elChart.count()) > 0) {
+                await elChart.first().scrollIntoViewIfNeeded().catch(() => {});
+                pngVistaSup = await elChart.first().screenshot();
+              }
+            } catch (e) { /* vista opcional */ }
+            if (pngVistaSup) {
+              supAttachments.push({ filename: 'vista-diaria.png', content: pngVistaSup, cid: 'vista-diaria' });
+            }
+
+            // Resumen de modelos y planes del equipo del supervisor
+            const resumenSup = await page.evaluate(async (nom) => {
+              try {
+                const v = window.__resumenVentas(nom) || {};
+                const modelos = await window.__resumenModelos(nom);
+                return { planes: v.planes || [], modelos: modelos || [] };
+              } catch (e) { return null; }
+            }, s.sup);
+
+            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual, resumenSup, !!pngVistaSup);
 
             await transporter.sendMail({
               from: REMITENTE,
