@@ -1,0 +1,38 @@
+name: Reporte diario ExpertCell
+
+# Este flujo NO toca tu reporte.html ni Supabase. Solo ABRE tu reporte
+# publicado (modo lectura), captura los Excel que el propio reporte genera
+# y la tabla maestra, y los envia por correo.
+
+on:
+  schedule:
+    # 14:00 UTC = 08:00 CDMX (Mexico ya no usa horario de verano: siempre UTC-6).
+    # '1-6' = lunes a sabado.
+    - cron: '0 14 * * 1-6'
+  workflow_dispatch: {}   # permite ejecutarlo A MANO desde la pestana Actions (para pruebas)
+
+jobs:
+  enviar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependencias y navegador
+        working-directory: scripts
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Generar y enviar reportes
+        working-directory: scripts
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: node enviar-reportes.mjs
