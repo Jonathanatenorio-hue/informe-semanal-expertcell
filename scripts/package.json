@@ -1,0 +1,11 @@
+{
+  "name": "reportes-expertcell",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Envio automatico diario de reportes ExpertCell (solo lectura del reporte.html publicado).",
+  "dependencies": {
+    "playwright": "^1.48.0",
+    "nodemailer": "^6.9.15"
+  }
+}
