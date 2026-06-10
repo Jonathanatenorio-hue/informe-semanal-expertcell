@@ -5616,7 +5616,7 @@ function renderDetalleAgentesConMes(mesKey) {
   });
   // ============================================================
 
-  window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel };
+  window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel, diasTranscurridos, diasHabilesTotales };
 
   const inactivosPorSup = {};
   let totalInactivos = 0;
@@ -7091,7 +7091,11 @@ function descargarEquipoExcel(supervisor) {
 // Retorna true si se agregaron hojas, false si no había datos.
 function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
   if (!window.__detalleAgentesData) return false;
-  const { agentesPorSup, mes, anio } = window.__detalleAgentesData;
+  const { agentesPorSup, mes, anio, diasTranscurridos, diasHabilesTotales } = window.__detalleAgentesData;
+  // Esperado al nivel de TOTAL = un solo redondeo sobre la meta total (igual que la
+  // tabla maestra en pantalla), NO la suma de redondeos por agente (que se inflaba).
+  const _factorEsp = (diasHabilesTotales > 0) ? (diasTranscurridos / diasHabilesTotales) : 0;
+  const espNivel = (m) => Math.round((m || 0) * _factorEsp);
   const agentes = agentesPorSup[supervisor] || [];
   if (agentes.length === 0) return false;
 
@@ -7108,7 +7112,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
   const totalMeta = ordenados.reduce((s, a) => s + (a.meta || 0), 0);
   const totalProg = ordenados.reduce((s, a) => s + (a.programadas || 0), 0);
   const totalCanc = ordenados.reduce((s, a) => s + (a.canceladas || 0), 0);
-  const totalEsperado = ordenados.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+  const totalEsperado = espNivel(totalMeta);
   // ===========================================================================================
   const gapTotal = totalAvance - totalEsperado;
   const pctMesEquipo = totalMeta > 0 ? (totalAvance / totalMeta * 100) : 0;
@@ -7992,7 +7996,10 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
 // DASHBOARD del coordinador — agregado de sus supervisores
 // ============================================================
 function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
-  const { mes, anio } = window.__detalleAgentesData;
+  const { mes, anio, diasTranscurridos, diasHabilesTotales } = window.__detalleAgentesData;
+  // Esperado por nivel = un solo redondeo sobre la meta (igual que la maestra en pantalla).
+  const _factorEsp = (diasHabilesTotales > 0) ? (diasTranscurridos / diasHabilesTotales) : 0;
+  const espNivel = (m) => Math.round((m || 0) * _factorEsp);
   const mesLabel = MESES_NOMBRE[mes - 1];
   const fechaCorte = new Date().toISOString().split('T')[0];
   const esMesActual = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
@@ -8019,7 +8026,7 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
     // === Totales INCLUYENDO bajas (para que coincida con reporte oficial) ===
     const meta = ags.reduce((s, a) => s + (a.meta || 0), 0);
     const avance = ags.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperado = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    const esperado = espNivel(meta);
     const programadas = ags.reduce((s, a) => s + (a.programadas || 0), 0);
     const canceladas = ags.reduce((s, a) => s + (a.canceladas || 0), 0);
     // ====================================================================
@@ -8037,7 +8044,7 @@ function _addCoordinadorDashboard(wb, coord, supervisores, agentesPorSup) {
 
   const totalMeta = stats.reduce((s, x) => s + x.meta, 0);
   const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
-  const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
+  const totalEsperado = espNivel(totalMeta);
   const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
   const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
   const totalGap = totalAvance - totalEsperado;
@@ -8175,7 +8182,9 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
   const coords = [...coordSet].sort();
 
   // Para el dashboard global, agrupar supervisores por coordinador
-  const { mes, anio } = window.__detalleAgentesData;
+  const { mes, anio, diasTranscurridos, diasHabilesTotales } = window.__detalleAgentesData;
+  const _factorEsp = (diasHabilesTotales > 0) ? (diasTranscurridos / diasHabilesTotales) : 0;
+  const espNivel = (m) => Math.round((m || 0) * _factorEsp);
   const mesLabel = MESES_NOMBRE[mes - 1];
   const fechaCorte = new Date().toISOString().split('T')[0];
   const esMesActual = !!(window.__avanceData && window.__avanceData.anio === anio && window.__avanceData.mes === mes);
@@ -8202,7 +8211,7 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
     // Totales INCLUYENDO bajas (para que coincida con reporte oficial)
     const meta = ags.reduce((s, a) => s + (a.meta || 0), 0);
     const avance = ags.reduce((s, a) => s + (a.avance || 0), 0);
-    const esperado = ags.reduce((s, a) => s + (a.esperadoHoy || 0), 0);
+    const esperado = espNivel(meta);
     return { sup, coord: mapa[sup] || '—', totalActivos: activos.length, bajas: ags.length - activos.length, meta, avance, esperado, gap: avance - esperado, pctMes: meta > 0 ? avance / meta * 100 : 0 };
   });
 
@@ -8216,11 +8225,11 @@ function _addGlobalDashboard(wb, supervisores, agentesPorSup) {
     coordStats[s.coord].avance += s.avance;
     coordStats[s.coord].esperado += s.esperado;
   });
-  const coordArr = Object.values(coordStats).map(c => ({ ...c, gap: c.avance - c.esperado, pctMes: c.meta > 0 ? c.avance / c.meta * 100 : 0 })).sort((a, b) => b.pctMes - a.pctMes);
+  const coordArr = Object.values(coordStats).map(c => ({ ...c, esperado: espNivel(c.meta), gap: c.avance - espNivel(c.meta), pctMes: c.meta > 0 ? c.avance / c.meta * 100 : 0 })).sort((a, b) => b.pctMes - a.pctMes);
 
   const totalMeta = stats.reduce((s, x) => s + x.meta, 0);
   const totalAvance = stats.reduce((s, x) => s + x.avance, 0);
-  const totalEsperado = stats.reduce((s, x) => s + x.esperado, 0);
+  const totalEsperado = espNivel(totalMeta);
   const totalActivos = stats.reduce((s, x) => s + x.totalActivos, 0);
   const totalBajas = stats.reduce((s, x) => s + x.bajas, 0);
   const totalGap = totalAvance - totalEsperado;
