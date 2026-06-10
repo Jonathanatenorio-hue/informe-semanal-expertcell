@@ -171,13 +171,23 @@ Jonathan`;
   return { text, html };
 }
 
-function construirCuerpoSupervisor(nombreSup, hayAnual, resumen, hayVista) {
+function construirCuerpoSupervisor(nombreSup, hayAnual, resumen, hayVista, hayInact) {
   const anualT = hayAnual ? '\nTambién te mando tu Análisis Anual (te lo paso los lunes).' : '';
-  const anualH = hayAnual ? '<p>También te mando tu <strong>Análisis Anual</strong> (te lo paso los lunes).</p>' : '';
+  const anualH = hayAnual ? '<li>Tu <strong>Análisis Anual</strong> (te lo paso los lunes).</li>' : '';
+  const inactT = hayInact
+    ? '\n- Tu Excel de inactividad (agentes de tu equipo con días sin activar / sin programar).'
+    : '\n- Hoy tu equipo no tiene agentes en alerta de inactividad. \u2705';
+  const inactH = hayInact
+    ? '<li>Tu <strong>Excel de inactividad</strong> (agentes con días sin activar / sin programar).</li>'
+    : '<li>Hoy tu equipo no tiene agentes en alerta de inactividad. \u2705</li>';
   const text =
 `Hola ${nombreSup},
 
-Te paso tu reporte de equipo de hoy: el dashboard de tu equipo y el detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).${resumenText(resumen)}${anualT}
+Te paso tu reporte de equipo de hoy.${resumenText(resumen)}
+
+Te dejo adjunto:
+- El Excel de tu equipo: dashboard y detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).
+- Tu tabla maestra.${inactT}${anualT}
 
 Échale un ojo y cualquier duda me buscas.
 
@@ -189,10 +199,16 @@ Jonathan`;
   const html =
 `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
   <p>Hola ${nombreSup},</p>
-  <p>Te paso tu reporte de equipo de hoy: el <strong>dashboard de tu equipo</strong> y el <strong>detalle de cada uno de tus agentes</strong> (avance, meta, % de cumplimiento e inactividad).</p>
+  <p>Te paso tu reporte de equipo de hoy.</p>
   ${resumenHtml(resumen)}
   ${imgVista}
-  ${anualH}
+  <p>Te dejo adjunto:</p>
+  <ul>
+    <li>El <strong>Excel de tu equipo</strong>: dashboard y detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).</li>
+    <li>Tu <strong>tabla maestra</strong>.</li>
+    ${inactH}
+    ${anualH}
+  </ul>
   <p>Échale un ojo y cualquier duda me buscas.</p>
   <p style="margin-top:16px;">Saludos,<br>Jonathan</p>
 </div>`;
@@ -522,6 +538,25 @@ async function main() {
             const supAttachments = [
               { filename: `Equipo_${s.sup}_${HOY_ARCHIVO}.xlsx`, content: Buffer.from(archEq.b64, 'base64') },
             ];
+
+            // Tabla maestra del supervisor (filtrada a su equipo)
+            await page.evaluate(() => { window.__captured = []; });
+            await page.evaluate((nom) => { try { descargarMaestraExcel(nom); } catch (e) {} }, s.sup);
+            const capMaeS = await page.evaluate(() => window.__captured.slice());
+            const archMaeS = capMaeS.find((x) => x.b64) || null;
+            if (archMaeS) {
+              supAttachments.push({ filename: `Tabla_Maestra_${s.sup}_${HOY_ARCHIVO}.xlsx`, content: Buffer.from(archMaeS.b64, 'base64') });
+            }
+
+            // Inactividad del supervisor (filtrada a su equipo). Opcional: si su equipo
+            // no tiene agentes en alerta, no se genera y no se adjunta.
+            await page.evaluate(() => { window.__captured = []; });
+            await page.evaluate((nom) => { try { descargarInactividadExcel(nom); } catch (e) {} }, s.sup);
+            const capInaS = await page.evaluate(() => window.__captured.slice());
+            const archInaS = capInaS.find((x) => x.b64) || null;
+            if (archInaS) {
+              supAttachments.push({ filename: `Inactividad_${s.sup}_${HOY_ARCHIVO}.xlsx`, content: Buffer.from(archInaS.b64, 'base64') });
+            }
             // LUNES: anexar su Analisis Anual
             let supHayAnual = false;
             if (ES_LUNES) {
@@ -561,7 +596,7 @@ async function main() {
               } catch (e) { return null; }
             }, s.sup);
 
-            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual, resumenSup, !!pngVistaSup);
+            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual, resumenSup, !!pngVistaSup, !!archInaS);
 
             await transporter.sendMail({
               from: REMITENTE,
