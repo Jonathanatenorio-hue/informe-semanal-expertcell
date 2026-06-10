@@ -42,13 +42,24 @@ const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const REMITENTE = `"Jonathan Atenorio" <${GMAIL_USER}>`;
 
 const TZ = 'America/Mexico_City';
-const HOY = new Date().toLocaleDateString('es-MX', {
+// HOY/HOY_ARCHIVO arrancan con la fecha de envio, pero despues de cargar el
+// reporte se reasignan a la FECHA DE CORTE real de los datos (normalmente ayer,
+// porque hoy aun no hay datos). Por eso son `let`, no `const`.
+let HOY = new Date().toLocaleDateString('es-MX', {
   timeZone: TZ, year: 'numeric', month: 'long', day: 'numeric',
 });
-const HOY_ARCHIVO = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+let HOY_ARCHIVO = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
 const ANIO = parseInt(HOY_ARCHIVO.slice(0, 4), 10);
 // getDay() sobre la fecha local de CDMX: 1 = lunes
 const ES_LUNES = new Date(new Date().toLocaleString('en-US', { timeZone: TZ })).getDay() === 1;
+
+// Convierte 'YYYY-MM-DD' a "9 de junio de 2026"
+function fmtFechaEs(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return null;
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  return `${parseInt(m[3], 10)} de ${meses[parseInt(m[2], 10) - 1]} de ${m[1]}`;
+}
 
 // ============================================================
 //  SEGURIDAD (doble candado):
@@ -202,6 +213,39 @@ async function avisarJonathan(transporter, asunto, mensaje) {
 }
 
 // ---------- PRINCIPAL ----------
+// Captura la vista diaria CON las tarjetas de arriba (las que explican como leer
+// las lineas) + la grafica. Oculta temporalmente el titulo y los controles de la
+// seccion, fotografia el cuerpo, y restaura todo.
+async function capturarVistaDiaria(page) {
+  try {
+    await page.evaluate(() => {
+      const sb = document.querySelector('#sec-vista-tiempo .section-body');
+      if (!sb) return;
+      const cards = document.getElementById('vt-resumen-cards');
+      const chartWrap = document.querySelector('#sec-vista-tiempo .chart-wrap');
+      window.__vtHidden = [];
+      Array.from(sb.children).forEach((ch) => {
+        if (ch !== cards && ch !== chartWrap) {
+          window.__vtHidden.push([ch, ch.style.display]);
+          ch.style.display = 'none';
+        }
+      });
+    });
+    let png = null;
+    const el = page.locator('#sec-vista-tiempo .section-body');
+    if ((await el.count()) > 0) {
+      await el.first().scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(150);
+      png = await el.first().screenshot();
+    }
+    await page.evaluate(() => {
+      (window.__vtHidden || []).forEach(([ch, disp]) => { ch.style.display = disp; });
+      window.__vtHidden = [];
+    });
+    return png;
+  } catch (e) { return null; }
+}
+
 async function main() {
   if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
     console.error('Faltan GMAIL_USER / GMAIL_APP_PASSWORD en los Secrets.');
@@ -244,6 +288,20 @@ async function main() {
     );
     process.exit(1);
   }
+
+  // --- Usar la FECHA DE CORTE real del reporte (normalmente ayer) en vez de hoy ---
+  try {
+    const corte = await page.evaluate(() => {
+      const a = window.__avanceData;
+      return a && a.fechaCorteStr ? a.fechaCorteStr : null;
+    });
+    const corteTxt = fmtFechaEs(corte);
+    if (corte && corteTxt) {
+      HOY_ARCHIVO = corte;
+      HOY = corteTxt;
+      console.log(`Fecha de corte del reporte: ${HOY} (${HOY_ARCHIVO}).`);
+    }
+  } catch (e) { /* si falla, se queda con la fecha de hoy */ }
 
   // --- Instalar captura de Excel (intercepta XLSX.writeFile, no descarga) ---
   await page.evaluate(() => {
@@ -333,7 +391,8 @@ async function main() {
         }
       } catch (e) { /* la tarjeta es opcional */ }
 
-      // 4b) Imagen de la vista diaria del centro (respeta el filtro de centro = vista Global)
+      // 4b) Imagen de la vista diaria del centro (tarjetas + grafica). Respeta el
+      //     filtro de centro = vista Global.
       let pngVista = null;
       try {
         await page.evaluate(() => {
@@ -343,11 +402,7 @@ async function main() {
           if (btnGlobal) btnGlobal.click(); // vista Global (respeta el centro del filtro de arriba)
         });
         await page.waitForTimeout(1600);
-        const elChart = page.locator('#chart-vt');
-        if ((await elChart.count()) > 0) {
-          await elChart.first().scrollIntoViewIfNeeded().catch(() => {});
-          pngVista = await elChart.first().screenshot();
-        }
+        pngVista = await capturarVistaDiaria(page);
       } catch (e) { /* vista diaria opcional */ }
 
       // Lista de supervisores del centro con datos (para anual de lunes y envio a supervisores)
@@ -479,7 +534,7 @@ async function main() {
                 supHayAnual = true;
               }
             }
-            // Vista diaria del supervisor (vista "Por supervisor" + su selector)
+            // Vista diaria del supervisor (vista "Por supervisor" + su selector), con tarjetas
             let pngVistaSup = null;
             try {
               await page.evaluate((nom) => {
@@ -491,11 +546,7 @@ async function main() {
                 if (sel) { sel.value = nom; sel.dispatchEvent(new Event('change', { bubbles: true })); }
               }, s.sup);
               await page.waitForTimeout(1600);
-              const elChart = page.locator('#chart-vt');
-              if ((await elChart.count()) > 0) {
-                await elChart.first().scrollIntoViewIfNeeded().catch(() => {});
-                pngVistaSup = await elChart.first().screenshot();
-              }
+              pngVistaSup = await capturarVistaDiaria(page);
             } catch (e) { /* vista opcional */ }
             if (pngVistaSup) {
               supAttachments.push({ filename: 'vista-diaria.png', content: pngVistaSup, cid: 'vista-diaria' });
