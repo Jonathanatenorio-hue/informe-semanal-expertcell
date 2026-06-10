@@ -9,7 +9,7 @@
 //         - El Excel del coordinador (dashboard + 1 hoja por supervisor + detalle
 //           general del centro)  -> tu funcion descargarCoordinadorExcel()
 //         - El Excel de inactividad del centro  -> tu funcion descargarInactividadExcel()
-//         - Una imagen de la TABLA MAESTRA del centro
+//         - Un Excel de la TABLA MAESTRA del centro
 //    3. Envia un correo por centro al coordinador, con copia a Jonathan.
 //
 //  GARANTIA: NO modifica reporte.html ni Supabase. Solo lee. Si la pagina no
@@ -70,7 +70,7 @@ function construirCuerpo(nombreCoord, etiquetaCentro, hayInact) {
 Adjunto el reporte operativo de hoy (${HOY}) para ${etiquetaCentro}:
 
 - Excel del centro: dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.
-- Tabla maestra del centro (imagen).
+- Tabla maestra del centro (Excel).
 - ${inactLinea}
 
 Saludos,
@@ -82,7 +82,7 @@ Reportes ExpertCell (envio automatico)`;
   <p>Adjunto el reporte operativo de hoy (<strong>${HOY}</strong>) para <strong>${etiquetaCentro}</strong>:</p>
   <ul>
     <li><strong>Excel del centro:</strong> dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.</li>
-    <li><strong>Tabla maestra</strong> del centro (imagen adjunta).</li>
+    <li><strong>Tabla maestra</strong> del centro (Excel adjunto).</li>
     <li>${inactLinea}</li>
   </ul>
   <p style="color:#6b7280;font-size:12px;margin-top:18px">Reportes ExpertCell &middot; env&iacute;o autom&aacute;tico</p>
@@ -219,19 +219,17 @@ async function main() {
       const capInact = await page.evaluate(() => window.__captured.slice());
       const archInact = capInact.find((x) => x.b64) || null;
 
-      // 3) Imagen de la tabla maestra del centro (OBLIGATORIO)
-      let pngMaestra = null;
-      const elTabla = page.locator('#avance-tabla');
-      if ((await elTabla.count()) > 0) {
-        await elTabla.first().scrollIntoViewIfNeeded().catch(() => {});
-        pngMaestra = await elTabla.first().screenshot();
-      }
+      // 3) Excel de la TABLA MAESTRA del centro (OBLIGATORIO)
+      await page.evaluate(() => { window.__captured = []; });
+      await page.evaluate(() => { try { descargarMaestraExcel(); } catch (e) {} });
+      const capMaestra = await page.evaluate(() => window.__captured.slice());
+      const archMaestra = capMaestra.find((x) => x.b64) || null;
 
       // Validacion: sin Excel de coordinador o sin maestra, NO se envia.
-      if (!archCoord || !pngMaestra) {
+      if (!archCoord || !archMaestra) {
         incidencias.push(
           `Paquete incompleto para "${nombre}" (${ruta.etiqueta}); NO se envio. ` +
-          `(Excel coordinador: ${archCoord ? 'ok' : 'FALTA'}, Tabla maestra: ${pngMaestra ? 'ok' : 'FALTA'})`
+          `(Excel coordinador: ${archCoord ? 'ok' : 'FALTA'}, Tabla maestra: ${archMaestra ? 'ok' : 'FALTA'})`
         );
         continue;
       }
@@ -242,8 +240,8 @@ async function main() {
           content: Buffer.from(archCoord.b64, 'base64'),
         },
         {
-          filename: `Tabla_Maestra_${centroKey}_${HOY_ARCHIVO}.png`,
-          content: pngMaestra,
+          filename: `Tabla_Maestra_${centroKey}_${HOY_ARCHIVO}.xlsx`,
+          content: Buffer.from(archMaestra.b64, 'base64'),
         },
       ];
       if (archInact) {
