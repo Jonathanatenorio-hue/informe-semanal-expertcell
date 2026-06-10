@@ -35,4 +35,8 @@ jobs:
         env:
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # Candados de seguridad y opciones (si el secret no existe, llega vacio = apagado)
+          MODO_PRUEBA: ${{ secrets.MODO_PRUEBA }}
+          ENVIAR_EN_VIVO: ${{ secrets.ENVIAR_EN_VIVO }}
+          ENVIAR_SUPERVISORES: ${{ secrets.ENVIAR_SUPERVISORES }}
         run: node enviar-reportes.mjs
