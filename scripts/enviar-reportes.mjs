@@ -51,15 +51,17 @@ const ANIO = parseInt(HOY_ARCHIVO.slice(0, 4), 10);
 const ES_LUNES = new Date(new Date().toLocaleString('en-US', { timeZone: TZ })).getDay() === 1;
 
 // ============================================================
-//  SEGURIDAD (default seguro):
-//  Por DEFECTO, TODOS los correos van UNICAMENTE a Jonathan (modo prueba).
-//  Para que lleguen a los destinatarios REALES (coordinadores y supervisores),
-//  hay que crear A PROPOSITO el secret ENVIAR_EN_VIVO en GitHub.
-//  Si ese secret NO existe (o se borra/olvida), NUNCA llega a coordinadores
-//  ni supervisores: el olvido es seguro, no peligroso.
+//  SEGURIDAD (doble candado):
+//  1) Por DEFECTO, TODO va UNICAMENTE a Jonathan (modo prueba). Para que llegue
+//     a los destinatarios REALES hay que crear A PROPOSITO el secret ENVIAR_EN_VIVO.
+//  2) FRENO DE EMERGENCIA: si existe el secret MODO_PRUEBA, SIEMPRE se queda en
+//     prueba, aunque ENVIAR_EN_VIVO este puesto. Sirve para frenar al instante.
+//  Resultado: solo llega a coordinadores/supervisores si ENVIAR_EN_VIVO existe
+//  Y MODO_PRUEBA no existe. Cualquier olvido cae del lado seguro.
 // ============================================================
 const ENVIAR_EN_VIVO = !!process.env.ENVIAR_EN_VIVO;
-const ES_PRUEBA = !ENVIAR_EN_VIVO;
+const FRENO_PRUEBA = !!process.env.MODO_PRUEBA;
+const ES_PRUEBA = FRENO_PRUEBA || !ENVIAR_EN_VIVO;
 
 // ENVIAR_SUPERVISORES: si existe el secret (cualquier valor), ADEMAS de los
 // coordinadores se le manda a cada supervisor su propio detalle de equipo,
