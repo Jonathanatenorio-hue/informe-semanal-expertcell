@@ -47,6 +47,11 @@ const HOY = new Date().toLocaleDateString('es-MX', {
 });
 const HOY_ARCHIVO = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
 
+// MODO PRUEBA: si existe el secret MODO_PRUEBA (cualquier valor), TODOS los correos
+// se redirigen unicamente a Jonathan (CC_SIEMPRE). Los coordinadores NO reciben nada.
+// Para volver al envio normal, basta con borrar ese secret.
+const MODO_PRUEBA = !!process.env.MODO_PRUEBA;
+
 // ---------- HELPERS ----------
 function clasificarCentro(raw) {
   const c = (raw || '').toUpperCase();
@@ -249,18 +254,24 @@ async function main() {
       }
 
       const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact);
+
+      // En MODO PRUEBA todo va solo a Jonathan; en normal, al coordinador con copia.
+      const destinoTo = MODO_PRUEBA ? CC_SIEMPRE : ruta.para;
+      const destinoCc = MODO_PRUEBA ? undefined : CC_SIEMPRE;
+      const prefijoAsunto = MODO_PRUEBA ? '[PRUEBA] ' : '';
+
       await transporter.sendMail({
         from: REMITENTE,
-        to: ruta.para,
-        cc: CC_SIEMPRE,
-        subject: `Reporte diario ExpertCell \u00B7 ${ruta.etiqueta} \u00B7 ${HOY}`,
+        to: destinoTo,
+        cc: destinoCc,
+        subject: `${prefijoAsunto}Reporte diario ExpertCell \u00B7 ${ruta.etiqueta} \u00B7 ${HOY}`,
         text: cuerpo.text,
         html: cuerpo.html,
         attachments,
       });
 
       enviados++;
-      console.log(`Enviado a ${ruta.para} (${ruta.etiqueta}).`);
+      console.log(`Enviado a ${destinoTo} (${ruta.etiqueta})${MODO_PRUEBA ? ' [PRUEBA]' : ''}.`);
     } catch (e) {
       incidencias.push(`Error con "${nombre}" (${ruta.etiqueta}): ${e.message}. NO se le envio.`);
     }
