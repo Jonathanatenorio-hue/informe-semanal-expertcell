@@ -2267,6 +2267,14 @@ async function cargarDatos() {
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
   supConfigData = supConfig || [];
 
+  // Mapa supervisor -> email (desde supervisores_config.email). Lo usa el envío
+  // automático de correos para mandar a cada supervisor su detalle. Si la columna
+  // email no existe o está vacía, el mapa queda vacío (no pasa nada en el reporte).
+  window.__emailsSupervisores = {};
+  (supConfigData || []).forEach(s => {
+    if (s && s.supervisor && s.email) window.__emailsSupervisores[s.supervisor] = String(s.email).trim();
+  });
+
   const { data: foliosIgn } = await db.from('folios_ignorados').select('*').order('created_at', { ascending: false });
   foliosIgnoradosData = foliosIgn || [];
 
@@ -5037,9 +5045,9 @@ function renderAvanceUI() {
         <th title="Meta del mes completo">Meta</th>
         <th title="Meta diaria que necesita el equipo (Meta total ÷ días hábiles del mes)">Meta/día</th>
         <th class="col-relevante col-sep-left" title="Activadas en el mes hasta el día actual">Avance</th>
-        <th class="col-relevante" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% Mes</th>
+        <th class="col-relevante" title="Avance ÷ Meta total · % de cumplimiento sobre toda la meta del mes">% meta mensual</th>
         <th class="col-relevante" title="Cuántas activadas debería llevar al día de hoy">Esperado<br><span class="header-sub">hoy</span></th>
-        <th class="col-relevante" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% Diario</th>
+        <th class="col-relevante" title="Avance ÷ Esperado · % de cumplimiento sobre lo que debería llevar HOY">% de meta al día</th>
         <th title="Promedio de ventas por agente activo en el mes">Prom/<br><span class="header-sub">agente</span></th>
         <th title="Promedio de ventas por día hábil transcurrido">Prom/<br><span class="header-sub">día</span></th>
         <th class="col-relevante" title="Diferencia entre avance real y esperado al día de hoy">Dif</th>
@@ -7128,8 +7136,8 @@ function descargarMaestraExcel() {
   // HOJA 1 · TABLA MAESTRA (por supervisor)  — idéntica a la pantalla
   // =====================================================================
   {
-    const headers = ['Supervisor', 'Agentes', 'Cumplidos', 'Meta', 'Meta/día', 'Avance', '% Mes',
-      'Esperado', '% Diario', 'Prom/agente', 'Prom/día', 'Dif', 'Tránsito', 'Gap pot.',
+    const headers = ['Supervisor', 'Agentes', 'Cumplidos', 'Meta', 'Meta/día', 'Avance', '% meta mensual',
+      'Esperado', '% de meta al día', 'Prom/agente', 'Prom/día', 'Dif', 'Tránsito', 'Gap pot.',
       'Ritmo nec.', 'Proyección', '% Proy', 'Estatus'];
     const nCols = headers.length;
     const PCT1 = new Set([6, 8]), PCT0 = new Set([16]);
@@ -7218,8 +7226,8 @@ function descargarMaestraExcel() {
   // =====================================================================
   const det = window.__detalleAgentesData;
   if (det && det.agentesPorSup && det.mes === mes && det.anio === anio) {
-    const headers = ['Supervisor', 'Agente', 'Tipo', 'Meta', 'Avance', '% Mes', 'Esperado',
-      '% Diario', 'Dif', 'Tránsito', 'Gap pot.', 'Ritmo nec.', 'Proyección', 'Estatus'];
+    const headers = ['Supervisor', 'Agente', 'Tipo', 'Meta', 'Avance', '% meta mensual', 'Esperado',
+      '% de meta al día', 'Dif', 'Tránsito', 'Gap pot.', 'Ritmo nec.', 'Proyección', 'Estatus'];
     const nCols = headers.length;
     const PCT1 = new Set([5, 7]);
     const aoa = [], merges = [];
