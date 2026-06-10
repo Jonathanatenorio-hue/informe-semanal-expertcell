@@ -7101,6 +7101,41 @@ function descargarInactividadExcel() {
 // datos que la maestra en pantalla, para que coincida exactamente).
 // Respeta el filtro de coordinador activo.
 // ============================================================
+// ============================================================
+// RESUMEN para el cuerpo del correo: equipos y planes que mas venden,
+// respetando el filtro de centro activo. Si se pasa un supervisor,
+// los planes se calculan solo de su equipo (y no se devuelven equipos).
+// ============================================================
+window.__resumenVentas = function (supFiltro) {
+  try {
+    const av = window.__avanceData;
+    if (!av) return null;
+    const sups = supFiltro ? new Set([supFiltro]) : new Set((av.supervisoresData || []).map(d => d.sup));
+    const ini = av.iniMesStr, fin = av.fechaCorteStr;
+    const planMap = {};
+    (ventasData || []).forEach(r => {
+      if (r.estatus !== 'activada' || !r.fecha_activacion) return;
+      if (r.fecha_activacion < ini || r.fecha_activacion > fin) return;
+      if (!sups.has(r.supervisor)) return;
+      const p = (r.plan && String(r.plan).trim()) || 'Sin plan';
+      if (!planMap[p]) planMap[p] = { plan: p, count: 0, sumArpu: 0, nArpu: 0 };
+      planMap[p].count++;
+      const arpu = Number(r.renta_sin_impuestos || r.precio || 0);
+      if (arpu > 0) { planMap[p].sumArpu += arpu; planMap[p].nArpu++; }
+    });
+    const planes = Object.values(planMap)
+      .map(x => ({ plan: x.plan, count: x.count, arpu: x.nArpu > 0 ? Math.round(x.sumArpu / x.nArpu) : 0 }))
+      .sort((a, b) => b.count - a.count).slice(0, 3);
+    let equipos = [];
+    if (!supFiltro) {
+      equipos = (av.supervisoresData || [])
+        .map(d => ({ sup: d.sup, avance: Math.round((d.avance || 0) * 10) / 10 }))
+        .sort((a, b) => b.avance - a.avance).slice(0, 3);
+    }
+    return { equipos, planes };
+  } catch (e) { return null; }
+};
+
 function descargarMaestraExcel() {
   if (!window.__avanceData) { alert('Primero deja que cargue el reporte.'); return; }
   const { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, mes, anio } = window.__avanceData;
