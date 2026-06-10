@@ -1112,12 +1112,19 @@
 
       <div style="display:flex; align-items:center; justify-content:space-between; margin: 28px 0 12px; gap:12px; flex-wrap:wrap;">
         <div style="font-weight: 600; font-size: 15px; color: var(--att-navy);">Tabla maestra</div>
+        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+        <button id="btn-descargar-maestra"
+                style="background:var(--green); color:white; border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;"
+                title="Descarga la tabla maestra tal como se ve, en Excel.">
+          📊 Excel maestra
+        </button>
         <button id="btn-toggle-transito"
                 style="background:#fff; border:1.5px solid var(--border); padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; color:var(--text); display:flex; align-items:center; gap:6px;"
                 title="Las columnas Tránsito y Gap potencial muestran datos no garantizados. Útil ocultarlas al compartir capturas con el equipo.">
           <span id="btn-toggle-transito-icon">👁️</span>
           <span id="btn-toggle-transito-label">Ocultar Tránsito y Gap potencial</span>
         </button>
+        </div>
       </div>
       <div style="overflow-x: auto;">
         <table id="avance-tabla"></table>
@@ -5168,6 +5175,12 @@ function renderAvanceUI() {
     };
   })();
 
+  // Wire del botón "Excel maestra"
+  (function wireDescargarMaestra() {
+    const btnM = document.getElementById('btn-descargar-maestra');
+    if (btnM) btnM.onclick = () => descargarMaestraExcel();
+  })();
+
   renderTendenciaMes();
   renderDetalleAgentes();
 }
@@ -7073,6 +7086,118 @@ function descargarInactividadExcel() {
   }
 
   XLSX.writeFile(wb, `inactividad_${nombreMes}_${anio}_umbral${umbral}d_${fecha}.xlsx`);
+}
+
+// ============================================================
+// EXPORT: TABLA MAESTRA a Excel (lee window.__avanceData, los MISMOS
+// datos que la maestra en pantalla, para que coincida exactamente).
+// Respeta el filtro de coordinador activo.
+// ============================================================
+function descargarMaestraExcel() {
+  if (!window.__avanceData) { alert('Primero deja que cargue el reporte.'); return; }
+  const { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, mes, anio } = window.__avanceData;
+  const mesLabel = MESES_NOMBRE[mes - 1];
+  const fechaCorte = new Date().toISOString().split('T')[0];
+  const dht = estadoTotal.diasHabilesTotales || 0;
+
+  let centroLabel = 'Global';
+  if (coordinadorFiltro !== 'todos') {
+    const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
+    if (coord) centroLabel = coord.centro || coord.nombre;
+  }
+
+  const headers = ['Supervisor', 'Agentes', 'Cumplidos', 'Meta', 'Meta/día', 'Avance', '% Mes',
+    'Esperado', '% Diario', 'Prom/agente', 'Prom/día', 'Dif', 'Tránsito', 'Gap pot.',
+    'Ritmo nec.', 'Proyección', '% Proy', 'Estatus'];
+  const nCols = headers.length;
+
+  const aoa = [];
+  const merges = [];
+  aoa.push([`TABLA MAESTRA · ${centroLabel}`].concat(Array(nCols - 1).fill('')));
+  merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: nCols - 1 } });
+  aoa.push([`${mesLabel} ${anio} · Corte: ${fechaCorte} · Día hábil ${diasTranscurridos.toFixed(1)} de ${dht.toFixed(1)}`].concat(Array(nCols - 1).fill('')));
+  merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: nCols - 1 } });
+  aoa.push(Array(nCols).fill(''));
+  const headerRow = aoa.length;
+  aoa.push(headers);
+
+  const filas = [];
+  supervisoresData.forEach(d => {
+    const proy = d.proyMes;
+    const pctProy = d.meta > 0 ? (proy / d.meta * 100) : 0;
+    const metaDia = dht > 0 ? d.meta / dht : 0;
+    const gapPot = d.diff + (d.transito || 0);
+    const totalAgs = d.agentesActivos + d.agentesBajas;
+    aoa.push([
+      d.sup, totalAgs, `${d.cumplidos}/${d.agentesActivos}`, d.meta,
+      Number(metaDia.toFixed(1)), Number(d.avance.toFixed(1)), Number(d.pctCumpl.toFixed(1)),
+      d.esperado, Number(d.pctEsperado.toFixed(1)), Number(d.promPorAgente.toFixed(1)),
+      Number(d.promPorDia.toFixed(1)), Number(d.diff.toFixed(1)), d.transito || 0,
+      Number(gapPot.toFixed(1)), Number(d.ritmoNecesario.toFixed(1)), proy,
+      Number(pctProy.toFixed(0)), d.estado.toUpperCase()
+    ]);
+    filas.push({ diff: d.diff, gapPot, estado: d.estado });
+  });
+
+  const transitoTotal = supervisoresData.reduce((s, d) => s + (d.transito || 0), 0);
+  const totalActivos = supervisoresData.reduce((s, d) => s + (d.agentesActivos || 0), 0);
+  const totalBajas = supervisoresData.reduce((s, d) => s + (d.agentesBajas || 0), 0);
+  const totalCumpl = supervisoresData.reduce((s, d) => s + (d.cumplidos || 0), 0);
+  const difTotal = estadoTotal.avance - estadoTotal.esperado;
+  const gapPotTotal = difTotal + transitoTotal;
+  const promAgTot = totalActivos > 0 ? estadoTotal.avance / totalActivos : 0;
+  const promDiaTot = diasTranscurridos > 0 ? estadoTotal.avance / diasTranscurridos : 0;
+  const ritmoTot = diasRestantes > 0 ? Math.max(0, estadoTotal.meta - estadoTotal.avance) / diasRestantes : 0;
+  const proyTot = estadoTotal.proyMes;
+  const pctProyTot = estadoTotal.meta > 0 ? proyTot / estadoTotal.meta * 100 : 0;
+  const pctEspTot = estadoTotal.esperado > 0 ? estadoTotal.avance / estadoTotal.esperado * 100 : 0;
+  const estadoTot = pctProyTot >= 100 ? 'VERDE' : pctProyTot >= 95 ? 'AMARILLO' : 'ROJO';
+  const totalRowIdx = aoa.length;
+  aoa.push([
+    'TOTAL', totalActivos + totalBajas, `${totalCumpl}/${totalActivos}`, estadoTotal.meta,
+    dht > 0 ? Number((estadoTotal.meta / dht).toFixed(1)) : 0, Number(estadoTotal.avance.toFixed(1)),
+    Number(estadoTotal.pctCumplimiento.toFixed(1)), estadoTotal.esperado, Number(pctEspTot.toFixed(1)),
+    Number(promAgTot.toFixed(1)), Number(promDiaTot.toFixed(1)), Number(difTotal.toFixed(1)),
+    transitoTotal, Number(gapPotTotal.toFixed(1)), Number(ritmoTot.toFixed(1)), proyTot,
+    Number(pctProyTot.toFixed(0)), estadoTot
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = headers.map((h, i) => i === 0 ? { wch: 16 } : (i === 2 ? { wch: 11 } : { wch: 9 }));
+  ws['!merges'] = merges;
+
+  const NAVY = '002B5C', LIGHT = '00A8E0', WHITE = 'FFFFFF', STRIPE = 'F5F8FB';
+  const border = {
+    top: { style: 'thin', color: { rgb: 'D0D7DE' } }, bottom: { style: 'thin', color: { rgb: 'D0D7DE' } },
+    left: { style: 'thin', color: { rgb: 'D0D7DE' } }, right: { style: 'thin', color: { rgb: 'D0D7DE' } }
+  };
+  const setS = (r, c, style) => { const ref = XLSX.utils.encode_cell({ r, c }); if (ws[ref]) ws[ref].s = style; };
+
+  setS(0, 0, { font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: WHITE } }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: 'left', vertical: 'center' } });
+  setS(1, 0, { font: { name: 'Calibri', sz: 10, color: { rgb: WHITE } }, fill: { fgColor: { rgb: LIGHT } }, alignment: { horizontal: 'left', vertical: 'center' } });
+  for (let c = 0; c < nCols; c++) setS(headerRow, c, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: WHITE } }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border });
+
+  const firstData = headerRow + 1;
+  for (let i = 0; i < filas.length; i++) {
+    const r = firstData + i;
+    const stripeBg = (i % 2 === 1) ? { fill: { fgColor: { rgb: STRIPE } } } : {};
+    for (let c = 0; c < nCols; c++) {
+      setS(r, c, { font: { name: 'Calibri', sz: 10 }, alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' }, border, ...stripeBg });
+    }
+    const f = filas[i];
+    const difColor = f.diff >= 0 ? '16A34A' : 'DC2626';
+    setS(r, 11, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: difColor } }, alignment: { horizontal: 'center', vertical: 'center' }, border, ...stripeBg });
+    const gpColor = f.gapPot >= 0 ? '16A34A' : 'DC2626';
+    setS(r, 13, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: gpColor } }, alignment: { horizontal: 'center', vertical: 'center' }, border, ...stripeBg });
+    const estBg = f.estado === 'verde' ? 'D1FAE5' : f.estado === 'amarillo' ? 'FEF3C7' : 'FEE2E2';
+    const estFg = f.estado === 'verde' ? '065F46' : f.estado === 'amarillo' ? '92400E' : '991B1B';
+    setS(r, 17, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: estFg } }, fill: { fgColor: { rgb: estBg } }, alignment: { horizontal: 'center', vertical: 'center' }, border });
+  }
+  for (let c = 0; c < nCols; c++) setS(totalRowIdx, c, { font: { name: 'Calibri', sz: 10, bold: true, color: { rgb: WHITE } }, fill: { fgColor: { rgb: NAVY } }, alignment: { horizontal: c === 0 ? 'left' : 'center', vertical: 'center' }, border });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Tabla Maestra');
+  XLSX.writeFile(wb, `tabla_maestra_${centroLabel}_${mesLabel}_${anio}.xlsx`);
 }
 
 function descargarEquipoExcel(supervisor) {
