@@ -39,7 +39,7 @@ const RUTEO_POR_CENTRO = {
 
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
-const REMITENTE = `"Reportes ExpertCell" <${GMAIL_USER}>`;
+const REMITENTE = `"Jonathan Atenorio" <${GMAIL_USER}>`;
 
 const TZ = 'America/Mexico_City';
 const HOY = new Date().toLocaleDateString('es-MX', {
@@ -50,10 +50,16 @@ const ANIO = parseInt(HOY_ARCHIVO.slice(0, 4), 10);
 // getDay() sobre la fecha local de CDMX: 1 = lunes
 const ES_LUNES = new Date(new Date().toLocaleString('en-US', { timeZone: TZ })).getDay() === 1;
 
-// MODO PRUEBA: si existe el secret MODO_PRUEBA (cualquier valor), TODOS los correos
-// se redirigen unicamente a Jonathan (CC_SIEMPRE). Los coordinadores NO reciben nada.
-// Para volver al envio normal, basta con borrar ese secret.
-const MODO_PRUEBA = !!process.env.MODO_PRUEBA;
+// ============================================================
+//  SEGURIDAD (default seguro):
+//  Por DEFECTO, TODOS los correos van UNICAMENTE a Jonathan (modo prueba).
+//  Para que lleguen a los destinatarios REALES (coordinadores y supervisores),
+//  hay que crear A PROPOSITO el secret ENVIAR_EN_VIVO en GitHub.
+//  Si ese secret NO existe (o se borra/olvida), NUNCA llega a coordinadores
+//  ni supervisores: el olvido es seguro, no peligroso.
+// ============================================================
+const ENVIAR_EN_VIVO = !!process.env.ENVIAR_EN_VIVO;
+const ES_PRUEBA = !ENVIAR_EN_VIVO;
 
 // ENVIAR_SUPERVISORES: si existe el secret (cualquier valor), ADEMAS de los
 // coordinadores se le manda a cada supervisor su propio detalle de equipo,
@@ -69,68 +75,105 @@ function clasificarCentro(raw) {
   return null;
 }
 
-function construirCuerpo(nombreCoord, etiquetaCentro, hayInact, hayTarjeta, hayAnual) {
+function resumenHtml(resumen) {
+  if (!resumen) return '';
+  const eq = (resumen.equipos || []);
+  const pl = (resumen.planes || []);
+  if (!eq.length && !pl.length) return '';
+  const dineroMx = (n) => '$' + Number(n || 0).toLocaleString('es-MX');
+  let h = '<div style="background:#F5F8FB;border-radius:10px;padding:12px 16px;margin:8px 0 16px;">';
+  if (eq.length) {
+    h += '<p style="margin:0 0 6px;"><strong>Equipos que más venden este mes:</strong></p><ol style="margin:0 0 10px;padding-left:20px;">';
+    eq.forEach((e) => { h += `<li>${e.sup} — <strong>${e.avance}</strong> activadas</li>`; });
+    h += '</ol>';
+  }
+  if (pl.length) {
+    h += '<p style="margin:0 0 6px;"><strong>Planes que más se venden:</strong></p><ol style="margin:0;padding-left:20px;">';
+    pl.forEach((p) => { h += `<li>${p.plan} — <strong>${p.count}</strong> ${p.arpu ? `(ARPU ${dineroMx(p.arpu)})` : ''}</li>`; });
+    h += '</ol>';
+  }
+  h += '</div>';
+  return h;
+}
+
+function resumenText(resumen) {
+  if (!resumen) return '';
+  const eq = (resumen.equipos || []);
+  const pl = (resumen.planes || []);
+  if (!eq.length && !pl.length) return '';
+  let t = '';
+  if (eq.length) t += '\nEquipos que más venden este mes: ' + eq.map((e) => `${e.sup} (${e.avance})`).join(', ') + '.';
+  if (pl.length) t += '\nPlanes que más se venden: ' + pl.map((p) => `${p.plan} (${p.count}${p.arpu ? `, ARPU $${p.arpu}` : ''})`).join(', ') + '.';
+  return t;
+}
+
+function construirCuerpo(nombreCoord, etiquetaCentro, hayInact, hayTarjeta, hayAnual, resumen) {
   const inactLinea = hayInact
     ? 'Excel de inactividad del centro (agentes con dias sin activar / sin programar).'
     : 'Hoy no hubo agentes en alerta de inactividad. \u2705';
   const anualLinea = hayAnual
-    ? '\n- Análisis Anual de cada supervisor del centro (adjunto, envío de los lunes).'
+    ? '\n- El Análisis Anual de cada uno de tus supervisores (te lo mando los lunes).'
     : '';
   const text =
 `Hola ${nombreCoord},
 
-Adjunto el reporte operativo de hoy (${HOY}) para ${etiquetaCentro}:
+Te comparto el resumen de ${etiquetaCentro} al ${HOY}.${resumenText(resumen)}
 
-- Excel del centro: dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.
-- Tabla maestra del centro (Excel).
+Te dejo adjunto:
+- El Excel del centro: dashboard, una hoja de detalle por cada supervisor y el detalle general.
+- La tabla maestra del centro.
 - ${inactLinea}${anualLinea}
 
+Revísalo y cualquier cosa que veas me dices.
+
 Saludos,
-Reportes ExpertCell (envio automatico)`;
+Jonathan`;
 
   const imgTarjeta = hayTarjeta
     ? `<p style="margin:6px 0 16px;"><img src="cid:tarjeta-resumen" alt="Resumen del centro" style="max-width:100%;border-radius:10px;"></p>`
     : '';
   const anualHtml = hayAnual
-    ? `<li><strong>Análisis Anual</strong> de cada supervisor del centro (adjunto, env&iacute;o de los lunes).</li>`
+    ? `<li>El <strong>Análisis Anual</strong> de cada uno de tus supervisores (te lo mando los lunes).</li>`
     : '';
   const html =
 `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
   <p>Hola ${nombreCoord},</p>
-  <p>Resumen del centro <strong>${etiquetaCentro}</strong> al ${HOY}:</p>
+  <p>Te comparto el resumen de <strong>${etiquetaCentro}</strong> al ${HOY}.</p>
   ${imgTarjeta}
-  <p>Adjuntos:</p>
+  ${resumenHtml(resumen)}
+  <p>Te dejo adjunto:</p>
   <ul>
-    <li><strong>Excel del centro:</strong> dashboard del coordinador, una hoja de detalle por cada supervisor y el detalle general del centro.</li>
-    <li><strong>Tabla maestra</strong> del centro (Excel adjunto).</li>
+    <li>El <strong>Excel del centro</strong>: dashboard, una hoja de detalle por cada supervisor y el detalle general.</li>
+    <li>La <strong>tabla maestra</strong> del centro.</li>
     <li>${inactLinea}</li>
     ${anualHtml}
   </ul>
-  <p style="color:#6b7280;font-size:12px;margin-top:18px">Reportes ExpertCell &middot; env&iacute;o autom&aacute;tico</p>
+  <p>Revísalo y cualquier cosa que veas me dices.</p>
+  <p style="margin-top:16px;">Saludos,<br>Jonathan</p>
 </div>`;
   return { text, html };
 }
 
-function construirCuerpoSupervisor(nombreSup, hayAnual) {
-  const anualT = hayAnual ? '\n- Tu Análisis Anual (envío de los lunes).' : '';
-  const anualH = hayAnual ? '<li>Tu <strong>Análisis Anual</strong> (env&iacute;o de los lunes).</li>' : '';
+function construirCuerpoSupervisor(nombreSup, hayAnual, resumen) {
+  const anualT = hayAnual ? '\nTambién te mando tu Análisis Anual (te lo paso los lunes).' : '';
+  const anualH = hayAnual ? '<p>También te mando tu <strong>Análisis Anual</strong> (te lo paso los lunes).</p>' : '';
   const text =
 `Hola ${nombreSup},
 
-Adjunto tu reporte de equipo de hoy (${HOY}): dashboard de tu equipo y el detalle
-de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).${anualT}
+Te paso tu reporte de equipo de hoy: el dashboard de tu equipo y el detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).${resumenText(resumen)}${anualT}
+
+Échale un ojo y cualquier duda me buscas.
 
 Saludos,
-Reportes ExpertCell (envio automatico)`;
+Jonathan`;
   const html =
 `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
   <p>Hola ${nombreSup},</p>
-  <p>Adjunto tu reporte de equipo de hoy (<strong>${HOY}</strong>):</p>
-  <ul>
-    <li>Dashboard de tu equipo y el detalle de cada uno de tus agentes (avance, meta, % de cumplimiento e inactividad).</li>
-    ${anualH}
-  </ul>
-  <p style="color:#6b7280;font-size:12px;margin-top:18px">Reportes ExpertCell &middot; env&iacute;o autom&aacute;tico</p>
+  <p>Te paso tu reporte de equipo de hoy: el <strong>dashboard de tu equipo</strong> y el <strong>detalle de cada uno de tus agentes</strong> (avance, meta, % de cumplimiento e inactividad).</p>
+  ${resumenHtml(resumen)}
+  ${anualH}
+  <p>Échale un ojo y cualquier duda me buscas.</p>
+  <p style="margin-top:16px;">Saludos,<br>Jonathan</p>
 </div>`;
   return { text, html };
 }
@@ -287,6 +330,11 @@ async function main() {
         return Object.keys(d.agentesPorSup).filter((s) => (d.agentesPorSup[s] || []).length > 0);
       });
 
+      // Resumen de equipos y planes que mas venden en el centro (para el cuerpo)
+      const resumenCentro = await page.evaluate(() => {
+        try { return window.__resumenVentas(); } catch (e) { return null; }
+      });
+
       // 5) LUNES: Analisis Anual de cada supervisor del centro (para el coordinador)
       const anualesCoord = [];
       if (ES_LUNES) {
@@ -330,12 +378,12 @@ async function main() {
         attachments.push({ filename: 'resumen.png', content: pngTarjeta, cid: 'tarjeta-resumen' });
       }
 
-      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact, !!pngTarjeta, ES_LUNES && anualesCoord.length > 0);
+      const cuerpo = construirCuerpo(nombre, ruta.etiqueta, !!archInact, !!pngTarjeta, ES_LUNES && anualesCoord.length > 0, resumenCentro);
 
       // En MODO PRUEBA todo va solo a Jonathan; en normal, al coordinador con copia.
-      const destinoTo = MODO_PRUEBA ? CC_SIEMPRE : ruta.para;
-      const destinoCc = MODO_PRUEBA ? undefined : CC_SIEMPRE;
-      const prefijoAsunto = MODO_PRUEBA ? '[PRUEBA] ' : '';
+      const destinoTo = ES_PRUEBA ? CC_SIEMPRE : ruta.para;
+      const destinoCc = ES_PRUEBA ? undefined : CC_SIEMPRE;
+      const prefijoAsunto = ES_PRUEBA ? '[PRUEBA] ' : '';
 
       await transporter.sendMail({
         from: REMITENTE,
@@ -348,7 +396,7 @@ async function main() {
       });
 
       enviados++;
-      console.log(`Enviado a ${destinoTo} (${ruta.etiqueta})${MODO_PRUEBA ? ' [PRUEBA]' : ''}.`);
+      console.log(`Enviado a ${destinoTo} (${ruta.etiqueta})${ES_PRUEBA ? ' [PRUEBA]' : ''}.`);
 
       // ---- Envio a cada SUPERVISOR de este centro (opcional) ----
       if (ENVIAR_SUPERVISORES) {
@@ -364,7 +412,7 @@ async function main() {
         });
 
         for (const s of sups) {
-          if (!s.email && !MODO_PRUEBA) {
+          if (!s.email && !ES_PRUEBA) {
             incidencias.push(`Supervisor "${s.sup}" (${ruta.etiqueta}) sin email en supervisores_config; no se le envio su detalle.`);
             continue;
           }
@@ -378,9 +426,9 @@ async function main() {
               continue;
             }
 
-            const supTo = MODO_PRUEBA ? CC_SIEMPRE : s.email;
-            const supCc = MODO_PRUEBA ? undefined : CC_SIEMPRE;
-            const supPref = MODO_PRUEBA ? '[PRUEBA] ' : '';
+            const supTo = ES_PRUEBA ? CC_SIEMPRE : s.email;
+            const supCc = ES_PRUEBA ? undefined : CC_SIEMPRE;
+            const supPref = ES_PRUEBA ? '[PRUEBA] ' : '';
 
             const supAttachments = [
               { filename: `Equipo_${s.sup}_${HOY_ARCHIVO}.xlsx`, content: Buffer.from(archEq.b64, 'base64') },
@@ -397,7 +445,9 @@ async function main() {
                 supHayAnual = true;
               }
             }
-            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual);
+            const cuerpoSup = construirCuerpoSupervisor(s.sup, supHayAnual, await page.evaluate((nom) => {
+              try { return window.__resumenVentas(nom); } catch (e) { return null; }
+            }, s.sup));
 
             await transporter.sendMail({
               from: REMITENTE,
@@ -409,7 +459,7 @@ async function main() {
               attachments: supAttachments,
             });
             enviados++;
-            console.log(`Enviado a ${supTo} (equipo ${s.sup})${MODO_PRUEBA ? ' [PRUEBA]' : ''}.`);
+            console.log(`Enviado a ${supTo} (equipo ${s.sup})${ES_PRUEBA ? ' [PRUEBA]' : ''}.`);
           } catch (e) {
             incidencias.push(`Error con supervisor "${s.sup}" (${ruta.etiqueta}): ${e.message}.`);
           }
