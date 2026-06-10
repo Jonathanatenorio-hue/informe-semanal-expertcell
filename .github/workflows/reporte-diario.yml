@@ -6,9 +6,9 @@ name: Reporte diario ExpertCell
 
 on:
   schedule:
-    # 14:00 UTC = 08:00 CDMX (Mexico ya no usa horario de verano: siempre UTC-6).
-    # '1-6' = lunes a sabado.
-    - cron: '0 14 * * 1-6'
+    # 15:15 UTC = 09:15 CDMX (Mexico ya no usa horario de verano: siempre UTC-6).
+    # '1-6' = lunes a sabado. Asi te da tiempo de subir los Excel actualizados antes.
+    - cron: '15 15 * * 1-6'
   workflow_dispatch: {}   # permite ejecutarlo A MANO desde la pestana Actions (para pruebas)
 
 jobs:
