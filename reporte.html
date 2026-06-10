@@ -7102,9 +7102,9 @@ function descargarInactividadExcel() {
 // Respeta el filtro de coordinador activo.
 // ============================================================
 // ============================================================
-// RESUMEN para el cuerpo del correo: equipos y planes que mas venden,
+// RESUMEN para el cuerpo del correo: PLANES que mas se venden,
 // respetando el filtro de centro activo. Si se pasa un supervisor,
-// los planes se calculan solo de su equipo (y no se devuelven equipos).
+// se calcula solo de su equipo.
 // ============================================================
 window.__resumenVentas = function (supFiltro) {
   try {
@@ -7126,14 +7126,36 @@ window.__resumenVentas = function (supFiltro) {
     const planes = Object.values(planMap)
       .map(x => ({ plan: x.plan, count: x.count, arpu: x.nArpu > 0 ? Math.round(x.sumArpu / x.nArpu) : 0 }))
       .sort((a, b) => b.count - a.count).slice(0, 3);
-    let equipos = [];
-    if (!supFiltro) {
-      equipos = (av.supervisoresData || [])
-        .map(d => ({ sup: d.sup, avance: Math.round((d.avance || 0) * 10) / 10 }))
-        .sort((a, b) => b.avance - a.avance).slice(0, 3);
-    }
-    return { equipos, planes };
+    return { planes };
   } catch (e) { return null; }
+};
+
+// ============================================================
+// MODELOS de telefono (equipos) que mas se venden, desde entregas_detalle
+// cruzado con activadas. Respeta el filtro de centro (o un supervisor).
+// Es async porque carga entregas. Si entregas_detalle no esta cargado,
+// devuelve [] (no truena).
+// ============================================================
+window.__resumenModelos = async function (supFiltro) {
+  try {
+    const av = window.__avanceData;
+    if (!av || typeof _cargarEntregasData !== 'function') return [];
+    const sups = supFiltro ? new Set([supFiltro]) : new Set((av.supervisoresData || []).map(d => d.sup));
+    const ini = av.iniMesStr, fin = av.fechaCorteStr;
+    const entregas = await _cargarEntregasData();
+    const data = _construirDatosLogistica(entregas);
+    const modeloMap = {};
+    (data || []).forEach(r => {
+      if (!r.fecha_activacion || r.fecha_activacion < ini || r.fecha_activacion > fin) return;
+      if (!sups.has(r.supervisor)) return;
+      const eq = r.equipo && String(r.equipo).trim();
+      if (!eq) return;
+      modeloMap[eq] = (modeloMap[eq] || 0) + 1;
+    });
+    return Object.entries(modeloMap)
+      .map(([modelo, count]) => ({ modelo, count }))
+      .sort((a, b) => b.count - a.count).slice(0, 3);
+  } catch (e) { return []; }
 };
 
 function descargarMaestraExcel() {
