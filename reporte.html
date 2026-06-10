@@ -6380,12 +6380,19 @@ function descargarInactivosExcel() {
   XLSX.writeFile(wb, `agentes_sin_venta_${nombreMes}_${a}_${fecha}.xlsx`);
 }
 
-function descargarInactividadExcel() {
+function descargarInactividadExcel(supFiltro) {
   if (!window.__inactividadAgentes) {
     alert('Datos de inactividad no disponibles. Recarga el reporte.');
     return;
   }
-  const { sinActAlerta, sinProgAlerta, mes, anio, umbral } = window.__inactividadAgentes;
+  const { mes, anio, umbral } = window.__inactividadAgentes;
+  let sinActAlerta = window.__inactividadAgentes.sinActAlerta;
+  let sinProgAlerta = window.__inactividadAgentes.sinProgAlerta;
+  // Filtro opcional a un solo supervisor (para el correo de cada supervisor).
+  if (supFiltro) {
+    sinActAlerta = (sinActAlerta || []).filter(a => a.supervisor === supFiltro);
+    sinProgAlerta = (sinProgAlerta || []).filter(a => a.supervisor === supFiltro);
+  }
 
   if (sinActAlerta.length === 0 && sinProgAlerta.length === 0) {
     alert(`No hay agentes con ${umbral}+ días sin actividad.`);
@@ -7158,15 +7165,32 @@ window.__resumenModelos = async function (supFiltro) {
   } catch (e) { return []; }
 };
 
-function descargarMaestraExcel() {
+function descargarMaestraExcel(supFiltro) {
   if (!window.__avanceData) { alert('Primero deja que cargue el reporte.'); return; }
-  const { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, mes, anio } = window.__avanceData;
+  const { diasTranscurridos, diasRestantes, mes, anio } = window.__avanceData;
+  let estadoTotal = window.__avanceData.estadoTotal;
+  let supervisoresData = window.__avanceData.supervisoresData;
+  // Filtro opcional a un solo supervisor (para el correo de cada supervisor).
+  // Si no se pasa, queda igual que siempre (nivel centro/coordinador).
+  if (supFiltro) {
+    const d = supervisoresData.find(x => x.sup === supFiltro);
+    supervisoresData = d ? [d] : [];
+    if (d) {
+      estadoTotal = {
+        ...estadoTotal,
+        avance: d.avance, meta: d.meta, esperado: d.esperado,
+        proyMes: d.proyMes, pctCumplimiento: d.pctCumpl,
+      };
+    }
+  }
   const mesLabel = MESES_NOMBRE[mes - 1];
   const fechaCorte = new Date().toISOString().split('T')[0];
   const dht = estadoTotal.diasHabilesTotales || 0;
 
   let centroLabel = 'Global';
-  if (coordinadorFiltro !== 'todos') {
+  if (supFiltro) {
+    centroLabel = supFiltro;
+  } else if (coordinadorFiltro !== 'todos') {
     const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
     if (coord) centroLabel = coord.centro || coord.nombre;
   }
