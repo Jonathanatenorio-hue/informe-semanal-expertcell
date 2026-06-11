@@ -68,6 +68,20 @@ function fmtFechaEs(iso) {
   return `${parseInt(m[3], 10)} de ${meses[parseInt(m[2], 10) - 1]} de ${m[1]}`;
 }
 
+// Devuelve el ULTIMO DIA HABIL esperado en los datos: normalmente ayer; si ayer
+// fue domingo (sin operacion), regresa el sabado. Formato 'YYYY-MM-DD' en CDMX.
+// Sirve para detectar si el reporte trae datos frescos o si se olvido subirlos.
+function ultimoDiaHabilEsperado() {
+  const hoyCdmx = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+  const d = new Date(hoyCdmx);
+  d.setDate(d.getDate() - 1);          // ayer
+  if (d.getDay() === 0) d.setDate(d.getDate() - 1); // si es domingo, al sabado
+  const y = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mm}-${dd}`;
+}
+
 // ============================================================
 //  SEGURIDAD (doble candado):
 //  1) Por DEFECTO, TODO va UNICAMENTE a Jonathan (modo prueba). Para que llegue
@@ -351,6 +365,26 @@ async function main() {
       HOY_ARCHIVO = corte;
       HOY = corteTxt;
       console.log(`Fecha de corte del reporte: ${HOY} (${HOY_ARCHIVO}).`);
+    }
+
+    // --- REGLA: no enviar si los datos no estan actualizados ---
+    // Si la fecha de corte del reporte es ANTERIOR al ultimo dia habil esperado,
+    // quiere decir que no se subieron los Excel nuevos. En ese caso NO se envia
+    // nada a nadie y solo se avisa a Jonathan.
+    const esperado = ultimoDiaHabilEsperado();
+    if (corte && corte < esperado) {
+      await browser.close();
+      await avisarJonathan(
+        transporter,
+        `\u26A0\uFE0F Reportes ExpertCell - datos sin actualizar (${HOY})`,
+        `No se envio ningun reporte porque los datos no estan actualizados.\n\n` +
+        `La fecha de corte del reporte sigue en ${corteTxt} (${corte}), y se esperaba ` +
+        `al menos ${fmtFechaEs(esperado)} (${esperado}).\n\n` +
+        `Probablemente falto subir los Excel a Supabase. Subelos y vuelve a correr el envio ` +
+        `(Actions > Run workflow, o espera al disparo de manana).`
+      );
+      console.log(`Datos sin actualizar (corte ${corte} < esperado ${esperado}). No se envio nada.`);
+      process.exit(0);
     }
   } catch (e) { /* si falla, se queda con la fecha de hoy */ }
 
