@@ -37,6 +37,13 @@ const RUTEO_POR_CENTRO = {
   JV:  { para: 'l.meza@solucell.com.mx',      etiqueta: 'JV' },
 };
 
+// Talento Humano por centro: reciben SOLO imagenes (tarjeta + avance diario)
+// para pasar en las pantallas. Sin Excel, sin tops.
+const TALENTO_HUMANO_POR_CENTRO = {
+  CC2: 'reclutamientocc2@solucell.com.mx',
+  JV:  'k.flores@solucell.com.mx',
+};
+
 const GMAIL_USER = process.env.GMAIL_USER;
 const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const REMITENTE = `"Jonathan Atenorio" <${GMAIL_USER}>`;
@@ -229,10 +236,38 @@ async function avisarJonathan(transporter, asunto, mensaje) {
 }
 
 // ---------- PRINCIPAL ----------
-// Captura la vista diaria CON las tarjetas de arriba (las que explican como leer
-// las lineas) + la grafica. Oculta temporalmente el titulo y los controles de la
-// seccion, fotografia el cuerpo, y restaura todo.
+// Cuerpo para Talento Humano: solo imagenes grandes (tarjeta + avance diario)
+// para proyectar en pantalla. Sin adjuntos ni tablas.
+function construirCuerpoTalento(etiquetaCentro, hayTarjeta, hayVista) {
+  const text =
+`Hola,
+
+Les comparto las imágenes de ${etiquetaCentro} al ${HOY} para las pantallas.
+
+Saludos,
+Jonathan`;
+  const imgTarjeta = hayTarjeta
+    ? `<p style="margin:0 0 18px;"><img src="cid:tarjeta-resumen" alt="Avance de ${etiquetaCentro}" style="max-width:100%;border-radius:10px;"></p>`
+    : '';
+  const imgVista = hayVista
+    ? `<p style="margin:0 0 8px;"><strong>Venta diaria del mes</strong></p><p style="margin:0 0 8px;"><img src="cid:vista-diaria" alt="Avance diario de ${etiquetaCentro}" style="max-width:100%;border-radius:10px;border:1px solid #E5E7EB;"></p>`
+    : '';
+  const html =
+`<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.55">
+  <p>Hola,</p>
+  <p>Les comparto las imágenes de <strong>${etiquetaCentro}</strong> al ${HOY} para las pantallas.</p>
+  ${imgTarjeta}
+  ${imgVista}
+  <p style="margin-top:16px;">Saludos,<br>Jonathan</p>
+</div>`;
+  return { text, html };
+}
+
+// Cuerpo para Talento Humano: solo imagenes grandes (tarjeta + avance diario)
 async function capturarVistaDiaria(page) {
+  // Captura la vista diaria CON las tarjetas de arriba (las que explican como leer
+  // las lineas) + la grafica. Oculta temporalmente el titulo y los controles de la
+  // seccion, fotografia el cuerpo, y restaura todo.
   try {
     await page.evaluate(() => {
       const sb = document.querySelector('#sec-vista-tiempo .section-body');
@@ -502,6 +537,34 @@ async function main() {
 
       enviados++;
       console.log(`Enviado a ${destinoTo} (${ruta.etiqueta})${ES_PRUEBA ? ' [PRUEBA]' : ''}.`);
+
+      // ---- Envio a TALENTO HUMANO del centro: solo imagenes para pantallas ----
+      const thEmail = TALENTO_HUMANO_POR_CENTRO[centroKey];
+      if (thEmail && (pngTarjeta || pngVista)) {
+        try {
+          const thAdjuntos = [];
+          if (pngTarjeta) thAdjuntos.push({ filename: 'resumen.png', content: pngTarjeta, cid: 'tarjeta-resumen' });
+          if (pngVista) thAdjuntos.push({ filename: 'vista-diaria.png', content: pngVista, cid: 'vista-diaria' });
+          const cuerpoTh = construirCuerpoTalento(ruta.etiqueta, !!pngTarjeta, !!pngVista);
+          const thTo = ES_PRUEBA ? CC_SIEMPRE : thEmail;
+          const thCc = ES_PRUEBA ? undefined : CC_SIEMPRE;
+          await transporter.sendMail({
+            from: REMITENTE,
+            to: thTo,
+            cc: thCc,
+            subject: `${prefijoAsunto}Avance ExpertCell \u00B7 ${ruta.etiqueta} \u00B7 ${HOY}`,
+            text: cuerpoTh.text,
+            html: cuerpoTh.html,
+            attachments: thAdjuntos,
+          });
+          enviados++;
+          console.log(`Enviado a ${thTo} (Talento Humano ${ruta.etiqueta})${ES_PRUEBA ? ' [PRUEBA]' : ''}.`);
+        } catch (e) {
+          incidencias.push(`Error enviando a Talento Humano (${ruta.etiqueta}): ${e.message}.`);
+        }
+      } else if (!thEmail) {
+        incidencias.push(`No hay correo de Talento Humano configurado para ${ruta.etiqueta}; no se le envio.`);
+      }
 
       // ---- Envio a cada SUPERVISOR de este centro (opcional) ----
       if (ENVIAR_SUPERVISORES) {
