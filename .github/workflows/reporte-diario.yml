@@ -5,11 +5,10 @@ name: Reporte diario ExpertCell
 # y la tabla maestra, y los envia por correo.
 
 on:
-  schedule:
-    # 15:15 UTC = 09:15 CDMX (Mexico ya no usa horario de verano: siempre UTC-6).
-    # '1-6' = lunes a sabado. Asi te da tiempo de subir los Excel actualizados antes.
-    - cron: '15 15 * * 1-6'
-  workflow_dispatch: {}   # permite ejecutarlo A MANO desde la pestana Actions (para pruebas)
+  # El disparo de las 9:15 lo hace un programador externo (cron-job.org) que es
+  # puntual y confiable. Por eso ya NO usamos el cron interno de GitHub (era
+  # impuntual y causaba envios tarde o duplicados).
+  workflow_dispatch: {}   # permite ejecutarlo A MANO desde Actions y desde cron-job.org
 
 jobs:
   enviar:
