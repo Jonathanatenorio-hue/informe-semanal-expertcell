@@ -10172,36 +10172,68 @@ function renderDistribucionPlantilla() {
   const hoy = new Date().toISOString().split('T')[0];
   const hoyDate = new Date(hoy + 'T12:00:00');
 
-  const supCentro = {};
-  supConfigData.forEach(c => { supCentro[c.supervisor] = c.centro; });
+  // Supervisores VIGENTES de piso por centro (mismo criterio que Estructura).
+  const supsPorCentro = { CC2: [], JV: [] };
+  const vigentSet = new Set();
+  supConfigData.forEach(s => {
+    if (!s.fecha_fin || s.fecha_fin >= hoy) {
+      if (supsPorCentro[s.centro]) supsPorCentro[s.centro].push(s.supervisor);
+      vigentSet.add(s.supervisor);
+    }
+  });
+
+  // Centro real del agente: si su supervisor es de piso, ese centro; si no
+  // (capacitación), se parsea su propio campo de centro. Misma lógica que la
+  // sección de Capacitadores. Devuelve null si no es AT&T (otra campaña).
+  function detectarCentro(p) {
+    if (supsPorCentro.CC2.includes(p.supervisor)) return 'CC2';
+    if (supsPorCentro.JV.includes(p.supervisor)) return 'JV';
+    const txt = String(p.centro || '').toUpperCase();
+    if (txt.includes('C CENTER 2') || txt.includes('CCENTER 2')) return 'CC2';
+    if (txt.includes('JUAREZ 701') || txt.includes('JUAREZ701') || txt.includes('CCENTER JV') || txt.includes('C CENTER JV')) return 'JV';
+    return null;
+  }
 
   const total = { nuevos: 0, exp: 0 };
   const porCentro = { CC2: { nuevos: 0, exp: 0 }, JV: { nuevos: 0, exp: 0 } };
-  const porSup = {};
+  const capacitacion = { CC2: 0, JV: 0 };
+  const porSup = {}; // id -> {label, centro, nuevos, exp, esCapa}
+
+  function bucket(label, centro, esCapa) {
+    const id = label + '||' + centro;
+    if (!porSup[id]) porSup[id] = { label, centro, nuevos: 0, exp: 0, esCapa };
+    return porSup[id];
+  }
 
   plantillaData.forEach(p => {
     if (!p.fecha_ingreso || p.fecha_ingreso > hoy) return;
     if (p.fecha_baja && p.fecha_baja <= hoy) return;
-    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
-    const dias = Math.floor((hoyDate - ing) / 86400000);
+    const centro = detectarCentro(p);
+    if (centro !== 'CC2' && centro !== 'JV') return; // solo AT&T (excluye otras campañas)
+    const dias = Math.floor((hoyDate - new Date(p.fecha_ingreso + 'T12:00:00')) / 86400000);
     const tipo = dias <= 42 ? 'nuevos' : 'exp';
-    const sup = p.supervisor || '(sin supervisor)';
-    const centro = supCentro[sup] || p.centro || null;
+    const asignado = p.supervisor && vigentSet.has(p.supervisor);
     total[tipo]++;
-    if (centro === 'CC2' || centro === 'JV') porCentro[centro][tipo]++;
-    if (!porSup[sup]) porSup[sup] = { nuevos: 0, exp: 0, centro };
-    porSup[sup][tipo]++;
+    porCentro[centro][tipo]++;
+    if (asignado) {
+      bucket(p.supervisor, centro, false)[tipo]++;
+    } else {
+      capacitacion[centro]++;
+      bucket('Capacitación', centro, true)[tipo]++;
+    }
   });
 
   const totalAgentes = total.nuevos + total.exp;
+  const totalCapa = capacitacion.CC2 + capacitacion.JV;
   const pct = (n) => totalAgentes ? Math.round((n / totalAgentes) * 100) : 0;
 
   const cards = document.getElementById('distrib-cards');
   if (cards) {
     cards.innerHTML = `
       <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">Plantilla activa</div>
+        <div class="stat-label">Plantilla activa AT&T</div>
         <div class="stat-value">${totalAgentes}</div>
+        <div style="font-size:11px; color:var(--text-soft);">CC2 ${porCentro.CC2.nuevos + porCentro.CC2.exp} · JV ${porCentro.JV.nuevos + porCentro.JV.exp}</div>
       </div>
       <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
         <div class="stat-label">Nuevos ingresos (≤42d)</div>
@@ -10214,32 +10246,35 @@ function renderDistribucionPlantilla() {
         <div style="font-size:11px; color:var(--text-soft);">${pct(total.exp)}% de la plantilla</div>
       </div>
       <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">CC2 · nuevos / exp</div>
-        <div class="stat-value">${porCentro.CC2.nuevos} / ${porCentro.CC2.exp}</div>
-      </div>
-      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">JV · nuevos / exp</div>
-        <div class="stat-value">${porCentro.JV.nuevos} / ${porCentro.JV.exp}</div>
+        <div class="stat-label">En capacitación</div>
+        <div class="stat-value" style="color:var(--att-blue-dark);">${totalCapa}</div>
+        <div style="font-size:11px; color:var(--text-soft);">CC2 ${capacitacion.CC2} · JV ${capacitacion.JV}</div>
       </div>`;
   }
 
   const body = document.getElementById('distrib-tabla-body');
   if (body) {
-    const filas = Object.entries(porSup)
-      .map(([sup, v]) => ({ sup, ...v, total: v.nuevos + v.exp }))
+    const filas = Object.values(porSup)
+      .map(v => ({ ...v, total: v.nuevos + v.exp }))
       .sort((a, b) => {
         const ca = a.centro || 'ZZ', cb = b.centro || 'ZZ';
         if (ca !== cb) return ca.localeCompare(cb);
+        if (a.esCapa !== b.esCapa) return a.esCapa ? 1 : -1; // capacitación al final de su centro
         return b.total - a.total;
       });
     body.innerHTML = filas.length
-      ? filas.map(f => `<tr>
-          <td>${f.sup}</td>
-          <td style="text-align:center;">${f.centro || '—'}</td>
-          <td class="num" style="text-align:center; color:var(--amber); font-weight:600;">${f.nuevos}</td>
-          <td class="num" style="text-align:center; color:var(--green); font-weight:600;">${f.exp}</td>
-          <td class="num" style="text-align:center; font-weight:700;">${f.total}</td>
-        </tr>`).join('')
+      ? filas.map(f => {
+          const nombre = f.esCapa
+            ? `<em style="color:var(--att-blue-dark);">Capacitación</em>`
+            : f.label;
+          return `<tr${f.esCapa ? ' style="background:#EFF6FF;"' : ''}>
+            <td>${nombre}</td>
+            <td style="text-align:center;">${f.centro || '—'}</td>
+            <td class="num" style="text-align:center; color:var(--amber); font-weight:600;">${f.nuevos}</td>
+            <td class="num" style="text-align:center; color:var(--green); font-weight:600;">${f.exp}</td>
+            <td class="num" style="text-align:center; font-weight:700;">${f.total}</td>
+          </tr>`;
+        }).join('')
       : `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-soft);">Sin datos de plantilla.</td></tr>`;
   }
 }
