@@ -1399,6 +1399,31 @@
       </div>
     </div>
 
+    <!-- DISTRIBUCIÓN DE PLANTILLA: NUEVOS vs EXPERIMENTADOS -->
+    <div class="section" id="sec-distribucion">
+      <div class="section-title">👥 Distribución de plantilla</div>
+      <div class="section-body">
+      <div class="section-subtitle">Cómo está repartida tu plantilla activa entre <strong>nuevos ingresos</strong> (≤42 días de antigüedad, en curva de aprendizaje) y <strong>experimentados</strong> (43 días o más).</div>
+
+      <div id="distrib-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0 20px;"></div>
+
+      <div style="overflow-x:auto;">
+        <table id="distrib-tabla" style="font-size: 12.5px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Supervisor</th>
+              <th style="text-align:center;">Centro</th>
+              <th class="num" style="text-align:center;">Nuevos (≤42d)</th>
+              <th class="num" style="text-align:center;">Experimentados (43+d)</th>
+              <th class="num" style="text-align:center;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="distrib-tabla-body"></tbody>
+        </table>
+      </div>
+      </div>
+    </div>
+
     <!-- ESTADO DEL BLOQUE SEMANAL -->
     <div class="section collapsible" id="sec-estado">
       <div class="section-title">Estado de cierre por semana</div>
@@ -2592,6 +2617,7 @@ function renderReporte(wActual, wCurrent) {
   renderAvanceMensual(wActual);
   renderVistaTiempo();
   renderEstructura();
+  renderDistribucionPlantilla();
   renderEmbudo(actual, anterior);
   renderProductividadEquipos();
   renderWhatIf();
@@ -10139,6 +10165,83 @@ function actualizarVista() {
       }
     }
   });
+}
+
+function renderDistribucionPlantilla() {
+  if (!plantillaData || !supConfigData) return;
+  const hoy = new Date().toISOString().split('T')[0];
+  const hoyDate = new Date(hoy + 'T12:00:00');
+
+  const supCentro = {};
+  supConfigData.forEach(c => { supCentro[c.supervisor] = c.centro; });
+
+  const total = { nuevos: 0, exp: 0 };
+  const porCentro = { CC2: { nuevos: 0, exp: 0 }, JV: { nuevos: 0, exp: 0 } };
+  const porSup = {};
+
+  plantillaData.forEach(p => {
+    if (!p.fecha_ingreso || p.fecha_ingreso > hoy) return;
+    if (p.fecha_baja && p.fecha_baja <= hoy) return;
+    const ing = new Date(p.fecha_ingreso + 'T12:00:00');
+    const dias = Math.floor((hoyDate - ing) / 86400000);
+    const tipo = dias <= 42 ? 'nuevos' : 'exp';
+    const sup = p.supervisor || '(sin supervisor)';
+    const centro = supCentro[sup] || p.centro || null;
+    total[tipo]++;
+    if (centro === 'CC2' || centro === 'JV') porCentro[centro][tipo]++;
+    if (!porSup[sup]) porSup[sup] = { nuevos: 0, exp: 0, centro };
+    porSup[sup][tipo]++;
+  });
+
+  const totalAgentes = total.nuevos + total.exp;
+  const pct = (n) => totalAgentes ? Math.round((n / totalAgentes) * 100) : 0;
+
+  const cards = document.getElementById('distrib-cards');
+  if (cards) {
+    cards.innerHTML = `
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Plantilla activa</div>
+        <div class="stat-value">${totalAgentes}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Nuevos ingresos (≤42d)</div>
+        <div class="stat-value" style="color:var(--amber);">${total.nuevos}</div>
+        <div style="font-size:11px; color:var(--text-soft);">${pct(total.nuevos)}% de la plantilla</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Experimentados (43+d)</div>
+        <div class="stat-value" style="color:var(--green);">${total.exp}</div>
+        <div style="font-size:11px; color:var(--text-soft);">${pct(total.exp)}% de la plantilla</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">CC2 · nuevos / exp</div>
+        <div class="stat-value">${porCentro.CC2.nuevos} / ${porCentro.CC2.exp}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">JV · nuevos / exp</div>
+        <div class="stat-value">${porCentro.JV.nuevos} / ${porCentro.JV.exp}</div>
+      </div>`;
+  }
+
+  const body = document.getElementById('distrib-tabla-body');
+  if (body) {
+    const filas = Object.entries(porSup)
+      .map(([sup, v]) => ({ sup, ...v, total: v.nuevos + v.exp }))
+      .sort((a, b) => {
+        const ca = a.centro || 'ZZ', cb = b.centro || 'ZZ';
+        if (ca !== cb) return ca.localeCompare(cb);
+        return b.total - a.total;
+      });
+    body.innerHTML = filas.length
+      ? filas.map(f => `<tr>
+          <td>${f.sup}</td>
+          <td style="text-align:center;">${f.centro || '—'}</td>
+          <td class="num" style="text-align:center; color:var(--amber); font-weight:600;">${f.nuevos}</td>
+          <td class="num" style="text-align:center; color:var(--green); font-weight:600;">${f.exp}</td>
+          <td class="num" style="text-align:center; font-weight:700;">${f.total}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="5" style="text-align:center; padding:24px; color:var(--text-soft);">Sin datos de plantilla.</td></tr>`;
+  }
 }
 
 function renderEstructura() {
