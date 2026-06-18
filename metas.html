@@ -281,6 +281,7 @@
     <button class="tab-btn" data-tab="calendario">📅 Calendario</button>
     <button class="tab-btn" data-tab="asignaciones">🔀 Asignaciones</button>
     <button class="tab-btn" data-tab="config">⚙️ Config</button>
+    <button class="tab-btn" data-tab="rechazos">🚫 Rechazos AT&T</button>
   </div>
 
   <!-- TAB METAS -->
@@ -654,6 +655,91 @@
 
   </div>
   <!-- FIN TAB CONFIG -->
+
+  <!-- TAB RECHAZOS AT&T -->
+  <div class="tab-content" id="tab-rechazos">
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">1</div>
+        Registrar rechazo de AT&amp;T
+      </div>
+      <div class="alert info">
+        <div>ℹ️</div>
+        <div>
+          Cuando AT&amp;T invalida una venta, escribe aquí el <strong>folio</strong>. El sistema captura solo
+          el <strong>agente, supervisor y plan</strong>, y calcula el <strong>peso</strong> (1, o 0.5 si es plan bajo).
+          La venta se <strong>descuenta del avance</strong> en la próxima carga de datos. Queda el registro para
+          ver cuántos rechazos van en el mes y de quién.
+        </div>
+      </div>
+
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px;">
+        <div>
+          <label style="display:block; font-size:12px; font-weight:600; color:var(--text-soft); margin-bottom:4px;">Folio</label>
+          <input id="rech-folio" type="text" placeholder="Folio rechazado"
+            style="padding:9px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:14px; width:200px;">
+        </div>
+        <div style="flex:1; min-width:220px;">
+          <label style="display:block; font-size:12px; font-weight:600; color:var(--text-soft); margin-bottom:4px;">Motivo (opcional)</label>
+          <input id="rech-motivo" type="text" placeholder="Ej: sin documentación, duplicada, fuera de política…"
+            style="padding:9px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:14px; width:100%;">
+        </div>
+        <button class="success" id="btn-rech-agregar">+ Agregar rechazo</button>
+      </div>
+      <div id="rech-msg" style="font-size:13px; margin-top:8px; min-height:18px;"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">
+        <div class="step-number">2</div>
+        Rechazos del mes
+      </div>
+
+      <div style="display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap;">
+        <label style="font-size:13px; font-weight:600; color:var(--text-soft);">Periodo:</label>
+        <select id="rech-mes" style="padding:8px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;"></select>
+        <select id="rech-anio" style="padding:8px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px;"></select>
+      </div>
+
+      <div id="rech-cards" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:12px; margin-bottom:24px;"></div>
+
+      <div style="font-weight:600; font-size:14px; margin:8px 0 8px; color:var(--text-soft);">Por supervisor</div>
+      <div style="overflow-x:auto;">
+        <table id="rech-tabla-sup" style="font-size:12.5px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Supervisor</th>
+              <th class="num" style="text-align:center;">Rechazos</th>
+              <th class="num" style="text-align:center;">Peso descontado</th>
+            </tr>
+          </thead>
+          <tbody id="rech-sup-body"></tbody>
+        </table>
+      </div>
+
+      <div style="font-weight:600; font-size:14px; margin:26px 0 8px; color:var(--text-soft);">Detalle (por folio)</div>
+      <div style="overflow-x:auto;">
+        <table id="rech-tabla-det" style="font-size:12.5px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Folio</th>
+              <th style="text-align:left;">Agente</th>
+              <th style="text-align:center;">Supervisor</th>
+              <th style="text-align:center;">Plan</th>
+              <th class="num" style="text-align:center;">Peso</th>
+              <th style="text-align:left;">Motivo</th>
+              <th style="text-align:center;">Registrado</th>
+              <th style="text-align:center;">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="rech-det-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+  <!-- FIN TAB RECHAZOS -->
 
 </div>
 
@@ -2369,6 +2455,208 @@ async function agregarSupervisorNuevo() {
 
 cargarConfig();
 document.getElementById('btn-config-agregar').addEventListener('click', agregarSupervisorNuevo);
+
+// ============================================================
+//  MÓDULO: RECHAZOS AT&T
+//  Registra folios que AT&T invalida. Se guardan en folios_ignorados
+//  (que el index.html ya excluye al cargar) con datos extra para reportar.
+//  Captura solo agente/supervisor/plan y calcula el peso (1 o 0.5).
+// ============================================================
+const RECH_PLANES_BAJOS = new Set(['ATT LITE 1', 'ATT AZUL', 'ATT AZUL 1']);
+const RECH_FECHA_PLANES_BAJOS = '2026-06-01';
+const RECH_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function rechLimpiarFolio(val) {
+  if (val === null || val === undefined || val === '') return '';
+  let s = String(val).trim().toUpperCase();
+  if (s.indexOf('NUEVO FOLIO') !== -1) {
+    const m = s.match(/(\d{5,})/);
+    return m ? m[1] : '';
+  }
+  while (s.length > 0 && !/\d/.test(s[s.length - 1])) s = s.slice(0, -1);
+  return s;
+}
+
+function rechCalcularPeso(plan, fechaRef) {
+  const p = String(plan || '').trim().toUpperCase();
+  if (!RECH_PLANES_BAJOS.has(p)) return 1.0;
+  if (!fechaRef) return 1.0;
+  return (fechaRef >= RECH_FECHA_PLANES_BAJOS) ? 0.5 : 1.0;
+}
+
+function rechMsg(texto, tipo) {
+  const el = document.getElementById('rech-msg');
+  const color = tipo === 'ok' ? 'var(--green)' : tipo === 'err' ? 'var(--red)' : 'var(--text-soft)';
+  el.style.color = color;
+  el.textContent = texto || '';
+}
+
+function rechInitSelectores() {
+  const selMes = document.getElementById('rech-mes');
+  const selAnio = document.getElementById('rech-anio');
+  const hoy = new Date();
+  selMes.innerHTML = RECH_MESES.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+  selMes.value = hoy.getMonth() + 1;
+  const anioActual = hoy.getFullYear();
+  let opts = '';
+  for (let a = anioActual; a >= anioActual - 1; a--) opts += `<option value="${a}">${a}</option>`;
+  selAnio.innerHTML = opts;
+  selAnio.value = anioActual;
+  selMes.addEventListener('change', cargarRechazos);
+  selAnio.addEventListener('change', cargarRechazos);
+}
+
+async function agregarRechazo() {
+  const folioInput = document.getElementById('rech-folio');
+  const motivoInput = document.getElementById('rech-motivo');
+  const folio = rechLimpiarFolio(folioInput.value);
+  const motivo = (motivoInput.value || '').trim();
+  if (!folio) { rechMsg('Escribe un folio válido.', 'err'); return; }
+
+  rechMsg('Buscando el folio en los datos…', '');
+  try {
+    // ¿ya está registrado?
+    const { data: yaExiste } = await db.from('folios_ignorados').select('folio').eq('folio', folio).maybeSingle();
+    if (yaExiste) { rechMsg(`El folio ${folio} ya estaba registrado.`, 'err'); return; }
+
+    // Buscar la venta para auto-capturar agente/supervisor/plan/peso
+    const { data: venta } = await db.from('ventas_detalle')
+      .select('ejecutivo, supervisor, centro, plan, fecha_bo, fecha_activacion, fecha_cancelacion')
+      .eq('folio', folio).maybeSingle();
+
+    let ejecutivo = null, supervisor = null, centro = null, plan = null, fechaBo = null, fechaAct = null, peso = 1.0;
+    if (venta) {
+      ejecutivo = venta.ejecutivo || null;
+      supervisor = venta.supervisor || null;
+      centro = venta.centro || null;
+      plan = venta.plan || null;
+      fechaBo = venta.fecha_bo || null;
+      fechaAct = venta.fecha_activacion || null;
+      const fechaRef = venta.fecha_activacion || venta.fecha_bo || venta.fecha_cancelacion;
+      peso = rechCalcularPeso(plan, fechaRef);
+    }
+
+    // Mes/año al que pertenece (por la fecha de la venta; si no hay, el periodo seleccionado)
+    const fechaParaMes = fechaAct || fechaBo;
+    let mes, anio;
+    if (fechaParaMes && /^\d{4}-\d{2}/.test(fechaParaMes)) {
+      anio = parseInt(fechaParaMes.slice(0, 4), 10);
+      mes = parseInt(fechaParaMes.slice(5, 7), 10);
+    } else {
+      mes = parseInt(document.getElementById('rech-mes').value, 10);
+      anio = parseInt(document.getElementById('rech-anio').value, 10);
+    }
+
+    const registro = {
+      folio, motivo: motivo || null, cliente: null,
+      ejecutivo, supervisor, centro, plan, peso,
+      fecha_bo: fechaBo, fecha_activacion: fechaAct,
+      mes, anio, tipo: 'rechazo_att',
+    };
+
+    const { error } = await db.from('folios_ignorados').insert(registro);
+    if (error) { rechMsg('Error al guardar: ' + error.message, 'err'); return; }
+
+    folioInput.value = '';
+    motivoInput.value = '';
+    if (venta) {
+      rechMsg(`Registrado: ${folio} · ${supervisor || 's/sup'} · ${plan || 's/plan'} · peso ${peso}. Se descontará en la próxima carga.`, 'ok');
+    } else {
+      rechMsg(`Registrado: ${folio}. Ojo: no encontré la venta en los datos (¿folio correcto o ya descargado?), lo guardé con peso 1.`, 'ok');
+    }
+    // posicionar el periodo en el del registro y recargar
+    document.getElementById('rech-mes').value = mes;
+    if ([...document.getElementById('rech-anio').options].some(o => o.value == anio)) {
+      document.getElementById('rech-anio').value = anio;
+    }
+    cargarRechazos();
+  } catch (e) {
+    rechMsg('Error: ' + e.message, 'err');
+  }
+}
+
+async function borrarRechazo(folio) {
+  if (!confirm(`¿Quitar el folio ${folio} de rechazos? Volverá a contar en la próxima carga.`)) return;
+  try {
+    const { error } = await db.from('folios_ignorados').delete().eq('folio', folio).eq('tipo', 'rechazo_att');
+    if (error) { alert('Error al borrar: ' + error.message); return; }
+    cargarRechazos();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+window.borrarRechazo = borrarRechazo;
+
+async function cargarRechazos() {
+  const mes = parseInt(document.getElementById('rech-mes').value, 10);
+  const anio = parseInt(document.getElementById('rech-anio').value, 10);
+  try {
+    const { data } = await db.from('folios_ignorados').select('*')
+      .eq('tipo', 'rechazo_att').eq('mes', mes).eq('anio', anio);
+    const filas = data || [];
+
+    const totalCasos = filas.length;
+    const totalPeso = filas.reduce((s, f) => s + (Number(f.peso) || 0), 0);
+    const bajos = filas.filter(f => (Number(f.peso) || 0) === 0.5).length;
+
+    document.getElementById('rech-cards').innerHTML = `
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Rechazos del mes</div>
+        <div class="stat-value" style="color:var(--red);">${totalCasos}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Peso descontado</div>
+        <div class="stat-value" style="color:var(--amber);">${totalPeso.toFixed(1)}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">De los cuales plan bajo</div>
+        <div class="stat-value">${bajos}</div>
+      </div>`;
+
+    // Por supervisor
+    const porSup = {};
+    filas.forEach(f => {
+      const k = f.supervisor || '(sin supervisor)';
+      if (!porSup[k]) porSup[k] = { casos: 0, peso: 0 };
+      porSup[k].casos++;
+      porSup[k].peso += (Number(f.peso) || 0);
+    });
+    const supBody = document.getElementById('rech-sup-body');
+    const sups = Object.entries(porSup).sort((a, b) => b[1].casos - a[1].casos);
+    supBody.innerHTML = sups.length
+      ? sups.map(([sup, v]) => `<tr>
+          <td>${sup}</td>
+          <td class="num" style="text-align:center;">${v.casos}</td>
+          <td class="num" style="text-align:center;">${v.peso.toFixed(1)}</td>
+        </tr>`).join('')
+      : `<tr><td colspan="3" style="text-align:center; padding:24px; color:var(--text-soft);">Sin rechazos este mes. 🎉</td></tr>`;
+
+    // Detalle
+    const detBody = document.getElementById('rech-det-body');
+    detBody.innerHTML = filas.length
+      ? filas
+          .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+          .map(f => {
+            const creado = f.created_at ? new Date(f.created_at).toLocaleDateString('es-MX') : '—';
+            return `<tr>
+              <td style="font-family:monospace;"><strong>${f.folio}</strong></td>
+              <td>${f.ejecutivo || '—'}</td>
+              <td style="text-align:center;">${f.supervisor || '—'}</td>
+              <td style="text-align:center; font-size:11px;">${f.plan || '—'}</td>
+              <td class="num" style="text-align:center;">${(Number(f.peso) || 0).toFixed(1)}</td>
+              <td style="font-size:11px;">${f.motivo || '—'}</td>
+              <td style="text-align:center; font-size:11px; color:var(--text-soft);">${creado}</td>
+              <td style="text-align:center;"><button class="danger" style="padding:4px 10px; font-size:11px;" onclick="borrarRechazo('${f.folio}')">Quitar</button></td>
+            </tr>`;
+          }).join('')
+      : `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-soft);">Sin rechazos este mes.</td></tr>`;
+  } catch (e) {
+    document.getElementById('rech-msg').textContent = 'Error al cargar: ' + e.message;
+  }
+}
+
+rechInitSelectores();
+document.getElementById('btn-rech-agregar').addEventListener('click', agregarRechazo);
+document.getElementById('rech-folio').addEventListener('keydown', (e) => { if (e.key === 'Enter') agregarRechazo(); });
+cargarRechazos();
 </script>
 </body>
 </html>
