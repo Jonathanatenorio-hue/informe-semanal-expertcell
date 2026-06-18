@@ -558,6 +558,33 @@ async function procesar() {
     state.bo_data = await leerExcel(state.bo);
     log(`${state.bo_data.length} filas en Backoffice`, 'ok');
 
+    // --- Inyectar filas FIJAS de backoffice (ventas activadas en tienda que no
+    //     salen en nuestra plataforma). Se guardan en Supabase y se agregan solas,
+    //     ya no se pegan a mano en el Excel. ---
+    try {
+      const { data: fijas } = await db.from('backoffice_fijas').select('*').eq('activa', true);
+      if (fijas && fijas.length) {
+        for (const f of fijas) {
+          state.bo_data.push({
+            'Jefe directo': f.jefe_directo,
+            'Ejecutivo': f.ejecutivo,
+            'Cliente': f.cliente,
+            'Telefono cliente': f.telefono_cliente,
+            'Folio': f.folio,
+            'Fecha Back Office': f.fecha_back_office,
+            'Hora Back Office': f.hora_back_office,
+            'Centro': f.centro,
+            'Estatus': f.estatus,
+            'Back Office': f.back_office,
+            'Venta': f.venta,
+          });
+        }
+        log(`${fijas.length} filas fijas de backoffice inyectadas (ventas en tienda)`, 'ok');
+      }
+    } catch (e) {
+      log('Aviso: no se pudieron cargar filas fijas de backoffice: ' + e.message, 'warn');
+    }
+
     log('Leyendo Excel de Activadas...', 'info');
     state.act_data = await leerExcel(state.act);
     const actTerminadas = state.act_data.filter(r => r.ESTATUS === 'Terminada');
