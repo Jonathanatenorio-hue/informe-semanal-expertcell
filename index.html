@@ -248,10 +248,10 @@
     </div>
     <div class="alert warn">
       <div>⚠️</div>
-      <div><strong>Importante:</strong> Esta acción borrará los datos actuales de Supabase y los reemplazará con los que acabas de procesar. Asegúrate de que el resumen de arriba sea correcto antes de continuar.</div>
+      <div><strong>Importante:</strong> Esta acción <strong>acumula por folio</strong>: actualiza los folios que ya existen, agrega los nuevos, y conserva el resto de la historia (no borra nada). Asegúrate de que el resumen de arriba sea correcto antes de continuar.</div>
     </div>
     <div class="actions">
-      <button class="success" id="btn-cargar">Cargar a Supabase (reemplaza todo)</button>
+      <button class="success" id="btn-cargar">Cargar a Supabase (acumula por folio)</button>
     </div>
     <div class="progress hidden" id="progress-wrap">
       <div class="progress-bar" id="progress-bar"></div>
@@ -964,18 +964,13 @@ async function cargarASupabase() {
   progressBar.style.width = '5%';
 
   try {
-    log('Iniciando carga a Supabase...', 'info');
+    log('Iniciando carga a Supabase (modo acumular)...', 'info');
 
-    log('Borrando registros anteriores de ventas_detalle...', 'info');
-    const { error: delErr } = await db
-      .from('ventas_detalle')
-      .delete()
-      .neq('folio', '___imposible___');
-    if (delErr) throw delErr;
-    log('Registros anteriores borrados', 'ok');
+    // MODO ACUMULAR: ya NO se borra nada. Se hace upsert por folio: los folios
+    // que ya existen se actualizan, los nuevos se insertan, y los que no vengan
+    // en este archivo se quedan tal cual (no se pierde la historia).
+    log(`Acumulando ${state.registros.length} registros por folio...`, 'info');
     progressBar.style.width = '15%';
-
-    log(`Insertando ${state.registros.length} registros nuevos...`, 'info');
 
     const batchSize = 500;
     const total = state.registros.length;
@@ -984,7 +979,7 @@ async function cargarASupabase() {
       const batch = state.registros.slice(i, i + batchSize);
       const { error: insErr } = await db
         .from('ventas_detalle')
-        .insert(batch);
+        .upsert(batch, { onConflict: 'folio' });
       if (insErr) throw insErr;
       insertados += batch.length;
       const pct = 15 + (insertados / total) * 80;
@@ -993,12 +988,12 @@ async function cargarASupabase() {
     }
 
     progressBar.style.width = '100%';
-    log(`Carga completa: ${insertados} registros insertados`, 'ok');
+    log(`Carga completa: ${insertados} registros procesados (upsert por folio)`, 'ok');
 
     const { count: verifyCount } = await db
       .from('ventas_detalle')
       .select('*', { count: 'exact', head: true });
-    log(`Verificación: ${verifyCount} registros en Supabase`, verifyCount === total ? 'ok' : 'warn');
+    log(`Total acumulado en Supabase: ${verifyCount} registros`, 'ok');
 
     // ===== Cargar entregas (si hay datos del 4to Excel) =====
     if (state.registrosEntregas && state.registrosEntregas.length > 0) {
