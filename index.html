@@ -839,6 +839,7 @@ async function procesar() {
     }
 
     state.registros = registros;
+    state.foliosBO = foliosVistos; // todos los folios presentes en el backoffice de hoy
     log(`${registros.length} registros válidos generados (del 2026)`, 'ok');
     if (ignoradosPorFecha > 0) log(`${ignoradosPorFecha} registros ignorados (BO anterior a 2026-01-01)`, 'info');
     if (ignoradosAtipicos > 0) log(`${ignoradosAtipicos} folios atípicos ignorados (casos especiales)`, 'info');
@@ -1026,6 +1027,50 @@ async function cargarASupabase() {
 
     progressBar.style.width = '100%';
     log(`Carga completa: ${insertados} registros procesados (upsert por folio)`, 'ok');
+
+    // ===== LIMPIEZA DE REZAGADOS =====
+    // Los folios "abiertos" (en tránsito / por activar / pendiente) siempre vienen
+    // completos en el backoffice de hoy. Si alguno quedó guardado en Supabase con
+    // ese estatus pero YA NO está en el backoffice de hoy, es un rezagado (se
+    // resolvió o se quitó en origen) y se elimina. Las activadas y canceladas
+    // (cerradas) NO se tocan: esas se siguen conservando.
+    try {
+      log('Buscando folios abiertos rezagados (ya no están en el backoffice)...', 'info');
+      const foliosBO = state.foliosBO || new Set();
+      const abiertos = [];
+      let desdeAb = 0;
+      const pagAb = 1000;
+      while (true) {
+        const { data: ab, error: abErr } = await db
+          .from('ventas_detalle')
+          .select('folio')
+          .in('estatus', ['en_transito', 'por_activar', 'pendiente'])
+          .range(desdeAb, desdeAb + pagAb - 1);
+        if (abErr) { log('Aviso: no se pudieron leer folios abiertos: ' + abErr.message, 'warn'); break; }
+        if (!ab || ab.length === 0) break;
+        ab.forEach(r => abiertos.push(r.folio));
+        if (ab.length < pagAb) break;
+        desdeAb += pagAb;
+      }
+      const rezagados = abiertos.filter(f => !foliosBO.has(String(f)));
+      if (rezagados.length > 0) {
+        let borrados = 0;
+        for (let i = 0; i < rezagados.length; i += 200) {
+          const lote = rezagados.slice(i, i + 200);
+          const { error: delRezErr } = await db
+            .from('ventas_detalle')
+            .delete()
+            .in('folio', lote);
+          if (delRezErr) { log('Aviso al borrar rezagados: ' + delRezErr.message, 'warn'); break; }
+          borrados += lote.length;
+        }
+        log(`${borrados} folios abiertos rezagados eliminados (ya no estaban en el backoffice)`, 'ok');
+      } else {
+        log('No hay folios abiertos rezagados', 'ok');
+      }
+    } catch (e) {
+      log('Aviso: no se pudo limpiar rezagados: ' + e.message, 'warn');
+    }
 
     const { count: verifyCount } = await db
       .from('ventas_detalle')
