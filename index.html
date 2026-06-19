@@ -696,6 +696,39 @@ async function procesar() {
     let ignoradosAtipicos = 0;
     const ejecutivosSinResolver = new Set();
 
+    // --- CONSERVAR ACTIVACIONES PREVIAS (para el archivo de activadas rápido) ---
+    // Lee de Supabase las activaciones ya guardadas. Si el archivo que subes NO
+    // trae un folio que ya estaba activado, se conserva su fecha/hora/plan/precio/
+    // renta/telefono. Así puedes subir solo el mes en curso sin borrar lo viejo.
+    // El supervisor histórico NO se conserva: se recalcula con la fecha (que sí se
+    // conserva) y las asignaciones, igual que siempre.
+    const actSupabasePorFolio = {};
+    try {
+      log('Leyendo activaciones ya guardadas en Supabase (para conservarlas)...', 'info');
+      let desde = 0;
+      const pagina = 1000;
+      while (true) {
+        const { data: prev, error: prevErr } = await db
+          .from('ventas_detalle')
+          .select('folio, fecha_activacion, hora_activacion, plan, precio, renta_sin_impuestos, telefono')
+          .not('fecha_activacion', 'is', null)
+          .range(desde, desde + pagina - 1);
+        if (prevErr) { log('Aviso: no se pudieron leer activaciones previas: ' + prevErr.message, 'warn'); break; }
+        if (!prev || prev.length === 0) break;
+        prev.forEach(r => {
+          actSupabasePorFolio[r.folio] = {
+            fecha: r.fecha_activacion, hora: r.hora_activacion, plan: r.plan,
+            precio: r.precio, renta: r.renta_sin_impuestos, telefono: r.telefono,
+          };
+        });
+        if (prev.length < pagina) break;
+        desde += pagina;
+      }
+      log(`${Object.keys(actSupabasePorFolio).length} activaciones previas disponibles para conservar`, 'ok');
+    } catch (e) {
+      log('Aviso: no se pudieron leer activaciones previas: ' + e.message, 'warn');
+    }
+
     for (const row of state.bo_data) {
       const folioOriginal = String(row.Folio || '').trim();
       const folio = limpiarFolio(row.Folio);
@@ -734,7 +767,11 @@ async function procesar() {
         continue;
       }
 
-      const actInfo = actPorFolio[folio];
+      let actInfo = actPorFolio[folio];
+      const actConservada = actSupabasePorFolio[folio]; // activación previa en Supabase
+      if (!actInfo && actConservada) {
+        actInfo = actConservada; // el archivo no trae este folio: conservar lo ya guardado
+      }
       const cancInfo = canPorFolio[folio]; // ahora es { fecha, hora } o undefined
       const fechaCan = cancInfo ? cancInfo.fecha : null;
       const horaCan = cancInfo ? cancInfo.hora : null;
@@ -797,7 +834,7 @@ async function procesar() {
         plan: actInfo ? actInfo.plan : null,
         precio: actInfo ? actInfo.precio : null,
         renta_sin_impuestos: actInfo ? actInfo.renta : null,
-        telefono: (actInfo && actInfo.telefono) || canTelPorFolio[folio] || normalizarTelefono(row['Telefono cliente']),
+        telefono: (actInfo && actInfo.telefono) || canTelPorFolio[folio] || normalizarTelefono(row['Telefono cliente']) || (actConservada && actConservada.telefono) || null,
       });
     }
 
