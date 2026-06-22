@@ -511,7 +511,7 @@ async function main() {
       if (ES_LUNES) {
         for (const sup of centroSups) {
           await page.evaluate(() => { window.__captured = []; });
-          await page.evaluate((s, a) => { try { exportarAnalisisAnualExcel(s, a); } catch (e) {} }, sup, ANIO);
+          await page.evaluate(({ s, a }) => { try { exportarAnalisisAnualExcel(s, a); } catch (e) {} }, { s: sup, a: ANIO });
           const cap = await page.evaluate(() => window.__captured.slice());
           const arch = cap.find((x) => x.b64) || null;
           if (arch) anualesCoord.push({ filename: `Anual_${sup}_${ANIO}.xlsx`, content: Buffer.from(arch.b64, 'base64') });
@@ -658,7 +658,7 @@ async function main() {
             let supHayAnual = false;
             if (ES_LUNES) {
               await page.evaluate(() => { window.__captured = []; });
-              await page.evaluate((nom, a) => { try { exportarAnalisisAnualExcel(nom, a); } catch (e) {} }, s.sup, ANIO);
+              await page.evaluate(({ nom, a }) => { try { exportarAnalisisAnualExcel(nom, a); } catch (e) {} }, { nom: s.sup, a: ANIO });
               const capAn = await page.evaluate(() => window.__captured.slice());
               const archAn = capAn.find((x) => x.b64) || null;
               if (archAn) {
