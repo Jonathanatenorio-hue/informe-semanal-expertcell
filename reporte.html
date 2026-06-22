@@ -12232,11 +12232,13 @@ function normMotivoBaja(raw) {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .trim();
   if (!t) return 'Sin especificar';
+  if (/no especific|sin especific|n\/?a$|^na$|ninguno/.test(t)) return 'Sin especificar';
   if (/ausent|falta|inasist|no asist|no se present|retardo/.test(t)) return 'Ausentismo';
   if (/abandono|no regres|dejo de asist|dejo de venir|no volvio|ya no vino/.test(t)) return 'Abandono de empleo';
-  if (/mala practica|mal desemp|bajo rendim|no cumpl|productivid|desempeno|incumpl|no vendi|sin venta|resultado/.test(t)) return 'Desempeño / mala práctica';
+  if (/mala practica|malas practica|mal desemp|bajo rendim|no cumpl|productivid|desempeno|incumpl|no vendi|sin venta|resultado/.test(t)) return 'Desempeño / mala práctica';
   if (/oferta|mejor empleo|otro trabajo|otra empresa|mejor opcion|mejor sueldo|mejor pago/.test(t)) return 'Mejor oferta laboral';
   if (/renuncia|voluntari/.test(t)) return 'Renuncia voluntaria';
+  if (/condicion.*trabajo|ambiente|clima laboral|horario|sueldo bajo|pago bajo/.test(t)) return 'Condiciones de trabajo';
   if (/personal|salud|enferm|familiar|escuela|estudio|embarazo|mudanza/.test(t)) return 'Motivos personales';
   if (/conducta|indisciplin|respeto|robo|fraude|honestidad|reglamento/.test(t)) return 'Conducta / disciplina';
   return 'Otro';
@@ -12429,7 +12431,7 @@ function descargarCohortesExcel() {
   XLSX.utils.book_append_sheet(wb, wsA, 'Curva semanal (Activacion)');
 
   // --- Hoja 4: Motivos de baja (por grupo y categoría) ---
-  const categorias = ['Ausentismo', 'Abandono de empleo', 'Desempeño / mala práctica', 'Mejor oferta laboral', 'Renuncia voluntaria', 'Motivos personales', 'Conducta / disciplina', 'Otro', 'Sin especificar'];
+  const categorias = ['Ausentismo', 'Abandono de empleo', 'Desempeño / mala práctica', 'Mejor oferta laboral', 'Renuncia voluntaria', 'Condiciones de trabajo', 'Motivos personales', 'Conducta / disciplina', 'Otro', 'Sin especificar'];
   const motivos = cohortes.map(g => {
     const row = { 'Grupo (semana ingreso)': g.grupo, 'Bajas totales': g.agentes.filter(a => a.esBaja).length };
     categorias.forEach(c => { row[c] = 0; });
