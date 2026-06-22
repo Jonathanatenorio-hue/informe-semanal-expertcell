@@ -12254,6 +12254,20 @@ function lunesDeSemana(fechaStr) {
 }
 
 // Construye las estructuras de cohortes a partir de plantillaData + ventasData.
+// Cuenta agentes AT&T ACTIVOS en toda la plantilla (cualquier año de ingreso).
+function activosATTplantilla() {
+  const cen = { CC2: 0, JV: 0 };
+  (plantillaData || []).forEach(p => {
+    if (p.fecha_baja) return;
+    if (p.estatus && String(p.estatus).toUpperCase().includes('BAJA')) return;
+    const t = String(p.centro || '').toUpperCase();
+    if (t.includes('IZZI')) return;
+    if (t.includes('C CENTER 2') || t.includes('CCENTER 2')) cen.CC2++;
+    else if (t.includes('JUAREZ 701') || t.includes('CCENTER JV') || t.includes('C CENTER JV')) cen.JV++;
+  });
+  return cen;
+}
+
 function construirCohortes() {
   if (!plantillaData || plantillaData.length === 0) return null;
   const hoy = new Date().toISOString().split('T')[0];
@@ -12343,20 +12357,24 @@ function renderCohortes() {
   });
   const retencion = totAg ? Math.round(((totAg - totBaja) / totAg) * 100) : 0;
 
+  const actPlant = activosATTplantilla();
+  const totActReal = actPlant.CC2 + actPlant.JV;
+
   if (cards) {
     cards.innerHTML = `
       <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">Grupos de ingreso</div>
+        <div class="stat-label">Agentes activos AT&T</div>
+        <div class="stat-value" style="color:var(--green);">${totActReal}</div>
+        <div style="font-size:11px; color:var(--text-soft);">plantilla total · CC2 ${actPlant.CC2} · JV ${actPlant.JV}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Grupos 2026</div>
         <div class="stat-value">${cohortes.length}</div>
       </div>
       <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">Agentes (histórico)</div>
-        <div class="stat-value">${totAg}</div>
-      </div>
-      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
-        <div class="stat-label">Retención global</div>
+        <div class="stat-label">Retención 2026</div>
         <div class="stat-value" style="color:var(--green);">${retencion}%</div>
-        <div style="font-size:11px; color:var(--text-soft);">${totBaja} bajas de ${totAg}</div>
+        <div style="font-size:11px; color:var(--text-soft);">${totBaja} bajas de ${totAg} ingresos 2026</div>
       </div>`;
   }
 
@@ -12506,26 +12524,31 @@ function descargarCohortesExcel() {
       if (a.esBaja) {
         o.baja++; bajasTot++; o.perdidas += vb; vPerd += vb;
         const d = a.fecha_baja ? Math.max(0, Math.floor((new Date(a.fecha_baja + 'T12:00:00') - new Date(a.fecha_ingreso + 'T12:00:00')) / 86400000)) : 0;
-        diasB.push(d); if (d <= 42) bajasCurva++; if (vb > 0) { bajasVend++; o.vend++; }
+        diasB.push(d); if (d <= 42) { bajasCurva++; o.curva = (o.curva || 0) + 1; } if (vb > 0) { bajasVend++; o.vend++; }
         const m = a.motivo_norm || 'Sin especificar'; mot[m] = (mot[m] || 0) + 1;
       } else o.act++;
     }));
     diasB.sort((x, y) => x - y); const med = diasB.length ? diasB[Math.floor(diasB.length / 2)] : 0;
-    const totAg = cen.CC2.ag + cen.JV.ag, totAct = cen.CC2.act + cen.JV.act;
+    // ACTIVOS = toda la plantilla AT&T (cualquier año). BAJAS = cohortes 2026.
+    const actPlant = activosATTplantilla();
+    const totActReal = actPlant.CC2 + actPlant.JV;
+    const ret2026 = (cohortes.reduce((s, g) => s + g.agentes.length, 0)) ? Math.round((cohortes.reduce((s, g) => s + g.agentes.filter(a => !a.esBaja).length, 0)) / cohortes.reduce((s, g) => s + g.agentes.length, 0) * 100) : 0;
+    const ag2026 = cohortes.reduce((s, g) => s + g.agentes.length, 0);
     const aoa = [
       ['RESUMEN EJECUTIVO — GRUPOS DE INGRESO 2026 (AT&T)'],
-      ['Corte: ' + hoyR + ' · Solo agentes AT&T · Solo ingresos 2026'],
+      ['Corte: ' + hoyR + ' · Activos: toda la plantilla AT&T · Bajas y curva: ingresos 2026'],
       [],
       ['INDICADOR', 'VALOR', 'DETALLE'],
-      ['Agentes (2026)', totAg, totAct + ' activos · ' + bajasTot + ' bajas'],
-      ['Retención global', (totAg ? Math.round(totAct / totAg * 100) : 0) + '%', totAct + ' de ' + totAg],
+      ['Agentes activos AT&T (plantilla total)', totActReal, 'CC2 ' + actPlant.CC2 + ' · JV ' + actPlant.JV],
+      ['Ingresos 2026 medidos', ag2026, bajasTot + ' bajas · retención ' + ret2026 + '%'],
+      ['Retención 2026', ret2026 + '%', 'de las generaciones que ingresaron en 2026'],
       ['Bajas en curva (≤42 días)', (bajasTot ? Math.round(bajasCurva / bajasTot * 100) : 0) + '%', bajasCurva + ' de ' + bajasTot + ' bajas en el aprendizaje'],
       ['Mediana de vida (bajas)', med + ' días', 'la mitad de las bajas duró menos'],
       ['Ventas perdidas por rotación', vPerd, (totVentas ? Math.round(vPerd / totVentas * 100) : 0) + '% del total de ventas'],
       ['Bajas que sí vendieron', bajasVend + ' (' + (bajasTot ? Math.round(bajasVend / bajasTot * 100) : 0) + '%)', 'producción que se fue con la rotación'],
       [],
-      ['POR CENTRO', 'Agentes', 'Activos', 'Bajas', 'Retención', 'Ventas', 'Ventas perdidas'],
-      ...['CC2', 'JV'].map(c => { const o = cen[c]; return [c, o.ag, o.act, o.baja, (o.ag ? Math.round(o.act / o.ag * 100) : 0) + '%', o.ventas, o.perdidas]; }),
+      ['POR CENTRO', 'Activos AT&T', 'Bajas 2026', 'En curva', 'Ventas perdidas'],
+      ...['CC2', 'JV'].map(c => { const o = cen[c]; return [c, actPlant[c], o.baja, (o.curva || 0), o.perdidas]; }),
       [],
       ['MOTIVOS DE BAJA', 'Bajas', '% del total'],
       ...Object.entries(mot).sort((a, b) => b[1] - a[1]).map(([m, v]) => [m, v, (bajasTot ? Math.round(v / bajasTot * 100) : 0) + '%']),
