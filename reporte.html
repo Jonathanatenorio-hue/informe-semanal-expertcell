@@ -1424,8 +1424,37 @@
       </div>
     </div>
 
-    <!-- ESTADO DEL BLOQUE SEMANAL -->
-    <div class="section collapsible" id="sec-estado">
+    <!-- ANÁLISIS DE GRUPOS DE INGRESO (COHORTES) -->
+    <div class="section collapsible" id="sec-cohortes">
+      <div class="section-title">🎓 Análisis de grupos de ingreso</div>
+      <div class="section-body">
+      <div class="section-subtitle">Mide cada <strong>generación de reclutamiento</strong> (los que entran el mismo lunes): cuántos siguen activos vs baja, su efectividad por semana de vida, y el motivo de las bajas. Descarga el Excel para el detalle completo por grupo.</div>
+
+      <div id="cohortes-cards" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin:16px 0 20px;"></div>
+
+      <div style="margin:0 0 16px;">
+        <button id="btn-descargar-cohortes" style="background: var(--green); color: white; border: none; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;">📥 Descargar Excel de grupos</button>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table id="cohortes-tabla" style="font-size: 12.5px;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Grupo (semana de ingreso)</th>
+              <th class="num" style="text-align:center;">Entraron</th>
+              <th class="num" style="text-align:center;">Activos</th>
+              <th class="num" style="text-align:center;">Bajas</th>
+              <th class="num" style="text-align:center;">% Retención</th>
+              <th class="num" style="text-align:center;">Ventas BO</th>
+              <th class="num" style="text-align:center;">Ventas/agente</th>
+            </tr>
+          </thead>
+          <tbody id="cohortes-tabla-body"></tbody>
+        </table>
+      </div>
+      </div>
+    </div>
+
       <div class="section-title">Estado de cierre por semana</div>
       <div class="section-body">
       <div class="section-subtitle">De lo que se programó cada semana, qué porcentaje ya se activó, canceló o sigue pendiente. Lo ideal es que las semanas pasadas estén al 100% entre activadas + canceladas.</div>
@@ -2618,6 +2647,9 @@ function renderReporte(wActual, wCurrent) {
   renderVistaTiempo();
   renderEstructura();
   renderDistribucionPlantilla();
+  renderCohortes();
+  const btnCoh = document.getElementById('btn-descargar-cohortes');
+  if (btnCoh) btnCoh.onclick = descargarCohortesExcel;
   renderEmbudo(actual, anterior);
   renderProductividadEquipos();
   renderWhatIf();
@@ -12179,6 +12211,258 @@ function descargarBajasExcel(periodo) {
   const sufijo = supFiltro === 'all' ? 'todos' : supFiltro;
   const periodoStr = periodo === 'todo' ? 'historico' : periodo;
   XLSX.writeFile(wb, `bajas_${periodoStr}_${sufijo}_${fecha}.xlsx`);
+}
+
+// ===================== ANÁLISIS DE GRUPOS DE INGRESO (COHORTES) =====================
+
+// Normaliza nombre para cruzar ventas (ejecutivo) con plantilla (nombre).
+function normNombreCohorte(s) {
+  return String(s || '')
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Normaliza el motivo de baja (texto con variantes) a categorías fijas.
+function normMotivoBaja(raw) {
+  const t = String(raw || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (!t) return 'Sin especificar';
+  if (/ausent|falta|inasist|no asist|no se present|retardo/.test(t)) return 'Ausentismo';
+  if (/abandono|no regres|dejo de asist|dejo de venir|no volvio|ya no vino/.test(t)) return 'Abandono de empleo';
+  if (/mala practica|mal desemp|bajo rendim|no cumpl|productivid|desempeno|incumpl|no vendi|sin venta|resultado/.test(t)) return 'Desempeño / mala práctica';
+  if (/oferta|mejor empleo|otro trabajo|otra empresa|mejor opcion|mejor sueldo|mejor pago/.test(t)) return 'Mejor oferta laboral';
+  if (/renuncia|voluntari/.test(t)) return 'Renuncia voluntaria';
+  if (/personal|salud|enferm|familiar|escuela|estudio|embarazo|mudanza/.test(t)) return 'Motivos personales';
+  if (/conducta|indisciplin|respeto|robo|fraude|honestidad|reglamento/.test(t)) return 'Conducta / disciplina';
+  return 'Otro';
+}
+
+// Lunes (inicio de semana) de una fecha YYYY-MM-DD.
+function lunesDeSemana(fechaStr) {
+  const d = new Date(fechaStr + 'T12:00:00');
+  const dow = d.getDay(); // 0=dom,1=lun,...
+  const diff = (dow === 0 ? -6 : 1 - dow); // retroceder al lunes
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().split('T')[0];
+}
+
+// Construye las estructuras de cohortes a partir de plantillaData + ventasData.
+function construirCohortes() {
+  if (!plantillaData || plantillaData.length === 0) return null;
+  const hoy = new Date().toISOString().split('T')[0];
+
+  // Ventas por ejecutivo (normalizado), con sus fechas.
+  const ventasPorEjec = {};
+  (ventasData || []).forEach(v => {
+    const k = normNombreCohorte(v.ejecutivo);
+    if (!k) return;
+    if (!ventasPorEjec[k]) ventasPorEjec[k] = [];
+    ventasPorEjec[k].push(v);
+  });
+
+  // Agrupar agentes por grupo = lunes de su semana de ingreso.
+  const grupos = {}; // grupoKey -> { grupo, agentes: [...] }
+  plantillaData.forEach(p => {
+    if (!p.fecha_ingreso) return;
+    const grupoKey = lunesDeSemana(p.fecha_ingreso);
+    if (!grupos[grupoKey]) grupos[grupoKey] = { grupo: grupoKey, agentes: [] };
+
+    const esBaja = !!(p.fecha_baja && p.fecha_baja <= hoy);
+    const ventas = ventasPorEjec[normNombreCohorte(p.nombre)] || [];
+    const ingDate = new Date(p.fecha_ingreso + 'T12:00:00');
+
+    // Semana de vida de cada venta (1 = primeros 7 días desde el ingreso).
+    const semBO = {};   // semanaVida -> conteo (por fecha_bo)
+    const semAct = {};  // semanaVida -> conteo (por fecha_activacion)
+    let totalBO = 0, totalAct = 0;
+    ventas.forEach(v => {
+      if (v.fecha_bo) {
+        const semana = Math.floor((new Date(v.fecha_bo + 'T12:00:00') - ingDate) / (1000 * 60 * 60 * 24 * 7)) + 1;
+        if (semana >= 1) { semBO[semana] = (semBO[semana] || 0) + 1; totalBO++; }
+      }
+      if (v.fecha_activacion) {
+        const semana = Math.floor((new Date(v.fecha_activacion + 'T12:00:00') - ingDate) / (1000 * 60 * 60 * 24 * 7)) + 1;
+        if (semana >= 1) { semAct[semana] = (semAct[semana] || 0) + 1; totalAct++; }
+      }
+    });
+
+    grupos[grupoKey].agentes.push({
+      nombre: p.nombre,
+      supervisor: p.supervisor || '',
+      centro: p.centro || '',
+      fecha_ingreso: p.fecha_ingreso,
+      fecha_baja: p.fecha_baja || '',
+      esBaja,
+      tipo_baja: p.tipo_baja || '',
+      motivo_raw: p.motivo_baja || '',
+      motivo_norm: esBaja ? normMotivoBaja(p.motivo_baja) : '',
+      ventasBO: totalBO,
+      ventasAct: totalAct,
+      semBO,
+      semAct,
+    });
+  });
+
+  // Ordenar grupos por fecha (más reciente primero).
+  const lista = Object.values(grupos).sort((a, b) => b.grupo.localeCompare(a.grupo));
+  return lista;
+}
+
+function renderCohortes() {
+  const cohortes = construirCohortes();
+  const cards = document.getElementById('cohortes-cards');
+  const body = document.getElementById('cohortes-tabla-body');
+  if (!cohortes || cohortes.length === 0) {
+    if (body) body.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:24px; color:var(--text-soft);">Sin datos de plantilla.</td></tr>';
+    return;
+  }
+
+  let totAg = 0, totBaja = 0, totVentas = 0;
+  cohortes.forEach(g => {
+    totAg += g.agentes.length;
+    totBaja += g.agentes.filter(a => a.esBaja).length;
+    totVentas += g.agentes.reduce((s, a) => s + a.ventasBO, 0);
+  });
+  const retencion = totAg ? Math.round(((totAg - totBaja) / totAg) * 100) : 0;
+
+  if (cards) {
+    cards.innerHTML = `
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Grupos de ingreso</div>
+        <div class="stat-value">${cohortes.length}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Agentes (histórico)</div>
+        <div class="stat-value">${totAg}</div>
+      </div>
+      <div style="background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px;">
+        <div class="stat-label">Retención global</div>
+        <div class="stat-value" style="color:var(--green);">${retencion}%</div>
+        <div style="font-size:11px; color:var(--text-soft);">${totBaja} bajas de ${totAg}</div>
+      </div>`;
+  }
+
+  if (body) {
+    body.innerHTML = cohortes.map(g => {
+      const entraron = g.agentes.length;
+      const bajas = g.agentes.filter(a => a.esBaja).length;
+      const activos = entraron - bajas;
+      const ret = entraron ? Math.round((activos / entraron) * 100) : 0;
+      const ventasBO = g.agentes.reduce((s, a) => s + a.ventasBO, 0);
+      const vpa = entraron ? (ventasBO / entraron).toFixed(1) : '0.0';
+      const colorRet = ret >= 70 ? 'var(--green)' : (ret >= 40 ? 'var(--amber)' : 'var(--red)');
+      return `<tr>
+        <td>Semana del ${g.grupo}</td>
+        <td class="num" style="text-align:center;">${entraron}</td>
+        <td class="num" style="text-align:center; color:var(--green); font-weight:600;">${activos}</td>
+        <td class="num" style="text-align:center; color:var(--red); font-weight:600;">${bajas}</td>
+        <td class="num" style="text-align:center; color:${colorRet}; font-weight:700;">${ret}%</td>
+        <td class="num" style="text-align:center;">${ventasBO}</td>
+        <td class="num" style="text-align:center;">${vpa}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+function descargarCohortesExcel() {
+  const cohortes = construirCohortes();
+  if (!cohortes || cohortes.length === 0) { alert('No hay datos de plantilla para generar los grupos.'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // --- Hoja 1: Resumen de grupos ---
+  const resumen = cohortes.map(g => {
+    const entraron = g.agentes.length;
+    const bajas = g.agentes.filter(a => a.esBaja).length;
+    const activos = entraron - bajas;
+    const ventasBO = g.agentes.reduce((s, a) => s + a.ventasBO, 0);
+    const ventasAct = g.agentes.reduce((s, a) => s + a.ventasAct, 0);
+    return {
+      'Grupo (semana ingreso)': g.grupo,
+      'Entraron': entraron,
+      'Activos hoy': activos,
+      'Bajas': bajas,
+      '% Retención': entraron ? Math.round((activos / entraron) * 100) : 0,
+      'Ventas BO (total)': ventasBO,
+      'Ventas activadas (total)': ventasAct,
+      'Ventas BO / agente': entraron ? +(ventasBO / entraron).toFixed(2) : 0,
+      'Ventas act / agente': entraron ? +(ventasAct / entraron).toFixed(2) : 0,
+    };
+  });
+  const wsR = XLSX.utils.json_to_sheet(resumen);
+  wsR['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 11 }, { wch: 8 }, { wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 16 }];
+  XLSX.utils.book_append_sheet(wb, wsR, 'Resumen grupos');
+
+  // Máximo de semanas de vida observado (para columnas de las curvas).
+  let maxSem = 1;
+  cohortes.forEach(g => g.agentes.forEach(a => {
+    Object.keys(a.semBO).forEach(k => { if (+k > maxSem) maxSem = +k; });
+    Object.keys(a.semAct).forEach(k => { if (+k > maxSem) maxSem = +k; });
+  }));
+  maxSem = Math.min(maxSem, 26); // tope de 26 semanas para no desbordar
+
+  // --- Hoja 2: Curva semanal (Backoffice) ---
+  const curvaBO = cohortes.map(g => {
+    const row = { 'Grupo (semana ingreso)': g.grupo, 'Agentes': g.agentes.length };
+    for (let s = 1; s <= maxSem; s++) {
+      row['S' + s] = g.agentes.reduce((sum, a) => sum + (a.semBO[s] || 0), 0);
+    }
+    return row;
+  });
+  const wsB = XLSX.utils.json_to_sheet(curvaBO);
+  XLSX.utils.book_append_sheet(wb, wsB, 'Curva semanal (BO)');
+
+  // --- Hoja 3: Curva semanal (Activación) ---
+  const curvaAct = cohortes.map(g => {
+    const row = { 'Grupo (semana ingreso)': g.grupo, 'Agentes': g.agentes.length };
+    for (let s = 1; s <= maxSem; s++) {
+      row['S' + s] = g.agentes.reduce((sum, a) => sum + (a.semAct[s] || 0), 0);
+    }
+    return row;
+  });
+  const wsA = XLSX.utils.json_to_sheet(curvaAct);
+  XLSX.utils.book_append_sheet(wb, wsA, 'Curva semanal (Activacion)');
+
+  // --- Hoja 4: Motivos de baja (por grupo y categoría) ---
+  const categorias = ['Ausentismo', 'Abandono de empleo', 'Desempeño / mala práctica', 'Mejor oferta laboral', 'Renuncia voluntaria', 'Motivos personales', 'Conducta / disciplina', 'Otro', 'Sin especificar'];
+  const motivos = cohortes.map(g => {
+    const row = { 'Grupo (semana ingreso)': g.grupo, 'Bajas totales': g.agentes.filter(a => a.esBaja).length };
+    categorias.forEach(c => { row[c] = 0; });
+    g.agentes.forEach(a => { if (a.esBaja) row[a.motivo_norm] = (row[a.motivo_norm] || 0) + 1; });
+    return row;
+  });
+  const wsM = XLSX.utils.json_to_sheet(motivos);
+  XLSX.utils.book_append_sheet(wb, wsM, 'Motivos de baja');
+
+  // --- Hoja 5: Detalle nominal ---
+  const detalle = [];
+  cohortes.forEach(g => g.agentes.forEach(a => {
+    detalle.push({
+      'Grupo (semana ingreso)': g.grupo,
+      'Nombre': a.nombre,
+      'Supervisor': a.supervisor,
+      'Centro': a.centro,
+      'Fecha ingreso': a.fecha_ingreso,
+      'Estatus': a.esBaja ? 'Baja' : 'Activo',
+      'Fecha baja': a.fecha_baja,
+      'Tipo baja': a.tipo_baja,
+      'Motivo (original)': a.motivo_raw,
+      'Motivo (categoría)': a.motivo_norm,
+      'Ventas BO': a.ventasBO,
+      'Ventas activadas': a.ventasAct,
+    });
+  }));
+  const wsD = XLSX.utils.json_to_sheet(detalle);
+  wsD['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 10 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, wsD, 'Detalle');
+
+  const fecha = new Date().toISOString().split('T')[0];
+  XLSX.writeFile(wb, `grupos_ingreso_${fecha}.xlsx`);
 }
 
 const SANITY_STATE = { filter: 'all', orden: 'delta' };
