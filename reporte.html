@@ -12271,6 +12271,11 @@ function construirCohortes() {
   const grupos = {}; // grupoKey -> { grupo, agentes: [...] }
   plantillaData.forEach(p => {
     if (!p.fecha_ingreso) return;
+    if (p.fecha_ingreso < '2026-01-01') return; // solo generaciones que ingresaron en 2026
+    const ceTxt = String(p.centro || '').toUpperCase();
+    if (ceTxt.includes('IZZI')) return; // excluir otra campaña (IZZI)
+    const esATT = ceTxt.includes('C CENTER 2') || ceTxt.includes('CCENTER 2') || ceTxt.includes('JUAREZ 701') || ceTxt.includes('CCENTER JV') || ceTxt.includes('C CENTER JV');
+    if (!esATT) return; // solo agentes AT&T
     const grupoKey = lunesDeSemana(p.fecha_ingreso);
     if (!grupos[grupoKey]) grupos[grupoKey] = { grupo: grupoKey, agentes: [] };
 
@@ -12486,6 +12491,76 @@ function descargarCohortesExcel() {
   }
   XLSX.utils.book_append_sheet(wb, hojaAgenteSemana('semBO'), 'Agente x semana (BO)');
   XLSX.utils.book_append_sheet(wb, hojaAgenteSemana('semAct'), 'Agente x semana (Act)');
+
+  // --- Hoja 0: RESUMEN EJECUTIVO (KPIs + por centro + motivos) ---
+  // Se inserta al inicio. Mide solo lo que ya viene filtrado (2026 + AT&T).
+  (function () {
+    const hoyR = new Date().toISOString().split('T')[0];
+    const cen = { CC2: mkC(), JV: mkC() };
+    function mkC() { return { ag: 0, act: 0, baja: 0, ventas: 0, perdidas: 0, vend: 0 }; }
+    function centroDe(c) { const t = String(c || '').toUpperCase(); if (t.includes('JUAREZ') || t.includes('JV')) return 'JV'; if (t.includes('CENTER 2') || t.includes('CC2')) return 'CC2'; return 'CC2'; }
+    let bajasCurva = 0, bajasTot = 0, diasB = [], vPerd = 0, bajasVend = 0, totVentas = 0;
+    const mot = {};
+    cohortes.forEach(g => g.agentes.forEach(a => {
+      const c = centroDe(a.centro); const o = cen[c]; const vb = a.ventasBO; o.ag++; o.ventas += vb; totVentas += vb;
+      if (a.esBaja) {
+        o.baja++; bajasTot++; o.perdidas += vb; vPerd += vb;
+        const d = a.fecha_baja ? Math.max(0, Math.floor((new Date(a.fecha_baja + 'T12:00:00') - new Date(a.fecha_ingreso + 'T12:00:00')) / 86400000)) : 0;
+        diasB.push(d); if (d <= 42) bajasCurva++; if (vb > 0) { bajasVend++; o.vend++; }
+        const m = a.motivo_norm || 'Sin especificar'; mot[m] = (mot[m] || 0) + 1;
+      } else o.act++;
+    }));
+    diasB.sort((x, y) => x - y); const med = diasB.length ? diasB[Math.floor(diasB.length / 2)] : 0;
+    const totAg = cen.CC2.ag + cen.JV.ag, totAct = cen.CC2.act + cen.JV.act;
+    const aoa = [
+      ['RESUMEN EJECUTIVO — GRUPOS DE INGRESO 2026 (AT&T)'],
+      ['Corte: ' + hoyR + ' · Solo agentes AT&T · Solo ingresos 2026'],
+      [],
+      ['INDICADOR', 'VALOR', 'DETALLE'],
+      ['Agentes (2026)', totAg, totAct + ' activos · ' + bajasTot + ' bajas'],
+      ['Retención global', (totAg ? Math.round(totAct / totAg * 100) : 0) + '%', totAct + ' de ' + totAg],
+      ['Bajas en curva (≤42 días)', (bajasTot ? Math.round(bajasCurva / bajasTot * 100) : 0) + '%', bajasCurva + ' de ' + bajasTot + ' bajas en el aprendizaje'],
+      ['Mediana de vida (bajas)', med + ' días', 'la mitad de las bajas duró menos'],
+      ['Ventas perdidas por rotación', vPerd, (totVentas ? Math.round(vPerd / totVentas * 100) : 0) + '% del total de ventas'],
+      ['Bajas que sí vendieron', bajasVend + ' (' + (bajasTot ? Math.round(bajasVend / bajasTot * 100) : 0) + '%)', 'producción que se fue con la rotación'],
+      [],
+      ['POR CENTRO', 'Agentes', 'Activos', 'Bajas', 'Retención', 'Ventas', 'Ventas perdidas'],
+      ...['CC2', 'JV'].map(c => { const o = cen[c]; return [c, o.ag, o.act, o.baja, (o.ag ? Math.round(o.act / o.ag * 100) : 0) + '%', o.ventas, o.perdidas]; }),
+      [],
+      ['MOTIVOS DE BAJA', 'Bajas', '% del total'],
+      ...Object.entries(mot).sort((a, b) => b[1] - a[1]).map(([m, v]) => [m, v, (bajasTot ? Math.round(v / bajasTot * 100) : 0) + '%']),
+    ];
+    const wsRes = XLSX.utils.aoa_to_sheet(aoa);
+    wsRes['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 11 }, { wch: 11 }, { wch: 15 }];
+    wsRes['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } }];
+    // estilos del resumen
+    const T = { fill: { fgColor: { rgb: '0A2540' } }, font: { name: 'Calibri', sz: 14, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+    const Tsub = { font: { name: 'Calibri', sz: 10, italic: true, color: { rgb: '8AA2B8' } }, fill: { fgColor: { rgb: '0A2540' } }, alignment: { horizontal: 'left', indent: 1 } };
+    const SECT = { fill: { fgColor: { rgb: '00A8E0' } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
+    if (wsRes['A1']) wsRes['A1'].s = T;
+    if (wsRes['A2']) wsRes['A2'].s = Tsub;
+    ['A4', 'A12', 'A' + (16 + (cen.CC2 ? 0 : 0))].forEach(() => {});
+    // marcar filas de sección/encabezado por contenido
+    const rng = XLSX.utils.decode_range(wsRes['!ref']);
+    for (let R = rng.s.r; R <= rng.e.r; R++) {
+      const a0 = wsRes[XLSX.utils.encode_cell({ r: R, c: 0 })];
+      if (!a0) continue;
+      const txt = String(a0.v || '');
+      const isHeadRow = ['INDICADOR', 'POR CENTRO', 'MOTIVOS DE BAJA'].includes(txt);
+      if (isHeadRow) {
+        for (let C = 0; C <= rng.e.c; C++) { const cc = wsRes[XLSX.utils.encode_cell({ r: R, c: C })]; if (cc) cc.s = SECT; }
+      } else if (R > 2) {
+        for (let C = 0; C <= rng.e.c; C++) {
+          const cc = wsRes[XLSX.utils.encode_cell({ r: R, c: C })]; if (!cc) continue;
+          cc.s = { font: { name: 'Calibri', sz: 10.5, bold: C === 1 && txt && !['POR CENTRO'].includes(txt), color: { rgb: '1F3A52' } }, alignment: { horizontal: C === 0 ? 'left' : 'center' }, border: { bottom: { style: 'hair', color: { rgb: 'E1E9F2' } } } };
+        }
+      }
+    }
+    wsRes['!rows'] = [{ hpt: 30 }, { hpt: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsRes, 'Resumen ejecutivo');
+    // mover la hoja al principio
+    wb.SheetNames.unshift(wb.SheetNames.pop());
+  })();
 
   // --- FORMATO (xlsx-js-style): encabezados azul AT&T, filas con bordes finos ---
   const HEAD = { fill: { fgColor: { rgb: '0A2540' } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: '00A8E0' } } } };
