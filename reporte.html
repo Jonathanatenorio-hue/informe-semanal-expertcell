@@ -12293,6 +12293,10 @@ function construirCohortes() {
       }
     });
 
+    const hoyStr2 = new Date().toISOString().split('T')[0];
+    const finRef = esBaja ? p.fecha_baja : hoyStr2;
+    const semanasVida = Math.max(1, Math.floor((new Date(finRef + 'T12:00:00') - ingDate) / (1000 * 60 * 60 * 24 * 7)) + 1);
+
     grupos[grupoKey].agentes.push({
       nombre: p.nombre,
       supervisor: p.supervisor || '',
@@ -12305,6 +12309,8 @@ function construirCohortes() {
       motivo_norm: esBaja ? normMotivoBaja(p.motivo_baja) : '',
       ventasBO: totalBO,
       ventasAct: totalAct,
+      semanasVida,
+      semanaBaja: esBaja ? semanasVida : '',
       semBO,
       semAct,
     });
@@ -12452,6 +12458,8 @@ function descargarCohortesExcel() {
       'Fecha ingreso': a.fecha_ingreso,
       'Estatus': a.esBaja ? 'Baja' : 'Activo',
       'Fecha baja': a.fecha_baja,
+      'Semanas de vida': a.semanasVida,
+      'Semana de baja': a.semanaBaja,
       'Tipo baja': a.tipo_baja,
       'Motivo (original)': a.motivo_raw,
       'Motivo (categoría)': a.motivo_norm,
@@ -12460,8 +12468,46 @@ function descargarCohortesExcel() {
     });
   }));
   const wsD = XLSX.utils.json_to_sheet(detalle);
-  wsD['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 10 }, { wch: 14 }];
+  wsD['!cols'] = [{ wch: 20 }, { wch: 32 }, { wch: 14 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 16 }, { wch: 28 }, { wch: 24 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, wsD, 'Detalle');
+
+  // --- Hojas 6 y 7: Ventas por agente y semana (para el visor: curva individual) ---
+  function hojaAgenteSemana(campo) {
+    const filas = [];
+    cohortes.forEach(g => g.agentes.forEach(a => {
+      const row = {
+        'Grupo (semana ingreso)': g.grupo, 'Nombre': a.nombre,
+        'Supervisor': a.supervisor, 'Estatus': a.esBaja ? 'Baja' : 'Activo',
+      };
+      for (let s = 1; s <= maxSem; s++) row['S' + s] = a[campo][s] || 0;
+      filas.push(row);
+    }));
+    return XLSX.utils.json_to_sheet(filas);
+  }
+  XLSX.utils.book_append_sheet(wb, hojaAgenteSemana('semBO'), 'Agente x semana (BO)');
+  XLSX.utils.book_append_sheet(wb, hojaAgenteSemana('semAct'), 'Agente x semana (Act)');
+
+  // --- FORMATO (xlsx-js-style): encabezados azul AT&T, filas con bordes finos ---
+  const HEAD = { fill: { fgColor: { rgb: '0A2540' } }, font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: '00A8E0' } } } };
+  const BORDER = { top: { style: 'hair', color: { rgb: 'D9E2EC' } }, bottom: { style: 'hair', color: { rgb: 'D9E2EC' } }, left: { style: 'hair', color: { rgb: 'EDF2F7' } }, right: { style: 'hair', color: { rgb: 'EDF2F7' } } };
+  function estilizar(ws) {
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        const ref = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[ref]; if (!cell) continue;
+        if (R === 0) { cell.s = HEAD; continue; }
+        const zebra = R % 2 === 0 ? { fill: { fgColor: { rgb: 'F4F8FC' } } } : {};
+        cell.s = Object.assign({ font: { name: 'Calibri', sz: 10.5, color: { rgb: '1F3A52' } }, alignment: { horizontal: C === 1 ? 'left' : 'center', vertical: 'center' }, border: BORDER }, zebra);
+      }
+    }
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    if (!ws['!rows']) ws['!rows'] = [];
+    ws['!rows'][0] = { hpt: 26 };
+  }
+  [wsR, wsB, wsA, wsM, wsD].forEach(estilizar);
+  // las dos hojas agente-semana también
+  wb.SheetNames.slice(-2).forEach(n => estilizar(wb.Sheets[n]));
 
   const fecha = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `grupos_ingreso_${fecha}.xlsx`);
