@@ -1781,6 +1781,7 @@
             <option value="all">Todos</option>
             <option value="nuevo">Nuevos</option>
             <option value="exp">Experimentados</option>
+            <option value="sinmeta">Sin meta</option>
           </select>
         </div>
       </div>
@@ -3264,7 +3265,7 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     });
 
     // Contar agentes (incluye los que estuvieron aunque sea parte del mes)
-    let totalAgentes = 0, agentesNuevos = 0, agentesMaduros = 0, agentesCumplidos = 0;
+    let totalAgentes = 0, agentesNuevos = 0, agentesMaduros = 0, agentesCumplidos = 0, agentesSinMeta = 0;
     metasMesSup.forEach(m => {
       const plant = plantMap[m.ejecutivo];
       // Excluir si fecha_baja es ANTES del inicio del mes
@@ -3272,6 +3273,27 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       totalAgentes++;
       if (tipoPorAgente[m.ejecutivo] === 'nuevo') agentesNuevos++;
       else agentesMaduros++;
+    });
+
+    // Agentes ACTIVOS del mes SIN meta cargada (recién ingresados a mitad de mes,
+    // en capacitación o pendientes de alta en metas). NO entran a "Total agentes"
+    // para no contaminar las métricas de meta; se muestran en su propia fila.
+    // Su supervisor se resuelve: asignaciones_supervisor vigente a mitad del mes → plantilla.
+    const conMetaEsteMes = new Set(metasAgeData.filter(m => m.anio === anio && m.mes === mes).map(m => m.ejecutivo));
+    const refMedioMes = `${anio}-${String(mes).padStart(2, '0')}-15`;
+    plantillaData.forEach(p => {
+      if (!p || !p.nombre) return;
+      if (conMetaEsteMes.has(p.nombre)) return; // tiene meta este mes (con cualquier supervisor)
+      if (!p.fecha_ingreso || p.fecha_ingreso > finMesStr) return; // aún no ingresaba
+      if (p.fecha_baja && p.fecha_baja < iniMesStr) return; // ya estaba de baja
+      let supVig = null;
+      if (Array.isArray(asignacionesData) && asignacionesData.length > 0) {
+        for (const a of asignacionesData) {
+          if (a.ejecutivo === p.nombre && a.fecha_inicio <= refMedioMes && (!a.fecha_fin || a.fecha_fin >= refMedioMes)) { supVig = a.supervisor; break; }
+        }
+      }
+      if (!supVig) supVig = p.supervisor;
+      if (supVig === sup) agentesSinMeta++;
     });
 
     // Mapa AGENTE → SUPERVISOR del mes según metas_agente (fuente de verdad)
@@ -3293,7 +3315,7 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     }
 
     // Ventas del supervisor en el mes
-    let ventas = 0, ventasNuevos = 0, ventasMaduros = 0;
+    let ventas = 0, ventasNuevos = 0, ventasMaduros = 0, ventasSinMeta = 0;
     ventasData.forEach(r => {
       if (!r.fecha_activacion) return;
       if (r.fecha_activacion < iniMesStr || r.fecha_activacion > cortePara) return;
@@ -3303,6 +3325,7 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       const tipo = tipoPorAgente[r.ejecutivo];
       if (tipo === 'nuevo') ventasNuevos += peso;
       else if (tipo === 'maduro') ventasMaduros += peso;
+      else ventasSinMeta += peso; // agente sin meta este mes
     });
 
     // Agentes cumplidos (con meta > 0 y avance >= meta)
@@ -3333,10 +3356,12 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       ventas,
       ventasNuevos,
       ventasMaduros,
+      ventasSinMeta,
       pctLogro,
       totalAgentes,
       agentesNuevos,
       agentesMaduros,
+      agentesSinMeta,
       agentesCumplidos,
       prodGeneral,
       prodNuevos,
@@ -3382,7 +3407,8 @@ function renderAnalisisAnualSupervisor(sup, anio) {
       colorTexto: '#075985',
       filas: [
         { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) }
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
       ]
     },
     {
@@ -3394,6 +3420,7 @@ function renderAnalisisAnualSupervisor(sup, anio) {
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
       ]
     },
@@ -3496,7 +3523,8 @@ function exportarAnalisisAnualExcel(sup, anio) {
       titulo: '💰 VENTAS POR TIPO',
       filas: [
         { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' }
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
       ]
     },
     {
@@ -3505,6 +3533,7 @@ function exportarAnalisisAnualExcel(sup, anio) {
         { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
         { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
         { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
       ]
     },
@@ -3685,9 +3714,11 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
     const ventas = filasReales.reduce((s, f) => s + (f.ventas || 0), 0);
     const ventasNuevos = filasReales.reduce((s, f) => s + (f.ventasNuevos || 0), 0);
     const ventasMaduros = filasReales.reduce((s, f) => s + (f.ventasMaduros || 0), 0);
+    const ventasSinMeta = filasReales.reduce((s, f) => s + (f.ventasSinMeta || 0), 0);
     const totalAgentes = filasReales.reduce((s, f) => s + (f.totalAgentes || 0), 0);
     const agentesNuevos = filasReales.reduce((s, f) => s + (f.agentesNuevos || 0), 0);
     const agentesMaduros = filasReales.reduce((s, f) => s + (f.agentesMaduros || 0), 0);
+    const agentesSinMeta = filasReales.reduce((s, f) => s + (f.agentesSinMeta || 0), 0);
     const agentesCumplidos = filasReales.reduce((s, f) => s + (f.agentesCumplidos || 0), 0);
     const diasHabilesMes = filasReales[0].diasHabilesMes || 0; // Igual para todos
     const diasTrans = filasReales[0].diasTrans || 0; // Igual para todos
@@ -3702,8 +3733,8 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
 
     filas.push({
       mes, esMesEnCurso,
-      meta, ventas, ventasNuevos, ventasMaduros, pctLogro,
-      totalAgentes, agentesNuevos, agentesMaduros, agentesCumplidos,
+      meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
+      totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
       prodGeneral, prodNuevos, prodMaduros, promDia,
       diasHabilesMes, diasTrans
     });
@@ -3734,7 +3765,8 @@ function renderAnalisisAnualCoordinador(coordNombre, anio) {
       color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
       filas: [
         { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) }
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
       ]
     },
     {
@@ -3744,6 +3776,7 @@ function renderAnalisisAnualCoordinador(coordNombre, anio) {
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
       ]
     },
@@ -3833,12 +3866,14 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
     ]},
     { titulo: '💰 VENTAS POR TIPO', filas: [
       { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' }
+      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
     ]},
     { titulo: '👥 EQUIPO', filas: [
       { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
       { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
       { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
       { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
     ]},
     { titulo: '⚡ PRODUCTIVIDAD', filas: [
@@ -3961,9 +3996,11 @@ function _calcularAnalisisAnualGlobal(anio) {
     const ventas = filasReales.reduce((s, f) => s + (f.ventas || 0), 0);
     const ventasNuevos = filasReales.reduce((s, f) => s + (f.ventasNuevos || 0), 0);
     const ventasMaduros = filasReales.reduce((s, f) => s + (f.ventasMaduros || 0), 0);
+    const ventasSinMeta = filasReales.reduce((s, f) => s + (f.ventasSinMeta || 0), 0);
     const totalAgentes = filasReales.reduce((s, f) => s + (f.totalAgentes || 0), 0);
     const agentesNuevos = filasReales.reduce((s, f) => s + (f.agentesNuevos || 0), 0);
     const agentesMaduros = filasReales.reduce((s, f) => s + (f.agentesMaduros || 0), 0);
+    const agentesSinMeta = filasReales.reduce((s, f) => s + (f.agentesSinMeta || 0), 0);
     const agentesCumplidos = filasReales.reduce((s, f) => s + (f.agentesCumplidos || 0), 0);
     const diasHabilesMes = filasReales[0].diasHabilesMes || 0; // Igual para todos
     const diasTrans = filasReales[0].diasTrans || 0; // Igual para todos
@@ -3978,8 +4015,8 @@ function _calcularAnalisisAnualGlobal(anio) {
 
     filas.push({
       mes, esMesEnCurso,
-      meta, ventas, ventasNuevos, ventasMaduros, pctLogro,
-      totalAgentes, agentesNuevos, agentesMaduros, agentesCumplidos,
+      meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
+      totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
       prodGeneral, prodNuevos, prodMaduros, promDia,
       diasHabilesMes, diasTrans
     });
@@ -4008,7 +4045,8 @@ function renderAnalisisAnualGlobal(anio) {
       color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
       filas: [
         { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) }
+        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
       ]
     },
     {
@@ -4018,6 +4056,7 @@ function renderAnalisisAnualGlobal(anio) {
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
       ]
     },
@@ -4105,12 +4144,14 @@ function exportarAnalisisAnualGlobalExcel(anio) {
     ]},
     { titulo: '💰 VENTAS POR TIPO', filas: [
       { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' }
+      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
     ]},
     { titulo: '👥 EQUIPO', filas: [
       { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
       { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
       { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
       { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
     ]},
     { titulo: '⚡ PRODUCTIVIDAD', filas: [
@@ -13712,6 +13753,7 @@ function _topRecalcular() {
   const tVal = selTipo && selTipo.value ? selTipo.value : 'all';
   if (tVal === 'nuevo') agentes = agentes.filter(a => a.tipo === 'fija_6');
   else if (tVal === 'exp') agentes = agentes.filter(a => a.tipo !== 'sin_meta' && a.tipo !== 'fija_6');
+  else if (tVal === 'sinmeta') agentes = agentes.filter(a => a.tipo === 'sin_meta');
 
   window.__topAgentesData = agentes;
 
