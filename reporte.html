@@ -1764,9 +1764,28 @@
     <div class="section collapsible" id="sec-top-agentes">
       <div class="section-title">⭐ Top agentes de la operación</div>
       <div class="section-body">
-      <div class="section-subtitle">Ranking global de los mejores agentes del mes, sin importar equipo. Útil para identificar talento, premiar desempeño y detectar candidatos a supervisor.</div>
+      <div class="section-subtitle">Ranking de los mejores agentes del periodo seleccionado. Útil para identificar talento, premiar desempeño y detectar candidatos a supervisor.</div>
 
-      <div style="display: flex; gap: 10px; margin: 16px 0; flex-wrap: wrap; align-items: center;">
+      <div style="display: flex; gap: 14px; margin: 16px 0 4px; flex-wrap: wrap; align-items: center;">
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Periodo:</span>
+          <select id="top-periodo" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 160px;"></select>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Equipo:</span>
+          <select id="top-equipo" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer; min-width: 180px;"></select>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Tipo:</span>
+          <select id="top-tipo" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
+            <option value="all">Todos</option>
+            <option value="nuevo">Nuevos</option>
+            <option value="exp">Experimentados</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 10px; margin: 8px 0 16px; flex-wrap: wrap; align-items: center;">
         <span style="font-size: 13px; color: var(--text-soft); font-weight: 600;">Ordenar por:</span>
         <button class="top-ord-btn active" data-ord="activadas">Activadas</button>
         <button class="top-ord-btn" data-ord="pct">% Meta</button>
@@ -13227,41 +13246,48 @@ function dibujarSanity() {
 
 function renderTopAgentes() {
   if (!window.__avanceData) return;
-  const { mes, anio, iniMesStr, fechaCorteStr, diasTranscurridos } = window.__avanceData;
+  const { mes, anio } = window.__avanceData;
 
-  const datosAgente = {};
+  const selPeriodo = document.getElementById('top-periodo');
+  const selEquipo = document.getElementById('top-equipo');
+  const selTipo = document.getElementById('top-tipo');
 
-  ventasData.forEach(r => {
-    if (!r.ejecutivo || !SUPERVISORES.includes(r.supervisor)) return;
-    if (!datosAgente[r.ejecutivo]) {
-      datosAgente[r.ejecutivo] = { ejecutivo: r.ejecutivo, supervisor: r.supervisor, activadas: 0, programadas: 0, canceladas: 0 };
-    }
-    if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
-      datosAgente[r.ejecutivo].activadas++;
-    }
-    if (r.fecha_bo && r.fecha_bo >= iniMesStr && r.fecha_bo <= fechaCorteStr) {
-      datosAgente[r.ejecutivo].programadas++;
-    }
-    if (r.fecha_cancelacion && r.fecha_cancelacion >= iniMesStr && r.fecha_cancelacion <= fechaCorteStr) {
-      datosAgente[r.ejecutivo].canceladas++;
-    }
-  });
+  // ---- Poblar filtros (solo la primera vez) ----
+  if (selPeriodo && !selPeriodo.dataset.inicializado) {
+    const meses = new Set();
+    const anios = new Set();
+    ventasData.forEach(r => {
+      if (r.fecha_activacion) { meses.add(r.fecha_activacion.substring(0, 7)); anios.add(r.fecha_activacion.substring(0, 4)); }
+      if (r.fecha_bo) { meses.add(r.fecha_bo.substring(0, 7)); anios.add(r.fecha_bo.substring(0, 4)); }
+    });
+    const noms = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    let opciones = [...anios].sort().reverse().map(a => `<option value="anio:${a}">Todo el año ${a}</option>`).join('');
+    opciones += [...meses].sort().reverse().map(m => {
+      const [a, mm] = m.split('-');
+      return `<option value="mes:${m}">${noms[parseInt(mm) - 1]} ${a}</option>`;
+    }).join('');
+    selPeriodo.innerHTML = opciones;
+    const defMes = `mes:${anio}-${String(mes).padStart(2, '0')}`;
+    if ([...selPeriodo.options].some(o => o.value === defMes)) selPeriodo.value = defMes;
+    selPeriodo.dataset.inicializado = '1';
+    selPeriodo.addEventListener('change', _topRecalcular);
+  }
 
-  const metasDelMes = {};
-  metasAgeData.filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor)).forEach(m => {
-    metasDelMes[m.ejecutivo] = { meta: m.meta_activadas, tipo: m.tipo_meta };
-  });
+  if (selEquipo && !selEquipo.dataset.inicializado) {
+    const centros = new Set();
+    ventasData.forEach(r => { const c = _topCentroNorm(r.centro); if (c) centros.add(c); });
+    let opciones = '<option value="all">Toda la operación</option>';
+    opciones += [...centros].sort().map(c => `<option value="centro:${c}">Centro: ${c}</option>`).join('');
+    opciones += SUPERVISORES.map(s => `<option value="sup:${s}">${s}</option>`).join('');
+    selEquipo.innerHTML = opciones;
+    selEquipo.dataset.inicializado = '1';
+    selEquipo.addEventListener('change', _topRecalcular);
+  }
 
-  const agentes = Object.values(datosAgente).map(a => {
-    const metaInfo = metasDelMes[a.ejecutivo];
-    const meta = metaInfo ? metaInfo.meta : 0;
-    const tipo = metaInfo ? metaInfo.tipo : 'sin_meta';
-    const pct = meta > 0 ? (a.activadas / meta * 100) : 0;
-    const ritmo = diasTranscurridos > 0 ? a.activadas / diasTranscurridos : 0;
-    return { ...a, meta, tipo, pct, ritmo };
-  }).filter(a => a.activadas > 0 || a.programadas > 0);
-
-  window.__topAgentesData = agentes;
+  if (selTipo && !selTipo.dataset.inicializado) {
+    selTipo.dataset.inicializado = '1';
+    selTipo.addEventListener('change', _topRecalcular);
+  }
 
   document.querySelectorAll('.top-ord-btn').forEach(btn => {
     btn.onclick = () => {
@@ -13275,7 +13301,147 @@ function renderTopAgentes() {
     renderTopTabla(btnActivo ? btnActivo.dataset.ord : 'activadas');
   };
 
-  renderTopTabla('activadas');
+  _topRecalcular();
+}
+
+function _topCentroNorm(c) {
+  const t = String(c || '').toUpperCase().trim();
+  if (!t) return null;
+  if (t.includes('JUAREZ') || t === 'JV' || t.includes('JV ') || t.includes(' JV')) return 'JV';
+  if (t.includes('CENTER 2') || t.includes('CC2')) return 'CC2';
+  return t;
+}
+
+function _topRecalcular() {
+  if (!window.__avanceData) return;
+  const { fechaCorteStr } = window.__avanceData;
+  const selPeriodo = document.getElementById('top-periodo');
+  const selEquipo = document.getElementById('top-equipo');
+  const selTipo = document.getElementById('top-tipo');
+  const periodoVal = selPeriodo && selPeriodo.value ? selPeriodo.value : null;
+  if (!periodoVal) return;
+
+  // ---- Rango de fechas del periodo ----
+  let iniStr, finStr, anioSel, mesSel = null;
+  if (periodoVal.startsWith('anio:')) {
+    anioSel = parseInt(periodoVal.slice(5));
+    iniStr = `${anioSel}-01-01`;
+    finStr = `${anioSel}-12-31`;
+  } else {
+    const m = periodoVal.slice(4);
+    const [a, mm] = m.split('-');
+    anioSel = parseInt(a);
+    mesSel = parseInt(mm);
+    const ultDia = new Date(anioSel, mesSel, 0).getDate();
+    iniStr = `${m}-01`;
+    finStr = `${m}-${String(ultDia).padStart(2, '0')}`;
+  }
+  // El periodo nunca rebasa el corte del reporte
+  if (finStr > fechaCorteStr && iniStr <= fechaCorteStr) finStr = fechaCorteStr;
+
+  // ---- Días hábiles transcurridos del periodo (para ritmo/día) ----
+  let diasTrans = 0;
+  (calendarioData || []).forEach(d => {
+    if (d && d.fecha && d.fecha >= iniStr && d.fecha <= finStr) diasTrans += parseFloat(d.factor_dia) || 0;
+  });
+
+  // ---- Metas del periodo por agente ----
+  // Mes específico: la meta de ese mes (metas_agente guarda el supervisor
+  // de cada mes, así los meses históricos salen con el supervisor de entonces).
+  // Todo el año: suma de las metas de los meses del año; tipo y supervisor
+  // son los del mes más reciente con meta.
+  const metasPeriodo = {};
+  if (mesSel === null) {
+    metasAgeData
+      .filter(m => m.anio === anioSel)
+      .sort((x, y) => x.mes - y.mes)
+      .forEach(m => {
+        if (!metasPeriodo[m.ejecutivo]) metasPeriodo[m.ejecutivo] = { meta: 0, tipo: 'sin_meta', supervisor: null };
+        metasPeriodo[m.ejecutivo].meta += (m.meta_activadas || 0);
+        metasPeriodo[m.ejecutivo].tipo = m.tipo_meta || 'sin_meta';
+        if (m.supervisor && SUPERVISORES.includes(m.supervisor)) metasPeriodo[m.ejecutivo].supervisor = m.supervisor;
+      });
+  } else {
+    metasAgeData
+      .filter(m => m.anio === anioSel && m.mes === mesSel)
+      .forEach(m => {
+        metasPeriodo[m.ejecutivo] = {
+          meta: m.meta_activadas || 0,
+          tipo: m.tipo_meta || 'sin_meta',
+          supervisor: (m.supervisor && SUPERVISORES.includes(m.supervisor)) ? m.supervisor : null
+        };
+      });
+  }
+
+  const plantMap = {};
+  (plantillaData || []).forEach(p => { if (p && p.nombre) plantMap[p.nombre] = p; });
+
+  // ---- Acumular ventas por agente ----
+  // Entran TODOS los agentes con actividad en el rango, aunque no tengan
+  // supervisor oficial (aparecen con supervisor "—"). Cadena de resolución
+  // del supervisor: metas del periodo → plantilla actual → backoffice.
+  const datosAgente = {};
+  ventasData.forEach(r => {
+    if (!r.ejecutivo) return;
+    const enAct = r.fecha_activacion && r.fecha_activacion >= iniStr && r.fecha_activacion <= finStr;
+    const enProg = r.fecha_bo && r.fecha_bo >= iniStr && r.fecha_bo <= finStr;
+    const enCanc = r.fecha_cancelacion && r.fecha_cancelacion >= iniStr && r.fecha_cancelacion <= finStr;
+    if (!enAct && !enProg && !enCanc) return;
+
+    if (!datosAgente[r.ejecutivo]) {
+      const mp = metasPeriodo[r.ejecutivo];
+      let sup = (mp && mp.supervisor) ? mp.supervisor : null;
+      if (!sup) {
+        const p = plantMap[r.ejecutivo];
+        if (p && p.supervisor && SUPERVISORES.includes(p.supervisor)) sup = p.supervisor;
+      }
+      datosAgente[r.ejecutivo] = { ejecutivo: r.ejecutivo, supervisor: sup, centro: null, activadas: 0, programadas: 0, canceladas: 0 };
+    }
+    const d = datosAgente[r.ejecutivo];
+    if (!d.supervisor && r.supervisor && SUPERVISORES.includes(r.supervisor)) d.supervisor = r.supervisor;
+    if (!d.centro) { const c = _topCentroNorm(r.centro); if (c) d.centro = c; }
+    if (enAct) d.activadas++;
+    if (enProg) d.programadas++;
+    if (enCanc) d.canceladas++;
+  });
+
+  // Completar centro desde plantilla si ninguna venta lo traía
+  Object.values(datosAgente).forEach(d => {
+    if (!d.centro) {
+      const p = plantMap[d.ejecutivo];
+      if (p && p.centro) d.centro = _topCentroNorm(p.centro);
+    }
+  });
+
+  // ---- Armar lista final con meta, tipo, % y ritmo ----
+  let agentes = Object.values(datosAgente).map(a => {
+    const mp = metasPeriodo[a.ejecutivo];
+    const meta = mp ? mp.meta : 0;
+    const tipo = mp ? mp.tipo : 'sin_meta';
+    const pct = meta > 0 ? (a.activadas / meta * 100) : 0;
+    const ritmo = diasTrans > 0 ? a.activadas / diasTrans : 0;
+    return { ...a, meta, tipo, pct, ritmo };
+  }).filter(a => a.activadas > 0 || a.programadas > 0);
+
+  // ---- Filtro de equipo (centro o supervisor) ----
+  const eqVal = selEquipo && selEquipo.value ? selEquipo.value : 'all';
+  if (eqVal.startsWith('centro:')) {
+    const c = eqVal.slice(7);
+    agentes = agentes.filter(a => a.centro === c);
+  } else if (eqVal.startsWith('sup:')) {
+    const s = eqVal.slice(4);
+    agentes = agentes.filter(a => a.supervisor === s);
+  }
+
+  // ---- Filtro de tipo (nuevos vs experimentados) ----
+  const tVal = selTipo && selTipo.value ? selTipo.value : 'all';
+  if (tVal === 'nuevo') agentes = agentes.filter(a => a.tipo === 'fija_6');
+  else if (tVal === 'exp') agentes = agentes.filter(a => a.tipo !== 'sin_meta' && a.tipo !== 'fija_6');
+
+  window.__topAgentesData = agentes;
+
+  const btnActivo = document.querySelector('.top-ord-btn.active');
+  renderTopTabla(btnActivo ? btnActivo.dataset.ord : 'activadas');
 }
 
 function renderTopTabla(criterio) {
@@ -13351,7 +13517,7 @@ function renderTopTabla(criterio) {
     html += `<tr>
       <td class="num" style="text-align:center; font-weight:700; font-size: ${idx < 3 ? '16px' : '13px'};">${medalEmoji}</td>
       <td><strong>${a.ejecutivo}</strong></td>
-      <td style="text-align:center;">${a.supervisor}</td>
+      <td style="text-align:center;">${a.supervisor || '—'}</td>
       <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
       <td class="num" style="text-align:center;">${a.programadas}</td>
       <td class="num" style="text-align:center; font-weight:700; font-size: 14px;">${a.activadas}</td>
