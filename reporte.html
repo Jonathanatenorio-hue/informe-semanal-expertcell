@@ -2032,6 +2032,19 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     return;
   }
 
+  // Vista por CENTRO: idéntico al acceso de centro — supervisores vigentes
+  // cuyo centro en supervisores_config es el seleccionado. No depende de
+  // coordinador_supervisor, así que no requiere mantenimiento de esa tabla.
+  if (coord.es_centro) {
+    const supsCentro = new Set(
+      (supConfigData || [])
+        .filter(s => _accesoNormCentro(s.centro) === coord.centro)
+        .map(s => s.supervisor)
+    );
+    SUPERVISORES = vigentes.filter(s => supsCentro.has(s));
+    return;
+  }
+
   const supsDelCoord = coordSupData
     .filter(cs =>
       cs.coordinador_id === coord.id &&
@@ -2379,10 +2392,18 @@ async function cargarDatos() {
   semanaSeleccionada = finalSemana;
 
   const selectCoord = document.getElementById('coordinador-select');
-  coordinadoresData.forEach(c => {
+  // Vistas por CENTRO (misma mecánica que los accesos CC2/JV). Se registran como
+  // "coordinadores sintéticos" para que todo el código de filtrado existente
+  // (que resuelve el centro vía coordinadoresData) funcione sin cambios.
+  const vistasCentro = [
+    { id: 'centro-CC2', nombre: 'Centro CC2', centro: 'CC2', es_centro: true },
+    { id: 'centro-JV', nombre: 'Centro JV', centro: 'JV', es_centro: true }
+  ];
+  coordinadoresData.push(...vistasCentro);
+  vistasCentro.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
-    opt.textContent = `${c.nombre} (${c.centro})`;
+    opt.textContent = c.nombre;
     opt.style.color = '#1a1a1a';
     selectCoord.appendChild(opt);
   });
