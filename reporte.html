@@ -2530,7 +2530,10 @@ function agregarPorFechaDeActividad(inicioStr, finStr) {
 
   function aplica(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
-    if (!r.supervisor && r.centro) {
+    // Si no se resolvió a un supervisor oficial pero la venta trae centro, cuenta
+    // en ese centro: cubre agentes nuevos, sin asignar, o bajo supervisores que
+    // todavía no están dados de alta en supervisores_config.
+    if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
       if (coord && coord.centro === r.centro) return true;
@@ -2574,7 +2577,10 @@ function agregarPorBloqueBO(inicioStr, finStr) {
 
   function aplica(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
-    if (!r.supervisor && r.centro) {
+    // Si no se resolvió a un supervisor oficial pero la venta trae centro, cuenta
+    // en ese centro: cubre agentes nuevos, sin asignar, o bajo supervisores que
+    // todavía no están dados de alta en supervisores_config.
+    if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
       if (coord && coord.centro === r.centro) return true;
@@ -4589,7 +4595,10 @@ function _renderAvanceMensualImpl(wActual) {
       const plant = plantMapTmp[r.ejecutivo];
       if (plant && plant.supervisor && SUPERVISORES.includes(plant.supervisor)) return true;
     }
-    if (!r.supervisor && r.centro) {
+    // Si no se resolvió a un supervisor oficial pero la venta trae centro, cuenta
+    // en ese centro: cubre agentes nuevos, sin asignar, o bajo supervisores que
+    // todavía no están dados de alta en supervisores_config.
+    if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
       if (coord && coord.centro === r.centro) return true;
@@ -5276,7 +5285,10 @@ function renderTendenciaMes() {
   ventasData.forEach(r => {
     if (!r.fecha_activacion) return;
     if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
-    if (!SUPERVISORES.includes(r.supervisor)) return;
+    // Antes exigía supervisor oficial, lo que tiraba las ventas de agentes nuevos
+    // o aún sin asignar (y las de supervisores no dados de alta todavía). Ahora
+    // basta con que la venta tenga centro: cuenta en su centro aunque no tenga equipo.
+    if (!SUPERVISORES.includes(r.supervisor) && !r.centro) return;
     activadasPorFecha[r.fecha_activacion] = (activadasPorFecha[r.fecha_activacion] || 0) + (r.peso_venta || 1);
   });
 
@@ -9324,7 +9336,10 @@ function actualizarVista() {
 
   function esVentaIncluida(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
-    if (!r.supervisor && r.centro) {
+    // Si no se resolvió a un supervisor oficial pero la venta trae centro, cuenta
+    // en ese centro: cubre agentes nuevos, sin asignar, o bajo supervisores que
+    // todavía no están dados de alta en supervisores_config.
+    if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
       if (coord && coord.centro === r.centro) return true;
