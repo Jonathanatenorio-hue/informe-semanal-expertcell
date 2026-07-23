@@ -2348,6 +2348,9 @@ async function cargarDatos() {
     .order('fecha_inicio', { ascending: true });
   asignacionesData = asigData || [];
 
+  // Filtrado por acceso (Director ve todo; CC2/JV solo su centro)
+  aplicarFiltroAcceso();
+
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
   const semanasConDatos = new Set();
@@ -15150,7 +15153,165 @@ function seleccionarSemana(w) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-cargarDatos().catch(e => console.error(e));
+// =====================================================================
+// SISTEMA DE ACCESO — Director / Centro CC2 / Centro JV
+// Las claves NO están en el código: solo sus hashes SHA-256.
+// El robot de correos puede entrar con ?clave=... en la URL.
+// =====================================================================
+const ACCESOS_HASH = {
+  'f482a943c8125ddf3e2f98be67523a97ea08474e7507e623dbf124ce62f812e3': 'director',
+  'e2673b641a1f27bd6302b8c042b7df77840819b84586f35d97fa4cd8a5f3990e': 'CC2',
+  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV'
+};
+
+async function _hashClave(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function _accesoNormCentro(c) {
+  const t = String(c || '').toUpperCase().trim();
+  if (!t) return null;
+  if (t.includes('JUAREZ') || t.includes('JV')) return 'JV';
+  if (t.includes('CENTER 2') || t.includes('CC2')) return 'CC2';
+  return t;
+}
+
+// Filtra TODOS los datos base al centro del acceso. Se llama dentro de
+// cargarDatos(), después de cargar y antes de renderizar: todo lo demás
+// (SUPERVISORES, avance, cohortes, logística, análisis anual) cascadea solo.
+function aplicarFiltroAcceso() {
+  const modo = window.__accesoModo || 'director';
+  if (modo !== 'CC2' && modo !== 'JV') return;
+  const C = modo;
+
+  // Secciones exclusivas de dirección: ocultas para accesos de centro
+  ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos'].forEach(id => {
+    const s = document.getElementById(id);
+    if (s) s.style.display = 'none';
+    const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
+    if (b) b.style.display = 'none';
+  });
+
+  // Config de supervisores: solo el centro (histórico completo del centro)
+  supConfigData = (supConfigData || []).filter(s => _accesoNormCentro(s.centro) === C);
+  const supsCentro = new Set(supConfigData.map(s => s.supervisor));
+
+  // Plantilla del centro (por texto de centro, con respaldo por supervisor)
+  plantillaData = (plantillaData || []).filter(p => {
+    const c = _accesoNormCentro(p.centro);
+    if (c === 'CC2' || c === 'JV') return c === C;
+    return p.supervisor && supsCentro.has(p.supervisor);
+  });
+  const agentesCentro = new Set(plantillaData.map(p => p.nombre));
+
+  // Ventas: por centro de la venta; sin centro, por agente o supervisor
+  ventasData = (ventasData || []).filter(r => {
+    const c = _accesoNormCentro(r.centro);
+    if (c === 'CC2' || c === 'JV') return c === C;
+    if (r.ejecutivo && agentesCentro.has(r.ejecutivo)) return true;
+    if (r.supervisor && supsCentro.has(r.supervisor)) return true;
+    return false;
+  });
+
+  metasAgeData = (metasAgeData || []).filter(m => supsCentro.has(m.supervisor) || agentesCentro.has(m.ejecutivo));
+  metasSupData = (metasSupData || []).filter(m => supsCentro.has(m.supervisor));
+  asignacionesData = (asignacionesData || []).filter(a => supsCentro.has(a.supervisor) || agentesCentro.has(a.ejecutivo));
+  capacitadoresData = (capacitadoresData || []).filter(cp => _accesoNormCentro(cp.centro) === C);
+
+  // El filtro de coordinador no aplica en modo centro
+  const sc = document.getElementById('coordinador-select');
+  if (sc && sc.parentElement) sc.parentElement.style.display = 'none';
+  const ci = document.getElementById('coord-info');
+  if (ci) ci.style.display = 'none';
+}
+
+function mostrarGate() {
+  const l = document.getElementById('loader');
+  if (l) l.style.display = 'none';
+  const div = document.createElement('div');
+  div.id = 'acceso-gate';
+  div.style.cssText = 'position:fixed; inset:0; background:#002B5C; z-index:99999; display:flex; align-items:center; justify-content:center; font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif;';
+  div.innerHTML = `
+    <div style="background:white; border-radius:14px; padding:36px 32px; width:340px; max-width:90vw; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="font-size:34px; margin-bottom:6px;">🔐</div>
+      <div style="font-weight:800; font-size:19px; color:#002B5C;">Informe Semanal ExpertCell</div>
+      <div style="font-size:12px; color:#64748B; margin:6px 0 20px;">Ingresa tu clave de acceso</div>
+      <input id="acceso-input" type="password" placeholder="Clave de acceso" autocomplete="off"
+        style="width:100%; box-sizing:border-box; padding:11px 14px; border:1.5px solid #CBD5E1; border-radius:8px; font-size:14px; text-align:center; outline:none;">
+      <div id="acceso-error" style="font-size:12px; color:#DC2626; margin-top:8px; min-height:16px;"></div>
+      <button id="acceso-btn" style="width:100%; margin-top:10px; padding:11px; background:#FF7200; color:white; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer;">Entrar</button>
+    </div>`;
+  document.body.appendChild(div);
+  const input = div.querySelector('#acceso-input');
+  const btn = div.querySelector('#acceso-btn');
+  const err = div.querySelector('#acceso-error');
+  async function intentar() {
+    if (!input.value.trim()) return;
+    const h = await _hashClave(input.value.trim());
+    if (ACCESOS_HASH[h]) {
+      window.__accesoModo = ACCESOS_HASH[h];
+      localStorage.setItem('ec_acceso_h', h);
+      div.remove();
+      const l2 = document.getElementById('loader');
+      if (l2) l2.style.display = '';
+      arrancarReporte();
+    } else {
+      err.textContent = 'Clave incorrecta';
+      input.value = '';
+      input.focus();
+    }
+  }
+  btn.onclick = intentar;
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') intentar(); });
+  input.focus();
+}
+
+function agregarBotonSalir() {
+  const modo = window.__accesoModo || 'director';
+  const lbl = modo === 'director' ? 'Director' : `Acceso ${modo}`;
+  const b = document.createElement('button');
+  b.textContent = `🔒 ${lbl} · Salir`;
+  b.title = 'Cerrar acceso y volver a la pantalla de clave';
+  b.style.cssText = 'position:fixed; bottom:14px; right:14px; z-index:9000; background:#002B5C; color:white; border:none; padding:7px 12px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer; opacity:0.85;';
+  b.onclick = () => { localStorage.removeItem('ec_acceso_h'); location.href = location.pathname; };
+  document.body.appendChild(b);
+}
+
+function arrancarReporte() {
+  agregarBotonSalir();
+  cargarDatos().catch(e => console.error(e));
+}
+
+async function iniciarAcceso() {
+  // 1) Clave por URL (?clave=...) — la usa el robot de correos
+  try {
+    const p = new URLSearchParams(location.search);
+    const claveUrl = p.get('clave');
+    if (claveUrl) {
+      const h = await _hashClave(claveUrl.trim());
+      if (ACCESOS_HASH[h]) {
+        window.__accesoModo = ACCESOS_HASH[h];
+        localStorage.setItem('ec_acceso_h', h);
+        arrancarReporte();
+        return;
+      }
+    }
+  } catch (e) { console.warn('[Acceso] Error leyendo clave de URL:', e); }
+
+  // 2) Sesión guardada en este navegador
+  const guardado = localStorage.getItem('ec_acceso_h');
+  if (guardado && ACCESOS_HASH[guardado]) {
+    window.__accesoModo = ACCESOS_HASH[guardado];
+    arrancarReporte();
+    return;
+  }
+
+  // 3) Pantalla de acceso
+  mostrarGate();
+}
+
+iniciarAcceso();
 
 document.addEventListener('click', (e) => {
   if (e.target.id === 'modal-cerrar' || e.target.id === 'modal-agente') {
