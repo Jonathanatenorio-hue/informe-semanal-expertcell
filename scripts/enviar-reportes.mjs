@@ -25,7 +25,7 @@ import nodemailer from 'nodemailer';
 
 // ---------- CONFIGURACION ----------
 const URL_REPORTE =
-  'https://jonathanatenorio-hue.github.io/informe-semanal-expertcell/reporte.html';
+  'https://jonathanatenorio-hue.github.io/informe-semanal-expertcell/reporte.html?clave=EC26-DIR!84Kz';
 
 // Copia fija en TODOS los correos (incluye los avisos a Jonathan).
 const CC_SIEMPRE = 'j.tenorio@expertcell.com.mx';
