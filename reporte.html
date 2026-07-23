@@ -4556,6 +4556,9 @@ function _renderAvanceMensualImpl(wActual) {
   const avancesPorSup = {};
   SUPERVISORES.forEach(s => { avancesPorSup[s] = 0; });
   const avancesPorAgente = {};
+  // Folios ya sumados al avance por algún supervisor. Evita que el recorrido de
+  // "ventas sin supervisor" los vuelva a contar (doble conteo).
+  const foliosYaContadosAvance = new Set();
 
   const avancesProgPorSup = {};
   SUPERVISORES.forEach(s => { avancesProgPorSup[s] = 0; });
@@ -4617,6 +4620,7 @@ function _renderAvanceMensualImpl(wActual) {
       if (tieneSupVenta) {
         avancesPorSup[supVenta] += peso;
         avancesPorAgente[r.ejecutivo] = (avancesPorAgente[r.ejecutivo] || 0) + peso;
+        if (r.folio) foliosYaContadosAvance.add(r.folio);
       }
     }
 
@@ -4649,7 +4653,11 @@ function _renderAvanceMensualImpl(wActual) {
   let avanceTotal = Object.values(avancesPorSup).reduce((a, b) => a + b, 0);
 
   ventasData.forEach(r => {
-    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return;
+    // Antes se descartaba mirando solo r.supervisor (el del backoffice), pero el
+    // avance por supervisor se resuelve con asignación histórica -> plantilla ->
+    // backoffice. Una venta resuelta por los dos primeros caminos, con r.supervisor
+    // fuera de la lista (o null), se contaba dos veces. Ahora se descarta por folio.
+    if (r.folio && foliosYaContadosAvance.has(r.folio)) return;
     if (!esVentaDelFiltro(r)) return;
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
       avanceTotal += (r.peso_venta || 1);
