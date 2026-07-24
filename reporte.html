@@ -1576,10 +1576,29 @@
               <th style="text-align:center;">Fecha BO</th>
               <th style="text-align:center;">Fecha cancelación</th>
               <th class="num" style="text-align:center;">Días sin recuperar</th>
+              <th style="text-align:center; width:44px;"></th>
             </tr>
           </thead>
           <tbody id="recup-perdidas-body"></tbody>
         </table>
+      </div>
+      <div style="margin-top:10px;">
+        <button id="btn-ver-descartadas" style="background:#64748B; color:white; border:none; padding:7px 14px; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;">🗂️ Ver descartadas (0)</button>
+        <div id="descartadas-panel" style="display:none; margin-top:10px; border:1px solid var(--border); border-radius:8px; max-height:400px; overflow-y:auto;">
+          <table style="font-size:12px;">
+            <thead style="position:sticky; top:0; z-index:1;">
+              <tr>
+                <th style="text-align:center;">Folio</th>
+                <th style="text-align:center;">Teléfono</th>
+                <th>Motivo</th>
+                <th style="text-align:center;">Descartó</th>
+                <th style="text-align:center;">Fecha</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="descartadas-body"></tbody>
+          </table>
+        </div>
       </div>
       </div>
     </div>
@@ -11653,7 +11672,117 @@ function renderFlujoEvolucion(conDias) {
   });
 }
 
+// =====================================================================
+// DESCARTE DE CANCELADAS IRRECUPERABLES (tabla canceladas_descartadas)
+// No borra nada de ventas_detalle: la venta solo sale de la lista
+// accionable, con motivo, quién y cuándo. Restaurable en todo momento.
+// =====================================================================
+let descartadasData = [];
+let _descartadasCargadas = false;
+
+function _etiquetaAcceso() {
+  const modo = window.__accesoModo || 'director';
+  return modo === 'director' ? 'Director' : 'Acceso ' + modo;
+}
+
+async function _cargarDescartadas(refrescar) {
+  try {
+    const { data, error } = await db.from('canceladas_descartadas').select('*').order('fecha_descarte', { ascending: false });
+    if (error) throw error;
+    descartadasData = data || [];
+    _descartadasCargadas = true;
+    if (refrescar && window.__recupDatosUltimos) renderRecupPerdidas(window.__recupDatosUltimos);
+  } catch (e) {
+    console.error('[Descartadas] Error cargando:', e);
+  }
+}
+
+function abrirDescartar(btn) {
+  const folio = btn.dataset.folio;
+  const telefono = btn.dataset.tel;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(0,20,45,0.55); z-index:99998; display:flex; align-items:center; justify-content:center;';
+  ov.innerHTML = `
+    <div style="background:white; border-radius:12px; padding:24px; width:420px; max-width:92vw; box-shadow:0 20px 60px rgba(0,0,0,0.35);">
+      <div style="font-weight:800; font-size:16px; color:var(--att-navy);">🗑️ Descartar cancelada</div>
+      <div style="font-size:12px; color:var(--text-soft); margin:6px 0 14px;">Folio <strong>${folio}</strong> · Tel <strong>${telefono}</strong><br>La venta NO se borra: solo sale de la lista accionable. Quedará registrado quién y cuándo la descartó.</div>
+      <textarea id="descartar-motivo" rows="3" placeholder="Motivo (obligatorio, mínimo 10 caracteres). Ej: cliente ya contrató con otra compañía, número fuera de servicio…" style="width:100%; box-sizing:border-box; padding:10px; border:1.5px solid #CBD5E1; border-radius:8px; font-size:13px; font-family:inherit; resize:vertical;"></textarea>
+      <div id="descartar-error" style="font-size:12px; color:#DC2626; min-height:16px; margin-top:4px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+        <button id="descartar-cancelar" style="background:#E2E8F0; color:#334155; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">Cancelar</button>
+        <button id="descartar-confirmar" style="background:#DC2626; color:white; border:none; padding:9px 16px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">Descartar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+  const ta = ov.querySelector('#descartar-motivo');
+  ta.focus();
+  ov.querySelector('#descartar-cancelar').onclick = () => ov.remove();
+  ov.querySelector('#descartar-confirmar').onclick = async () => {
+    const motivo = ta.value.trim();
+    if (motivo.length < 10) {
+      ov.querySelector('#descartar-error').textContent = 'Escribe un motivo de al menos 10 caracteres.';
+      return;
+    }
+    const btnC = ov.querySelector('#descartar-confirmar');
+    btnC.disabled = true; btnC.textContent = 'Guardando…';
+    try {
+      const { error } = await db.from('canceladas_descartadas').insert({
+        folio: folio, telefono: telefono, motivo: motivo, descartado_por: _etiquetaAcceso()
+      });
+      if (error) throw error;
+      ov.remove();
+      await _cargarDescartadas(true);
+    } catch (e) {
+      console.error('[Descartadas] Error guardando:', e);
+      ov.querySelector('#descartar-error').textContent = 'Error al guardar: ' + (e.message || e);
+      btnC.disabled = false; btnC.textContent = 'Descartar';
+    }
+  };
+}
+
+async function restaurarDescartada(folio) {
+  if (!confirm('¿Restaurar este folio a la lista accionable?')) return;
+  try {
+    const { error } = await db.from('canceladas_descartadas').delete().eq('folio', folio);
+    if (error) throw error;
+    await _cargarDescartadas(true);
+  } catch (e) {
+    console.error('[Descartadas] Error restaurando:', e);
+    alert('Error al restaurar: ' + (e.message || e));
+  }
+}
+
+function _renderDescartadasPanel() {
+  const btn = document.getElementById('btn-ver-descartadas');
+  const body = document.getElementById('descartadas-body');
+  if (!btn || !body) return;
+  btn.textContent = `🗂️ Ver descartadas (${descartadasData.length})`;
+  body.innerHTML = descartadasData.map(d => {
+    const folioSafe = String(d.folio).replace(/'/g, "\\'");
+    const motivoSafe = String(d.motivo || '').replace(/</g, '&lt;');
+    return `<tr>
+      <td style="text-align:center; font-family:monospace;">${d.folio}</td>
+      <td style="text-align:center; font-family:monospace;">${d.telefono || '—'}</td>
+      <td>${motivoSafe}</td>
+      <td style="text-align:center;">${d.descartado_por}</td>
+      <td style="text-align:center; white-space:nowrap;">${(d.fecha_descarte || '').substring(0, 16).replace('T', ' ')}</td>
+      <td style="text-align:center;"><button onclick="restaurarDescartada('${folioSafe}')" style="background:none; border:1px solid var(--border); border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;">↩️ Restaurar</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" style="text-align:center; padding:20px; color:var(--text-soft);">No hay descartadas.</td></tr>`;
+}
+
 function renderRecuperacion() {
+  // Descartadas: cargar una vez y cablear el toggle del panel
+  const btnDesc = document.getElementById('btn-ver-descartadas');
+  if (btnDesc && !btnDesc.dataset.wired) {
+    btnDesc.dataset.wired = '1';
+    btnDesc.onclick = () => {
+      const p = document.getElementById('descartadas-panel');
+      if (p) p.style.display = p.style.display === 'none' ? '' : 'none';
+    };
+  }
+  if (!_descartadasCargadas) _cargarDescartadas(true);
+
   const canceladas = ventasData.filter(r =>
     r.estatus === 'cancelada' &&
     r.fecha_bo && r.fecha_cancelacion &&
@@ -11735,6 +11864,9 @@ function descargarPerdidasExcel(periodo) {
   if (supFiltro !== 'all') {
     perdidas = perdidas.filter(r => r.supervisor === supFiltro);
   }
+  // Excluir descartadas también del Excel accionable
+  const setDescXl = new Set(descartadasData.map(d => d.folio));
+  perdidas = perdidas.filter(r => !setDescXl.has(r.folio));
   perdidas.sort((a, b) => b.diasSinRecuperar - a.diasSinRecuperar);
 
   if (perdidas.length === 0) {
@@ -11859,12 +11991,17 @@ function renderRecupConFiltro(periodo) {
 }
 
 function renderRecupPerdidas(datos) {
+  window.__recupDatosUltimos = datos;
   const supFiltro = document.getElementById('recup-sup-filter').value;
   let perdidas = datos.filter(r => r.estatusRecup === 'perdida');
 
   if (supFiltro !== 'all') {
     perdidas = perdidas.filter(r => r.supervisor === supFiltro);
   }
+
+  // Excluir descartadas (marcadas como irrecuperables con motivo)
+  const setDesc = new Set(descartadasData.map(d => d.folio));
+  perdidas = perdidas.filter(r => !setDesc.has(r.folio));
 
   perdidas.sort((a, b) => b.diasSinRecuperar - a.diasSinRecuperar);
 
@@ -11873,6 +12010,7 @@ function renderRecupPerdidas(datos) {
 
   document.getElementById('recup-perdidas-body').innerHTML = perdidas.map(p => {
     const colorDias = p.diasSinRecuperar >= 30 ? 'var(--red)' : p.diasSinRecuperar >= 14 ? 'var(--amber)' : 'var(--text-soft)';
+    const folioAttr = String(p.folio).replace(/"/g, '&quot;');
     return `<tr>
       <td style="text-align:center;font-family:monospace;"><strong>${p.telefono}</strong></td>
       <td style="text-align:center;">${p.ejecutivo}</td>
@@ -11880,13 +12018,16 @@ function renderRecupPerdidas(datos) {
       <td class="num" style="text-align:center;">${p.fecha_bo}</td>
       <td class="num" style="text-align:center;">${p.fecha_cancelacion}</td>
       <td class="num" style="text-align:center;color:${colorDias};font-weight:700;">${p.diasSinRecuperar}</td>
+      <td style="text-align:center;"><button data-folio="${folioAttr}" data-tel="${p.telefono}" onclick="abrirDescartar(this)" title="Descartar: irrecuperable" style="background:none; border:none; cursor:pointer; font-size:15px; padding:2px 6px;">🗑️</button></td>
     </tr>`;
   }).join('');
 
   if (perdidas.length === 0) {
     document.getElementById('recup-perdidas-body').innerHTML =
-      `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-soft);">No hay canceladas perdidas con estos filtros 🎉</td></tr>`;
+      `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text-soft);">No hay canceladas perdidas con estos filtros 🎉</td></tr>`;
   }
+
+  _renderDescartadasPanel();
 }
 
 function plantillaActivaEn(fechaStr, supervisor) {
