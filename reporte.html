@@ -2349,6 +2349,14 @@ async function cargarDatos() {
   const { data: mAge } = await db.from('metas_agente').select('*');
   metasAgeData = mAge || [];
 
+  // Normalizar el TIPO por MONTO de meta (la etiqueta del Excel a veces viene
+  // mal grabada, ej. agentes con meta 6 etiquetados como sin_meta):
+  //   meta >= 8 → calculada (Exp) · meta 1-7 → fija_6 (Nuevo) · meta 0/null → sin_meta
+  metasAgeData.forEach(m => {
+    const mt = Number(m.meta_activadas) || 0;
+    m.tipo_meta = mt >= 8 ? 'calculada' : (mt > 0 ? 'fija_6' : 'sin_meta');
+  });
+
   const { data: coordData } = await db.from('coordinadores').select('*').eq('activo', true);
   coordinadoresData = coordData || [];
 
