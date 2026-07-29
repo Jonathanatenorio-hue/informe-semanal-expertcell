@@ -1173,13 +1173,14 @@
     <div class="section collapsible" id="sec-comisiones">
       <div class="section-title">💰 Comisiones simulador</div>
       <div class="section-body">
-        <div class="section-subtitle">Cálculo retroactivo de comisiones de toda la plantilla (activos + bajas) según el esquema comercial 2026. Base $9,400 + comisión por planes vendidos según nivel alcanzado (6-9 / 10-15 / 16+) + aceleradores ($100 al llegar a 20, $150 al llegar a 25). Agentes nuevos en su primer mes calendario completo comisionan desde la venta 1.</div>
+        <div class="section-subtitle">Cálculo retroactivo de comisiones de toda la plantilla (activos + bajas) según el esquema comercial 2026. Base $9,400 + comisión por planes según nivel (6-9 / 10-15 / 16+) + aceleradores sobre todas las cuotas del mes: desde junio 12-15 → $50 · 16-19 → $75, y los ya existentes 20-24 → $100 · 25+ → $150. Incluye ajuste DHL de todo el año (venta con guía: AZUL 2 −$25, resto −$50). Abajo: comisiones de supervisores (15% + bono 3%).</div>
         <div id="comisiones-contenido">
           <div style="padding:24px; text-align:center;">
             <button onclick="renderComisiones()" style="background:#16A34A; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">💰 Calcular comisiones</button>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa toda la plantilla y todas las activadas del año.</div>
           </div>
         </div>
+        <div id="comisiones-sup-contenido" style="margin-top:28px;"></div>
       </div>
     </div>
 
@@ -16387,10 +16388,12 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
   let totalCuotaCompleta = 0;     // # planes que pesan 1
   let totalOtros = 0;             // planes desconocidos (no en esquema)
 
+  const dhlPorPlan = {}; // ventas del plan enviadas por DHL (con guía)
   ventasAgente.forEach(v => {
     const planN = _comNormalizarPlan(v.plan);
     const esquema = COMISION_ESQUEMA_2026[planN];
     cuentaPorPlan[planN] = (cuentaPorPlan[planN] || 0) + 1;
+    if (_dhlFolios && v.folio && _dhlFolios.has(v.folio)) dhlPorPlan[planN] = (dhlPorPlan[planN] || 0) + 1;
     if (!esquema) {
       totalOtros++;
       return;
@@ -16417,13 +16420,21 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
     else if (cuotasTotales >= 6) { nivelAlcanzado = 1; etiquetaNivel = 'Nivel 1'; }
   }
 
-  // Aceleradores: por CUOTAS (Azul/Azul1/Lite1 = 0.5 también para acelerador)
-  if (cuotasTotales >= 25) { aplicaAcel25 = true; etiquetaNivel += ' + Acel 25'; }
-  else if (cuotasTotales >= 20) { aplicaAcel20 = true; etiquetaNivel += ' + Acel 20'; }
+  // Aceleradores: por CUOTAS (Azul/Azul1/Lite1 = 0.5 también para acelerador).
+  // Desde JUNIO 2026 hay rangos adicionales que complementan los existentes.
+  // Cada rango paga sobre TODAS las cuotas del mes y sustituye al anterior:
+  // 12-15 → $50 · 16-19 → $75 · 20-24 → $100 · 25+ → $150
+  const _rangosJunio = (anioMes > 2026) || (anioMes === 2026 && mesMes >= 6);
+  let tarifaAcelerador = 0;
+  if (cuotasTotales >= 25) { aplicaAcel25 = true; tarifaAcelerador = ACELERADOR_25; etiquetaNivel += ' + Acel 25'; }
+  else if (cuotasTotales >= 20) { aplicaAcel20 = true; tarifaAcelerador = ACELERADOR_20; etiquetaNivel += ' + Acel 20'; }
+  else if (_rangosJunio && cuotasTotales >= 16) { tarifaAcelerador = 75; etiquetaNivel += ' + Acel $75'; }
+  else if (_rangosJunio && cuotasTotales >= 12) { tarifaAcelerador = 50; etiquetaNivel += ' + Acel $50'; }
 
   // Calcular comisión por plan según nivel
   let comisionPlanes = 0;
-  let detalleComision = []; // [{plan, count, tarifa, subtotal}]
+  let ajusteDHL = 0;
+  let detalleComision = []; // [{plan, count, tarifa, subtotal, dhl, descuentoDHL}]
   if (nivelAlcanzado > 0) {
     const tarifaKey = nivelAlcanzado === 1 ? 'nivel1' : nivelAlcanzado === 2 ? 'nivel2' : 'nivel3';
     Object.entries(cuentaPorPlan).forEach(([planN, count]) => {
@@ -16432,15 +16443,31 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
       const tarifa = esquema[tarifaKey];
       const subtotal = tarifa * count;
       comisionPlanes += subtotal;
-      detalleComision.push({ plan: planN, count, tarifa, subtotal, cuota: esquema.cuota });
+      // Ajuste DHL (todo el año): venta con guía → AZUL 2 −$25, resto −$50.
+      // El descuento nunca excede la tarifa de la venta (piso $0 por venta).
+      const dhlCount = dhlPorPlan[planN] || 0;
+      let descuentoDHL = 0;
+      if (dhlCount > 0) {
+        // AZUL 2 / LITE 2: −$25 (75→50 en niveles 1-2; 100→75 en nivel 16+).
+        // Medios (AZUL/AZUL 1/LITE 1): el PAR por DHL netea como un Azul 2 DHL
+        // del bracket → par neto $50 en niveles 1-2 (desc $25 c/u) y par neto
+        // $75 en nivel 16+ (desc $12.50 c/u). Resto de planes: −$50.
+        let descUnit;
+        if (planN === 'ATT AZUL 2' || planN === 'ATT LITE 2') descUnit = 25;
+        else if (esquema.cuota === 0.5) descUnit = (nivelAlcanzado === 3) ? 12.5 : 25;
+        else descUnit = 50;
+        descuentoDHL = Math.min(descUnit, tarifa) * dhlCount;
+        comisionPlanes -= descuentoDHL;
+        ajusteDHL += descuentoDHL;
+      }
+      detalleComision.push({ plan: planN, count, tarifa, subtotal, cuota: esquema.cuota, dhl: dhlCount, descuentoDHL });
     });
   }
+  const ventasDHL = Object.values(dhlPorPlan).reduce((a, b) => a + b, 0);
 
   // Calcular bono acelerador (sobre el TOTAL de cuotas, no sobre conteo bruto)
   // Ejemplo: 22 cuotas (de las cuales 4 son medias) → bono = 22 × $100
-  let bonoAcelerador = 0;
-  if (aplicaAcel25) bonoAcelerador = cuotasTotales * ACELERADOR_25;
-  else if (aplicaAcel20) bonoAcelerador = cuotasTotales * ACELERADOR_20;
+  let bonoAcelerador = tarifaAcelerador > 0 ? cuotasTotales * tarifaAcelerador : 0;
 
   // Base neto: solo si estuvo activo en el mes
   const baseNeto = estuvoActivo ? BASE_NETO_MENSUAL : 0;
@@ -16545,6 +16572,9 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
     detalleComision,
     comisionPlanes,
     bonoAcelerador,
+    tarifaAcelerador,
+    ajusteDHL,
+    ventasDHL,
     baseNeto,
     totalCobrado: baseNeto + comisionPlanes + bonoAcelerador,
   };
@@ -16712,27 +16742,257 @@ let _comFiltroCentro = 'todos';
 let _comFiltroMadurez = 'todos'; // 'todos' | 'curva' | 'desarrollo' | 'maduro'
 let _comMostrarBajas = true;
 
+// =====================================================================
+// COMISIONES DE SUPERVISORES — 15% de la comisión de sus agentes
+// (con y sin aceleradores) + bono 3% del monto en rentas sin IVA
+// si avance >= 103% de meta Y todos los maduros con >= 8 ventas.
+// =====================================================================
+let _dhlFolios = new Set();
+
+// Precio de plan CON IVA (renta sin impuestos = precio × 0.837).
+// Equivalencias: LITE 2 = AZUL 2 · LITE ILIMITADO = DIAMANTE ·
+// AZUL / AZUL 1 / LITE 1: cada 2 equivalen a un AZUL 2 (mitad c/u).
+const PRECIO_PLAN_IVA = {
+  'ATT AZUL 2': 435, 'ATT LITE 2': 435,
+  'ATT AZUL 3': 550,
+  'ATT PLATA': 650,
+  'ATT ORO': 725,
+  'ATT BLACK': 825,
+  'ATT PLATINO': 1035,
+  'ATT DIAMANTE': 1300, 'ATT LITE ILIMITADO': 1300,
+  'ATT TITANIO': 1599,
+  'ATT AZUL': 217.5, 'ATT AZUL 1': 217.5, 'ATT LITE 1': 217.5
+};
+const FACTOR_SIN_IVA = 0.837;
+// Planes "familia Azul 2" con descuento DHL de $25 (el resto descuenta $50):
+// AZUL 2 y LITE 2 directo; AZUL / AZUL 1 / LITE 1 porque cada 2 equivalen a un Azul 2.
+const PLANES_DHL_25 = new Set(['ATT AZUL 2', 'ATT LITE 2', 'ATT AZUL', 'ATT AZUL 1', 'ATT LITE 1']);
+const SUP_PCT_COMISION = 0.15;   // 15% de la comisión de sus agentes
+const SUP_BONO_PCT = 0.03;       // 3% del monto en rentas sin IVA
+const SUP_BONO_UMBRAL = 103;     // % de meta para destrabar el bono
+const SUP_BONO_MIN_MADURO = 8;   // ventas mínimas de cada agente maduro
+
+function _comSupCalcular(anio, mes) {
+  const ms = `${anio}-${String(mes).padStart(2, '0')}`;
+  const ventasMes = ventasData.filter(v => v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms));
+  const plantMap = {};
+  (plantillaData || []).forEach(p => { if (p && p.nombre) plantMap[p.nombre] = p; });
+
+  const metasAgeMes = (metasAgeData || []).filter(m => m.anio === anio && m.mes === mes);
+  const metasSupMes = (metasSupData || []).filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor));
+
+  // Agentes por supervisor: metas del mes + ventas con supervisor del backoffice
+  const agentesPorSup = {};
+  metasSupMes.forEach(m => { agentesPorSup[m.supervisor] = new Set(); });
+  metasAgeMes.forEach(m => { if (agentesPorSup[m.supervisor]) agentesPorSup[m.supervisor].add(m.ejecutivo); });
+  const conMetaMes = new Set(metasAgeMes.map(m => m.ejecutivo));
+  ventasMes.forEach(v => {
+    if (!v.ejecutivo || conMetaMes.has(v.ejecutivo)) return;
+    if (v.supervisor && agentesPorSup[v.supervisor]) agentesPorSup[v.supervisor].add(v.ejecutivo);
+  });
+
+  const filas = metasSupMes.map(msup => {
+    const sup = msup.supervisor;
+    const setAg = agentesPorSup[sup] || new Set();
+    const agentes = [...setAg];
+
+    let comSin = 0, comCon = 0, ajusteDHLTotal = 0, ventasDHL = 0;
+    agentes.forEach(a => {
+      const p = plantMap[a] || {};
+      const c = _comCalcularAgenteMes(a, p.fecha_ingreso || null, p.fecha_baja || null, anio, mes, ventasMes);
+      comSin += c.comisionPlanes;
+      comCon += c.comisionPlanes + c.bonoAcelerador;
+      ajusteDHLTotal += (c.ajusteDHL || 0);
+      ventasDHL += (c.ventasDHL || 0);
+    });
+
+    // Avance (peso) y monto en rentas sin IVA del equipo
+    let avance = 0, montoRentas = 0, ventasSinPrecio = 0;
+    const pesoPorAg = {};
+    ventasMes.forEach(v => {
+      if (!v.ejecutivo || !setAg.has(v.ejecutivo)) return;
+      const peso = (v.peso_venta != null ? v.peso_venta : 1);
+      avance += peso;
+      pesoPorAg[v.ejecutivo] = (pesoPorAg[v.ejecutivo] || 0) + peso;
+      const planN = _comNormalizarPlan(v.plan);
+      const precio = PRECIO_PLAN_IVA[planN];
+      if (precio != null) montoRentas += precio * FACTOR_SIN_IVA;
+      else ventasSinPrecio++;
+    });
+
+    const meta = Number(msup.meta_activadas) || 0;
+    const pct = meta > 0 ? (avance / meta * 100) : 0;
+    const okMeta = meta > 0 && pct >= SUP_BONO_UMBRAL;
+
+    // Agentes maduros del mes (tipo calculada) con mínimo 8 ventas
+    const maduros = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta && m.tipo_meta !== 'sin_meta' && m.tipo_meta !== 'fija_6');
+    const madurosDebajo = maduros
+      .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0 }))
+      .filter(x => x.ventas < SUP_BONO_MIN_MADURO)
+      .sort((a, b) => a.ventas - b.ventas);
+    const okMaduros = madurosDebajo.length === 0;
+
+    const bonoPotencial = montoRentas * SUP_BONO_PCT;
+    const bono = (okMeta && okMaduros) ? bonoPotencial : 0;
+
+    return {
+      sup, numAgentes: agentes.length,
+      comSin, comCon,
+      sup15sin: comSin * SUP_PCT_COMISION,
+      sup15con: comCon * SUP_PCT_COMISION,
+      ajusteDHLTotal, ventasDHL,
+      meta, avance, pct, okMeta,
+      numMaduros: maduros.length, madurosDebajo, okMaduros,
+      montoRentas, ventasSinPrecio, bonoPotencial, bono,
+      total: comCon * SUP_PCT_COMISION + bono
+    };
+  });
+
+  filas.sort((a, b) => b.total - a.total);
+  return filas;
+}
+
+function renderComisionesSupervisores() {
+  const cont = document.getElementById('comisiones-sup-contenido');
+  if (!cont) return;
+
+  // Meses disponibles (activadas 2026+)
+  const mesesSet = new Set();
+  ventasData.forEach(v => {
+    if (v.estatus === 'activada' && v.fecha_activacion) {
+      const m = String(v.fecha_activacion).substring(0, 7);
+      if (m >= '2026-01') mesesSet.add(m);
+    }
+  });
+  const meses = [...mesesSet].sort().reverse();
+  if (meses.length === 0) { cont.innerHTML = ''; return; }
+
+  const hoyMs = new Date().toISOString().substring(0, 7);
+  const sel = (window.__comSupMes && meses.includes(window.__comSupMes)) ? window.__comSupMes : (meses.includes(hoyMs) ? hoyMs : meses[0]);
+  window.__comSupMes = sel;
+  const [aStr, mStr] = sel.split('-');
+  const anio = parseInt(aStr), mes = parseInt(mStr);
+  const filas = _comSupCalcular(anio, mes);
+  const esMesEnCurso = sel === hoyMs;
+
+  const fmt = n => '$' + Math.round(n).toLocaleString('es-MX');
+  const nomsMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+  let totDHLVentas = 0, totSinPrecio = 0;
+  filas.forEach(f => { totDHLVentas += f.ventasDHL; totSinPrecio += f.ventasSinPrecio; });
+
+  let html = `
+    <div style="border-top:2px dashed #E5E7EB; padding-top:22px;">
+      <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:6px;">
+        <div style="font-weight:800; font-size:16px; color:var(--att-navy);">👔 Comisiones de supervisores</div>
+        <select id="com-sup-mes" style="padding:6px 12px; border:1.5px solid var(--border); border-radius:6px; font-size:13px; font-weight:600; background:white; cursor:pointer;">
+          ${meses.map(m => {
+            const [a2, m2] = m.split('-');
+            return `<option value="${m}" ${m === sel ? 'selected' : ''}>${nomsMes[parseInt(m2) - 1]} ${a2}</option>`;
+          }).join('')}
+        </select>
+        ${esMesEnCurso ? '<span style="background:#FEF3C7; color:#92400E; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ Proyección al corte — el mes sigue corriendo</span>' : ''}
+      </div>
+      <div style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;">
+        15% de la comisión variable de sus agentes (sin sueldo base) · Bono: 3% del monto en rentas sin IVA si el avance ≥ ${SUP_BONO_UMBRAL}% de meta y TODOS los maduros llevan ≥ ${SUP_BONO_MIN_MADURO} ventas · Incluye ajuste DHL (${totDHLVentas} ventas con guía en el mes)${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
+      </div>
+      <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
+        <table style="font-size:12px; min-width:1050px; width:100%;">
+          <thead>
+            <tr>
+              <th style="text-align:left;">Supervisor</th>
+              <th style="text-align:center;">Agentes</th>
+              <th style="text-align:right;">Com. agentes<br>sin acel</th>
+              <th style="text-align:right;">Com. agentes<br>con acel</th>
+              <th style="text-align:right;">15%<br>sin acel</th>
+              <th style="text-align:right;">15%<br>con acel</th>
+              <th style="text-align:center;">Avance vs meta<br>(bono ≥ ${SUP_BONO_UMBRAL}%)</th>
+              <th style="text-align:center;">Maduros ≥ ${SUP_BONO_MIN_MADURO}</th>
+              <th style="text-align:right;">Monto rentas<br>sin IVA</th>
+              <th style="text-align:right;">Bono 3%</th>
+              <th style="text-align:right;">TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>`;
+
+  filas.forEach(f => {
+    const colorPct = f.okMeta ? 'var(--green)' : (f.pct >= 90 ? 'var(--amber)' : 'var(--red)');
+    const madurosHTML = f.okMaduros
+      ? `<span style="color:var(--green); font-weight:700;">✅ ${f.numMaduros}/${f.numMaduros}</span>`
+      : `<span style="color:var(--red); font-weight:700;" title="${f.madurosDebajo.map(x => `${x.nombre}: ${x.ventas}`).join(' · ')}">❌ falta${f.madurosDebajo.length > 1 ? 'n' : ''} ${f.madurosDebajo.length}</span>
+         <div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.madurosDebajo.slice(0, 3).map(x => `${x.nombre.split(' ')[0]} (${x.ventas})`).join(', ')}${f.madurosDebajo.length > 3 ? '…' : ''}</div>`;
+    const bonoHTML = f.bono > 0
+      ? `<span style="color:var(--green); font-weight:800;">${fmt(f.bono)}</span>`
+      : `<span style="color:var(--text-soft);" title="Bono potencial si se cumplen las condiciones">(${fmt(f.bonoPotencial)})</span>`;
+    html += `<tr>
+      <td style="font-weight:700;">${f.sup}</td>
+      <td style="text-align:center;">${f.numAgentes}</td>
+      <td style="text-align:right;">${fmt(f.comSin)}</td>
+      <td style="text-align:right;">${fmt(f.comCon)}</td>
+      <td style="text-align:right;">${fmt(f.sup15sin)}</td>
+      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}</td>
+      <td style="text-align:center; color:${colorPct}; font-weight:700;">${f.avance.toFixed(1)} / ${f.meta} · ${f.pct.toFixed(1)}%</td>
+      <td style="text-align:center;">${madurosHTML}</td>
+      <td style="text-align:right;">${fmt(f.montoRentas)}</td>
+      <td style="text-align:right;">${bonoHTML}</td>
+      <td style="text-align:right; font-weight:800; color:var(--att-navy);">${fmt(f.total)}</td>
+    </tr>`;
+  });
+
+  const tSin = filas.reduce((a, f) => a + f.sup15sin, 0);
+  const tCon = filas.reduce((a, f) => a + f.sup15con, 0);
+  const tBono = filas.reduce((a, f) => a + f.bono, 0);
+  const tTotal = filas.reduce((a, f) => a + f.total, 0);
+  html += `<tr style="background:var(--bg); font-weight:800;">
+      <td>TOTAL</td>
+      <td></td><td></td><td></td>
+      <td style="text-align:right;">${fmt(tSin)}</td>
+      <td style="text-align:right;">${fmt(tCon)}</td>
+      <td></td><td></td><td></td>
+      <td style="text-align:right;">${fmt(tBono)}</td>
+      <td style="text-align:right; color:var(--att-navy);">${fmt(tTotal)}</td>
+    </tr>`;
+  html += `</tbody></table></div>
+      <div style="font-size:10.5px; color:var(--text-soft); margin-top:8px;">El bono en gris entre paréntesis es el monto potencial si se destraban las condiciones. Cifras sin sueldo base. Nota DHL: AZUL 2 / LITE 2 por DHL quedan en $50 neto en niveles 1-2 y $75 neto en el bracket 16+. El par de medios (AZUL, AZUL 1, LITE 1) por DHL netea como un Azul 2 DHL del bracket: $50 el par en niveles 1-2 y $75 el par en 16+ (ej: 15 Azul 2 + 2 Azul 1 = 16 cuotas → ese par paga $100, o $75 si fue DHL). El resto de planes descuenta −$50 por venta DHL.</div>
+    </div>`;
+
+  cont.innerHTML = html;
+  const selEl = document.getElementById('com-sup-mes');
+  if (selEl) selEl.onchange = () => { window.__comSupMes = selEl.value; renderComisionesSupervisores(); };
+}
+
 function renderComisiones() {
   const cont = document.getElementById('comisiones-contenido');
   if (!cont) return;
   cont.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-soft);">Calculando comisiones...</div>';
 
-  setTimeout(() => {
-    try {
-      const data = _comConstruirDataset();
-      if (!data || data.meses.length === 0) {
-        cont.innerHTML = '<div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">Sin ventas en 2026 para calcular.</div>';
-        return;
-      }
-      window.__comisionesData = data;
-      _comRenderUI(cont, data);
-    } catch (e) {
-      console.error('[Comisiones] Error:', e);
-      cont.innerHTML = `<div style="padding:16px; background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px;">
-        <strong>Error:</strong> ${e.message || e}
-      </div>`;
-    }
-  }, 50);
+  // Cargar entregas para identificar ventas DHL (número de guía o costo de guía > 0)
+  Promise.resolve()
+    .then(() => _cargarEntregasData())
+    .catch(() => null)
+    .then(() => {
+      _dhlFolios = new Set();
+      (_entregasCache || []).forEach(e => {
+        if (e && e.folio && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+      });
+      setTimeout(() => {
+        try {
+          const data = _comConstruirDataset();
+          if (!data || data.meses.length === 0) {
+            cont.innerHTML = '<div style="padding:20px; background:#FEF3C7; border-left:4px solid #D97706; border-radius:8px;">Sin ventas en 2026 para calcular.</div>';
+            return;
+          }
+          window.__comisionesData = data;
+          _comRenderUI(cont, data);
+          renderComisionesSupervisores();
+        } catch (e) {
+          console.error('[Comisiones] Error:', e);
+          cont.innerHTML = `<div style="padding:16px; background:#FEE2E2; border-left:4px solid #DC2626; border-radius:8px;">
+            <strong>Error:</strong> ${e.message || e}
+          </div>`;
+        }
+      }, 50);
+    });
 }
 
 function _comRenderUI(cont, data) {
