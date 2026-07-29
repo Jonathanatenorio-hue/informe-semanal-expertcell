@@ -456,6 +456,18 @@ function procesarEntregas(rows) {
       equipo,
       marca,
       plan: txt(r['Plan']),
+      // Número de guía DHL: el encabezado puede variar (Guia / Guía / No. Guia…),
+      // se busca tolerante excluyendo las columnas de costo/total de guía.
+      guia: (() => {
+        for (const k of Object.keys(r)) {
+          const kn = String(k).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (kn.includes('guia') && !kn.includes('costo') && !kn.includes('total')) {
+            const v = txt(r[k]);
+            if (v) return v;
+          }
+        }
+        return null;
+      })(),
       costo_guia: num(r['Costo guia']),
       total_guia: num(r['Total Guía']),
       estatus_entrega: txt(r['Estatus']),
