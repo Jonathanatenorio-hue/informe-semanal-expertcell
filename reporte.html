@@ -16770,7 +16770,14 @@ const PLANES_DHL_25 = new Set(['ATT AZUL 2', 'ATT LITE 2', 'ATT AZUL', 'ATT AZUL
 const SUP_PCT_COMISION = 0.15;   // 15% de la comisión de sus agentes
 const SUP_BONO_PCT = 0.03;       // 3% del monto en rentas sin IVA
 const SUP_BONO_UMBRAL = 103;     // % de meta para destrabar el bono
-const SUP_BONO_MIN_MADURO = 8;   // ventas mínimas de cada agente maduro
+const SUP_BONO_MIN_MADURO = 8;   // ventas mínimas de cada agente maduro (meta calculada)
+const SUP_BONO_MIN_NUEVO = 6;    // ventas mínimas de cada nuevo (meta fija 6), si el interruptor lo exige
+
+// Interruptor: ¿exigir el mínimo de 6 a los nuevos para el bono? (persistente)
+function _comSupExigirNuevos() {
+  const v = localStorage.getItem('com_sup_exigir_nuevos');
+  return v === null ? true : v === '1';
+}
 
 function _comSupCalcular(anio, mes) {
   const ms = `${anio}-${String(mes).padStart(2, '0')}`;
@@ -16824,27 +16831,44 @@ function _comSupCalcular(anio, mes) {
     const pct = meta > 0 ? (avance / meta * 100) : 0;
     const okMeta = meta > 0 && pct >= SUP_BONO_UMBRAL;
 
-    // Agentes maduros del mes (tipo calculada) con mínimo 8 ventas
+    // Condición del bono por agentes (según meta al inicio del mes):
+    //  - Maduros (meta calculada, 8+): mínimo 8 ventas.
+    //  - Nuevos (meta fija 6): mínimo 6 ventas, SOLO si el interruptor está activo.
+    //  - Sin meta: no afectan.
+    const exigirNuevos = _comSupExigirNuevos();
     const maduros = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta && m.tipo_meta !== 'sin_meta' && m.tipo_meta !== 'fija_6');
+    const nuevos6 = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta === 'fija_6');
     const madurosDebajo = maduros
-      .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0 }))
-      .filter(x => x.ventas < SUP_BONO_MIN_MADURO)
-      .sort((a, b) => a.ventas - b.ventas);
-    const okMaduros = madurosDebajo.length === 0;
+      .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_MADURO }))
+      .filter(x => x.ventas < SUP_BONO_MIN_MADURO);
+    const nuevosDebajo = exigirNuevos
+      ? nuevos6
+          .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_NUEVO }))
+          .filter(x => x.ventas < SUP_BONO_MIN_NUEVO)
+      : [];
+    const incumplidos = [...madurosDebajo, ...nuevosDebajo].sort((a, b) => a.ventas - b.ventas);
+    const okAgentes = incumplidos.length === 0;
+
+    // Escalón del 15%: logro >= 100% → completo · 90-99.9% → proporcional
+    // al % logrado (ej. 95% de meta → cobra el 95% de su 15%) · < 90% → $0
+    const factor15 = pct >= 100 ? 1 : (pct >= 90 ? pct / 100 : 0);
 
     const bonoPotencial = montoRentas * SUP_BONO_PCT;
-    const bono = (okMeta && okMaduros) ? bonoPotencial : 0;
+    const bono = (okMeta && okAgentes) ? bonoPotencial : 0;
 
     return {
       sup, numAgentes: agentes.length,
       comSin, comCon,
-      sup15sin: comSin * SUP_PCT_COMISION,
-      sup15con: comCon * SUP_PCT_COMISION,
+      sup15sinPleno: comSin * SUP_PCT_COMISION,
+      sup15conPleno: comCon * SUP_PCT_COMISION,
+      sup15sin: comSin * SUP_PCT_COMISION * factor15,
+      sup15con: comCon * SUP_PCT_COMISION * factor15,
+      factor15,
       ajusteDHLTotal, ventasDHL,
       meta, avance, pct, okMeta,
-      numMaduros: maduros.length, madurosDebajo, okMaduros,
+      numMaduros: maduros.length, numNuevos6: nuevos6.length, incumplidos, okAgentes,
       montoRentas, ventasSinPrecio, bonoPotencial, bono,
-      total: comCon * SUP_PCT_COMISION + bono
+      total: comCon * SUP_PCT_COMISION * factor15 + bono
     };
   });
 
@@ -16892,9 +16916,13 @@ function renderComisionesSupervisores() {
           }).join('')}
         </select>
         ${esMesEnCurso ? '<span style="background:#FEF3C7; color:#92400E; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ Proyección al corte — el mes sigue corriendo</span>' : ''}
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text); cursor:pointer; margin-left:auto;">
+          <input type="checkbox" id="com-sup-toggle-nuevos" ${_comSupExigirNuevos() ? 'checked' : ''} style="cursor:pointer;">
+          Exigir ${SUP_BONO_MIN_NUEVO} a los nuevos (meta fija 6)
+        </label>
       </div>
       <div style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;">
-        15% de la comisión variable de sus agentes (sin sueldo base) · Bono: 3% del monto en rentas sin IVA si el avance ≥ ${SUP_BONO_UMBRAL}% de meta y TODOS los maduros llevan ≥ ${SUP_BONO_MIN_MADURO} ventas · Incluye ajuste DHL (${totDHLVentas} ventas con guía en el mes)${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
+        15% de la comisión variable de sus agentes (sin base), escalonado por logro de meta: ≥100% cobra completo · 90-99.9% cobra el % logrado · &lt;90% no cobra · Bono: 3% del monto en rentas sin IVA si avance ≥ ${SUP_BONO_UMBRAL}% Y maduros (meta 8+) con mínimo ${SUP_BONO_MIN_MADURO}${_comSupExigirNuevos() ? ` y nuevos (meta 6) con mínimo ${SUP_BONO_MIN_NUEVO}` : ' (mínimo de nuevos desactivado)'} · Sin meta no afectan · Ajuste DHL incluido (${totDHLVentas} ventas con guía)${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
       </div>
       <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
         <table style="font-size:12px; min-width:1050px; width:100%;">
@@ -16904,10 +16932,10 @@ function renderComisionesSupervisores() {
               <th style="text-align:center;">Agentes</th>
               <th style="text-align:right;">Com. agentes<br>sin acel</th>
               <th style="text-align:right;">Com. agentes<br>con acel</th>
-              <th style="text-align:right;">15%<br>sin acel</th>
-              <th style="text-align:right;">15%<br>con acel</th>
+              <th style="text-align:right;">15% sin acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>
+              <th style="text-align:right;">15% con acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>
               <th style="text-align:center;">Avance vs meta<br>(bono ≥ ${SUP_BONO_UMBRAL}%)</th>
-              <th style="text-align:center;">Maduros ≥ ${SUP_BONO_MIN_MADURO}</th>
+              <th style="text-align:center;">Agentes al mínimo<br><span style="font-weight:400; font-size:10px;">maduros ≥${SUP_BONO_MIN_MADURO} · nuevos ≥${SUP_BONO_MIN_NUEVO}</span></th>
               <th style="text-align:right;">Monto rentas<br>sin IVA</th>
               <th style="text-align:right;">Bono 3%</th>
               <th style="text-align:right;">TOTAL</th>
@@ -16917,10 +16945,15 @@ function renderComisionesSupervisores() {
 
   filas.forEach(f => {
     const colorPct = f.okMeta ? 'var(--green)' : (f.pct >= 90 ? 'var(--amber)' : 'var(--red)');
-    const madurosHTML = f.okMaduros
-      ? `<span style="color:var(--green); font-weight:700;">✅ ${f.numMaduros}/${f.numMaduros}</span>`
-      : `<span style="color:var(--red); font-weight:700;" title="${f.madurosDebajo.map(x => `${x.nombre}: ${x.ventas}`).join(' · ')}">❌ falta${f.madurosDebajo.length > 1 ? 'n' : ''} ${f.madurosDebajo.length}</span>
-         <div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.madurosDebajo.slice(0, 3).map(x => `${x.nombre.split(' ')[0]} (${x.ventas})`).join(', ')}${f.madurosDebajo.length > 3 ? '…' : ''}</div>`;
+    const condHTML = f.okAgentes
+      ? `<span style="color:var(--green); font-weight:700;">✅ al corriente</span><div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.numMaduros} mad · ${f.numNuevos6} nvos</div>`
+      : `<span style="color:var(--red); font-weight:700;" title="${f.incumplidos.map(x => `${x.nombre}: ${x.ventas}/${x.min}`).join(' · ')}">❌ falta${f.incumplidos.length > 1 ? 'n' : ''} ${f.incumplidos.length}</span>
+         <div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.incumplidos.slice(0, 3).map(x => `${x.nombre.split(' ')[0]} (${x.ventas}/${x.min})`).join(', ')}${f.incumplidos.length > 3 ? '…' : ''}</div>`;
+    const escalonSub = f.factor15 >= 1
+      ? ''
+      : (f.factor15 > 0
+        ? `<div style="font-size:9.5px; color:var(--amber);">${f.pct.toFixed(1)}% del pleno ${fmt(f.sup15conPleno)}</div>`
+        : `<div style="font-size:9.5px; color:var(--red);">logro &lt;90% · pleno era ${fmt(f.sup15conPleno)}</div>`);
     const bonoHTML = f.bono > 0
       ? `<span style="color:var(--green); font-weight:800;">${fmt(f.bono)}</span>`
       : `<span style="color:var(--text-soft);" title="Bono potencial si se cumplen las condiciones">(${fmt(f.bonoPotencial)})</span>`;
@@ -16930,9 +16963,9 @@ function renderComisionesSupervisores() {
       <td style="text-align:right;">${fmt(f.comSin)}</td>
       <td style="text-align:right;">${fmt(f.comCon)}</td>
       <td style="text-align:right;">${fmt(f.sup15sin)}</td>
-      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}</td>
+      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}${escalonSub}</td>
       <td style="text-align:center; color:${colorPct}; font-weight:700;">${f.avance.toFixed(1)} / ${f.meta} · ${f.pct.toFixed(1)}%</td>
-      <td style="text-align:center;">${madurosHTML}</td>
+      <td style="text-align:center;">${condHTML}</td>
       <td style="text-align:right;">${fmt(f.montoRentas)}</td>
       <td style="text-align:right;">${bonoHTML}</td>
       <td style="text-align:right; font-weight:800; color:var(--att-navy);">${fmt(f.total)}</td>
@@ -16959,6 +16992,8 @@ function renderComisionesSupervisores() {
   cont.innerHTML = html;
   const selEl = document.getElementById('com-sup-mes');
   if (selEl) selEl.onchange = () => { window.__comSupMes = selEl.value; renderComisionesSupervisores(); };
+  const tgl = document.getElementById('com-sup-toggle-nuevos');
+  if (tgl) tgl.onchange = () => { localStorage.setItem('com_sup_exigir_nuevos', tgl.checked ? '1' : '0'); renderComisionesSupervisores(); };
 }
 
 function renderComisiones() {
