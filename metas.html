@@ -317,6 +317,7 @@
       </div>
       <div class="actions" style="margin-top:14px;">
         <button class="success" id="btn-calc-guardar" type="button">💾 Guardar en Supabase</button>
+        <button class="secondary" id="btn-calc-excel" type="button">📥 Descargar Excel</button>
       </div>
     </div>
   </div>
@@ -2762,12 +2763,53 @@ async function guardarMetasCalculadas() {
   }
 }
 
+function exportarMetasExcel() {
+  const { filas, metasSup, anio, mes } = calcState;
+  if (!filas) { alert('Primero calcula las metas.'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // Hoja 1: formato de carga (compatible con el flujo manual de esta página)
+  const hoja1 = [['EJECUTIVO', 'Supervisor', 'dias_activo_al_1ro', 'meta_mes_actual']];
+  filas.forEach(f => {
+    hoja1.push([f.ejecutivo, f.supervisor || '', f.dias == null ? 0 : f.dias, f.meta]);
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(hoja1);
+  ws1['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Metas_Mes');
+
+  // Hoja 2: revisión completa del cálculo
+  const hoja2 = [['Agente', 'Supervisor', 'Días al 1°', 'Banda', 'Prom. 3 meses', 'Meta anterior', 'META', 'Tipo', 'Observaciones']];
+  filas.forEach(f => {
+    hoja2.push([
+      f.ejecutivo, f.supervisor || 'SIN SUPERVISOR', f.dias == null ? '' : f.dias,
+      f.banda, f.prom == null ? '' : Number(f.prom.toFixed(2)),
+      f.metaAnt || '', f.meta, f.tipo, f.flags.join(' · ')
+    ]);
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(hoja2);
+  ws2['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 10 }, { wch: 24 }, { wch: 13 }, { wch: 13 }, { wch: 8 }, { wch: 11 }, { wch: 60 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Revision');
+
+  // Hoja 3: metas de supervisor
+  const hoja3 = [['Supervisor', 'Meta']];
+  metasSup.forEach(s => hoja3.push([s.supervisor, s.meta_activadas]));
+  hoja3.push(['TOTAL', metasSup.reduce((a, s) => a + s.meta_activadas, 0)]);
+  const ws3 = XLSX.utils.aoa_to_sheet(hoja3);
+  ws3['!cols'] = [{ wch: 20 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Supervisores');
+
+  XLSX.writeFile(wb, `metas_calculadas_${MESES[mes - 1]}_${anio}.xlsx`);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   _calcInicializarSelector();
   const b1 = document.getElementById('btn-calc-metas');
   if (b1) b1.addEventListener('click', calcularMetasAuto);
   const b2 = document.getElementById('btn-calc-guardar');
   if (b2) b2.addEventListener('click', guardarMetasCalculadas);
+  const b3 = document.getElementById('btn-calc-excel');
+  if (b3) b3.addEventListener('click', exportarMetasExcel);
 });
 
 const RECH_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
