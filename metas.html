@@ -287,6 +287,40 @@
   <!-- TAB METAS -->
   <div class="tab-content active" id="tab-metas">
 
+  <!-- CALCULADOR AUTOMÁTICO DE METAS -->
+  <div class="section" style="border: 2px solid var(--att-orange);">
+    <div class="section-title">🧮 Calculador automático de metas</div>
+    <div class="alert info">
+      <div>📐</div>
+      <div>
+        <strong>Reglas oficiales</strong> (días cumplidos al día 1 del mes, desde fecha de ingreso en plantilla):
+        ≤ 6 días = sin meta · 7–41 días = meta <strong>6</strong> · 42–89 días = meta <strong>10</strong> ·
+        90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + 1, mínimo 12, máximo 20,
+        y <strong>nunca desciende</strong> respecto a la meta del mes anterior. Previsualiza antes de guardar; nada se escribe sin tu confirmación.
+      </div>
+    </div>
+    <div class="periodo-selector">
+      <label>Calcular metas de:</label>
+      <select id="calc-mes-select"></select>
+      <button id="btn-calc-metas" type="button">🧮 Calcular</button>
+    </div>
+    <div id="calc-status" style="margin-top:10px; font-size:13px;"></div>
+    <div id="calc-resultado" class="hidden" style="margin-top:14px;">
+      <div class="stats-grid" id="calc-stats"></div>
+      <div id="calc-avisos"></div>
+      <div style="margin-top:14px; max-height:480px; overflow:auto; border:1px solid var(--border, #E2E8F0); border-radius:8px;">
+        <table id="calc-tabla" style="width:100%; border-collapse:collapse; font-size:12px;"></table>
+      </div>
+      <div style="margin-top:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Metas de supervisor resultantes (suma de sus agentes):</div>
+        <table id="calc-tabla-sup" style="border-collapse:collapse; font-size:12px;"></table>
+      </div>
+      <div class="actions" style="margin-top:14px;">
+        <button class="success" id="btn-calc-guardar" type="button">💾 Guardar en Supabase</button>
+      </div>
+    </div>
+  </div>
+
   <!-- PASO 1: Seleccionar periodo -->
   <div class="section">
     <div class="section-title">
@@ -2464,6 +2498,278 @@ document.getElementById('btn-config-agregar').addEventListener('click', agregarS
 // ============================================================
 const RECH_PLANES_BAJOS = new Set(['ATT LITE 1', 'ATT AZUL', 'ATT AZUL 1']);
 const RECH_FECHA_PLANES_BAJOS = '2026-06-01';
+// =====================================================================
+// CALCULADOR AUTOMÁTICO DE METAS
+// Bandas por días al día 1: ≤6 sin meta · 7-41 → 6 · 42-89 → 10 ·
+// 90+ → calculada: max(12, round(prom 3 meses + 1)), tope 20, nunca desciende.
+// =====================================================================
+const calcState = { filas: null, metasSup: null, anio: null, mes: null, existePrevio: false };
+
+function _calcPad(n) { return String(n).padStart(2, '0'); }
+
+function _calcPesoVenta(v) {
+  const plan = String(v.plan || '').trim().toUpperCase();
+  const bajo = plan === 'ATT LITE 1' || plan === 'ATT AZUL' || plan === 'ATT AZUL 1';
+  const f = v.fecha_bo || v.fecha_activacion || '';
+  return (bajo && f >= '2026-06-01') ? 0.5 : 1;
+}
+
+async function _calcFetchTodo(tabla, columnas, filtros) {
+  // Supabase corta en 1000 filas: paginar siempre
+  const todo = [];
+  let desde = 0;
+  const LOTE = 1000;
+  while (true) {
+    let q = db.from(tabla).select(columnas).range(desde, desde + LOTE - 1);
+    if (filtros) q = filtros(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    todo.push(...(data || []));
+    if (!data || data.length < LOTE) break;
+    desde += LOTE;
+  }
+  return todo;
+}
+
+function _calcInicializarSelector() {
+  const sel = document.getElementById('calc-mes-select');
+  if (!sel) return;
+  const hoy = new Date();
+  const opciones = [];
+  for (const delta of [0, 1]) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() + delta, 1);
+    opciones.push({ anio: d.getFullYear(), mes: d.getMonth() + 1 });
+  }
+  sel.innerHTML = opciones.map(o =>
+    `<option value="${o.anio}-${o.mes}">${MESES[o.mes - 1]} ${o.anio}</option>`
+  ).join('');
+  // Default: el mes siguiente (las metas se calculan para el mes que arranca)
+  sel.value = `${opciones[1].anio}-${opciones[1].mes}`;
+}
+
+async function calcularMetasAuto() {
+  const sel = document.getElementById('calc-mes-select');
+  const status = document.getElementById('calc-status');
+  const btn = document.getElementById('btn-calc-metas');
+  const [anio, mes] = sel.value.split('-').map(Number);
+  btn.disabled = true;
+  status.innerHTML = '⏳ Cargando datos...';
+  try {
+    const dia1Str = `${anio}-${_calcPad(mes)}-01`;
+    const dia1 = new Date(dia1Str + 'T00:00:00');
+
+    // Rango de los 3 meses previos
+    const iniPrev = new Date(anio, mes - 4, 1);
+    const finPrev = new Date(anio, mes - 1, 0);
+    const iniPrevStr = `${iniPrev.getFullYear()}-${_calcPad(iniPrev.getMonth() + 1)}-01`;
+    const finPrevStr = `${finPrev.getFullYear()}-${_calcPad(finPrev.getMonth() + 1)}-${_calcPad(finPrev.getDate())}`;
+    const mesesPrevios = [];
+    for (let k = 3; k >= 1; k--) {
+      const d = new Date(anio, mes - 1 - k, 1);
+      mesesPrevios.push({ anio: d.getFullYear(), mes: d.getMonth() + 1, key: `${d.getFullYear()}-${_calcPad(d.getMonth() + 1)}` });
+    }
+
+    // Mes anterior (para la regla "nunca desciende")
+    const dAnt = new Date(anio, mes - 2, 1);
+
+    const [plantilla, ventas, metasAnt, existentes] = await Promise.all([
+      _calcFetchTodo('plantilla', 'nombre, supervisor, fecha_ingreso, fecha_baja'),
+      _calcFetchTodo('ventas_detalle', 'ejecutivo, plan, fecha_activacion, fecha_bo, estatus',
+        q => q.eq('estatus', 'activada').gte('fecha_activacion', iniPrevStr).lte('fecha_activacion', finPrevStr)),
+      _calcFetchTodo('metas_agente', 'ejecutivo, meta_activadas',
+        q => q.eq('anio', dAnt.getFullYear()).eq('mes', dAnt.getMonth() + 1)),
+      db.from('metas_agente').select('id', { count: 'exact', head: true }).eq('anio', anio).eq('mes', mes)
+    ]);
+    calcState.existePrevio = (existentes.count || 0) > 0;
+
+    // Peso vendido por agente por mes
+    const pesoPorAgenteMes = {};
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_activacion) return;
+      const key = String(v.fecha_activacion).substring(0, 7);
+      if (!pesoPorAgenteMes[v.ejecutivo]) pesoPorAgenteMes[v.ejecutivo] = {};
+      pesoPorAgenteMes[v.ejecutivo][key] = (pesoPorAgenteMes[v.ejecutivo][key] || 0) + _calcPesoVenta(v);
+    });
+
+    const metaAntMap = {};
+    metasAnt.forEach(m => { metaAntMap[m.ejecutivo] = m.meta_activadas || 0; });
+
+    const filas = [];
+    const sinSupervisor = [];
+    const bajas = [];
+    plantilla.forEach(p => {
+      if (!p || !p.nombre) return;
+      if (p.fecha_baja && p.fecha_baja < dia1Str) { bajas.push(p.nombre); return; }
+      if (!p.fecha_ingreso) {
+        filas.push({ ejecutivo: p.nombre, supervisor: p.supervisor || null, dias: null, banda: '⚠️ sin fecha de ingreso', prom: null, metaAnt: metaAntMap[p.nombre] || 0, meta: 0, tipo: 'sin_meta', flags: ['Sin fecha de ingreso en plantilla: revisar'] });
+        return;
+      }
+      const ing = new Date(p.fecha_ingreso + 'T00:00:00');
+      const dias = Math.floor((dia1 - ing) / 86400000);
+      const flags = [];
+      let banda, meta, tipo, prom = null;
+
+      if (dias <= 6) {
+        banda = 'Sin meta (≤6 días)'; meta = 0; tipo = 'sin_meta';
+      } else if (dias <= 41) {
+        banda = 'Nuevo (7-41 días)'; meta = 6; tipo = 'fija_6';
+      } else if (dias <= 89) {
+        banda = 'Intermedio (42-89 días)'; meta = 10; tipo = 'fija_10';
+      } else {
+        banda = 'Maduro (90+ días)'; tipo = 'calculada';
+        // Promedio de peso de los meses previos en los que ya estaba ingresado
+        let suma = 0, n = 0;
+        mesesPrevios.forEach(mp => {
+          const finMesPrev = new Date(mp.anio, mp.mes, 0);
+          if (ing <= finMesPrev) {
+            suma += (pesoPorAgenteMes[p.nombre] && pesoPorAgenteMes[p.nombre][mp.key]) || 0;
+            n++;
+          }
+        });
+        prom = n > 0 ? suma / n : 0;
+        if (n < 3) flags.push(`Solo ${n} mes(es) de historia para el promedio`);
+        const calc = Math.min(20, Math.max(12, Math.round(prom + 1)));
+        const metaAnt = metaAntMap[p.nombre] || 0;
+        meta = Math.max(calc, metaAnt); // nunca desciende
+        if (metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
+        if (prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
+      }
+
+      if (!p.supervisor) {
+        sinSupervisor.push(p.nombre);
+        flags.push('SIN SUPERVISOR en plantilla: no se guardará hasta asignarlo');
+      }
+
+      filas.push({
+        ejecutivo: p.nombre, supervisor: p.supervisor || null, dias,
+        banda, prom, metaAnt: metaAntMap[p.nombre] || 0, meta, tipo, flags
+      });
+    });
+
+    filas.sort((a, b) => (a.supervisor || 'zzz').localeCompare(b.supervisor || 'zzz') || b.meta - a.meta);
+
+    // Metas de supervisor = suma de metas de sus agentes
+    const supAgg = {};
+    filas.forEach(f => { if (f.supervisor) supAgg[f.supervisor] = (supAgg[f.supervisor] || 0) + f.meta; });
+    const metasSup = Object.entries(supAgg).map(([supervisor, meta]) => ({ supervisor, anio, mes, meta_activadas: meta }))
+      .sort((a, b) => b.meta_activadas - a.meta_activadas);
+
+    calcState.filas = filas;
+    calcState.metasSup = metasSup;
+    calcState.anio = anio;
+    calcState.mes = mes;
+
+    _calcRenderResultado(sinSupervisor, bajas);
+    status.innerHTML = '✅ Cálculo listo. Revisa la previsualización y guarda cuando estés conforme.';
+  } catch (e) {
+    console.error('[Calculador]', e);
+    status.innerHTML = '❌ Error: ' + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function _calcRenderResultado(sinSupervisor, bajas) {
+  const { filas, metasSup, anio, mes } = calcState;
+  const cont = document.getElementById('calc-resultado');
+  cont.classList.remove('hidden');
+
+  const conMeta = filas.filter(f => f.meta > 0);
+  const porTipo = filas.reduce((a, f) => { a[f.tipo] = (a[f.tipo] || 0) + 1; return a; }, {});
+  const metaTotal = conMeta.reduce((a, f) => a + f.meta, 0);
+
+  document.getElementById('calc-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Agentes evaluados</div><div class="stat-value">${filas.length}</div><div class="stat-sub">activos al día 1</div></div>
+    <div class="stat-card" style="border-left-color: var(--att-orange);"><div class="stat-label">Meta total</div><div class="stat-value">${metaTotal}</div><div class="stat-sub">${MESES[mes-1]} ${anio}</div></div>
+    <div class="stat-card"><div class="stat-label">Maduros / Interm. / Nuevos / Sin meta</div><div class="stat-value" style="font-size:18px;">${porTipo['calculada']||0} / ${porTipo['fija_10']||0} / ${porTipo['fija_6']||0} / ${porTipo['sin_meta']||0}</div><div class="stat-sub">por banda</div></div>
+  `;
+
+  let avisos = '';
+  if (calcState.existePrevio) avisos += `<div class="alert warn"><div>⚠️</div><div>Ya existen metas de ${MESES[mes-1]} ${anio} en Supabase. Al guardar se <strong>reemplazarán</strong> por estas.</div></div>`;
+  if (sinSupervisor.length > 0) avisos += `<div class="alert warn"><div>⚠️</div><div><strong>${sinSupervisor.length} agentes sin supervisor</strong> (no se guardarán): ${sinSupervisor.slice(0, 10).join(', ')}${sinSupervisor.length > 10 ? '…' : ''}</div></div>`;
+  if (bajas.length > 0) avisos += `<div class="alert info"><div>ℹ️</div><div>${bajas.length} bajas excluidas del cálculo.</div></div>`;
+  document.getElementById('calc-avisos').innerHTML = avisos;
+
+  const filasFlag = filas.filter(f => f.flags.length > 0).length;
+  document.getElementById('calc-tabla').innerHTML = `
+    <thead><tr style="background:#002B5C; color:white; position:sticky; top:0;">
+      <th style="padding:6px; text-align:left;">Agente</th><th style="padding:6px;">Supervisor</th>
+      <th style="padding:6px;">Días al 1°</th><th style="padding:6px; text-align:left;">Banda</th>
+      <th style="padding:6px;">Prom. 3m</th><th style="padding:6px;">Meta ant.</th>
+      <th style="padding:6px; background:#FF7200;">META</th><th style="padding:6px; text-align:left;">Observaciones (${filasFlag})</th>
+    </tr></thead><tbody>` +
+    filas.map(f => `<tr style="border-bottom:1px solid #EEF2F7; ${f.flags.length ? 'background:#FFFBEB;' : ''}">
+      <td style="padding:5px;">${f.ejecutivo}</td>
+      <td style="padding:5px; text-align:center;">${f.supervisor || '<span style="color:#DC2626; font-weight:700;">—</span>'}</td>
+      <td style="padding:5px; text-align:center;">${f.dias == null ? '—' : f.dias}</td>
+      <td style="padding:5px;">${f.banda}</td>
+      <td style="padding:5px; text-align:center;">${f.prom == null ? '—' : f.prom.toFixed(2)}</td>
+      <td style="padding:5px; text-align:center;">${f.metaAnt || '—'}</td>
+      <td style="padding:5px; text-align:center; font-weight:800;">${f.meta}</td>
+      <td style="padding:5px; font-size:11px; color:#92400E;">${f.flags.join(' · ')}</td>
+    </tr>`).join('') + '</tbody>';
+
+  document.getElementById('calc-tabla-sup').innerHTML =
+    `<thead><tr style="background:#002B5C; color:white;"><th style="padding:6px 12px;">Supervisor</th><th style="padding:6px 12px;">Meta</th></tr></thead><tbody>` +
+    metasSup.map(s => `<tr style="border-bottom:1px solid #EEF2F7;"><td style="padding:5px 12px;">${s.supervisor}</td><td style="padding:5px 12px; text-align:center; font-weight:700;">${s.meta_activadas}</td></tr>`).join('') +
+    `<tr style="background:#F1F5F9; font-weight:800;"><td style="padding:5px 12px;">TOTAL</td><td style="padding:5px 12px; text-align:center;">${metasSup.reduce((a, s) => a + s.meta_activadas, 0)}</td></tr></tbody>`;
+}
+
+async function guardarMetasCalculadas() {
+  const { filas, metasSup, anio, mes } = calcState;
+  if (!filas) return;
+  const aGuardar = filas.filter(f => f.supervisor);
+  const msg = calcState.existePrevio
+    ? `Ya existen metas de ${MESES[mes-1]} ${anio}. ¿REEMPLAZARLAS por las ${aGuardar.length} calculadas?`
+    : `¿Guardar ${aGuardar.length} metas de agente y ${metasSup.length} de supervisor para ${MESES[mes-1]} ${anio}?`;
+  if (!confirm(msg)) return;
+
+  const btn = document.getElementById('btn-calc-guardar');
+  btn.disabled = true;
+  btn.textContent = 'Guardando...';
+  const status = document.getElementById('calc-status');
+  try {
+    const { error: e1 } = await db.from('metas_agente').delete().eq('anio', anio).eq('mes', mes);
+    if (e1) throw e1;
+    const { error: e2 } = await db.from('metas_supervisor').delete().eq('anio', anio).eq('mes', mes);
+    if (e2) throw e2;
+
+    const rows = aGuardar.map(f => ({
+      ejecutivo: f.ejecutivo,
+      supervisor: f.supervisor,
+      anio, mes,
+      meta_activadas: f.meta,
+      dias_antiguedad: f.dias == null ? 0 : f.dias,
+      tipo_meta: f.tipo
+    }));
+    // Insertar en lotes de 500
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await db.from('metas_agente').insert(rows.slice(i, i + 500));
+      if (error) throw error;
+    }
+    const { error: e3 } = await db.from('metas_supervisor').insert(metasSup);
+    if (e3) throw e3;
+
+    status.innerHTML = `✅ Guardado: ${rows.length} metas de agente y ${metasSup.length} de supervisor para ${MESES[mes-1]} ${anio}.`;
+    calcState.existePrevio = true;
+    btn.textContent = '💾 Guardar en Supabase';
+    btn.disabled = false;
+  } catch (e) {
+    console.error('[Calculador][Guardar]', e);
+    status.innerHTML = '❌ Error al guardar: ' + (e.message || e);
+    btn.textContent = '💾 Guardar en Supabase';
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  _calcInicializarSelector();
+  const b1 = document.getElementById('btn-calc-metas');
+  if (b1) b1.addEventListener('click', calcularMetasAuto);
+  const b2 = document.getElementById('btn-calc-guardar');
+  if (b2) b2.addEventListener('click', guardarMetasCalculadas);
+});
+
 const RECH_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
 function rechLimpiarFolio(val) {
