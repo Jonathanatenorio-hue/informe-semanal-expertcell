@@ -436,6 +436,18 @@
       </div>
     </div>
 
+    <div class="section hidden" id="section-sql-reasig" style="border: 2px solid var(--att-orange);">
+      <div class="section-title">🔁 SQL de reasignaciones detectadas</div>
+      <div class="alert warn">
+        <div>⚠️</div>
+        <div id="sql-reasig-info"></div>
+      </div>
+      <textarea id="sql-reasig-text" readonly rows="14" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px; padding:12px; border:1px solid #CBD5E1; border-radius:8px; background:#F8FAFC;"></textarea>
+      <div class="actions" style="margin-top:10px;">
+        <button class="secondary" id="btn-sql-reasig-copiar" type="button">📋 Copiar SQL</button>
+      </div>
+    </div>
+
     <div class="section hidden" id="section-validacion-plant">
       <div class="section-title">
         <div class="step-number">2</div>
@@ -1580,6 +1592,12 @@ async function cargarPlantASupabase() {
       logPlant(`Progreso: ${insertados}/${agentesParaGuardar.length}`, 'info');
     }
     logPlant(`Plantilla cargada: ${insertados} agentes`, 'ok');
+
+    // Reasignaciones detectadas (Excel ≠ asignación vigente): generar SQL en lote
+    _renderSQLReasignaciones(supervisorCambiado);
+    if (supervisorCambiado.length > 0) {
+      logPlant(`🔁 ${supervisorCambiado.length} reasignaciones detectadas: se generó el SQL en el panel naranja de abajo. IMPORTANTE: mientras no lo corras, esos agentes siguen con su supervisor anterior.`, 'warn');
+    }
 
     if (sinAsignacion.length > 0) {
       const conSup = sinAsignacion.filter(a => a.supervisor);
@@ -2825,7 +2843,49 @@ function exportarMetasExcel() {
   XLSX.writeFile(wb, `metas_calculadas_${MESES[mes - 1]}_${anio}.xlsx`);
 }
 
+function _renderSQLReasignaciones(cambios) {
+  const sec = document.getElementById('section-sql-reasig');
+  const ta = document.getElementById('sql-reasig-text');
+  const info = document.getElementById('sql-reasig-info');
+  if (!sec || !ta || !info) return;
+  if (!cambios || cambios.length === 0) { sec.classList.add('hidden'); return; }
+
+  const ahora = new Date();
+  const iniMes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-01`;
+  const finPrev = new Date(ahora.getFullYear(), ahora.getMonth(), 0);
+  const finPrevStr = `${finPrev.getFullYear()}-${String(finPrev.getMonth() + 1).padStart(2, '0')}-${String(finPrev.getDate()).padStart(2, '0')}`;
+  const esc = s => String(s).replace(/'/g, "''");
+
+  let sql = `-- REASIGNACIONES DETECTADAS (${cambios.length}) · supervisor del Excel vs asignación vigente\n`;
+  sql += `-- Cierra la asignación anterior al ${finPrevStr} y abre la nueva desde el ${iniMes}.\n`;
+  sql += `-- Así los meses anteriores conservan su supervisor histórico y el mes nuevo usa el actual.\n`;
+  sql += `-- REVISA la lista antes de correr: si algún cambio no es real, borra su bloque completo.\n\n`;
+  sql += `begin;\n\n`;
+  cambios.forEach(c => {
+    sql += `-- ${c.nombre}: ${c.actual} → ${c.enExcel}\n`;
+    sql += `update asignaciones_supervisor set fecha_fin = '${finPrevStr}' where ejecutivo = '${esc(c.nombre)}' and fecha_fin is null;\n`;
+    sql += `insert into asignaciones_supervisor (ejecutivo, supervisor, fecha_inicio, fecha_fin) values ('${esc(c.nombre)}', '${esc(c.enExcel)}', '${iniMes}', null);\n`;
+    sql += `update plantilla set supervisor = '${esc(c.enExcel)}' where nombre = '${esc(c.nombre)}';\n\n`;
+  });
+  sql += `commit;\n`;
+
+  ta.value = sql;
+  ta.rows = Math.min(24, 6 + cambios.length * 4);
+  info.textContent = `${cambios.length} agentes cambian de supervisor según el Excel. Copia el SQL, revísalo y córrelo en el SQL Editor de Supabase. Todo en una transacción: o entra completo o no entra nada.`;
+  sec.classList.remove('hidden');
+  sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  const bCopy = document.getElementById('btn-sql-reasig-copiar');
+  if (bCopy) bCopy.addEventListener('click', () => {
+    const ta = document.getElementById('sql-reasig-text');
+    if (!ta || !ta.value) return;
+    navigator.clipboard.writeText(ta.value).then(() => {
+      bCopy.textContent = '✓ Copiado';
+      setTimeout(() => { bCopy.textContent = '📋 Copiar SQL'; }, 2000);
+    });
+  });
   _calcInicializarSelector();
   const b1 = document.getElementById('btn-calc-metas');
   if (b1) b1.addEventListener('click', calcularMetasAuto);
