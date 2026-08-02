@@ -1527,10 +1527,33 @@ async function cargarPlantASupabase() {
     if (e1) throw e1;
     logPlant('Plantilla anterior borrada', 'ok');
 
-    const agentesParaGuardar = plantState.agentes.map(a => ({
+    let agentesParaGuardar = plantState.agentes.map(a => ({
       ...a,
       supervisor: mapSupVigente[a.nombre] || a.supervisor
     }));
+
+    // ===== Deduplicar por nombre (la tabla tiene llave única en nombre) =====
+    // Caso típico: reingresos — la misma persona con su periodo viejo y el nuevo
+    // en dos filas del headcount. Se conserva la fila con fecha_ingreso MÁS
+    // RECIENTE (el periodo vigente) y se reporta cada duplicado en la bitácora.
+    const porNombre = {};
+    const duplicados = [];
+    agentesParaGuardar.forEach(a => {
+      const previo = porNombre[a.nombre];
+      if (!previo) {
+        porNombre[a.nombre] = a;
+      } else {
+        duplicados.push(a.nombre);
+        const fPrev = previo.fecha_ingreso || '';
+        const fNueva = a.fecha_ingreso || '';
+        if (fNueva > fPrev) porNombre[a.nombre] = a; // gana el ingreso más reciente
+      }
+    });
+    if (duplicados.length > 0) {
+      const unicos = [...new Set(duplicados)];
+      logPlant(`⚠️ ${unicos.length} nombre(s) DUPLICADO(S) en el archivo (probable reingreso). Se conserva el periodo con ingreso más reciente: ${unicos.join(', ')}`, 'warn');
+      agentesParaGuardar = Object.values(porNombre);
+    }
 
     const sinAsignacion = [];
     const supervisorCambiado = [];
