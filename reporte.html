@@ -2435,6 +2435,15 @@ async function cargarDatos() {
     opt.style.color = '#1a1a1a';
     selectCoord.appendChild(opt);
   });
+  // Vistas por COORDINADOR (equipos según coordinador_supervisor vigente):
+  // permiten separar objetivos y resultados por cada coordinador.
+  coordinadoresData.filter(c => !c.es_centro).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.nombre} (${c.centro})`;
+    opt.style.color = '#1a1a1a';
+    selectCoord.appendChild(opt);
+  });
   selectCoord.addEventListener('change', () => {
     coordinadorFiltro = selectCoord.value;
     aplicarFiltroCoordinador();
