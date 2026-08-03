@@ -1372,16 +1372,7 @@
 
       <div id="estructura-resumen-cards" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0;"></div>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
-        <div>
-          <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">CC2 (Eduardo Aguila)</div>
-          <div id="estructura-cc2"></div>
-        </div>
-        <div>
-          <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; color: var(--att-navy);">JV (Luisa Meza)</div>
-          <div id="estructura-jv"></div>
-        </div>
-      </div>
+      <div id="estructura-tablas" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr)); gap: 20px; margin-top: 20px;"></div>
       </div>
     </div>
 
@@ -2073,6 +2064,19 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     )
     .map(cs => cs.supervisor);
 
+  // Si el coordinador NO tenía equipos en la fecha consultada (ej. Guillermina
+  // antes de agosto), mostrar su CENTRO completo: la historia se ve como siempre
+  // y la repartición nueva solo aplica desde que existe la relación.
+  if (supsDelCoord.length === 0) {
+    const supsCentro = new Set(
+      (supConfigData || [])
+        .filter(s => _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))
+        .map(s => s.supervisor)
+    );
+    SUPERVISORES = vigentes.filter(s => supsCentro.has(s));
+    return;
+  }
+
   SUPERVISORES = supsDelCoord.filter(s => vigentes.includes(s));
 }
 const MESES_NOMBRE = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -2363,6 +2367,10 @@ async function cargarDatos() {
   const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
   coordSupData = coordSup || [];
 
+  // Filtrado por acceso (Director todo · CC2/JV su centro · coordinador sus equipos).
+  // Va DESPUÉS de cargar coordinadores para que el acceso por coordinador resuelva bien.
+  aplicarFiltroAcceso();
+
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
   supConfigData = supConfig || [];
 
@@ -2388,9 +2396,6 @@ async function cargarDatos() {
     .select('ejecutivo, supervisor, fecha_inicio, fecha_fin')
     .order('fecha_inicio', { ascending: true });
   asignacionesData = asigData || [];
-
-  // Filtrado por acceso (Director ve todo; CC2/JV solo su centro)
-  aplicarFiltroAcceso();
 
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
@@ -4623,6 +4628,12 @@ function _renderAvanceMensualImpl(wActual) {
       }
     }
   }
+
+  // Vistas por coordinador conscientes del MES consultado: los meses anteriores
+  // resuelven los equipos con la relación coordinador↔supervisor vigente EN ESE MES.
+  // Julio y atrás se ven como siempre; la repartición nueva aplica desde agosto.
+  const _finMesConsultado = `${anio}-${String(mes).padStart(2, '0')}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`;
+  aplicarFiltroCoordinador(_finMesConsultado < hoyStr ? _finMesConsultado : hoyStr);
 
   const diasDelMes = calendarioData.filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`));
   if (diasDelMes.length === 0) {
@@ -10590,8 +10601,33 @@ function renderEstructura() {
     return html;
   }
 
-  document.getElementById('estructura-cc2').innerHTML = renderTabla(datosCC2, topeCC2, actCC2);
-  document.getElementById('estructura-jv').innerHTML = renderTabla(datosJV, topeJV, actJV);
+  // Agrupar por COORDINADOR (relación vigente hoy): cada tabla dice a quién pertenece
+  const contTablas = document.getElementById('estructura-tablas');
+  if (contTablas) {
+    const coordDeSup = {};
+    (coordSupData || []).forEach(cs => {
+      if (cs.fecha_inicio <= hoy && (!cs.fecha_fin || cs.fecha_fin >= hoy)) {
+        const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+        if (c) coordDeSup[cs.supervisor] = c.nombre_corto || c.nombre;
+      }
+    });
+    const grupos = {};
+    datos.forEach(d => {
+      const coordN = coordDeSup[d.supervisor] || 'Sin coordinador';
+      const key = `${d.centro}||${coordN}`;
+      if (!grupos[key]) grupos[key] = { centro: d.centro, coordinador: coordN, filas: [] };
+      grupos[key].filas.push(d);
+    });
+    const orden = Object.values(grupos).sort((a, b) => a.centro.localeCompare(b.centro) || a.coordinador.localeCompare(b.coordinador));
+    contTablas.innerHTML = orden.map(g => {
+      const tope = sumar(g.filas, 'tope_agentes');
+      const act = sumar(g.filas, 'actuales');
+      return `<div>
+        <div style="font-weight:700; font-size:14px; margin-bottom:10px; color:var(--att-navy);">${g.centro} · ${g.coordinador}</div>
+        ${renderTabla(g.filas, tope, act)}
+      </div>`;
+    }).join('');
+  }
 }
 
 const VD_STATE = { vista: 'total', metrica: 'activadas' };
@@ -11726,7 +11762,9 @@ let _descartadasCargadas = false;
 
 function _etiquetaAcceso() {
   const modo = window.__accesoModo || 'director';
-  return modo === 'director' ? 'Director' : 'Acceso ' + modo;
+  if (modo === 'director') return 'Director';
+  if (String(modo).startsWith('coord:')) return modo.slice(6);
+  return 'Acceso ' + modo;
 }
 
 async function _cargarDescartadas(refrescar) {
@@ -15407,7 +15445,9 @@ function seleccionarSemana(w) {
 const ACCESOS_HASH = {
   'f482a943c8125ddf3e2f98be67523a97ea08474e7507e623dbf124ce62f812e3': 'director',
   'e2673b641a1f27bd6302b8c042b7df77840819b84586f35d97fa4cd8a5f3990e': 'CC2',
-  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV'
+  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV',
+  '4f07679980346c72fe4e0cb4054089d3c6a7d5d8652a6e1c468e50d644538e13': 'coord:Guillermina',
+  '6f93a940498a1a0604e77ce4796dccc6b5223d04aa928adb528f7c08005de389': 'coord:Eduardo'
 };
 
 async function _hashClave(txt) {
@@ -15428,16 +15468,49 @@ function _accesoNormCentro(c) {
 // (SUPERVISORES, avance, cohortes, logística, análisis anual) cascadea solo.
 function aplicarFiltroAcceso() {
   const modo = window.__accesoModo || 'director';
-  if (modo !== 'CC2' && modo !== 'JV') return;
-  const C = modo;
+  if (modo === 'director') return;
 
-  // Secciones exclusivas de dirección: ocultas para accesos de centro
+  // Secciones exclusivas de dirección: ocultas para todo acceso que no sea director
   ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos'].forEach(id => {
     const s = document.getElementById(id);
     if (s) s.style.display = 'none';
     const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
     if (b) b.style.display = 'none';
   });
+  const scSel = document.getElementById('coordinador-select');
+  if (scSel && scSel.parentElement) scSel.parentElement.style.display = 'none';
+  const ciInfo = document.getElementById('coord-info');
+  if (ciInfo) ciInfo.style.display = 'none';
+
+  // ===== Acceso por COORDINADOR: estrictamente sus equipos vigentes hoy =====
+  if (String(modo).startsWith('coord:')) {
+    const nom = modo.slice(6).toUpperCase();
+    const coordRow = (coordinadoresData || []).find(c => !c.es_centro &&
+      (((c.nombre_corto || '') + ' ' + (c.nombre || '')).toUpperCase().includes(nom)));
+    const ahora = new Date();
+    const hoyLocal = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+    const supsCoord = new Set(
+      (coordSupData || [])
+        .filter(cs => coordRow && cs.coordinador_id === coordRow.id && cs.fecha_inicio <= hoyLocal && (!cs.fecha_fin || cs.fecha_fin >= hoyLocal))
+        .map(cs => cs.supervisor)
+    );
+    supConfigData = (supConfigData || []).filter(s => supsCoord.has(s.supervisor));
+    plantillaData = (plantillaData || []).filter(p => p.supervisor && supsCoord.has(p.supervisor));
+    const agentesCoord = new Set(plantillaData.map(p => p.nombre));
+    ventasData = (ventasData || []).filter(r =>
+      (r.ejecutivo && agentesCoord.has(r.ejecutivo)) ||
+      (r.supervisor && supsCoord.has(r.supervisor))
+    );
+    metasAgeData = (metasAgeData || []).filter(m => supsCoord.has(m.supervisor) || agentesCoord.has(m.ejecutivo));
+    metasSupData = (metasSupData || []).filter(m => supsCoord.has(m.supervisor));
+    asignacionesData = (asignacionesData || []).filter(a => supsCoord.has(a.supervisor) || agentesCoord.has(a.ejecutivo));
+    capacitadoresData = (capacitadoresData || []).filter(cp => coordRow && _accesoNormCentro(cp.centro) === _accesoNormCentro(coordRow.centro));
+    return;
+  }
+
+  // ===== Acceso por CENTRO (CC2 / JV) =====
+  if (modo !== 'CC2' && modo !== 'JV') return;
+  const C = modo;
 
   // Config de supervisores: solo el centro (histórico completo del centro)
   supConfigData = (supConfigData || []).filter(s => _accesoNormCentro(s.centro) === C);
@@ -15464,12 +15537,6 @@ function aplicarFiltroAcceso() {
   metasSupData = (metasSupData || []).filter(m => supsCentro.has(m.supervisor));
   asignacionesData = (asignacionesData || []).filter(a => supsCentro.has(a.supervisor) || agentesCentro.has(a.ejecutivo));
   capacitadoresData = (capacitadoresData || []).filter(cp => _accesoNormCentro(cp.centro) === C);
-
-  // El filtro de coordinador no aplica en modo centro
-  const sc = document.getElementById('coordinador-select');
-  if (sc && sc.parentElement) sc.parentElement.style.display = 'none';
-  const ci = document.getElementById('coord-info');
-  if (ci) ci.style.display = 'none';
 }
 
 function mostrarGate() {
@@ -15515,7 +15582,7 @@ function mostrarGate() {
 
 function agregarBotonSalir() {
   const modo = window.__accesoModo || 'director';
-  const lbl = modo === 'director' ? 'Director' : `Acceso ${modo}`;
+  const lbl = modo === 'director' ? 'Director' : (String(modo).startsWith('coord:') ? modo.slice(6) : `Acceso ${modo}`);
   const b = document.createElement('button');
   b.textContent = `🔒 ${lbl} · Salir`;
   b.title = 'Cerrar acceso y volver a la pantalla de clave';
