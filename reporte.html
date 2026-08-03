@@ -2056,6 +2056,20 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     return;
   }
 
+  // La repartición por COORDINADOR existe desde AGOSTO 2026. Para fechas
+  // anteriores cada coordinador llevaba su centro completo: se respeta tal cual
+  // (julio y atrás se ven idénticos a como siempre se vieron).
+  const ERA_COORDINADORES = '2026-08-01';
+  if (hoy < ERA_COORDINADORES) {
+    const supsCentroEra = new Set(
+      (supConfigData || [])
+        .filter(s => _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))
+        .map(s => s.supervisor)
+    );
+    SUPERVISORES = vigentes.filter(s => supsCentroEra.has(s));
+    return;
+  }
+
   const supsDelCoord = coordSupData
     .filter(cs =>
       cs.coordinador_id === coord.id &&
@@ -4605,6 +4619,14 @@ function _renderAvanceMensualImpl(wActual) {
     mes = fechaRef.getMonth() + 1;
   }
 
+  // Aplicar el filtro de vista con la fecha del mes consultado ANTES de evaluar
+  // metas: así el respaldo de "mes sin metas" se decide con el alcance correcto.
+  const _refCoordDe = (a2, m2) => {
+    const f = `${a2}-${String(m2).padStart(2, '0')}-${String(new Date(a2, m2, 0).getDate()).padStart(2, '0')}`;
+    return f < hoyStr ? f : hoyStr;
+  };
+  aplicarFiltroCoordinador(_refCoordDe(anio, mes));
+
   // Cambio de mes: puede haber registros del mes nuevo (o corridos de fecha por
   // el huso horario en canceladas) ANTES de cargar sus metas. Si el mes detectado
   // no tiene metas y el usuario no eligió mes manualmente, caer al último mes que
@@ -4629,11 +4651,8 @@ function _renderAvanceMensualImpl(wActual) {
     }
   }
 
-  // Vistas por coordinador conscientes del MES consultado: los meses anteriores
-  // resuelven los equipos con la relación coordinador↔supervisor vigente EN ESE MES.
-  // Julio y atrás se ven como siempre; la repartición nueva aplica desde agosto.
-  const _finMesConsultado = `${anio}-${String(mes).padStart(2, '0')}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`;
-  aplicarFiltroCoordinador(_finMesConsultado < hoyStr ? _finMesConsultado : hoyStr);
+  // Reaplicar el filtro por si el respaldo de metas cambió el mes consultado
+  aplicarFiltroCoordinador(_refCoordDe(anio, mes));
 
   const diasDelMes = calendarioData.filter(d => d.fecha.startsWith(`${anio}-${String(mes).padStart(2,'0')}`));
   if (diasDelMes.length === 0) {
