@@ -4726,6 +4726,25 @@ function _renderAvanceMensualImpl(wActual) {
     .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
     .forEach(m => { supDelMesPorAgente[m.ejecutivo] = m.supervisor; });
 
+  // Historial de asignaciones por agente, para resolver al supervisor VIGENTE
+  // EN LA FECHA de cada venta. Clave para agentes SIN meta del mes: julio se
+  // queda con el supervisor de julio aunque la plantilla ya sea la de agosto.
+  const asigPorAgenteAv = {};
+  (asignacionesData || []).forEach(a => {
+    if (!a || !a.ejecutivo) return;
+    if (!asigPorAgenteAv[a.ejecutivo]) asigPorAgenteAv[a.ejecutivo] = [];
+    asigPorAgenteAv[a.ejecutivo].push(a);
+  });
+  function supHistoricoEn(ejecutivo, fechaStr) {
+    const arr = asigPorAgenteAv[ejecutivo];
+    if (!arr || !fechaStr) return null;
+    const f = String(fechaStr).substring(0, 10);
+    for (const a of arr) {
+      if (a.fecha_inicio && a.fecha_inicio <= f && (!a.fecha_fin || a.fecha_fin >= f)) return a.supervisor;
+    }
+    return null;
+  }
+
   function esVentaDelFiltro(r) {
     if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
     // Para ventas en tránsito: si r.supervisor es obsoleto, usar supervisor
@@ -4751,13 +4770,19 @@ function _renderAvanceMensualImpl(wActual) {
 
     const peso = r.peso_venta || 1;
 
-    // Determinar el supervisor que se le atribuye la venta (el actual del agente en el mes):
-    // 1. Si el agente tiene meta cargada en el mes, ese supervisor manda
-    // 2. Si no, usar plantilla actual
-    // 3. Si no, el supervisor original de la venta
+    // Determinar el supervisor que se le atribuye la venta:
+    // 1. Meta del mes (la verdad oficial del mes consultado)
+    // 2. Asignación HISTÓRICA vigente en la fecha de la venta (agentes sin meta:
+    //    respeta quién era su supervisor CUANDO ocurrió la venta, aunque la
+    //    plantilla ya traiga la estructura nueva)
+    // 3. Plantilla actual
+    // 4. Supervisor original de la venta
     let supVenta = null;
+    const _supHist = r.ejecutivo ? supHistoricoEn(r.ejecutivo, r.fecha_activacion || r.fecha_bo || r.fecha_cancelacion) : null;
     if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
       supVenta = supDelMesPorAgente[r.ejecutivo];
+    } else if (_supHist && SUPERVISORES.includes(_supHist)) {
+      supVenta = _supHist;
     } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
       supVenta = plantMapTmp[r.ejecutivo].supervisor;
     } else if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
@@ -4786,6 +4811,8 @@ function _renderAvanceMensualImpl(wActual) {
       let supTransito = null;
       if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
         supTransito = supDelMesPorAgente[r.ejecutivo];
+      } else if (_supHist && SUPERVISORES.includes(_supHist)) {
+        supTransito = _supHist;
       } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
         supTransito = plantMapTmp[r.ejecutivo].supervisor;
       } else {
