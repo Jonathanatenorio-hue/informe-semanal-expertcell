@@ -2381,10 +2381,6 @@ async function cargarDatos() {
   const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
   coordSupData = coordSup || [];
 
-  // Filtrado por acceso (Director todo · CC2/JV su centro · coordinador sus equipos).
-  // Va DESPUÉS de cargar coordinadores para que el acceso por coordinador resuelva bien.
-  aplicarFiltroAcceso();
-
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
   supConfigData = supConfig || [];
 
@@ -2410,6 +2406,10 @@ async function cargarDatos() {
     .select('ejecutivo, supervisor, fecha_inicio, fecha_fin')
     .order('fecha_inicio', { ascending: true });
   asignacionesData = asigData || [];
+
+  // Filtrado por acceso (Director todo · CC2/JV su centro · coordinador su centro
+  // con la vista bloqueada en su coordinación). Va al FINAL de TODAS las cargas.
+  aplicarFiltroAcceso();
 
   document.getElementById('loader-msg').textContent = `${allData.length} ventas, ${plantData.length} agentes, ${calendarioData.length} días, ${metasSupData.length} metas sup cargadas. Procesando...`;
 
@@ -10664,7 +10664,12 @@ function renderEstructura() {
       if (!grupos[key]) grupos[key] = { centro: d.centro, coordinador: coordN, filas: [] };
       grupos[key].filas.push(d);
     });
-    const orden = Object.values(grupos).sort((a, b) => a.centro.localeCompare(b.centro) || a.coordinador.localeCompare(b.coordinador));
+    let orden = Object.values(grupos).sort((a, b) => a.centro.localeCompare(b.centro) || a.coordinador.localeCompare(b.coordinador));
+    // Acceso de coordinador: solo su propia tabla de estructura
+    if (window.__accesoCoordNombre) {
+      const propio = orden.filter(g => g.coordinador === window.__accesoCoordNombre);
+      if (propio.length > 0) orden = propio;
+    }
     contTablas.innerHTML = orden.map(g => {
       const tope = sumar(g.filas, 'tope_agentes');
       const act = sumar(g.filas, 'actuales');
@@ -15528,35 +15533,24 @@ function aplicarFiltroAcceso() {
   const ciInfo = document.getElementById('coord-info');
   if (ciInfo) ciInfo.style.display = 'none';
 
-  // ===== Acceso por COORDINADOR: estrictamente sus equipos vigentes hoy =====
+  // Determinar el CENTRO a filtrar. Con acceso de COORDINADOR, los datos se
+  // filtran por su CENTRO completo y la VISTA queda bloqueada en su coordinación:
+  // así julio y anteriores se ven completos (regla de era) y desde agosto las
+  // secciones del mes reparten solo sus equipos.
+  let C = null;
   if (String(modo).startsWith('coord:')) {
     const nom = modo.slice(6).toUpperCase();
     const coordRow = (coordinadoresData || []).find(c => !c.es_centro &&
       (((c.nombre_corto || '') + ' ' + (c.nombre || '')).toUpperCase().includes(nom)));
-    const ahora = new Date();
-    const hoyLocal = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
-    const supsCoord = new Set(
-      (coordSupData || [])
-        .filter(cs => coordRow && cs.coordinador_id === coordRow.id && cs.fecha_inicio <= hoyLocal && (!cs.fecha_fin || cs.fecha_fin >= hoyLocal))
-        .map(cs => cs.supervisor)
-    );
-    supConfigData = (supConfigData || []).filter(s => supsCoord.has(s.supervisor));
-    plantillaData = (plantillaData || []).filter(p => p.supervisor && supsCoord.has(p.supervisor));
-    const agentesCoord = new Set(plantillaData.map(p => p.nombre));
-    ventasData = (ventasData || []).filter(r =>
-      (r.ejecutivo && agentesCoord.has(r.ejecutivo)) ||
-      (r.supervisor && supsCoord.has(r.supervisor))
-    );
-    metasAgeData = (metasAgeData || []).filter(m => supsCoord.has(m.supervisor) || agentesCoord.has(m.ejecutivo));
-    metasSupData = (metasSupData || []).filter(m => supsCoord.has(m.supervisor));
-    asignacionesData = (asignacionesData || []).filter(a => supsCoord.has(a.supervisor) || agentesCoord.has(a.ejecutivo));
-    capacitadoresData = (capacitadoresData || []).filter(cp => coordRow && _accesoNormCentro(cp.centro) === _accesoNormCentro(coordRow.centro));
-    return;
+    if (coordRow) {
+      C = _accesoNormCentro(coordRow.centro);
+      coordinadorFiltro = coordRow.id; // vista bloqueada en su coordinación
+      window.__accesoCoordNombre = coordRow.nombre_corto || coordRow.nombre;
+    }
+  } else if (modo === 'CC2' || modo === 'JV') {
+    C = modo;
   }
-
-  // ===== Acceso por CENTRO (CC2 / JV) =====
-  if (modo !== 'CC2' && modo !== 'JV') return;
-  const C = modo;
+  if (C !== 'CC2' && C !== 'JV') return;
 
   // Config de supervisores: solo el centro (histórico completo del centro)
   supConfigData = (supConfigData || []).filter(s => _accesoNormCentro(s.centro) === C);
