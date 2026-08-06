@@ -5833,7 +5833,11 @@ function renderDetalleAgentesConMes(mesKey) {
   // (típicamente: nuevos ingresos posteriores a la carga de metas,
   //  o bajas tempranas que nunca tuvieron meta asignada)
   // ============================================================
-  const ejecutivosConMeta = new Set(metasDelMes.map(m => m.ejecutivo));
+  // Dueño-primero: un agente con meta del mes EN CUALQUIER coordinación no es
+  // huérfano de esta vista — pertenece a donde está su meta.
+  const ejecutivosConMeta = new Set(
+    metasAgeData.filter(m => m.anio === anioSel && m.mes === mesSel).map(m => m.ejecutivo)
+  );
   const ejecutivosHuerfanos = new Set();
   // Agentes con activadas
   Object.keys(actPorAgente).forEach(e => {
@@ -5851,8 +5855,11 @@ function renderDetalleAgentesConMes(mesKey) {
     // 3) Supervisor de las programadas (mayoritario)
     const plant = plantMap[eje];
     let supAsignado = plant ? plant.supervisor : null;
-    if (!supAsignado || !SUPERVISORES.includes(supAsignado)) {
-      // Buscar supervisor mayoritario en las ventas
+    // Dueño-primero: si su plantilla tiene dueño pero está FUERA de la vista
+    // actual, el agente pertenece a otra vista — no se rescata aquí.
+    if (supAsignado && !SUPERVISORES.includes(supAsignado)) return;
+    if (!supAsignado) {
+      // Sin plantilla (bajas viejas): buscar supervisor mayoritario en las ventas
       const supCount = {};
       ventasData.forEach(r => {
         if (r.ejecutivo !== eje) return;
