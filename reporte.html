@@ -4788,14 +4788,19 @@ function _renderAvanceMensualImpl(wActual) {
   }
 
   function esVentaDelFiltro(r) {
-    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
-    // Para ventas en tránsito: si r.supervisor es obsoleto, usar supervisor
-    // de metas del mes o plantilla actual
-    if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.ejecutivo) {
-      if (supDelMesPorAgente[r.ejecutivo]) return true;
-      const plant = plantMapTmp[r.ejecutivo];
-      if (plant && plant.supervisor && SUPERVISORES.includes(plant.supervisor)) return true;
+    // DUEÑO-PRIMERO: si conocemos al dueño del registro (meta del mes →
+    // asignación histórica en la fecha → plantilla), ÉL decide si el registro
+    // pertenece a la vista actual. Un dueño de otra vista = no pertenece aquí.
+    if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
+      return SUPERVISORES.includes(supDelMesPorAgente[r.ejecutivo]);
     }
+    if (r.ejecutivo) {
+      const supH = supHistoricoEn(r.ejecutivo, r.fecha_activacion || r.fecha_bo || r.fecha_cancelacion);
+      if (supH) return SUPERVISORES.includes(supH);
+      const plant = plantMapTmp[r.ejecutivo];
+      if (plant && plant.supervisor) return SUPERVISORES.includes(plant.supervisor);
+    }
+    if (r.supervisor && SUPERVISORES.includes(r.supervisor)) return true;
     // Si no se resolvió a un supervisor oficial pero la venta trae centro, cuenta
     // en ese centro: cubre agentes nuevos, sin asignar, o bajo supervisores que
     // todavía no están dados de alta en supervisores_config.
