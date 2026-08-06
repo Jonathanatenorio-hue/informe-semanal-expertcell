@@ -4760,9 +4760,12 @@ function _renderAvanceMensualImpl(wActual) {
   // Mapa AGENTE → SUPERVISOR del mes vigente, basado en metas_agente.
   // Esta es la fuente más confiable: si un agente tiene meta para el mes con
   // supervisor X, sus ventas (incluido el tránsito) deben atribuirse a X.
+  // Dueño VERDADERO del agente en el mes (SIN filtrar por la vista): así un
+  // agente de otra coordinación no "cascadea" por los respaldos hasta pegarse
+  // a un supervisor de esta vista vía plantilla o backoffice desactualizados.
   const supDelMesPorAgente = {};
   metasAgeData
-    .filter(m => m.anio === anio && m.mes === mes && SUPERVISORES.includes(m.supervisor))
+    .filter(m => m.anio === anio && m.mes === mes)
     .forEach(m => { supDelMesPorAgente[m.ejecutivo] = m.supervisor; });
 
   // Historial de asignaciones por agente, para resolver al supervisor VIGENTE
@@ -4819,24 +4822,15 @@ function _renderAvanceMensualImpl(wActual) {
 
     const peso = r.peso_venta || 1;
 
-    // Determinar el supervisor que se le atribuye la venta:
-    // 1. Meta del mes (la verdad oficial del mes consultado)
-    // 2. Asignación HISTÓRICA vigente en la fecha de la venta (agentes sin meta:
-    //    respeta quién era su supervisor CUANDO ocurrió la venta, aunque la
-    //    plantilla ya traiga la estructura nueva)
-    // 3. Plantilla actual
-    // 4. Supervisor original de la venta
-    let supVenta = null;
+    // Resolver PRIMERO al dueño verdadero de la venta, en orden de verdad:
+    // meta del mes → asignación histórica en la fecha de la venta → plantilla →
+    // backoffice. Y solo DESPUÉS decidir si ese dueño entra en la vista actual.
+    // Si el dueño es de otra coordinación, la venta no se atribuye aquí.
     const _supHist = r.ejecutivo ? supHistoricoEn(r.ejecutivo, r.fecha_activacion || r.fecha_bo || r.fecha_cancelacion) : null;
-    if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
-      supVenta = supDelMesPorAgente[r.ejecutivo];
-    } else if (_supHist && SUPERVISORES.includes(_supHist)) {
-      supVenta = _supHist;
-    } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
-      supVenta = plantMapTmp[r.ejecutivo].supervisor;
-    } else if (r.supervisor && SUPERVISORES.includes(r.supervisor)) {
-      supVenta = r.supervisor;
-    }
+    const _dueno = (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) || _supHist ||
+      (r.ejecutivo && plantMapTmp[r.ejecutivo] && plantMapTmp[r.ejecutivo].supervisor) ||
+      r.supervisor || null;
+    let supVenta = (_dueno && SUPERVISORES.includes(_dueno)) ? _dueno : null;
     const tieneSupVenta = !!supVenta;
 
     if (r.fecha_activacion && r.fecha_activacion >= iniMesStr && r.fecha_activacion <= fechaCorteStr) {
@@ -4853,23 +4847,12 @@ function _renderAvanceMensualImpl(wActual) {
     }
 
     if ((r.estatus === 'en_transito' || r.estatus === 'por_activar') && r.fecha_bo) {
-      // Prioridad para asignar supervisor a una venta en tránsito:
-      // 1. Supervisor del agente en metas_agente del mes actual (la verdad oficial)
-      // 2. Supervisor actual de plantilla (si no hay meta cargada para ese agente)
-      // 3. Supervisor original de la venta (último fallback)
-      let supTransito = null;
-      if (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) {
-        supTransito = supDelMesPorAgente[r.ejecutivo];
-      } else if (_supHist && SUPERVISORES.includes(_supHist)) {
-        supTransito = _supHist;
-      } else if (r.ejecutivo && plantMapTmp[r.ejecutivo] && SUPERVISORES.includes(plantMapTmp[r.ejecutivo].supervisor)) {
-        supTransito = plantMapTmp[r.ejecutivo].supervisor;
-      } else {
-        const supOriginal = r.supervisor_bo || r.supervisor;
-        if (supOriginal && SUPERVISORES.includes(supOriginal)) {
-          supTransito = supOriginal;
-        }
-      }
+      // Dueño verdadero del tránsito primero (meta → historial → plantilla →
+      // backoffice), y solo después decidir si entra en la vista actual.
+      const _duenoTr = (r.ejecutivo && supDelMesPorAgente[r.ejecutivo]) || _supHist ||
+        (r.ejecutivo && plantMapTmp[r.ejecutivo] && plantMapTmp[r.ejecutivo].supervisor) ||
+        r.supervisor_bo || r.supervisor || null;
+      const supTransito = (_duenoTr && SUPERVISORES.includes(_duenoTr)) ? _duenoTr : null;
       if (supTransito) {
         transitoPorSup[supTransito]++;
         transitoTotal++;
