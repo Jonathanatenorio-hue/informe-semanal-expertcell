@@ -2620,7 +2620,17 @@ function agregarPorFechaDeActividad(inicioStr, finStr) {
     if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
-      if (coord && coord.centro === r.centro) return true;
+      if (coord && coord.centro === r.centro) {
+        // Rescate SOLO para registros sin dueño: si el supervisor del registro
+        // es un supervisor oficial del centro pero de OTRA coordinación
+        // (no está en la vista actual), este registro no pertenece aquí.
+        const supRef = r.supervisor_bo || r.supervisor;
+        if (supRef && !SUPERVISORES.includes(supRef) &&
+            (supConfigData || []).some(s => s.supervisor === supRef && _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))) {
+          return false;
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -2667,7 +2677,17 @@ function agregarPorBloqueBO(inicioStr, finStr) {
     if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
-      if (coord && coord.centro === r.centro) return true;
+      if (coord && coord.centro === r.centro) {
+        // Rescate SOLO para registros sin dueño: si el supervisor del registro
+        // es un supervisor oficial del centro pero de OTRA coordinación
+        // (no está en la vista actual), este registro no pertenece aquí.
+        const supRef = r.supervisor_bo || r.supervisor;
+        if (supRef && !SUPERVISORES.includes(supRef) &&
+            (supConfigData || []).some(s => s.supervisor === supRef && _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))) {
+          return false;
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -4779,7 +4799,17 @@ function _renderAvanceMensualImpl(wActual) {
     if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
-      if (coord && coord.centro === r.centro) return true;
+      if (coord && coord.centro === r.centro) {
+        // Rescate SOLO para registros sin dueño: si el supervisor del registro
+        // es un supervisor oficial del centro pero de OTRA coordinación
+        // (no está en la vista actual), este registro no pertenece aquí.
+        const supRef = r.supervisor_bo || r.supervisor;
+        if (supRef && !SUPERVISORES.includes(supRef) &&
+            (supConfigData || []).some(s => s.supervisor === supRef && _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))) {
+          return false;
+        }
+        return true;
+      }
     }
     return false;
   }
@@ -4840,8 +4870,14 @@ function _renderAvanceMensualImpl(wActual) {
           supTransito = supOriginal;
         }
       }
-      if (supTransito) transitoPorSup[supTransito]++;
-      transitoTotal++;
+      if (supTransito) {
+        transitoPorSup[supTransito]++;
+        transitoTotal++;
+      } else if (esVentaDelFiltro(r)) {
+        // Sin dueño atribuible (bajas, pendientes de asignar): cuenta al total
+        // solo si pertenece al alcance de la vista actual
+        transitoTotal++;
+      }
     }
   });
 
@@ -9528,7 +9564,17 @@ function actualizarVista() {
     if (r.centro) {
       if (coordinadorFiltro === 'todos') return true;
       const coord = coordinadoresData.find(c => c.id == coordinadorFiltro);
-      if (coord && coord.centro === r.centro) return true;
+      if (coord && coord.centro === r.centro) {
+        // Rescate SOLO para registros sin dueño: si el supervisor del registro
+        // es un supervisor oficial del centro pero de OTRA coordinación
+        // (no está en la vista actual), este registro no pertenece aquí.
+        const supRef = r.supervisor_bo || r.supervisor;
+        if (supRef && !SUPERVISORES.includes(supRef) &&
+            (supConfigData || []).some(s => s.supervisor === supRef && _accesoNormCentro(s.centro) === _accesoNormCentro(coord.centro))) {
+          return false;
+        }
+        return true;
+      }
     }
     return false;
   }
