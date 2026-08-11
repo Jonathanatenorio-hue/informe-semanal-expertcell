@@ -2419,6 +2419,14 @@ async function cargarDatos() {
   const { data: pisosCfg } = await db.from('pisos_config').select('*').order('vigente_desde', { ascending: true });
   pisosConfigData = pisosCfg || [];
 
+  // Prefetch de entregas para el ajuste DHL (detalle por agente y comisiones)
+  Promise.resolve().then(() => _cargarEntregasData()).catch(() => null).then(() => {
+    _dhlFolios = new Set();
+    (_entregasCache || []).forEach(e => {
+      if (e && e.folio && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+    });
+  });
+
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
   supConfigData = supConfig || [];
 
@@ -5974,6 +5982,19 @@ function renderDetalleAgentesConMes(mesKey) {
   });
   // ============================================================
 
+  // Comisión del mes y bracket por agente (motor oficial, con ajuste DHL)
+  const _ventasMesCom = ventasData.filter(v => v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(`${anioSel}-${String(mesSel).padStart(2, '0')}`));
+  Object.keys(agentesPorSup).forEach(supK => {
+    agentesPorSup[supK].forEach(a => {
+      try {
+        const pC = plantMap[a.ejecutivo] || {};
+        const c = _comCalcularAgenteMes(a.ejecutivo, pC.fecha_ingreso || null, pC.fecha_baja || null, anioSel, mesSel, _ventasMesCom);
+        a.comMes = (c.comisionPlanes || 0) + (c.bonoAcelerador || 0);
+        a.bracketLbl = c.nivelAlcanzado > 0 ? c.etiquetaNivel : '—';
+      } catch (e) { a.comMes = null; a.bracketLbl = '—'; }
+    });
+  });
+
   window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel, diasTranscurridos, diasHabilesTotales };
 
   const inactivosPorSup = {};
@@ -6259,6 +6280,8 @@ function renderDetalleAgentesConMes(mesKey) {
                   <th style="text-align:center;">#</th>
                   <th>Agente</th>
                   <th style="text-align:center;">Tipo</th>
+                  <th class="num" style="text-align:center;" title="Comisión variable del mes (motor oficial, con ajuste DHL)">Com. mes</th>
+                  <th style="text-align:center;">Bracket</th>
                   <th class="num" style="text-align:center;">Días act.</th>
                   <th class="num" style="text-align:center;" title="Días hábiles desde la última venta programada (BO)">Sin prog.</th>
                   <th class="num" style="text-align:center;" title="Días hábiles desde la última venta activada">Sin activar</th>
@@ -6330,6 +6353,8 @@ function renderDetalleAgentesConMes(mesKey) {
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
                     <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: ${a.esBaja ? '#6B7280' : 'var(--att-blue-dark)'}; text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
                     <td style="text-align:center;"><span title="${a.cambiaNivelA ? 'Cruza a ' + (TIPO_LBL[a.cambiaNivelA] || a.cambiaNivelA) + ' durante este mes' : ''}" style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
+                    <td class="num" style="text-align:center; font-weight:700;">${a.comMes == null ? '—' : '$' + Math.round(a.comMes).toLocaleString('es-MX')}</td>
+                    <td style="text-align:center; font-size:10px;">${a.bracketLbl || '—'}</td>
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinAct, a.nuncaActivo)}</td>
@@ -17103,7 +17128,7 @@ const FACTOR_SIN_IVA = 0.837;
 const PLANES_DHL_25 = new Set(['ATT AZUL 2', 'ATT LITE 2', 'ATT AZUL', 'ATT AZUL 1', 'ATT LITE 1']);
 // ===== PISOS DEL BONO S2 (editables por dirección, con vigencia por mes) =====
 // Los pisos suben por evaluación bimestral (nunca bajan) hasta sus techos.
-const PISOS_DEFAULT = { piso_nuevo: 6, piso_medio: 8, piso_maduro: 12, umbral_sube2: 85, umbral_sube1: 70, dias_baja_excluye: 15 };
+const PISOS_DEFAULT = { piso_nuevo: 6, piso_medio: 8, piso_maduro: 12, umbral_sube2: 85, umbral_sube1: 70, dias_baja_excluye: 15, factor_minimo: 60 };
 const PISOS_TECHOS = { nuevo: 8, medio: 12, maduro: 25 };
 function pisosVigentes(anio, mes) {
   const d1 = `${anio}-${String(mes).padStart(2, '0')}-01`;
@@ -17209,7 +17234,8 @@ function _comSupCalcular(anio, mes) {
       factorPisos = evaluables > 0 ? enPiso / evaluables : 1;
       numMadurosCalc = evalRows.filter(m => m.tipo_meta !== 'fija_6').length;
       numNuevosCalc = evalRows.filter(m => m.tipo_meta === 'fija_6').length;
-      okAgentes = factorPisos >= 0.60;
+      const _fmin = (Number(_pv.factor_minimo) || 60) / 100;
+      okAgentes = factorPisos >= _fmin;
       bonoPotencial = montoRentas * SUP_BONO_PCT * factorPisos;
       bono = (okMeta && okAgentes) ? bonoPotencial : 0;
     } else {
@@ -17306,7 +17332,7 @@ function renderComisionesSupervisores() {
       </div>
       <div style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;">
         ${esAgoMes
-          ? `Esquema AGOSTO 2026: 15% de la comisión unificada de sus agentes (sin aceleradores, integrados en la tarifa), escalonado por logro: ≥100% completo · 90-99.9% el % logrado · &lt;90% no cobra · <strong>Bono S2 de pisos</strong>: 3% de la renta sin IVA × factor de pisos, con puertas de logro ≥ ${SUP_BONO_UMBRAL}% y factor ≥ 60% · Pisos vigentes: nuevos ${pvMes.piso_nuevo} · medios ${pvMes.piso_medio} · maduros ${pvMes.piso_maduro} · bajas antes del día ${pvMes.dias_baja_excluye || 15} excluidas · DHL: medios −$12.50 c/u (par = $25), Azul 2/Lite 2 −$25, Azul 3+ −$50 (${totDHLVentas} ventas con guía)`
+          ? `Esquema AGOSTO 2026: 15% de la comisión unificada de sus agentes (sin aceleradores, integrados en la tarifa), escalonado por logro: ≥100% completo · 90-99.9% el % logrado · &lt;90% no cobra · <strong>Bono S2 de pisos</strong>: 3% de la renta sin IVA × factor de pisos, con puertas de logro ≥ ${SUP_BONO_UMBRAL}% y factor ≥ ${Math.round(Number(pvMes.factor_minimo) || 60)}% · Pisos vigentes: nuevos ${pvMes.piso_nuevo} · medios ${pvMes.piso_medio} · maduros ${pvMes.piso_maduro} · bajas antes del día ${pvMes.dias_baja_excluye || 15} excluidas · DHL: medios −$12.50 c/u (par = $25), Azul 2/Lite 2 −$25, Azul 3+ −$50 (${totDHLVentas} ventas con guía)`
           : `15% de la comisión variable de sus agentes (sin base), escalonado por logro de meta: ≥100% cobra completo · 90-99.9% cobra el % logrado · &lt;90% no cobra · Bono: 3% del monto en rentas sin IVA si avance ≥ ${SUP_BONO_UMBRAL}% Y maduros (meta 8+) con mínimo ${SUP_BONO_MIN_MADURO}${_comSupExigirNuevos() ? ` y nuevos (meta 6) con mínimo ${SUP_BONO_MIN_NUEVO}` : ' (mínimo de nuevos desactivado)'} · Sin meta no afectan · Ajuste DHL incluido (${totDHLVentas} ventas con guía)`}${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
       </div>
       <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
@@ -17324,7 +17350,7 @@ function renderComisionesSupervisores() {
               <th style="text-align:right;">15% con acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>`}
               <th style="text-align:center;">Avance vs meta<br>(bono ≥ ${SUP_BONO_UMBRAL}%)</th>
               ${esAgoMes
-                ? `<th style="text-align:center;">Factor de pisos<br><span style="font-weight:400; font-size:10px;">bono con factor ≥60% · pisos ${pvMes.piso_nuevo}/${pvMes.piso_medio}/${pvMes.piso_maduro}</span></th>`
+                ? `<th style="text-align:center;">Factor de pisos<br><span style="font-weight:400; font-size:10px;">bono con factor ≥${Math.round(Number(pvMes.factor_minimo) || 60)}% · pisos ${pvMes.piso_nuevo}/${pvMes.piso_medio}/${pvMes.piso_maduro}</span></th>`
                 : `<th style="text-align:center;">Agentes al mínimo<br><span style="font-weight:400; font-size:10px;">maduros ≥${SUP_BONO_MIN_MADURO} · nuevos ≥${SUP_BONO_MIN_NUEVO}</span></th>`}
               <th style="text-align:right;">Monto rentas<br>sin IVA</th>
               <th style="text-align:right;">Bono 3%</th>
@@ -17357,7 +17383,7 @@ function renderComisionesSupervisores() {
       ? `<span style="color:var(--green); font-weight:800;">${fmt(f.bono)}</span>`
       : `<span style="color:var(--text-soft);" title="Bono potencial si se cumplen las condiciones">(${fmt(f.bonoPotencial)})</span>`;
     html += `<tr>
-      <td style="font-weight:700;">${f.sup}</td>
+      <td style="font-weight:700;">${f.sup} <button class="btn-radiografia" data-sup="${f.sup}" title="Radiografía: qué le falta para asegurar comisión y bono" style="border:none; background:transparent; cursor:pointer; font-size:13px;">📋</button></td>
       <td style="text-align:center;">${f.numAgentes}</td>
       ${esAgoMes ? `
       <td style="text-align:right;">${fmt(f.comCon)}</td>
@@ -17393,8 +17419,13 @@ function renderComisionesSupervisores() {
       <div style="font-size:10.5px; color:var(--text-soft); margin-top:8px;">El bono en gris entre paréntesis es el monto potencial si se destraban las condiciones. Cifras sin sueldo base. Nota DHL: AZUL 2 / LITE 2 por DHL quedan en $50 neto en niveles 1-2 y $75 neto en el bracket 16+. El par de medios (AZUL, AZUL 1, LITE 1) por DHL netea como un Azul 2 DHL del bracket: $50 el par en niveles 1-2 y $75 el par en 16+ (ej: 15 Azul 2 + 2 Azul 1 = 16 cuotas → ese par paga $100, o $75 si fue DHL). El resto de planes descuenta −$50 por venta DHL.</div>
     </div>`;
 
+  html += _comCoordHTML(filas, anio, mes, esAgoMes);
   html += _pisosPanelHTML();
   cont.innerHTML = html;
+  window.__comSupFilas = { filas, anio, mes, esAgoMes };
+  cont.querySelectorAll('.btn-radiografia').forEach(b => {
+    b.onclick = () => radiografiaSup(b.getAttribute('data-sup'));
+  });
   const btnEval = document.getElementById('btn-eval-pisos');
   if (btnEval) btnEval.onclick = evaluarPisos;
   const selEl = document.getElementById('com-sup-mes');
@@ -17408,6 +17439,154 @@ function renderComisionesSupervisores() {
 // ≥ umbral2 % del segmento superó su piso → +2 · ≥ umbral1 % → +1 ·
 // debajo → se mantiene. Nunca bajan. Techos: nuevos 8 · medios 12 · maduros 25.
 // =====================================================================
+// ===== RADIOGRAFÍA por supervisor: informe copiable (WhatsApp) =====
+function radiografiaSup(supNombre) {
+  const ctx = window.__comSupFilas;
+  if (!ctx) return;
+  const f = ctx.filas.find(x => x.sup === supNombre);
+  if (!f) return;
+  const { anio, mes, esAgoMes } = ctx;
+  const pv = pisosVigentes(anio, mes);
+  const fmin = (Number(pv.factor_minimo) || 60) / 100;
+  const fmt$ = n => '$' + Math.round(n).toLocaleString('es-MX');
+  const L = [];
+  L.push(`📋 RADIOGRAFÍA · ${f.sup} · ${String(mes).padStart(2, '0')}/${anio}`);
+  L.push('');
+  L.push(`— COMISIÓN 15% (escalonada) —`);
+  L.push(`Avance ${f.avance}/${f.meta} = ${f.pct.toFixed(1)}%`);
+  if (f.pct >= 100) {
+    L.push(`✅ Escalón completo: cobra ${fmt$(f.sup15con)}`);
+  } else if (f.pct >= 90) {
+    const faltan100 = Math.max(0, Math.ceil(f.meta - f.avance));
+    L.push(`🟡 Escalón proporcional (${f.pct.toFixed(1)}%): cobra ${fmt$(f.sup15con)} de ${fmt$(f.comCon * 0.15)} posibles`);
+    L.push(`→ Faltan ${faltan100} ventas para el 100% y cobrar completo`);
+  } else {
+    const faltan90 = Math.max(0, Math.ceil(f.meta * 0.9 - f.avance));
+    const faltan100 = Math.max(0, Math.ceil(f.meta - f.avance));
+    L.push(`🔴 Debajo del 90%: hoy NO cobra el 15%`);
+    L.push(`→ Faltan ${faltan90} ventas para entrar al escalón (90%) y ${faltan100} para el 100%`);
+  }
+  L.push('');
+  if (esAgoMes) {
+    L.push(`— BONO S2 (3% × factor de pisos) —`);
+    const falta103 = Math.max(0, Math.ceil(f.meta * (SUP_BONO_UMBRAL / 100) - f.avance));
+    L.push(falta103 <= 0 ? `✅ Puerta de meta ${SUP_BONO_UMBRAL}%: cumplida` : `⏳ Puerta de meta ${SUP_BONO_UMBRAL}%: faltan ${falta103} ventas`);
+    const pctF = Math.round((f.factorPisos || 0) * 100);
+    L.push(`Factor de pisos: ${f.enPiso}/${f.evaluables} = ${pctF}% (mínimo ${Math.round(fmin * 100)}%)`);
+    const necesarios = Math.max(0, Math.ceil(fmin * f.evaluables) - f.enPiso);
+    if (necesarios > 0) {
+      L.push(`→ Necesita subir ${necesarios} agente(s) al piso. Los más cercanos:`);
+      [...f.incumplidos].sort((a, b) => (a.min - a.ventas) - (b.min - b.ventas)).slice(0, necesarios + 2)
+        .forEach(x => L.push(`   · ${x.nombre}: ${x.ventas}/${x.min} (faltan ${Math.ceil(x.min - x.ventas)})`));
+    } else if (f.incumplidos.length > 0) {
+      L.push(`→ Mínimo cumplido; cada agente extra en piso sube el bono ${fmt$(f.montoRentas * 0.03 / Math.max(1, f.evaluables))}:`);
+      f.incumplidos.slice(0, 3).forEach(x => L.push(`   · ${x.nombre}: ${x.ventas}/${x.min}`));
+    }
+    L.push(`Bono hoy: ${fmt$(f.bono)} · al 100% de pisos: ${fmt$(f.montoRentas * 0.03)}`);
+  } else {
+    L.push(`— BONO 3% (todo o nada, esquema previo) —`);
+    L.push(f.okAgentes ? `✅ Agentes al mínimo` : `❌ Fuera: ${f.incumplidos.map(x => `${x.nombre} (${x.ventas}/${x.min})`).join(', ')}`);
+    L.push(`Bono hoy: ${fmt$(f.bono)}`);
+  }
+  L.push('');
+  L.push(`TOTAL HOY: ${fmt$(f.total)}`);
+  const texto = L.join('\n');
+
+  let ov = document.getElementById('radiografia-overlay');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'radiografia-overlay';
+  ov.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:9999; display:flex; align-items:center; justify-content:center;';
+  ov.innerHTML = `<div style="background:white; border-radius:12px; padding:20px; max-width:520px; width:92%; max-height:80vh; overflow:auto;">
+    <pre style="white-space:pre-wrap; font-family:ui-monospace, monospace; font-size:12.5px; margin:0 0 12px;">${texto}</pre>
+    <div style="display:flex; gap:10px;">
+      <button id="rad-copiar" style="background:var(--att-orange); color:white; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer;">📋 Copiar</button>
+      <button id="rad-cerrar" style="background:#E2E8F0; border:none; padding:8px 16px; border-radius:6px; font-weight:700; cursor:pointer;">Cerrar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  document.getElementById('rad-cerrar').onclick = () => ov.remove();
+  document.getElementById('rad-copiar').onclick = () => {
+    navigator.clipboard.writeText(texto).then(() => {
+      document.getElementById('rad-copiar').textContent = '✓ Copiado';
+    });
+  };
+}
+
+// ===== COMISIONES DE COORDINADORES (desde agosto 2026): C1 5% + C2 pisos =====
+// Ambos sobre RENTA SIN IMPUESTOS de sus equipos. C2 suma ejecutivos (no
+// promedia factores). Puertas C2: logro >= 103% y factor >= mínimo vigente.
+function _comCoordHTML(filas, anio, mes, esAgoMes) {
+  if (!esAgoMes) return '';
+  const ahora = new Date();
+  const finMesStr = `${anio}-${String(mes).padStart(2, '0')}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`;
+  const hoyLoc = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}-${String(ahora.getDate()).padStart(2, '0')}`;
+  const ref = finMesStr < hoyLoc ? finMesStr : hoyLoc;
+  const pv = pisosVigentes(anio, mes);
+  const fmin = (Number(pv.factor_minimo) || 60) / 100;
+  const porSup = {};
+  filas.forEach(f => { porSup[f.sup] = f; });
+  const fmt = n => '$' + Math.round(n).toLocaleString('es-MX');
+  let rows = '';
+  let tC1 = 0, tC2 = 0;
+  (coordinadoresData || []).filter(c => !c.es_centro).forEach(c => {
+    const sups = [...new Set((coordSupData || [])
+      .filter(cs => cs.coordinador_id === c.id && cs.fecha_inicio <= ref && (!cs.fecha_fin || cs.fecha_fin >= ref))
+      .map(cs => cs.supervisor))];
+    const fs = sups.map(s => porSup[s]).filter(Boolean);
+    if (fs.length === 0) return;
+    const renta = fs.reduce((a, f) => a + f.montoRentas, 0);
+    const meta = fs.reduce((a, f) => a + f.meta, 0);
+    const av = fs.reduce((a, f) => a + f.avance, 0);
+    const pct = meta > 0 ? av / meta * 100 : 0;
+    const fC1 = pct >= 100 ? 1 : (pct >= 90 ? pct / 100 : 0);
+    const c1 = renta * 0.05 * fC1;
+    const enP = fs.reduce((a, f) => a + (f.enPiso || 0), 0);
+    const ev = fs.reduce((a, f) => a + (f.evaluables || 0), 0);
+    const fPis = ev > 0 ? enP / ev : 1;
+    const okC2 = pct >= (SUP_BONO_UMBRAL) && fPis >= fmin;
+    const c2pot = renta * 0.03 * fPis;
+    const c2 = okC2 ? c2pot : 0;
+    tC1 += c1; tC2 += c2;
+    rows += `<tr>
+      <td style="font-weight:700; padding:6px 10px;">${c.nombre_corto || c.nombre}</td>
+      <td style="padding:6px 10px; font-size:11px;">${fs.map(f => f.sup).join(', ')}</td>
+      <td style="text-align:right; padding:6px 10px;">${fmt(renta)}</td>
+      <td style="text-align:center; padding:6px 10px; font-weight:700; color:${pct >= 100 ? 'var(--green)' : pct >= 90 ? 'var(--amber, #D97706)' : 'var(--red)'};">${pct.toFixed(1)}%</td>
+      <td style="text-align:right; padding:6px 10px;">${fmt(c1)}</td>
+      <td style="text-align:center; padding:6px 10px; color:${fPis >= fmin ? 'var(--green)' : 'var(--red)'};">${Math.round(fPis * 100)}% (${enP}/${ev})</td>
+      <td style="text-align:right; padding:6px 10px; font-weight:700;">${c2 > 0 ? fmt(c2) : `<span style="color:var(--text-soft);">$0 <span style="font-size:10px;">(pot ${fmt(c2pot)})</span></span>`}</td>
+      <td style="text-align:right; padding:6px 10px; font-weight:800;">${fmt(c1 + c2)}</td>
+    </tr>`;
+  });
+  if (!rows) return '';
+  return `
+    <div style="margin-top:18px;">
+      <div style="font-weight:800; font-size:14px; color:var(--att-navy); margin-bottom:4px;">🧑‍💼 Comisiones de coordinadores</div>
+      <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">C1: 5% de la renta sin impuestos de sus equipos, escalonado (≥100% completo · 90-99.9% × logro · &lt;90% $0) · C2: 3% × factor de pisos del conjunto (suma ejecutivos, no promedia), con puertas de logro ≥${SUP_BONO_UMBRAL}% y factor ≥${Math.round(fmin * 100)}%</div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+        <thead><tr style="background:var(--att-navy); color:white;">
+          <th style="padding:6px 10px; text-align:left;">Coordinador</th>
+          <th style="padding:6px 10px; text-align:left;">Equipos</th>
+          <th style="padding:6px 10px; text-align:right;">Renta s/IVA</th>
+          <th style="padding:6px 10px;">Logro</th>
+          <th style="padding:6px 10px; text-align:right;">C1 (5%)</th>
+          <th style="padding:6px 10px;">Factor pisos</th>
+          <th style="padding:6px 10px; text-align:right;">C2 (3%)</th>
+          <th style="padding:6px 10px; text-align:right;">TOTAL</th>
+        </tr></thead>
+        <tbody>${rows}
+        <tr style="background:var(--bg); font-weight:800;">
+          <td style="padding:6px 10px;" colspan="4">TOTAL</td>
+          <td style="text-align:right; padding:6px 10px;">${fmt(tC1)}</td><td></td>
+          <td style="text-align:right; padding:6px 10px;">${fmt(tC2)}</td>
+          <td style="text-align:right; padding:6px 10px;">${fmt(tC1 + tC2)}</td>
+        </tr></tbody>
+      </table>
+    </div>`;
+}
+
 function _pisosPanelHTML() {
   if ((window.__accesoModo || 'director') !== 'director') return '';
   const meses = [];
@@ -17427,6 +17606,7 @@ function _pisosPanelHTML() {
         · Sube +2 si ≥ <input id="ep-u2" type="number" value="${cfg.umbral_sube2 || 85}" style="width:52px;"> %
         · Sube +1 si ≥ <input id="ep-u1" type="number" value="${cfg.umbral_sube1 || 70}" style="width:52px;"> %
         · Excluir bajas antes del día <input id="ep-nb" type="number" value="${cfg.dias_baja_excluye || 15}" style="width:48px;">
+        · Factor mínimo del bono <input id="ep-fm" type="number" value="${Math.round(Number(cfg.factor_minimo) || 60)}" style="width:52px;"> %
         <button id="btn-eval-pisos" style="background:var(--att-orange); color:white; border:none; padding:6px 14px; border-radius:6px; font-weight:700; cursor:pointer;">Evaluar</button>
       </div>
       <div id="eval-pisos-res" style="margin-top:10px;"></div>
@@ -17499,6 +17679,19 @@ function evaluarPisos() {
     </tr>`;
   });
 
+  // Fila GENERAL (todas las observaciones juntas, informativa)
+  const gObs = seg.nuevo.obs + seg.medio.obs + seg.maduro.obs;
+  const gOk = seg.nuevo.ok + seg.medio.ok + seg.maduro.ok;
+  const gPct = gObs > 0 ? gOk / gObs * 100 : 0;
+  filas += `<tr style="background:var(--bg); font-weight:800;">
+      <td style="padding:5px 10px;">GENERAL</td>
+      <td style="padding:5px 10px; text-align:center;">—</td>
+      <td style="padding:5px 10px; text-align:center;">${gObs}</td>
+      <td style="padding:5px 10px; text-align:center;">${gOk}</td>
+      <td style="padding:5px 10px; text-align:center; color:${gPct >= u1 ? 'var(--green)' : 'var(--red)'};">${gPct.toFixed(1)}%</td>
+      <td style="padding:5px 10px; text-align:center;" colspan="2">referencia global de la operación</td>
+    </tr>`;
+
   const hoy = new Date();
   const sig = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
   const vigDefault = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, '0')}-01`;
@@ -17516,10 +17709,11 @@ function evaluarPisos() {
       <button id="btn-aplicar-pisos" style="background:var(--green, #16A34A); color:white; border:none; padding:7px 16px; border-radius:6px; font-weight:700; cursor:pointer;">💾 Aplicar pisos</button>
       <span style="color:var(--text-soft); font-size:11px;">Se guarda un registro nuevo con vigencia; los meses ya pagados conservan sus pisos.</span>
     </div>`;
-  document.getElementById('btn-aplicar-pisos').onclick = () => aplicarPisosNuevos(u2, u1, nb);
+  const fmNuevo = parseFloat(document.getElementById('ep-fm').value) || 60;
+  document.getElementById('btn-aplicar-pisos').onclick = () => aplicarPisosNuevos(u2, u1, nb, fmNuevo);
 }
 
-async function aplicarPisosNuevos(u2, u1, nb) {
+async function aplicarPisosNuevos(u2, u1, nb, fm) {
   const vig = document.getElementById('ep-vigencia').value;
   const nuevos = {
     piso_nuevo: parseInt(document.getElementById('ep-nuevo-nuevo').value),
@@ -17540,7 +17734,7 @@ async function aplicarPisosNuevos(u2, u1, nb) {
   const { error } = await db.from('pisos_config').insert({
     vigente_desde: vig,
     piso_nuevo: nuevos.piso_nuevo, piso_medio: nuevos.piso_medio, piso_maduro: nuevos.piso_maduro,
-    umbral_sube2: u2, umbral_sube1: u1, dias_baja_excluye: nb
+    umbral_sube2: u2, umbral_sube1: u1, dias_baja_excluye: nb, factor_minimo: fm || 60
   });
   if (error) { alert('Error al guardar: ' + error.message); return; }
   const { data: pisosCfg } = await db.from('pisos_config').select('*').order('vigente_desde', { ascending: true });
