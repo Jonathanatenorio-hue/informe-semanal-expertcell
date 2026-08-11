@@ -1776,7 +1776,8 @@
           <select id="top-tipo" style="padding: 6px 12px; border: 1.5px solid var(--border); border-radius: 6px; font-size: 13px; font-weight: 600; background: white; cursor: pointer;">
             <option value="all">Todos</option>
             <option value="nuevo">Nuevos</option>
-            <option value="exp">Experimentados</option>
+            <option value="medio">Medios</option>
+            <option value="maduro">Maduros</option>
             <option value="sinmeta">Sin meta</option>
           </select>
         </div>
@@ -2028,6 +2029,39 @@ function calcularSupervisoresVigentes(fechaConsultaStr) {
   return vigentes.length > 0 ? vigentes : [...SUPERVISORES_ALL];
 }
 
+// =====================================================================
+// TIPO DE AGENTE POR MES — 4 niveles, por días activos al día 1 del mes
+// consultado: sin_meta = entró en el mes · nuevo ≤42 · medio 43-89 · maduro 90+
+// Devuelve también si el agente CRUZA de nivel durante ese mes (⬆).
+// =====================================================================
+function _bandaPorDias(d) {
+  if (d == null || d <= 0) return 'sin_meta';
+  if (d <= 42) return 'nuevo';
+  if (d <= 89) return 'medio';
+  return 'maduro';
+}
+function tipoAgenteMes(fechaIngreso, anio, mes) {
+  if (!fechaIngreso) return { tipo: 'sin_meta', dias: null, cambiaA: null };
+  const dia1 = new Date(anio, mes - 1, 1);
+  const finMes = new Date(anio, mes, 0);
+  const ing = new Date(String(fechaIngreso).substring(0, 10) + 'T00:00:00');
+  const dias = Math.floor((dia1 - ing) / 86400000);
+  const tipo = _bandaPorDias(dias);
+  const diasFin = Math.floor((finMes - ing) / 86400000);
+  const tipoFin = _bandaPorDias(diasFin);
+  return { tipo, dias, cambiaA: tipoFin !== tipo ? tipoFin : null };
+}
+const TIPO_LBL = { sin_meta: 'Sin meta', nuevo: 'Nuevo', medio: 'Medio', maduro: 'Maduro', baja: 'Baja', fija_6: 'Nuevo', fija_10: 'Medio', calculada: 'Maduro' };
+const TIPO_BADGE = {
+  sin_meta: 'background:#E5E7EB;color:#374151;',
+  nuevo: 'background:#DBEAFE;color:#1E40AF;',
+  medio: 'background:#FEF3C7;color:#92400E;',
+  maduro: 'background:#DCFCE7;color:#15803D;',
+  fija_6: 'background:#DBEAFE;color:#1E40AF;',
+  fija_10: 'background:#FEF3C7;color:#92400E;',
+  calculada: 'background:#DCFCE7;color:#15803D;'
+};
+
 function aplicarFiltroCoordinador(fechaConsultaStr) {
   const vigentes = calcularSupervisoresVigentes(fechaConsultaStr);
 
@@ -2129,6 +2163,7 @@ let metasSupData = [];
 let metasAgeData = [];
 let coordinadoresData = [];
 let coordSupData = [];
+let pisosConfigData = [];
 let supConfigData = [];
 let foliosIgnoradosData = [];
 let capacitadoresData = [];
@@ -2372,7 +2407,7 @@ async function cargarDatos() {
   //   meta >= 8 → calculada (Exp) · meta 1-7 → fija_6 (Nuevo) · meta 0/null → sin_meta
   metasAgeData.forEach(m => {
     const mt = Number(m.meta_activadas) || 0;
-    m.tipo_meta = mt >= 8 ? 'calculada' : (mt > 0 ? 'fija_6' : 'sin_meta');
+    m.tipo_meta = mt >= 12 ? 'calculada' : (mt >= 8 ? 'fija_10' : (mt > 0 ? 'fija_6' : 'sin_meta'));
   });
 
   const { data: coordData } = await db.from('coordinadores').select('*').eq('activo', true);
@@ -2380,6 +2415,9 @@ async function cargarDatos() {
 
   const { data: coordSup } = await db.from('coordinador_supervisor').select('*');
   coordSupData = coordSup || [];
+
+  const { data: pisosCfg } = await db.from('pisos_config').select('*').order('vigente_desde', { ascending: true });
+  pisosConfigData = pisosCfg || [];
 
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
   supConfigData = supConfig || [];
@@ -5804,7 +5842,9 @@ function renderDetalleAgentesConMes(mesKey) {
     const arpuInfo = arpuPorAgente[m.ejecutivo];
     const arpu = arpuInfo && arpuInfo.count > 0 ? arpuInfo.sum / arpuInfo.count : 0;
 
-    const tipoFinal = estaDeBaja ? 'baja' : m.tipo_meta;
+    const _tiMes = plant && plant.fecha_ingreso ? tipoAgenteMes(plant.fecha_ingreso, anioSel, mesSel) : null;
+    const tipoFinal = estaDeBaja ? 'baja' : (_tiMes ? _tiMes.tipo : m.tipo_meta);
+    const cambiaNivelA = (!estaDeBaja && _tiMes) ? _tiMes.cambiaA : null;
 
     agentesPorSup[m.supervisor].push({
       ejecutivo: m.ejecutivo,
@@ -5820,6 +5860,7 @@ function renderDetalleAgentesConMes(mesKey) {
       esperadoHoy, gap, pctEsperado,
       tipo: tipoFinal,
       tipoMetaOriginal: m.tipo_meta,
+      cambiaNivelA,
       esBaja: estaDeBaja,
       bajaEnMesActual,
       fechaBaja: fechaBajaStr,
@@ -5920,8 +5961,9 @@ function renderDetalleAgentesConMes(mesKey) {
       arpu: arpuH,
       pct: 0, ritmoActual: ritmoActualH, proyeccion: proyeccionH, ritmoNecesario: 0,
       esperadoHoy: 0, gap: avanceH, pctEsperado: avanceH > 0 ? 100 : 0,
-      tipo: estaDeBajaH ? 'baja' : 'sin_meta',
+      tipo: estaDeBajaH ? 'baja' : (plant && plant.fecha_ingreso ? tipoAgenteMes(plant.fecha_ingreso, anioSel, mesSel).tipo : 'sin_meta'),
       tipoMetaOriginal: 'sin_meta',
+      cambiaNivelA: (!estaDeBajaH && plant && plant.fecha_ingreso) ? tipoAgenteMes(plant.fecha_ingreso, anioSel, mesSel).cambiaA : null,
       esBaja: estaDeBajaH,
       bajaEnMesActual: bajaEnMesH,
       fechaBaja: fechaBajaH,
@@ -6261,15 +6303,9 @@ function renderDetalleAgentesConMes(mesKey) {
                   if (a.esBaja) {
                     tipoLbl = a.bajaEnMesActual ? 'Baja' : 'Baja prev.';
                     tipoBadge = 'background:#9CA3AF;color:white;';
-                  } else if (a.tipo === 'sin_meta') {
-                    tipoLbl = 'Sin meta';
-                    tipoBadge = 'background:#E5E7EB;color:#374151;';
-                  } else if (a.tipo === 'fija_6') {
-                    tipoLbl = 'Nuevo';
-                    tipoBadge = 'background:#DBEAFE;color:#1E40AF;';
                   } else {
-                    tipoLbl = 'Exp';
-                    tipoBadge = 'background:#DCFCE7;color:#15803D;';
+                    tipoLbl = (TIPO_LBL[a.tipo] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : '');
+                    tipoBadge = TIPO_BADGE[a.tipo] || TIPO_BADGE.maduro;
                   }
 
                   // Color del % Mes: en mes en curso usar el % Esperado (justo respecto al avance del mes).
@@ -6293,7 +6329,7 @@ function renderDetalleAgentesConMes(mesKey) {
                   return `<tr style="${colorFila}" ${fechaBajaTooltip}>
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
                     <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: ${a.esBaja ? '#6B7280' : 'var(--att-blue-dark)'}; text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
-                    <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
+                    <td style="text-align:center;"><span title="${a.cambiaNivelA ? 'Cruza a ' + (TIPO_LBL[a.cambiaNivelA] || a.cambiaNivelA) + ' durante este mes' : ''}" style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
                     <td class="num" style="text-align:center;">${a.diasActivos}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinProg, a.nuncaProgramo)}</td>
                     <td class="num" style="text-align:center;">${formatDias(a.diasSinAct, a.nuncaActivo)}</td>
@@ -6938,7 +6974,7 @@ function descargarInactividadExcel(supFiltro) {
           'Supervisor': a.supervisor,
           'Agente': a.ejecutivo,
           'Centro': centroPorAgente[a.ejecutivo] || '',
-          'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+          'Tipo': (TIPO_LBL[a.tipo] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : ''),
           'Días sin activar': dias,
           'Visual días': visual,
           'Última activada': a.ultAct || '— Nunca —',
@@ -6975,7 +7011,7 @@ function descargarInactividadExcel(supFiltro) {
           'Supervisor': a.supervisor,
           'Agente': a.ejecutivo,
           'Centro': centroPorAgente[a.ejecutivo] || '',
-          'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+          'Tipo': (TIPO_LBL[a.tipo] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : ''),
           'Días sin programar': dias,
           'Visual días': visual,
           'Última programada': a.ultProg || '— Nunca —',
@@ -8098,7 +8134,7 @@ function _addSupervisorSheetsToWB(wb, supervisor, prefix, soloDashboard) {
         '#': idx + 1,
         'Agente': a.ejecutivo,
         'Centro': a.centro || (window.__centroPorAgente && window.__centroPorAgente[a.ejecutivo]) || '',
-        'Tipo': a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+        'Tipo': (TIPO_LBL[a.tipo] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : ''),
         'Estatus': estatus,
         'Días act.': a.diasActivos,
         'Sin prog.': a.diasSinProg !== null ? Number(a.diasSinProg.toFixed(1)) : null,
@@ -8432,7 +8468,7 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
       a._supSorted,
       a.ejecutivo,
       a.centro || (window.__centroPorAgente && window.__centroPorAgente[a.ejecutivo]) || '',
-      a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Experimentado',
+      (TIPO_LBL[a.tipo] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : ''),
       estatus,
       a.diasActivos,
       a.diasSinProg !== null && a.diasSinProg !== undefined ? Number(a.diasSinProg.toFixed(1)) : null,
@@ -8576,7 +8612,7 @@ function _addDetalleGeneralUnificado(wb, supervisores, agentesPorSup) {
         if (colName === 'Supervisor' || colName === 'Agente') {
           cellStyle = { ...baseCell, font: { name: 'Calibri', sz: 10, bold: true }, alignment: { horizontal: 'left', vertical: 'center', indent: 1 } };
         } else if (colName === 'Tipo') {
-          const tipoBg = a.tipo === 'fija_6' ? 'DBEAFE' : a.tipo === 'sin_meta' ? 'F3F4F6' : 'D1FAE5';
+          const tipoBg = (a.tipo === 'fija_6' || a.tipo === 'nuevo') ? 'DBEAFE' : (a.tipo === 'fija_10' || a.tipo === 'medio') ? 'FEF3C7' : a.tipo === 'sin_meta' ? 'F3F4F6' : 'D1FAE5';
           cellStyle = { ...baseCell, fill: { fgColor: { rgb: tipoBg } }, font: { name: 'Calibri', sz: 10, bold: true } };
         } else if (colName === 'Estatus') {
           const pctEval = evalPct(a);
@@ -13795,11 +13831,24 @@ function _topRecalcular() {
     agentes = agentes.filter(a => a.supervisor === s);
   }
 
-  // ---- Filtro de tipo (nuevos vs experimentados) ----
+  // ---- Tipo por DÍAS del mes consultado (4 niveles) ----
+  const _refTipo = (mesSel !== null)
+    ? { a: anioSel, m: mesSel }
+    : (() => { const h = new Date(); return { a: h.getFullYear(), m: h.getMonth() + 1 }; })();
+  agentes = agentes.map(a => {
+    const p = plantMap[a.ejecutivo];
+    const ti = (p && p.fecha_ingreso)
+      ? tipoAgenteMes(p.fecha_ingreso, _refTipo.a, _refTipo.m)
+      : { tipo: a.tipo === 'fija_6' ? 'nuevo' : a.tipo === 'fija_10' ? 'medio' : a.tipo === 'calculada' ? 'maduro' : 'sin_meta', cambiaA: null };
+    return { ...a, tipoDias: ti.tipo, cambiaNivelA: ti.cambiaA };
+  });
+
+  // ---- Filtro de tipo (4 niveles) ----
   const tVal = selTipo && selTipo.value ? selTipo.value : 'all';
-  if (tVal === 'nuevo') agentes = agentes.filter(a => a.tipo === 'fija_6');
-  else if (tVal === 'exp') agentes = agentes.filter(a => a.tipo !== 'sin_meta' && a.tipo !== 'fija_6');
-  else if (tVal === 'sinmeta') agentes = agentes.filter(a => a.tipo === 'sin_meta');
+  if (tVal === 'nuevo') agentes = agentes.filter(a => a.tipoDias === 'nuevo');
+  else if (tVal === 'medio') agentes = agentes.filter(a => a.tipoDias === 'medio');
+  else if (tVal === 'maduro') agentes = agentes.filter(a => a.tipoDias === 'maduro');
+  else if (tVal === 'sinmeta') agentes = agentes.filter(a => a.tipoDias === 'sin_meta');
 
   window.__topAgentesData = agentes;
 
@@ -13864,8 +13913,9 @@ function renderTopTabla(criterio) {
   </tr></thead><tbody>`;
 
   top.forEach((a, idx) => {
-    const tipoLbl = a.tipo === 'sin_meta' ? 'Sin meta' : a.tipo === 'fija_6' ? 'Nuevo' : 'Exp';
-    const tipoBadge = a.tipo === 'sin_meta' ? 'background:#E5E7EB;color:#374151;' : a.tipo === 'fija_6' ? 'background:#DBEAFE;color:#1E40AF;' : 'background:#DCFCE7;color:#15803D;';
+    const _t = a.tipoDias || a.tipo;
+    const tipoLbl = (TIPO_LBL[_t] || 'Maduro') + (a.cambiaNivelA ? ' ⬆' : '');
+    const tipoBadge = TIPO_BADGE[_t] || TIPO_BADGE.maduro;
 
     let nivel, nivelColor;
     if (a.activadas >= 20) { nivel = '🌟 Top Performer'; nivelColor = 'var(--att-orange);font-weight:700;'; }
@@ -13881,7 +13931,7 @@ function renderTopTabla(criterio) {
       <td class="num" style="text-align:center; font-weight:700; font-size: ${idx < 3 ? '16px' : '13px'};">${medalEmoji}</td>
       <td><strong>${a.ejecutivo}</strong></td>
       <td style="text-align:center;">${a.supervisor || '—'}</td>
-      <td style="text-align:center;"><span style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
+      <td style="text-align:center;"><span title="${a.cambiaNivelA ? 'Cruza a ' + (TIPO_LBL[a.cambiaNivelA] || a.cambiaNivelA) + ' durante este mes' : ''}" style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
       <td class="num" style="text-align:center;">${a.programadas}</td>
       <td class="num" style="text-align:center; font-weight:700; font-size: 14px;">${a.activadas}</td>
       <td class="num" style="text-align:center; color: var(--red);">${a.canceladas}</td>
@@ -16599,6 +16649,41 @@ function _comEsAgenteNuevo(fechaIngreso, anioMes, mesMes) {
 
 // Calcula la comisión de un agente en un mes específico
 // Devuelve un objeto con todo el desglose
+// =====================================================================
+// ESQUEMA UNIFICADO desde AGOSTO 2026 — 5 brackets por CUOTAS (medios 0.5):
+// 6-11.99 → B1 · 12-15.99 → B2 · 16-19.99 → B3 · 20-24.99 → B4 · 25+ → B5.
+// SIN aceleradores (el monto quedó integrado en la tarifa).
+// DHL agosto: Azul 2/Lite 2 y medios −$25 · Azul 3 en adelante −$50.
+// Julio 2026 y anteriores conservan el esquema previo intacto.
+// =====================================================================
+const COMISION_TARIFAS_AGO = {
+  'ATT AZUL 2':         [75, 125, 175, 200, 250],
+  'ATT LITE 2':         [75, 125, 175, 200, 250],
+  'ATT AZUL 3':         [125, 300, 425, 450, 500],
+  'ATT PLATA':          [150, 350, 475, 500, 550],
+  'ATT ORO':            [175, 400, 550, 575, 625],
+  'ATT BLACK':          [225, 500, 725, 750, 800],
+  'ATT DIAMANTE':       [250, 550, 775, 800, 850],
+  'ATT LITE ILIMITADO': [225, 500, 725, 750, 800],
+  'ATT PLATINO':        [250, 550, 775, 800, 850],
+  'ATT TITANIO':        [100, 250, 325, 350, 400],
+  // Lite 3 = Azul 3 · Lite 4 = Plata · Lite 5 = Oro · Lite ilimitado = Black
+  'ATT LITE 3':         [125, 300, 425, 450, 500],
+  'ATT LITE 4':         [150, 350, 475, 500, 550],
+  'ATT LITE 5':         [175, 400, 550, 575, 625],
+  // Lite 6 ya no existe (sin tarifa en agosto). Lite 7: proporcional entre
+  // Oro y Black en cada bracket (b1 oficial: 200; redondeo a $5)
+  'ATT LITE 7':         [200, 450, 640, 665, 715],
+  // Medios: $50 fijo en todos los brackets (cuota 0.5)
+  'ATT AZUL':           [50, 50, 50, 50, 50],
+  'ATT AZUL 1':         [50, 50, 50, 50, 50],
+  'ATT LITE 1':         [50, 50, 50, 50, 50]
+};
+const _BRACKETS_AGO_LBL = ['6-11', '12-15', '16-19', '20-24', '25+'];
+function _comEsEsquemaAgo(anioMes, mesMes) {
+  return (anioMes > 2026) || (anioMes === 2026 && mesMes >= 8);
+}
+
 function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, mesMes, ventasDelMes) {
   const mesStr = `${anioMes}-${String(mesMes).padStart(2, '0')}`;
   const ventasAgente = ventasDelMes.filter(v => v.ejecutivo === agenteNombre);
@@ -16640,7 +16725,16 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
   let etiquetaNivel = 'Sin nivel';
   let aplicaAcel20 = false;
   let aplicaAcel25 = false;
-  if (esNuevo && cuotasTotales > 0) {
+  const _esqAgo = _comEsEsquemaAgo(anioMes, mesMes);
+  if (_esqAgo) {
+    // Esquema unificado (agosto 2026+): 5 brackets por cuotas
+    if (cuotasTotales >= 25) nivelAlcanzado = 5;
+    else if (cuotasTotales >= 20) nivelAlcanzado = 4;
+    else if (cuotasTotales >= 16) nivelAlcanzado = 3;
+    else if (cuotasTotales >= 12) nivelAlcanzado = 2;
+    else if (cuotasTotales >= 6 || (esNuevo && cuotasTotales > 0)) nivelAlcanzado = 1;
+    if (nivelAlcanzado > 0) etiquetaNivel = `${esNuevo ? 'Nuevo · ' : ''}Bracket ${_BRACKETS_AGO_LBL[nivelAlcanzado - 1]}`;
+  } else if (esNuevo && cuotasTotales > 0) {
     // Agente nuevo (primer mes calendario completo): comisiona desde la cuota 1
     if (cuotasTotales >= 16) { nivelAlcanzado = 3; etiquetaNivel = 'Nuevo · Nivel 3'; }
     else if (cuotasTotales >= 10) { nivelAlcanzado = 2; etiquetaNivel = 'Nuevo · Nivel 2'; }
@@ -16655,9 +16749,10 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
   // Desde JUNIO 2026 hay rangos adicionales que complementan los existentes.
   // Cada rango paga sobre TODAS las cuotas del mes y sustituye al anterior:
   // 12-15 → $50 · 16-19 → $75 · 20-24 → $100 · 25+ → $150
-  const _rangosJunio = (anioMes > 2026) || (anioMes === 2026 && mesMes >= 6);
+  const _rangosJunio = !_esqAgo && ((anioMes > 2026) || (anioMes === 2026 && mesMes >= 6));
   let tarifaAcelerador = 0;
-  if (cuotasTotales >= 25) { aplicaAcel25 = true; tarifaAcelerador = ACELERADOR_25; etiquetaNivel += ' + Acel 25'; }
+  if (_esqAgo) { /* sin aceleradores: integrados en la tarifa del bracket */ }
+  else if (cuotasTotales >= 25) { aplicaAcel25 = true; tarifaAcelerador = ACELERADOR_25; etiquetaNivel += ' + Acel 25'; }
   else if (cuotasTotales >= 20) { aplicaAcel20 = true; tarifaAcelerador = ACELERADOR_20; etiquetaNivel += ' + Acel 20'; }
   else if (_rangosJunio && cuotasTotales >= 16) { tarifaAcelerador = 75; etiquetaNivel += ' + Acel $75'; }
   else if (_rangosJunio && cuotasTotales >= 12) { tarifaAcelerador = 50; etiquetaNivel += ' + Acel $50'; }
@@ -16671,7 +16766,9 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
     Object.entries(cuentaPorPlan).forEach(([planN, count]) => {
       const esquema = COMISION_ESQUEMA_2026[planN];
       if (!esquema || !esquema.comisiona) return;
-      const tarifa = esquema[tarifaKey];
+      const tarifa = _esqAgo
+        ? ((COMISION_TARIFAS_AGO[planN] || [0, 0, 0, 0, 0])[nivelAlcanzado - 1] || 0)
+        : esquema[tarifaKey];
       const subtotal = tarifa * count;
       comisionPlanes += subtotal;
       // Ajuste DHL (todo el año): venta con guía → AZUL 2 −$25, resto −$50.
@@ -16684,7 +16781,13 @@ function _comCalcularAgenteMes(agenteNombre, fechaIngreso, fechaBaja, anioMes, m
         // del bracket → par neto $50 en niveles 1-2 (desc $25 c/u) y par neto
         // $75 en nivel 16+ (desc $12.50 c/u). Resto de planes: −$50.
         let descUnit;
-        if (planN === 'ATT AZUL 2' || planN === 'ATT LITE 2') descUnit = 25;
+        if (_esqAgo) {
+          // Agosto+: medios −$12.50 c/u (el PAR descuenta $25, como un Azul 2) ·
+          // Azul 2/Lite 2 −$25 · Azul 3 en adelante −$50
+          if (esquema.cuota === 0.5) descUnit = 12.5;
+          else if (planN === 'ATT AZUL 2' || planN === 'ATT LITE 2') descUnit = 25;
+          else descUnit = 50;
+        } else if (planN === 'ATT AZUL 2' || planN === 'ATT LITE 2') descUnit = 25;
         else if (esquema.cuota === 0.5) descUnit = (nivelAlcanzado === 3) ? 12.5 : 25;
         else descUnit = 50;
         descuentoDHL = Math.min(descUnit, tarifa) * dhlCount;
@@ -16998,6 +17101,20 @@ const FACTOR_SIN_IVA = 0.837;
 // Planes "familia Azul 2" con descuento DHL de $25 (el resto descuenta $50):
 // AZUL 2 y LITE 2 directo; AZUL / AZUL 1 / LITE 1 porque cada 2 equivalen a un Azul 2.
 const PLANES_DHL_25 = new Set(['ATT AZUL 2', 'ATT LITE 2', 'ATT AZUL', 'ATT AZUL 1', 'ATT LITE 1']);
+// ===== PISOS DEL BONO S2 (editables por dirección, con vigencia por mes) =====
+// Los pisos suben por evaluación bimestral (nunca bajan) hasta sus techos.
+const PISOS_DEFAULT = { piso_nuevo: 6, piso_medio: 8, piso_maduro: 12, umbral_sube2: 85, umbral_sube1: 70, dias_baja_excluye: 15 };
+const PISOS_TECHOS = { nuevo: 8, medio: 12, maduro: 25 };
+function pisosVigentes(anio, mes) {
+  const d1 = `${anio}-${String(mes).padStart(2, '0')}-01`;
+  let vig = null;
+  (pisosConfigData || []).forEach(p => {
+    const vd = String(p.vigente_desde || '').substring(0, 10);
+    if (vd && vd <= d1 && (!vig || vd > String(vig.vigente_desde).substring(0, 10))) vig = p;
+  });
+  return vig || PISOS_DEFAULT;
+}
+
 const SUP_PCT_COMISION = 0.15;   // 15% de la comisión de sus agentes
 const SUP_BONO_PCT = 0.03;       // 3% del monto en rentas sin IVA
 const SUP_BONO_UMBRAL = 103;     // % de meta para destrabar el bono
@@ -17062,30 +17179,62 @@ function _comSupCalcular(anio, mes) {
     const pct = meta > 0 ? (avance / meta * 100) : 0;
     const okMeta = meta > 0 && pct >= SUP_BONO_UMBRAL;
 
-    // Condición del bono por agentes (según meta al inicio del mes):
-    //  - Maduros (meta calculada, 8+): mínimo 8 ventas.
-    //  - Nuevos (meta fija 6): mínimo 6 ventas, SOLO si el interruptor está activo.
-    //  - Sin meta: no afectan.
     const exigirNuevos = _comSupExigirNuevos();
-    const maduros = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta && m.tipo_meta !== 'sin_meta' && m.tipo_meta !== 'fija_6');
-    const nuevos6 = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta === 'fija_6');
-    const madurosDebajo = maduros
-      .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_MADURO }))
-      .filter(x => x.ventas < SUP_BONO_MIN_MADURO);
-    const nuevosDebajo = exigirNuevos
-      ? nuevos6
-          .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_NUEVO }))
-          .filter(x => x.ventas < SUP_BONO_MIN_NUEVO)
-      : [];
-    const incumplidos = [...madurosDebajo, ...nuevosDebajo].sort((a, b) => a.ventas - b.ventas);
-    const okAgentes = incumplidos.length === 0;
+    const _esqAgoSup = _comEsEsquemaAgo(anio, mes);
+    let incumplidos, okAgentes, numMadurosCalc, numNuevosCalc;
+    let factorPisos = null, enPiso = 0, evaluables = 0;
+    let bonoPotencial = 0, bono = 0;
+
+    if (_esqAgoSup) {
+      // ===== S2 (agosto 2026+): BONO DE CUMPLIMIENTO DE PISOS =====
+      // Sustituye al todo-o-nada. Piso por segmento según su meta del mes:
+      // nuevos (meta 6) → 6 · medios (meta 10) → piso 8 · maduros (12+) → 12.
+      // Puertas: logro >= 103% Y factor de pisos >= 60%.
+      // S2 = renta sin IVA del equipo × 3% × factor (enPiso / evaluables).
+      // Sin interruptor: los pisos ya cubren a todos los segmentos con meta.
+      const _pv = pisosVigentes(anio, mes);
+      const _limBaja = `${anio}-${String(mes).padStart(2, '0')}-${String(_pv.dias_baja_excluye || 15).padStart(2, '0')}`;
+      const evalRows = metasAgeMes.filter(m => {
+        if (m.supervisor !== sup || !m.tipo_meta || m.tipo_meta === 'sin_meta') return false;
+        // Excluir bajas ocurridas antes del día N del mes (editable en pisos_config)
+        const pB = plantMap[m.ejecutivo];
+        if (pB && pB.fecha_baja && String(pB.fecha_baja).substring(0, 10) <= _limBaja) return false;
+        return true;
+      });
+      evaluables = evalRows.length;
+      const pisoDe = t => t === 'fija_6' ? (_pv.piso_nuevo || 6) : (t === 'fija_10' ? (_pv.piso_medio || 8) : (_pv.piso_maduro || 12));
+      const detallesPiso = evalRows.map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: pisoDe(m.tipo_meta) }));
+      enPiso = detallesPiso.filter(x => x.ventas >= x.min).length;
+      incumplidos = detallesPiso.filter(x => x.ventas < x.min).sort((a, b) => a.ventas - b.ventas);
+      factorPisos = evaluables > 0 ? enPiso / evaluables : 1;
+      numMadurosCalc = evalRows.filter(m => m.tipo_meta !== 'fija_6').length;
+      numNuevosCalc = evalRows.filter(m => m.tipo_meta === 'fija_6').length;
+      okAgentes = factorPisos >= 0.60;
+      bonoPotencial = montoRentas * SUP_BONO_PCT * factorPisos;
+      bono = (okMeta && okAgentes) ? bonoPotencial : 0;
+    } else {
+      // ===== Esquema ANTERIOR (julio 2026 y antes): todo-o-nada =====
+      const maduros = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta && m.tipo_meta !== 'sin_meta' && m.tipo_meta !== 'fija_6');
+      const nuevos6 = metasAgeMes.filter(m => m.supervisor === sup && m.tipo_meta === 'fija_6');
+      const madurosDebajo = maduros
+        .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_MADURO }))
+        .filter(x => x.ventas < SUP_BONO_MIN_MADURO);
+      const nuevosDebajo = exigirNuevos
+        ? nuevos6
+            .map(m => ({ nombre: m.ejecutivo, ventas: pesoPorAg[m.ejecutivo] || 0, min: SUP_BONO_MIN_NUEVO }))
+            .filter(x => x.ventas < SUP_BONO_MIN_NUEVO)
+        : [];
+      incumplidos = [...madurosDebajo, ...nuevosDebajo].sort((a, b) => a.ventas - b.ventas);
+      okAgentes = incumplidos.length === 0;
+      numMadurosCalc = maduros.length;
+      numNuevosCalc = nuevos6.length;
+      bonoPotencial = montoRentas * SUP_BONO_PCT;
+      bono = (okMeta && okAgentes) ? bonoPotencial : 0;
+    }
 
     // Escalón del 15%: logro >= 100% → completo · 90-99.9% → proporcional
     // al % logrado (ej. 95% de meta → cobra el 95% de su 15%) · < 90% → $0
     const factor15 = pct >= 100 ? 1 : (pct >= 90 ? pct / 100 : 0);
-
-    const bonoPotencial = montoRentas * SUP_BONO_PCT;
-    const bono = (okMeta && okAgentes) ? bonoPotencial : 0;
 
     return {
       sup, numAgentes: agentes.length,
@@ -17097,7 +17246,8 @@ function _comSupCalcular(anio, mes) {
       factor15,
       ajusteDHLTotal, ventasDHL,
       meta, avance, pct, okMeta,
-      numMaduros: maduros.length, numNuevos6: nuevos6.length, incumplidos, okAgentes,
+      numMaduros: numMadurosCalc, numNuevos6: numNuevosCalc, incumplidos, okAgentes,
+      esEsquemaAgo: _esqAgoSup, factorPisos, enPiso, evaluables,
       montoRentas, ventasSinPrecio, bonoPotencial, bono,
       total: comCon * SUP_PCT_COMISION * factor15 + bono
     };
@@ -17129,6 +17279,8 @@ function renderComisionesSupervisores() {
   const anio = parseInt(aStr), mes = parseInt(mStr);
   const filas = _comSupCalcular(anio, mes);
   const esMesEnCurso = sel === hoyMs;
+  const esAgoMes = _comEsEsquemaAgo(anio, mes);
+  const pvMes = pisosVigentes(anio, mes);
 
   const fmt = n => '$' + Math.round(n).toLocaleString('es-MX');
   const nomsMes = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -17147,13 +17299,15 @@ function renderComisionesSupervisores() {
           }).join('')}
         </select>
         ${esMesEnCurso ? '<span style="background:#FEF3C7; color:#92400E; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:700;">⏳ Proyección al corte — el mes sigue corriendo</span>' : ''}
-        <label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text); cursor:pointer; margin-left:auto;">
+        ${esAgoMes ? '' : `<label style="display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:var(--text); cursor:pointer; margin-left:auto;">
           <input type="checkbox" id="com-sup-toggle-nuevos" ${_comSupExigirNuevos() ? 'checked' : ''} style="cursor:pointer;">
           Exigir ${SUP_BONO_MIN_NUEVO} a los nuevos (meta fija 6)
-        </label>
+        </label>`}
       </div>
       <div style="font-size:11.5px; color:var(--text-soft); margin-bottom:14px;">
-        15% de la comisión variable de sus agentes (sin base), escalonado por logro de meta: ≥100% cobra completo · 90-99.9% cobra el % logrado · &lt;90% no cobra · Bono: 3% del monto en rentas sin IVA si avance ≥ ${SUP_BONO_UMBRAL}% Y maduros (meta 8+) con mínimo ${SUP_BONO_MIN_MADURO}${_comSupExigirNuevos() ? ` y nuevos (meta 6) con mínimo ${SUP_BONO_MIN_NUEVO}` : ' (mínimo de nuevos desactivado)'} · Sin meta no afectan · Ajuste DHL incluido (${totDHLVentas} ventas con guía)${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
+        ${esAgoMes
+          ? `Esquema AGOSTO 2026: 15% de la comisión unificada de sus agentes (sin aceleradores, integrados en la tarifa), escalonado por logro: ≥100% completo · 90-99.9% el % logrado · &lt;90% no cobra · <strong>Bono S2 de pisos</strong>: 3% de la renta sin IVA × factor de pisos, con puertas de logro ≥ ${SUP_BONO_UMBRAL}% y factor ≥ 60% · Pisos vigentes: nuevos ${pvMes.piso_nuevo} · medios ${pvMes.piso_medio} · maduros ${pvMes.piso_maduro} · bajas antes del día ${pvMes.dias_baja_excluye || 15} excluidas · DHL: medios −$12.50 c/u (par = $25), Azul 2/Lite 2 −$25, Azul 3+ −$50 (${totDHLVentas} ventas con guía)`
+          : `15% de la comisión variable de sus agentes (sin base), escalonado por logro de meta: ≥100% cobra completo · 90-99.9% cobra el % logrado · &lt;90% no cobra · Bono: 3% del monto en rentas sin IVA si avance ≥ ${SUP_BONO_UMBRAL}% Y maduros (meta 8+) con mínimo ${SUP_BONO_MIN_MADURO}${_comSupExigirNuevos() ? ` y nuevos (meta 6) con mínimo ${SUP_BONO_MIN_NUEVO}` : ' (mínimo de nuevos desactivado)'} · Sin meta no afectan · Ajuste DHL incluido (${totDHLVentas} ventas con guía)`}${totSinPrecio > 0 ? ` · ⚠️ ${totSinPrecio} ventas con plan sin precio configurado quedaron fuera del monto del bono` : ''}
       </div>
       <div style="overflow-x:auto; border:1px solid var(--border); border-radius:8px;">
         <table style="font-size:12px; min-width:1050px; width:100%;">
@@ -17161,12 +17315,17 @@ function renderComisionesSupervisores() {
             <tr>
               <th style="text-align:left;">Supervisor</th>
               <th style="text-align:center;">Agentes</th>
+              ${esAgoMes ? `
+              <th style="text-align:right;">Com. agentes<br><span style="font-weight:400; font-size:10px;">esquema unificado</span></th>
+              <th style="text-align:right;">15%<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>` : `
               <th style="text-align:right;">Com. agentes<br>sin acel</th>
               <th style="text-align:right;">Com. agentes<br>con acel</th>
               <th style="text-align:right;">15% sin acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>
-              <th style="text-align:right;">15% con acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>
+              <th style="text-align:right;">15% con acel<br><span style="font-weight:400; font-size:10px;">escalonado</span></th>`}
               <th style="text-align:center;">Avance vs meta<br>(bono ≥ ${SUP_BONO_UMBRAL}%)</th>
-              <th style="text-align:center;">Agentes al mínimo<br><span style="font-weight:400; font-size:10px;">maduros ≥${SUP_BONO_MIN_MADURO} · nuevos ≥${SUP_BONO_MIN_NUEVO}</span></th>
+              ${esAgoMes
+                ? `<th style="text-align:center;">Factor de pisos<br><span style="font-weight:400; font-size:10px;">bono con factor ≥60% · pisos ${pvMes.piso_nuevo}/${pvMes.piso_medio}/${pvMes.piso_maduro}</span></th>`
+                : `<th style="text-align:center;">Agentes al mínimo<br><span style="font-weight:400; font-size:10px;">maduros ≥${SUP_BONO_MIN_MADURO} · nuevos ≥${SUP_BONO_MIN_NUEVO}</span></th>`}
               <th style="text-align:right;">Monto rentas<br>sin IVA</th>
               <th style="text-align:right;">Bono 3%</th>
               <th style="text-align:right;">TOTAL</th>
@@ -17176,7 +17335,16 @@ function renderComisionesSupervisores() {
 
   filas.forEach(f => {
     const colorPct = f.okMeta ? 'var(--green)' : (f.pct >= 90 ? 'var(--amber)' : 'var(--red)');
-    const condHTML = f.okAgentes
+    const condHTML = f.esEsquemaAgo
+      ? (() => {
+          const pctF = Math.round((f.factorPisos || 0) * 100);
+          const colorF = f.okAgentes ? 'var(--green)' : 'var(--red)';
+          const lista = f.incumplidos.length
+            ? `<div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.incumplidos.slice(0, 3).map(x => `${x.nombre.split(' ')[0]} (${x.ventas}/${x.min})`).join(', ')}${f.incumplidos.length > 3 ? '…' : ''}</div>`
+            : '';
+          return `<span style="color:${colorF}; font-weight:700;" title="${f.incumplidos.map(x => `${x.nombre}: ${x.ventas}/${x.min}`).join(' · ')}">${f.okAgentes ? '✅' : '❌'} ${pctF}% (${f.enPiso}/${f.evaluables})</span>${lista}`;
+        })()
+      : f.okAgentes
       ? `<span style="color:var(--green); font-weight:700;">✅ al corriente</span><div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.numMaduros} mad · ${f.numNuevos6} nvos</div>`
       : `<span style="color:var(--red); font-weight:700;" title="${f.incumplidos.map(x => `${x.nombre}: ${x.ventas}/${x.min}`).join(' · ')}">❌ falta${f.incumplidos.length > 1 ? 'n' : ''} ${f.incumplidos.length}</span>
          <div style="font-size:10px; color:var(--text-soft); margin-top:2px;">${f.incumplidos.slice(0, 3).map(x => `${x.nombre.split(' ')[0]} (${x.ventas}/${x.min})`).join(', ')}${f.incumplidos.length > 3 ? '…' : ''}</div>`;
@@ -17191,10 +17359,13 @@ function renderComisionesSupervisores() {
     html += `<tr>
       <td style="font-weight:700;">${f.sup}</td>
       <td style="text-align:center;">${f.numAgentes}</td>
+      ${esAgoMes ? `
+      <td style="text-align:right;">${fmt(f.comCon)}</td>
+      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}${escalonSub}</td>` : `
       <td style="text-align:right;">${fmt(f.comSin)}</td>
       <td style="text-align:right;">${fmt(f.comCon)}</td>
       <td style="text-align:right;">${fmt(f.sup15sin)}</td>
-      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}${escalonSub}</td>
+      <td style="text-align:right; font-weight:700;">${fmt(f.sup15con)}${escalonSub}</td>`}
       <td style="text-align:center; color:${colorPct}; font-weight:700;">${f.avance.toFixed(1)} / ${f.meta} · ${f.pct.toFixed(1)}%</td>
       <td style="text-align:center;">${condHTML}</td>
       <td style="text-align:right;">${fmt(f.montoRentas)}</td>
@@ -17209,9 +17380,11 @@ function renderComisionesSupervisores() {
   const tTotal = filas.reduce((a, f) => a + f.total, 0);
   html += `<tr style="background:var(--bg); font-weight:800;">
       <td>TOTAL</td>
-      <td></td><td></td><td></td>
+      ${esAgoMes ? `<td></td>
+      <td style="text-align:right;">${fmt(filas.reduce((a, f) => a + f.comCon, 0))}</td>
+      <td style="text-align:right;">${fmt(tCon)}</td>` : `<td></td><td></td><td></td>
       <td style="text-align:right;">${fmt(tSin)}</td>
-      <td style="text-align:right;">${fmt(tCon)}</td>
+      <td style="text-align:right;">${fmt(tCon)}</td>`}
       <td></td><td></td><td></td>
       <td style="text-align:right;">${fmt(tBono)}</td>
       <td style="text-align:right; color:var(--att-navy);">${fmt(tTotal)}</td>
@@ -17220,11 +17393,160 @@ function renderComisionesSupervisores() {
       <div style="font-size:10.5px; color:var(--text-soft); margin-top:8px;">El bono en gris entre paréntesis es el monto potencial si se destraban las condiciones. Cifras sin sueldo base. Nota DHL: AZUL 2 / LITE 2 por DHL quedan en $50 neto en niveles 1-2 y $75 neto en el bracket 16+. El par de medios (AZUL, AZUL 1, LITE 1) por DHL netea como un Azul 2 DHL del bracket: $50 el par en niveles 1-2 y $75 el par en 16+ (ej: 15 Azul 2 + 2 Azul 1 = 16 cuotas → ese par paga $100, o $75 si fue DHL). El resto de planes descuenta −$50 por venta DHL.</div>
     </div>`;
 
+  html += _pisosPanelHTML();
   cont.innerHTML = html;
+  const btnEval = document.getElementById('btn-eval-pisos');
+  if (btnEval) btnEval.onclick = evaluarPisos;
   const selEl = document.getElementById('com-sup-mes');
   if (selEl) selEl.onchange = () => { window.__comSupMes = selEl.value; renderComisionesSupervisores(); };
   const tgl = document.getElementById('com-sup-toggle-nuevos');
   if (tgl) tgl.onchange = () => { localStorage.setItem('com_sup_exigir_nuevos', tgl.checked ? '1' : '0'); renderComisionesSupervisores(); };
+}
+
+// =====================================================================
+// EVALUACIÓN BIMESTRAL DE PISOS (solo director) — regla del trinquete:
+// ≥ umbral2 % del segmento superó su piso → +2 · ≥ umbral1 % → +1 ·
+// debajo → se mantiene. Nunca bajan. Techos: nuevos 8 · medios 12 · maduros 25.
+// =====================================================================
+function _pisosPanelHTML() {
+  if ((window.__accesoModo || 'director') !== 'director') return '';
+  const meses = [];
+  const hoy = new Date();
+  for (let k = 5; k >= 0; k--) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1);
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  const cfg = pisosVigentes(hoy.getFullYear(), hoy.getMonth() + 1);
+  const op = m => `<option value="${m}">${m}</option>`;
+  return `
+    <div style="margin-top:18px; border:1.5px dashed var(--att-orange); border-radius:10px; padding:14px;">
+      <div style="font-weight:800; font-size:14px; color:var(--att-navy); margin-bottom:6px;">⚙️ Evaluación bimestral de pisos <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(solo director · los pisos nunca bajan · techos: nuevos ${PISOS_TECHOS.nuevo} · medios ${PISOS_TECHOS.medio} · maduros ${PISOS_TECHOS.maduro})</span></div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center; font-size:12px;">
+        Periodo: <select id="ep-desde">${meses.slice(0, -1).map(op).join('')}</select> a
+        <select id="ep-hasta">${meses.map(op).join('')}</select>
+        · Sube +2 si ≥ <input id="ep-u2" type="number" value="${cfg.umbral_sube2 || 85}" style="width:52px;"> %
+        · Sube +1 si ≥ <input id="ep-u1" type="number" value="${cfg.umbral_sube1 || 70}" style="width:52px;"> %
+        · Excluir bajas antes del día <input id="ep-nb" type="number" value="${cfg.dias_baja_excluye || 15}" style="width:48px;">
+        <button id="btn-eval-pisos" style="background:var(--att-orange); color:white; border:none; padding:6px 14px; border-radius:6px; font-weight:700; cursor:pointer;">Evaluar</button>
+      </div>
+      <div id="eval-pisos-res" style="margin-top:10px;"></div>
+    </div>`;
+}
+
+function evaluarPisos() {
+  const desde = document.getElementById('ep-desde').value;
+  const hasta = document.getElementById('ep-hasta').value;
+  const u2 = parseFloat(document.getElementById('ep-u2').value) || 85;
+  const u1 = parseFloat(document.getElementById('ep-u1').value) || 70;
+  const nb = parseInt(document.getElementById('ep-nb').value) || 15;
+  const res = document.getElementById('eval-pisos-res');
+  if (hasta < desde) { res.innerHTML = '<span style="color:var(--red);">El periodo está invertido.</span>'; return; }
+
+  const mesesEval = [];
+  let [a, m] = desde.split('-').map(Number);
+  while (`${a}-${String(m).padStart(2, '0')}` <= hasta) {
+    mesesEval.push({ a, m });
+    m++; if (m > 12) { m = 1; a++; }
+    if (mesesEval.length > 6) break;
+  }
+  const avisoPeriodo = (mesesEval.length < 2 || mesesEval.length > 3)
+    ? `<div style="color:var(--amber); font-size:11px; margin-bottom:6px;">⚠️ La evaluación oficial es de 2 o 3 meses (elegiste ${mesesEval.length}).</div>` : '';
+
+  const plantMapE = {};
+  (plantillaData || []).forEach(p => { if (p && p.nombre) plantMapE[p.nombre] = p; });
+  const seg = { nuevo: { obs: 0, ok: 0 }, medio: { obs: 0, ok: 0 }, maduro: { obs: 0, ok: 0 } };
+
+  mesesEval.forEach(({ a: aE, m: mE }) => {
+    const pv = pisosVigentes(aE, mE);
+    const ms = `${aE}-${String(mE).padStart(2, '0')}`;
+    const limBaja = `${ms}-${String(nb).padStart(2, '0')}`;
+    const pesoAg = {};
+    ventasData.forEach(v => {
+      if (v.estatus === 'activada' && v.ejecutivo && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms)) {
+        pesoAg[v.ejecutivo] = (pesoAg[v.ejecutivo] || 0) + (v.peso_venta != null ? v.peso_venta : 1);
+      }
+    });
+    metasAgeData.filter(x => x.anio === aE && x.mes === mE && x.tipo_meta && x.tipo_meta !== 'sin_meta').forEach(x => {
+      const pB = plantMapE[x.ejecutivo];
+      if (pB && pB.fecha_baja && String(pB.fecha_baja).substring(0, 10) <= limBaja) return;
+      const s = x.tipo_meta === 'fija_6' ? 'nuevo' : (x.tipo_meta === 'fija_10' ? 'medio' : 'maduro');
+      const piso = s === 'nuevo' ? (pv.piso_nuevo || 6) : (s === 'medio' ? (pv.piso_medio || 8) : (pv.piso_maduro || 12));
+      seg[s].obs++;
+      if ((pesoAg[x.ejecutivo] || 0) >= piso) seg[s].ok++;
+    });
+  });
+
+  const ult = mesesEval[mesesEval.length - 1];
+  const pvBase = pisosVigentes(ult.a, ult.m);
+  const base = { nuevo: pvBase.piso_nuevo || 6, medio: pvBase.piso_medio || 8, maduro: pvBase.piso_maduro || 12 };
+  const nombres = { nuevo: 'Nuevos', medio: 'Medios', maduro: 'Maduros' };
+  const propuesto = {};
+  let filas = '';
+  ['nuevo', 'medio', 'maduro'].forEach(s => {
+    const d = seg[s];
+    const pct = d.obs > 0 ? d.ok / d.obs * 100 : 0;
+    const delta = pct >= u2 ? 2 : (pct >= u1 ? 1 : 0);
+    propuesto[s] = Math.min(base[s] + delta, PISOS_TECHOS[s]);
+    const sugTxt = delta === 0 ? 'Se mantiene' : (propuesto[s] === base[s] ? 'En techo: se mantiene' : `Sube +${propuesto[s] - base[s]}`);
+    filas += `<tr>
+      <td style="padding:5px 10px; font-weight:700;">${nombres[s]}</td>
+      <td style="padding:5px 10px; text-align:center;">${base[s]}</td>
+      <td style="padding:5px 10px; text-align:center;">${d.obs}</td>
+      <td style="padding:5px 10px; text-align:center;">${d.ok}</td>
+      <td style="padding:5px 10px; text-align:center; font-weight:700; color:${pct >= u1 ? 'var(--green)' : 'var(--red)'};">${pct.toFixed(1)}%</td>
+      <td style="padding:5px 10px; text-align:center;">${sugTxt}</td>
+      <td style="padding:5px 10px; text-align:center;"><input id="ep-nuevo-${s}" type="number" value="${propuesto[s]}" min="${base[s]}" max="${PISOS_TECHOS[s]}" style="width:56px; text-align:center; font-weight:700;"></td>
+    </tr>`;
+  });
+
+  const hoy = new Date();
+  const sig = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1);
+  const vigDefault = `${sig.getFullYear()}-${String(sig.getMonth() + 1).padStart(2, '0')}-01`;
+  res.innerHTML = `${avisoPeriodo}
+    <table style="border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+      <thead><tr style="background:var(--att-navy); color:white;">
+        <th style="padding:6px 10px;">Segmento</th><th style="padding:6px 10px;">Piso actual</th>
+        <th style="padding:6px 10px;">Evaluables<br>(agente·mes)</th><th style="padding:6px 10px;">Superaron</th>
+        <th style="padding:6px 10px;">% logro</th><th style="padding:6px 10px;">Sugerencia</th>
+        <th style="padding:6px 10px;">Piso a aplicar</th>
+      </tr></thead><tbody>${filas}</tbody>
+    </table>
+    <div style="margin-top:10px; font-size:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      Vigente desde: <input id="ep-vigencia" type="date" value="${vigDefault}">
+      <button id="btn-aplicar-pisos" style="background:var(--green, #16A34A); color:white; border:none; padding:7px 16px; border-radius:6px; font-weight:700; cursor:pointer;">💾 Aplicar pisos</button>
+      <span style="color:var(--text-soft); font-size:11px;">Se guarda un registro nuevo con vigencia; los meses ya pagados conservan sus pisos.</span>
+    </div>`;
+  document.getElementById('btn-aplicar-pisos').onclick = () => aplicarPisosNuevos(u2, u1, nb);
+}
+
+async function aplicarPisosNuevos(u2, u1, nb) {
+  const vig = document.getElementById('ep-vigencia').value;
+  const nuevos = {
+    piso_nuevo: parseInt(document.getElementById('ep-nuevo-nuevo').value),
+    piso_medio: parseInt(document.getElementById('ep-nuevo-medio').value),
+    piso_maduro: parseInt(document.getElementById('ep-nuevo-maduro').value)
+  };
+  const [aV, mV] = vig.split('-').map(Number);
+  const actuales = pisosVigentes(aV, mV);
+  if (nuevos.piso_nuevo < (actuales.piso_nuevo || 6) || nuevos.piso_medio < (actuales.piso_medio || 8) || nuevos.piso_maduro < (actuales.piso_maduro || 12)) {
+    alert('Los pisos nunca bajan: hay un valor menor al vigente.');
+    return;
+  }
+  if (nuevos.piso_nuevo > PISOS_TECHOS.nuevo || nuevos.piso_medio > PISOS_TECHOS.medio || nuevos.piso_maduro > PISOS_TECHOS.maduro) {
+    alert(`Techos: nuevos ${PISOS_TECHOS.nuevo} · medios ${PISOS_TECHOS.medio} · maduros ${PISOS_TECHOS.maduro}.`);
+    return;
+  }
+  if (!confirm(`¿Aplicar pisos ${nuevos.piso_nuevo}/${nuevos.piso_medio}/${nuevos.piso_maduro} con vigencia desde ${vig}?`)) return;
+  const { error } = await db.from('pisos_config').insert({
+    vigente_desde: vig,
+    piso_nuevo: nuevos.piso_nuevo, piso_medio: nuevos.piso_medio, piso_maduro: nuevos.piso_maduro,
+    umbral_sube2: u2, umbral_sube1: u1, dias_baja_excluye: nb
+  });
+  if (error) { alert('Error al guardar: ' + error.message); return; }
+  const { data: pisosCfg } = await db.from('pisos_config').select('*').order('vigente_desde', { ascending: true });
+  pisosConfigData = pisosCfg || [];
+  alert('✅ Pisos aplicados. El bono S2 los usará desde su vigencia.');
+  renderComisionesSupervisores();
 }
 
 function renderComisiones() {
