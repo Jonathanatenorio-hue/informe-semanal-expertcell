@@ -5908,9 +5908,19 @@ function renderDetalleAgentesConMes(mesKey) {
     // 2) Supervisor de las activadas (mayoritario)
     // 3) Supervisor de las programadas (mayoritario)
     const plant = plantMap[eje];
-    let supAsignado = plant ? plant.supervisor : null;
-    // Dueño-primero: si su plantilla tiene dueño pero está FUERA de la vista
-    // actual, el agente pertenece a otra vista — no se rescata aquí.
+    // Dueño del MES consultado: la asignación histórica vigente al cierre de
+    // ese mes manda sobre la plantilla actual (que ya trae la estructura nueva).
+    // Así los sin-meta de julio siguen apareciendo con su supervisor de julio.
+    const _finMesDet = `${anioSel}-${String(mesSel).padStart(2, '0')}-${String(new Date(anioSel, mesSel, 0).getDate()).padStart(2, '0')}`;
+    let supAsignado = null;
+    const _histDet = (asignacionesData || []).find(x =>
+      x.ejecutivo === eje && x.fecha_inicio &&
+      String(x.fecha_inicio).substring(0, 10) <= _finMesDet &&
+      (!x.fecha_fin || String(x.fecha_fin).substring(0, 10) >= _finMesDet)
+    );
+    if (_histDet) supAsignado = _histDet.supervisor;
+    else if (plant) supAsignado = plant.supervisor;
+    // Dueño-primero: si el dueño está FUERA de la vista actual, pertenece a otra vista
     if (supAsignado && !SUPERVISORES.includes(supAsignado)) return;
     if (!supAsignado) {
       // Sin plantilla (bajas viejas): buscar supervisor mayoritario en las ventas
@@ -17634,12 +17644,16 @@ function evaluarPisos() {
     m++; if (m > 12) { m = 1; a++; }
     if (mesesEval.length > 6) break;
   }
-  const avisoPeriodo = (mesesEval.length < 2 || mesesEval.length > 3)
-    ? `<div style="color:var(--amber); font-size:11px; margin-bottom:6px;">⚠️ La evaluación oficial es de 2 o 3 meses (elegiste ${mesesEval.length}).</div>` : '';
+  const avisoPeriodo = mesesEval.length > 3
+    ? `<div style="color:var(--amber); font-size:11px; margin-bottom:6px;">⚠️ La evaluación oficial es de 2 o 3 meses (elegiste ${mesesEval.length}).</div>`
+    : (mesesEval.length === 1 ? `<div style="color:var(--text-soft); font-size:11px; margin-bottom:6px;">Vista de un solo mes (la evaluación oficial de subida de pisos es de 2-3 meses).</div>` : '');
 
   const plantMapE = {};
   (plantillaData || []).forEach(p => { if (p && p.nombre) plantMapE[p.nombre] = p; });
   const seg = { nuevo: { obs: 0, ok: 0 }, medio: { obs: 0, ok: 0 }, maduro: { obs: 0, ok: 0 } };
+  const centroDeSup = {};
+  (supConfigData || []).forEach(s => { centroDeSup[s.supervisor] = _accesoNormCentro(s.centro) || s.centro; });
+  const det = [];
 
   mesesEval.forEach(({ a: aE, m: mE }) => {
     const pv = pisosVigentes(aE, mE);
@@ -17651,13 +17665,27 @@ function evaluarPisos() {
         pesoAg[v.ejecutivo] = (pesoAg[v.ejecutivo] || 0) + (v.peso_venta != null ? v.peso_venta : 1);
       }
     });
+    const finMesE = `${ms}-${String(new Date(aE, mE, 0).getDate()).padStart(2, '0')}`;
+    const coordDeSupMes = {};
+    if (ms >= '2026-08') {
+      (coordSupData || []).forEach(cs => {
+        if (cs.fecha_inicio <= finMesE && (!cs.fecha_fin || cs.fecha_fin >= finMesE)) {
+          const cRow = (coordinadoresData || []).find(c2 => c2.id === cs.coordinador_id && !c2.es_centro);
+          if (cRow) coordDeSupMes[cs.supervisor] = cRow.nombre_corto || cRow.nombre;
+        }
+      });
+    }
     metasAgeData.filter(x => x.anio === aE && x.mes === mE && x.tipo_meta && x.tipo_meta !== 'sin_meta').forEach(x => {
       const pB = plantMapE[x.ejecutivo];
       if (pB && pB.fecha_baja && String(pB.fecha_baja).substring(0, 10) <= limBaja) return;
       const s = x.tipo_meta === 'fija_6' ? 'nuevo' : (x.tipo_meta === 'fija_10' ? 'medio' : 'maduro');
       const piso = s === 'nuevo' ? (pv.piso_nuevo || 6) : (s === 'medio' ? (pv.piso_medio || 8) : (pv.piso_maduro || 12));
+      const okP = (pesoAg[x.ejecutivo] || 0) >= piso;
       seg[s].obs++;
-      if ((pesoAg[x.ejecutivo] || 0) >= piso) seg[s].ok++;
+      if (okP) seg[s].ok++;
+      const cnE = centroDeSup[x.supervisor] || '—';
+      det.push({ sup: x.supervisor, seg: s, ok: okP, centro: cnE,
+        coord: ms >= '2026-08' ? (coordDeSupMes[x.supervisor] || 'Sin coordinador') : cnE });
     });
   });
 
@@ -17714,8 +17742,61 @@ function evaluarPisos() {
       <button id="btn-aplicar-pisos" style="background:var(--green, #16A34A); color:white; border:none; padding:7px 16px; border-radius:6px; font-weight:700; cursor:pointer;">💾 Aplicar pisos</button>
       <span style="color:var(--text-soft); font-size:11px;">Se guarda un registro nuevo con vigencia; los meses ya pagados conservan sus pisos.</span>
     </div>`;
+  // ---- Desglose de cumplimiento por supervisor / coordinador / centro ----
+  window.__evalPisosDet = det;
+  window.__evalPisosUmbrales = { u1, u2 };
+  res.insertAdjacentHTML('beforeend', `
+    <div style="margin-top:14px;">
+      <div style="font-weight:700; font-size:13px; margin-bottom:6px;">Desglose de cumplimiento ·
+        <select id="ep-det-modo" style="font-size:12px;">
+          <option value="sup">Por supervisor</option>
+          <option value="coord">Por coordinador</option>
+          <option value="centro">Por centro</option>
+        </select>
+        <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(antes de agosto 2026, coordinador = su centro; el global es la fila GENERAL de arriba)</span>
+      </div>
+      <div id="ep-det-cont"></div>
+    </div>`);
+  document.getElementById('ep-det-modo').onchange = _evalDetRender;
+  _evalDetRender();
+
   const fmNuevo = parseFloat(document.getElementById('ep-fm').value) || 60;
   document.getElementById('btn-aplicar-pisos').onclick = () => aplicarPisosNuevos(u2, u1, nb, fmNuevo);
+}
+
+function _evalDetRender() {
+  const det = window.__evalPisosDet || [];
+  const { u1, u2 } = window.__evalPisosUmbrales || { u1: 70, u2: 85 };
+  const modo = (document.getElementById('ep-det-modo') || {}).value || 'sup';
+  const llave = d => modo === 'sup' ? d.sup : modo === 'coord' ? d.coord : d.centro;
+  const g = {};
+  det.forEach(d => {
+    const k = llave(d) || '—';
+    if (!g[k]) g[k] = { nuevo: { o: 0, c: 0 }, medio: { o: 0, c: 0 }, maduro: { o: 0, c: 0 } };
+    g[k][d.seg].o++;
+    if (d.ok) g[k][d.seg].c++;
+  });
+  const celda = cx => cx.o === 0
+    ? '<td style="text-align:center; padding:5px 8px; color:var(--text-soft);">—</td>'
+    : (() => {
+        const p = cx.c / cx.o * 100;
+        const col = p >= u2 ? 'var(--green)' : p >= u1 ? 'var(--amber, #D97706)' : 'var(--red)';
+        return `<td style="text-align:center; padding:5px 8px;"><span style="font-weight:700; color:${col};">${cx.c}/${cx.o}</span> <span style="font-size:10px; color:var(--text-soft);">(${p.toFixed(0)}%)</span></td>`;
+      })();
+  const filasD = Object.entries(g).sort((a, b) => a[0].localeCompare(b[0])).map(([nom, v]) => {
+    const to = v.nuevo.o + v.medio.o + v.maduro.o;
+    const tc = v.nuevo.c + v.medio.c + v.maduro.c;
+    const tp = to > 0 ? tc / to * 100 : 0;
+    const colT = tp >= u2 ? 'var(--green)' : tp >= u1 ? 'var(--amber, #D97706)' : 'var(--red)';
+    return `<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 8px; font-weight:700;">${nom}</td>${celda(v.nuevo)}${celda(v.medio)}${celda(v.maduro)}<td style="text-align:center; padding:5px 8px; font-weight:800; color:${colT};">${tc}/${to} (${tp.toFixed(0)}%)</td></tr>`;
+  }).join('');
+  const cont = document.getElementById('ep-det-cont');
+  if (cont) cont.innerHTML = `<table style="border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+    <thead><tr style="background:var(--att-navy); color:white;">
+      <th style="padding:6px 8px; text-align:left;">${modo === 'sup' ? 'Supervisor' : modo === 'coord' ? 'Coordinador' : 'Centro'}</th>
+      <th style="padding:6px 8px;">Nuevos<br><span style="font-weight:400; font-size:10px;">en piso / evaluables</span></th>
+      <th style="padding:6px 8px;">Medios</th><th style="padding:6px 8px;">Maduros</th><th style="padding:6px 8px;">Total</th>
+    </tr></thead><tbody>${filasD}</tbody></table>`;
 }
 
 async function aplicarPisosNuevos(u2, u1, nb, fm) {
