@@ -1173,7 +1173,7 @@
     <div class="section collapsible" id="sec-comisiones">
       <div class="section-title">💰 Comisiones simulador</div>
       <div class="section-body">
-        <div class="section-subtitle">Cálculo retroactivo de comisiones de toda la plantilla (activos + bajas) según el esquema comercial 2026. Base $9,400 + comisión por planes según nivel (6-9 / 10-15 / 16+) + aceleradores sobre todas las cuotas del mes: desde junio 12-15 → $50 · 16-19 → $75, y los ya existentes 20-24 → $100 · 25+ → $150. Incluye ajuste DHL de todo el año (venta con guía: AZUL 2 −$25, resto −$50). Abajo: comisiones de supervisores (15% + bono 3%).</div>
+        <div class="section-subtitle">Comisiones de toda la plantilla (activos + bajas), cada mes con el esquema que le corresponde. <strong>Hasta julio 2026:</strong> base $9,400 + niveles 6-9 / 10-15 / 16+ con aceleradores (jun: 12-15 → $50 · 16-19 → $75 · 20-24 → $100 · 25+ → $150) y DHL Azul 2 −$25 / resto −$50. <strong>Desde agosto 2026 (esquema unificado):</strong> 5 brackets por cuotas (6-11 / 12-15 / 16-19 / 20-24 / 25+) con el acelerador integrado en la tarifa, medios a $50 fijo (cuota 0.5), y DHL: medios −$12.50 · Azul 2/Lite 2 −$25 · Azul 3+ −$50. Abajo: supervisores (hasta julio 15% + bono 3% todo-o-nada · desde agosto 15% único escalonado + bono S2 de pisos) y coordinadores (C1 5% + C2 de pisos, sobre renta sin impuestos).</div>
         <div id="comisiones-contenido">
           <div style="padding:24px; text-align:center;">
             <button onclick="renderComisiones()" style="background:#16A34A; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">💰 Calcular comisiones</button>
@@ -5267,6 +5267,11 @@ function renderAvanceUI() {
           <div class="metrica-label">Esperado hoy</div>
           <div class="metrica-valor">${estadoTotal.esperado.toLocaleString()}</div>
           <div class="metrica-sub">proporcional al día</div>
+        </div>
+        <div class="metrica">
+          <div class="metrica-label">Diferencia</div>
+          <div class="metrica-valor" style="color: ${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? '#4ADE80' : '#F87171'};">${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? '+' : ''}${(estadoTotal.avance - estadoTotal.esperado).toLocaleString()}</div>
+          <div class="metrica-sub">${(estadoTotal.avance - estadoTotal.esperado) >= 0 ? 'arriba de lo esperado' : 'debajo de lo esperado'}</div>
         </div>
         <div class="metrica">
           <div class="metrica-label">Ritmo necesario</div>
