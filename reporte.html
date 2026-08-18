@@ -1447,6 +1447,8 @@
             <th class="num" style="color:#86EFAC">Activadas</th>
             <th class="num" style="color:#FCA5A5">Canceladas</th>
             <th class="num" style="color:#FBBF24">Pendientes</th>
+            <th class="num" title="Activadas ÷ Programadas: cuánto de lo levantado esa semana terminó en activación">% Conversión</th>
+            <th class="num" title="De las canceladas de esa semana, cuántas se recuperaron (mismo teléfono con venta activada posterior)">Recup.</th>
             <th class="num">% Cerrado</th>
           </tr>
         </thead>
@@ -11454,14 +11456,34 @@ function renderEstadoSemanas(wActual) {
   const maxW = Math.max(...semanasConDatos);
   const minW = Math.min(...semanasConDatos);
 
+  // Índice teléfono → ventas (para detectar canceladas RECUPERADAS: mismo
+  // teléfono con una venta activada posterior — el criterio de la sección de canceladas)
+  const _ventasPorTel = {};
+  ventasData.forEach(v => {
+    if (!v.telefono) return;
+    if (!_ventasPorTel[v.telefono]) _ventasPorTel[v.telefono] = [];
+    _ventasPorTel[v.telefono].push(v);
+  });
+
   for (let w = minW; w <= maxW; w++) {
     const rango = fechasDeSemana(w);
     const iniStr = rango.inicio.toISOString().split('T')[0];
     const finStr = rango.fin.toISOString().split('T')[0];
     const agg = agregarPorBloqueBO(iniStr, finStr);
     if (agg.totales.prog === 0) continue;
+    // Recuperadas de la cohorte: canceladas de esta semana cuyo teléfono tiene
+    // una venta activada con fecha_bo posterior
+    let recup = 0;
+    ventasData.forEach(r => {
+      if (r.estatus !== 'cancelada' || !r.fecha_bo) return;
+      if (r.fecha_bo < iniStr || r.fecha_bo > finStr) return;
+      if (!r.telefono) return;
+      const otras = _ventasPorTel[r.telefono] || [];
+      const refC = r.fecha_cancelacion || r.fecha_bo;
+      if (otras.some(v => v.folio !== r.folio && v.estatus === 'activada' && v.fecha_bo && v.fecha_bo >= refC)) recup++;
+    });
     semanas.push({
-      w, rango, totales: agg.totales,
+      w, rango, totales: agg.totales, recup,
       pctCerrado: agg.totales.prog > 0 ? ((agg.totales.act + agg.totales.canc) / agg.totales.prog) * 100 : 0
     });
   }
@@ -11519,6 +11541,8 @@ function renderEstadoSemanas(wActual) {
       <td class="num" style="color:var(--green);font-weight:600;">${s.totales.act}</td>
       <td class="num" style="color:var(--red);font-weight:600;">${s.totales.canc}</td>
       <td class="num" style="color:var(--amber);font-weight:600;">${s.totales.pend}</td>
+      <td class="num" style="font-weight:700; color:${(s.totales.prog > 0 ? s.totales.act / s.totales.prog * 100 : 0) >= 90 ? 'var(--green)' : (s.totales.prog > 0 ? s.totales.act / s.totales.prog * 100 : 0) >= 80 ? 'var(--amber)' : 'var(--red)'};">${s.totales.prog > 0 ? (s.totales.act / s.totales.prog * 100).toFixed(1) : '0.0'}%</td>
+      <td class="num" style="color:var(--green);">${s.recup > 0 ? s.recup : '—'}</td>
       <td class="num" style="color:${color};font-weight:700;">${pctCerrado.toFixed(1)}%</td>
     </tr>`;
   }).join('');
