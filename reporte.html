@@ -1163,6 +1163,7 @@
         <div id="logistica-contenido">
           <div style="padding:24px; text-align:center;">
             <button onclick="renderLogistica()" id="btn-cargar-logistica" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📦 Cargar análisis de logística</button>
+            <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; margin-left:10px;">📥 Excel equipos + inventario</button>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
           </div>
         </div>
@@ -15915,6 +15916,247 @@ let _logisticaCentroSel = 'todos'; // 'todos', 'CC2', 'JV'
 let _logisticaSupSel = 'todos'; // nombre del supervisor o 'todos'
 let _logisticaMarcaSel = 'todos'; // marca del equipo o 'todos'
 
+// =====================================================================
+// EXCEL DE EQUIPOS + INVENTARIO (director de inventarios):
+// pivote anual por modelo, cruzado con el inventario HUB del día.
+// =====================================================================
+function _normEquipo(s) {
+  return String(s || '').toUpperCase()
+    .replace(/\bATT\b|\bAT&T\b/g, ' ')
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+async function exportarPivoteEquipos() {
+  try {
+    await _cargarEntregasData().catch(() => null);
+    const { data: inv } = await db.from('inventario_actual').select('*');
+    const inventario = inv || [];
+    const filasLog = _construirDatosLogistica(_entregasCache || []);
+    if (!filasLog.length) { alert('Sin ventas activadas cargadas.'); return; }
+
+    const anioAct = new Date().getFullYear();
+    const mesesConVenta = filasLog
+      .filter(f => String(f.fecha_activacion).startsWith(String(anioAct)))
+      .map(f => parseInt(String(f.fecha_activacion).substring(5, 7)));
+    if (!mesesConVenta.length) { alert('Sin ventas del año en curso.'); return; }
+    const mesMax = Math.max(...mesesConVenta);
+    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    const porEquipo = {};
+    filasLog.forEach(f => {
+      if (!String(f.fecha_activacion).startsWith(String(anioAct))) return;
+      const m = parseInt(String(f.fecha_activacion).substring(5, 7));
+      const key = f.equipo || 'SIM';
+      if (!porEquipo[key]) porEquipo[key] = { marca: f.marca || '—', meses: Array(12).fill(0) };
+      porEquipo[key].meses[m - 1]++;
+    });
+
+    const invPorNorm = {};
+    inventario.forEach(i => {
+      const k = _normEquipo(i.nombre);
+      if (!invPorNorm[k]) invPorNorm[k] = { total: 0, filas: [] };
+      invPorNorm[k].total += Number(i.existencia) || 0;
+      invPorNorm[k].filas.push(i);
+    });
+    const invUsado = new Set();
+    const buscarInv = eqNorm => {
+      if (invPorNorm[eqNorm]) { invUsado.add(eqNorm); return invPorNorm[eqNorm].total; }
+      const toks = eqNorm.split(' ').filter(t => t.length > 1);
+      if (!toks.length) return null;
+      for (const k of Object.keys(invPorNorm)) {
+        if (toks.every(t => k.includes(t))) { invUsado.add(k); return invPorNorm[k].total; }
+      }
+      return null;
+    };
+
+    const filas = Object.entries(porEquipo).map(([equipo, d]) => {
+      const tot = d.meses.reduce((a, b) => a + b, 0);
+      const activos = d.meses.slice(0, mesMax);
+      const ult3 = activos.slice(-3);
+      const ult6 = activos.slice(-6);
+      const prom3 = ult3.length ? ult3.reduce((a, b) => a + b, 0) / ult3.length : 0;
+      const prom6 = ult6.length ? ult6.reduce((a, b) => a + b, 0) / ult6.length : 0;
+      const media = activos.length ? tot / activos.length : 0;
+      const mejor = Math.max(...activos, 0);
+      const mejorMes = MESES_L[activos.indexOf(mejor)] || '—';
+      const multi = media > 0 ? mejor / media : 0;
+      const invT = equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo));
+      const cobertura = (invT != null && prom3 > 0) ? invT / prom3 : null;
+      const pedido = (invT != null) ? Math.max(0, Math.ceil(prom3 * 1.3 - invT)) : null;
+      const ultimo = activos[activos.length - 1] || 0;
+      const tendencia = prom3 > 0 ? (ultimo / prom3 - 1) * 100 : 0;
+      return { equipo, marca: d.marca, meses: activos, tot, prom3, prom6, media, mejor, mejorMes, multi, invT, cobertura, pedido, tendencia };
+    }).sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
+
+    const wb = XLSX.utils.book_new();
+    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, mesMax), 'Total', 'Inventario', 'Cobertura (meses)', 'Prom 3m', 'Prom 6m', 'Media', 'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %', 'Pedido sugerido (1.3×prom3 − inv)'];
+    const aoa = [H];
+    filas.forEach(f => aoa.push([
+      f.marca, f.equipo, ...f.meses, f.tot,
+      f.invT == null ? '' : f.invT,
+      f.cobertura == null ? '' : Number(f.cobertura.toFixed(2)),
+      Number(f.prom3.toFixed(1)), Number(f.prom6.toFixed(1)), Number(f.media.toFixed(1)),
+      f.mejorMes, f.mejor, Number(f.multi.toFixed(2)), Number(f.tendencia.toFixed(1)),
+      f.pedido == null ? '' : f.pedido
+    ]));
+    const ws1 = XLSX.utils.aoa_to_sheet(aoa);
+    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(mesMax).fill({ wch: 6 }), { wch: 7 }, { wch: 10 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 7 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
+
+    const aoa2 = [['Nombre', 'Almacén', 'Existencia', 'Categoría', 'Corte']];
+    inventario.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
+      .forEach(i => aoa2.push([i.nombre, i.almacen, Number(i.existencia) || 0, i.categoria, i.fecha_corte]));
+    const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+    ws2['!cols'] = [{ wch: 42 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 11 }];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Inventario por almacen');
+
+    const aoa3 = [['Nombre en inventario', 'Existencia total', 'Nota']];
+    Object.entries(invPorNorm).forEach(([k, v]) => {
+      if (!invUsado.has(k)) aoa3.push([v.filas[0].nombre, v.total, 'Sin venta cruzada este año (o nombre distinto al del backoffice)']);
+    });
+    const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
+    ws3['!cols'] = [{ wch: 42 }, { wch: 14 }, { wch: 50 }];
+    XLSX.utils.book_append_sheet(wb, ws3, 'Inventario sin cruzar');
+
+    XLSX.writeFile(wb, `equipos_inventario_${anioAct}.xlsx`);
+  } catch (e) {
+    console.error('[PivoteEquipos]', e);
+    alert('Error al generar: ' + (e.message || e));
+  }
+}
+
+// ===== TRÁNSITO POR ETAPA + ALARMA "ENTREGADO SIN VENTA" + DURACIONES =====
+function _transitoPorEtapaHTML() {
+  const abiertos = (ventasData || []).filter(r => r && ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.fecha_bo);
+  if (!abiertos.length) return '';
+  const entMap = {};
+  (_entregasCache || []).forEach(e => { if (e && e.folio) entMap[String(e.folio)] = e; });
+  const hoy = new Date();
+  const coordDe = {};
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStr && (!cs.fecha_fin || cs.fecha_fin >= hoyStr)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre_corto || c.nombre;
+    }
+  });
+  const ETAPAS = ['Solicitado', 'En preparacion', 'Back Office', 'En entrega', 'Entregado'];
+  const normEt = e => {
+    const t = String(e || '').trim().toLowerCase();
+    if (t.startsWith('solicit')) return 'Solicitado';
+    if (t.startsWith('en prep') || t.startsWith('prepar')) return 'En preparacion';
+    if (t.includes('back')) return 'Back Office';
+    if (t.startsWith('en entrega') || t.startsWith('entrega ') || t === 'en entrega') return 'En entrega';
+    if (t.startsWith('entregado')) return 'Entregado';
+    return 'Back Office';
+  };
+  const porSup = {};
+  const criticos = [];
+  abiertos.forEach(r => {
+    const sup = r.supervisor || '—';
+    if (!porSup[sup]) porSup[sup] = { coord: coordDe[sup] || '—', centro: r.centro || '—', et: { 'Solicitado': 0, 'En preparacion': 0, 'Back Office': 0, 'En entrega': 0, 'Entregado': 0 }, total: 0, m8: 0, m57: 0, sinVenta: 0 };
+    const det = entMap[String(r.folio)];
+    const et = det ? normEt(det.estatus_entrega) : 'Back Office';
+    const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
+    const p = porSup[sup];
+    p.et[et]++; p.total++;
+    if (dias >= 8) p.m8++; else if (dias >= 5) p.m57++;
+    if (et === 'Entregado') { p.sinVenta++; criticos.push({ sup, eje: r.ejecutivo, folio: r.folio, dias, plaza: det ? (det.plaza || '') : '' }); }
+  });
+  criticos.sort((a, b) => b.dias - a.dias);
+  window.__transitoCriticos = criticos;
+  const filas = Object.entries(porSup).sort((a, b) => b[1].total - a[1].total).map(([s, p]) => `<tr>
+    <td style="padding:5px 8px; font-weight:700;">${s}</td>
+    <td style="padding:5px 8px; font-size:11px;">${p.coord}</td>
+    <td style="padding:5px 8px; text-align:center;">${p.centro}</td>
+    ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${p.et[e] || '—'}</td>`).join('')}
+    <td style="text-align:center; padding:5px 8px; font-weight:800;">${p.total}</td>
+    <td style="text-align:center; padding:5px 8px; font-weight:700; color:${p.sinVenta > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.sinVenta || '—'}</td>
+    <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
+    <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
+  </tr>`).join('');
+  const totSinVenta = criticos.length;
+  const alarma = totSinVenta > 0 ? `
+    <div style="background:#FEF2F2; border:1.5px solid #DC2626; border-radius:10px; padding:12px 16px; margin-bottom:12px; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:22px;">🚨</span>
+      <div>
+        <div style="font-weight:800; color:#B91C1C;">${totSinVenta} equipos ENTREGADOS SIN VENTA ACTIVADA</div>
+        <div style="font-size:12px; color:#7F1D1D;">Equipo ya en manos del cliente sin activación — el más añejo lleva ${criticos[0].dias} días. Lista completa en el Excel de tránsito.</div>
+      </div>
+    </div>` : '';
+  return `
+    <div style="margin-bottom:24px;">
+      <div style="font-weight:800; font-size:15px; color:var(--att-navy); margin-bottom:8px;">🚚 Tránsito por etapa <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(corte de hoy · ${abiertos.length} folios abiertos)</span>
+        <button onclick="exportarTransitoEtapas()" style="background:#0077A8; color:white; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-left:10px;">📥 Excel tránsito</button>
+      </div>
+      ${alarma}
+      <div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+        <thead><tr style="background:var(--att-navy); color:white;">
+          <th style="padding:6px 8px; text-align:left;">Supervisor</th><th style="padding:6px 8px; text-align:left;">Coordinador</th><th style="padding:6px 8px;">Centro</th>
+          ${ETAPAS.map(e => `<th style="padding:6px 8px;">${e}</th>`).join('')}
+          <th style="padding:6px 8px;">Total</th><th style="padding:6px 8px;">Entregado<br>sin venta</th><th style="padding:6px 8px;">8+ días</th><th style="padding:6px 8px;">5-7 días</th>
+        </tr></thead><tbody>${filas}</tbody>
+      </table></div>
+      <div id="duracion-etapas" style="margin-top:14px;"></div>
+    </div>`;
+}
+
+async function _renderDuracionEtapas() {
+  const cont = document.getElementById('duracion-etapas');
+  if (!cont) return;
+  try {
+    const { data } = await db.from('etapas_folio').select('folio, etapa, fecha_deteccion').order('fecha_deteccion', { ascending: true });
+    const regs = data || [];
+    if (regs.length === 0) {
+      cont.innerHTML = '<div style="font-size:12px; color:var(--text-soft);">⏱️ Duración por etapa: sin registros aún — se nutre con cada carga diaria del archivo de detalle (curva confiable tras 2-3 semanas).</div>';
+      return;
+    }
+    const porFolio = {};
+    regs.forEach(r => { if (!porFolio[r.folio]) porFolio[r.folio] = []; porFolio[r.folio].push(r); });
+    const dur = {};
+    Object.values(porFolio).forEach(arr => {
+      arr.sort((a, b) => String(a.fecha_deteccion).localeCompare(String(b.fecha_deteccion)));
+      for (let i = 0; i < arr.length - 1; i++) {
+        const d = Math.floor((new Date(arr[i + 1].fecha_deteccion) - new Date(arr[i].fecha_deteccion)) / 86400000);
+        if (d < 0 || d > 90) continue;
+        if (!dur[arr[i].etapa]) dur[arr[i].etapa] = { suma: 0, n: 0 };
+        dur[arr[i].etapa].suma += d; dur[arr[i].etapa].n++;
+      }
+    });
+    const desde = String(regs[0].fecha_deteccion).substring(0, 10);
+    const items = Object.entries(dur).filter(([, v]) => v.n > 0).map(([e, v]) => `<strong>${e}</strong>: ${(v.suma / v.n).toFixed(1)} días (${v.n} transiciones)`);
+    cont.innerHTML = `<div style="font-size:12px; color:var(--text);">⏱️ <strong>Duración promedio por etapa</strong> <span style="color:var(--text-soft);">(midiendo desde ${desde}; entre más días de cargas, más precisa)</span>: ${items.length ? items.join(' · ') : 'aún sin transiciones registradas — se nutre con las cargas diarias'}</div>`;
+  } catch (e) {
+    cont.innerHTML = '<div style="font-size:12px; color:var(--text-soft);">⏱️ Duración por etapa: corre el SQL de la tabla etapas_folio para activar la medición.</div>';
+  }
+}
+
+function exportarTransitoEtapas() {
+  const abiertos = (ventasData || []).filter(r => r && ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.fecha_bo);
+  const entMap = {};
+  (_entregasCache || []).forEach(e => { if (e && e.folio) entMap[String(e.folio)] = e; });
+  const hoy = new Date();
+  const wb = XLSX.utils.book_new();
+  const aoa = [['Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Días', 'Etapa', 'Plaza', 'Centro']];
+  abiertos.sort((a, b) => String(a.fecha_bo).localeCompare(String(b.fecha_bo))).forEach(r => {
+    const det = entMap[String(r.folio)] || {};
+    const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
+    aoa.push([r.supervisor, r.ejecutivo, det.cliente || '', r.telefono || '', r.folio, String(r.fecha_bo).substring(0, 10), dias, det.estatus_entrega || 'Back Office', det.plaza || '', r.centro || '']);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 14 }, { wch: 7 }, { wch: 7 }];
+  XLSX.utils.book_append_sheet(wb, ws, 'Transito detalle');
+  const cr = window.__transitoCriticos || [];
+  const aoa2 = [['Supervisor', 'Ejecutivo', 'Folio', 'Días', 'Plaza', 'Revisar']];
+  cr.forEach(c => aoa2.push([c.sup, c.eje, c.folio, c.dias, c.plaza, 'Equipo YA entregado sin venta activada']));
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  ws2['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 12 }, { wch: 6 }, { wch: 7 }, { wch: 36 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Entregado sin venta');
+  const h = new Date();
+  XLSX.writeFile(wb, `transito_etapas_${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}.xlsx`);
+}
+
 async function renderLogistica() {
   const cont = document.getElementById('logistica-contenido');
   if (!cont) return;
@@ -16005,8 +16247,9 @@ function _construirDatosLogistica(entregasRaw) {
       municipio: det ? det.municipio : null,
       cp: det ? det.cp : null,
       pago_inicial: det ? det.pago_inicial : null,
-      equipo: det ? det.equipo : null,
-      marca: det ? det.marca : null,
+      // Venta sin renglón de entrega = SIM (no requiere envío de equipo)
+      equipo: det ? det.equipo : 'SIM',
+      marca: det ? det.marca : 'SIM',
       modelo: det ? det.modelo : null,
       subregion: det ? det.subregion : null,
       region: det ? det.region : null,
@@ -16018,6 +16261,13 @@ function _construirDatosLogistica(entregasRaw) {
 }
 
 function _renderLogisticaUI(cont, data) {
+  _renderLogisticaUIBase(cont, data);
+  // Tránsito por etapa + alarma de entregados sin venta + duraciones —
+  // antepuesto en cada render (los filtros re-renderizan la sección completa)
+  cont.insertAdjacentHTML('afterbegin', _transitoPorEtapaHTML());
+  _renderDuracionEtapas();
+}
+function _renderLogisticaUIBase(cont, data) {
   // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
   const mesesUnicos = [...new Set(data.filter(d => d.fecha_activacion).map(d => String(d.fecha_activacion).substring(0, 7)))].sort().reverse();
   // Centros y supervisores únicos en los datos
