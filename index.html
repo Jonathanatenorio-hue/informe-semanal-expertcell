@@ -219,6 +219,12 @@
         <div class="drop-zone-filename" id="name-ent"></div>
         <input type="file" accept=".xlsx,.xls" id="file-ent">
       </div>
+      <div class="drop-zone" id="zone-hub" style="border-color:#7C3AED;">
+        <div class="drop-zone-label">🏬 Inventario HUB <span style="font-size:10px; color:var(--text-soft); font-weight:400;">(independiente: carga al soltar)</span></div>
+        <div class="drop-zone-hint">Arrastra el Excel del HUB (Artículo, Nombre, Almacén, Existencia)</div>
+        <div class="drop-zone-filename" id="name-hub"></div>
+        <input type="file" accept=".xlsx,.xls" id="file-hub">
+      </div>
     </div>
     <div class="actions">
       <button id="btn-procesar" disabled>Procesar y validar</button>
@@ -1362,6 +1368,51 @@ async function generarSnapshotDelDia() {
     .upsert(snapshots, { onConflict: 'fecha_snapshot,supervisor,mes_reporte,anio_reporte' });
   if (upsertErr) throw upsertErr;
 }
+
+// ===== INVENTARIO HUB: se procesa al soltar, reemplazo completo del día =====
+async function cargarInventarioHub(file) {
+  try {
+    document.getElementById('name-hub').textContent = file.name;
+    log(`[HUB] Leyendo ${file.name}...`, 'info');
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { cellDates: true, cellNF: false, cellText: false });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: null, raw: true });
+    const items = rows.map(r => ({
+      codigo: r['Código Proveedor'] || r['Codigo Proveedor'] || r['Artículo'] || r['Articulo'] || null,
+      nombre: r['Nombre'] ? String(r['Nombre']).trim() : null,
+      almacen: r['Almacén'] || r['Almacen'] || null,
+      categoria: r['Categoría'] || r['Categoria'] || null,
+      existencia: parseFloat(r['Existencia']) || 0,
+      fecha_corte: (() => { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`; })()
+    })).filter(x => x.nombre);
+    if (items.length === 0) { log('[HUB] El archivo no trae renglones con Nombre. Revisa el formato.', 'error'); return; }
+    log(`[HUB] ${items.length} renglones de inventario. Reemplazando foto anterior...`, 'info');
+    const { error: eDel } = await db.from('inventario_actual').delete().gte('id', 0);
+    if (eDel) { log('[HUB] Error al limpiar: ' + eDel.message, 'error'); return; }
+    for (let i = 0; i < items.length; i += 500) {
+      const { error } = await db.from('inventario_actual').insert(items.slice(i, i + 500));
+      if (error) { log('[HUB] Error al insertar: ' + error.message, 'error'); return; }
+    }
+    const piezas = items.reduce((a, x) => a + x.existencia, 0);
+    log(`[HUB] ✅ Inventario cargado: ${items.length} renglones · ${piezas.toLocaleString()} piezas · corte de hoy`, 'ok');
+  } catch (e) {
+    log('[HUB] Error: ' + (e.message || e), 'error');
+  }
+}
+(function () {
+  const zona = document.getElementById('zone-hub');
+  const inp = document.getElementById('file-hub');
+  if (!zona || !inp) return;
+  zona.addEventListener('click', () => inp.click());
+  zona.addEventListener('dragover', e => { e.preventDefault(); zona.classList.add('dragover'); });
+  zona.addEventListener('dragleave', () => zona.classList.remove('dragover'));
+  zona.addEventListener('drop', e => {
+    e.preventDefault();
+    zona.classList.remove('dragover');
+    if (e.dataTransfer.files.length) cargarInventarioHub(e.dataTransfer.files[0]);
+  });
+  inp.addEventListener('change', () => { if (inp.files.length) cargarInventarioHub(inp.files[0]); });
+})();
 
 setupDropZone('zone-bo', 'file-bo', 'bo');
 setupDropZone('zone-act', 'file-act', 'act');
