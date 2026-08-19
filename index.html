@@ -843,7 +843,7 @@ async function procesar() {
         supervisor_act: supervisorAct || null,
         supervisor_can: supervisorCan || null,
         fecha_bo: fechaBO,
-        etapa_entrega: r['Estatus'] ? String(r['Estatus']).trim() : null,
+        etapa_entrega: estatusBO ? String(estatusBO).trim() : null,
         fecha_activacion: actInfo ? actInfo.fecha : null,
         hora_activacion: actInfo ? actInfo.hora : null,
         // Solo guardamos fecha_cancelacion si la cancelación NO fue superada por una reactivación
