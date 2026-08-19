@@ -1123,6 +1123,30 @@ async function cargarASupabase() {
           log(`Entregas: ${entInsertadas}/${totalEnt}`, 'info');
         }
         log(`Entregas cargadas: ${entInsertadas}`, 'ok');
+
+        // ===== Registro de ETAPAS por folio (primera vez visto en cada etapa) =====
+        // Alimenta la medición de cuánto dura una venta en cada etapa: en cada
+        // carga se registra la fecha en que un folio apareció en una etapa nueva.
+        try {
+          const hoyE = (() => { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`; })();
+          const vistos = new Set();
+          const etapasRows = [];
+          state.registrosEntregas.forEach(r => {
+            if (!r.folio || !r.estatus_entrega) return;
+            const k = `${r.folio}||${r.estatus_entrega}`;
+            if (vistos.has(k)) return;
+            vistos.add(k);
+            etapasRows.push({ folio: String(r.folio), etapa: String(r.estatus_entrega).trim(), fecha_deteccion: hoyE });
+          });
+          let regEt = 0;
+          for (let i = 0; i < etapasRows.length; i += 500) {
+            const { error: eEt } = await db.from('etapas_folio')
+              .upsert(etapasRows.slice(i, i + 500), { onConflict: 'folio,etapa', ignoreDuplicates: true });
+            if (eEt) { log(`⚠️ Etapas: ${eEt.message}`, 'warn'); break; }
+            regEt += 500;
+          }
+          log(`Etapas de entrega registradas (${etapasRows.length} folios·etapa evaluados)`, 'ok');
+        } catch (eE) { log('⚠️ Etapas: ' + (eE.message || eE), 'warn'); }
       }
     }
 
