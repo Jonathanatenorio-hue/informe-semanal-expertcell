@@ -1106,6 +1106,7 @@
 
       <div id="avance-tarjeta-principal"></div>
 
+      <div id="transito-etapa-slot"></div>
       <div style="font-weight: 600; font-size: 15px; margin: 24px 0 12px; color: var(--att-navy);">Estatus por supervisor</div>
       <div id="avance-semaforo-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;"></div>
 
@@ -4613,6 +4614,12 @@ function renderAvanceMensual(wActual) {
   }
 }
 
+function _montarTransitoEnDetalle() {
+  const slot = document.getElementById('transito-etapa-slot');
+  if (!slot) return;
+  slot.innerHTML = _transitoPorEtapaHTML();
+  _renderDuracionEtapas();
+}
 function _renderAvanceMensualImpl(wActual) {
   const rangoSem = fechasDeSemana(wActual);
   const ahora = new Date();
@@ -5200,6 +5207,8 @@ function _renderAvanceMensualImpl(wActual) {
       subEl.insertAdjacentHTML('afterend', h);
     });
   }
+
+  try { _montarTransitoEnDetalle(); } catch (e) { console.warn('[Transito]', e); }
 
   window.__avanceData = { estadoTotal, supervisoresData, diasTranscurridos, diasRestantes, diasHabilesTotales, diasUltSemana, mesNombre, anio, mes, fechaCorteStr, iniMesStr, wActual };
 
@@ -16057,7 +16066,7 @@ function _transitoPorEtapaHTML() {
     const sup = r.supervisor || '—';
     if (!porSup[sup]) porSup[sup] = { coord: coordDe[sup] || '—', centro: r.centro || '—', et: { 'Solicitado': 0, 'En preparacion': 0, 'Back Office': 0, 'En entrega': 0, 'Entregado': 0 }, total: 0, m8: 0, m57: 0, sinVenta: 0 };
     const det = entMap[String(r.folio)];
-    const et = det ? normEt(det.estatus_entrega) : 'Back Office';
+    const et = normEt(r.etapa_entrega || (det && det.estatus_entrega) || 'Back Office');
     const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
     const p = porSup[sup];
     p.et[et]++; p.total++;
@@ -16270,7 +16279,7 @@ function exportarTransitoEtapas() {
   const detalleRows = abiertos.map(r => {
     const det = entMap[String(r.folio)] || {};
     const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
-    const etTxt = det.estatus_entrega || 'Back Office';
+    const etTxt = r.etapa_entrega || det.estatus_entrega || 'Back Office';
     const sem = dias >= 8 ? 'CRITICO - 8+ dias' : dias >= 5 ? 'ALERTA - 5 a 7 dias' : 'OK - flujo normal';
     return {
       coord: coordDeS[r.supervisor || '—'] || '—', sup: r.supervisor || '—', eje: r.ejecutivo || '',
@@ -16308,6 +16317,33 @@ function exportarTransitoEtapas() {
   const w5 = XLSX.utils.aoa_to_sheet(a5);
   w5['!cols'] = [{ wch: 22 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 7 }, { wch: 7 }];
   XLSX.utils.book_append_sheet(wb, w5, `Detalle ${total}`);
+
+  // ---- Formato: títulos, encabezados navy y semáforos en color ----
+  const estilo = (ws, hdrRow, nCols, colorCol) => {
+    const rango = XLSX.utils.decode_range(ws['!ref']);
+    const celda = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+    if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '002B5C' } } };
+    if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', italic: true, sz: 10, color: { rgb: '64748B' } } };
+    for (let c = 0; c < nCols; c++) {
+      const h = celda(hdrRow, c);
+      if (h) h.s = { fill: { fgColor: { rgb: '002B5C' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+    }
+    if (colorCol != null) {
+      for (let r = hdrRow + 1; r <= rango.e.r; r++) {
+        const x = celda(r, colorCol);
+        if (!x) continue;
+        const t = String(x.v || '');
+        const rgb = (t.startsWith('CRITICO') || t.includes('YA entregado') || t.startsWith('8+')) ? 'DC2626'
+          : t.startsWith('ALERTA') ? 'D97706' : '16A34A';
+        x.s = { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb } } };
+      }
+    }
+  };
+  estilo(w1, 3, 12, null);
+  estilo(w2, 3, 13, null);
+  estilo(w3, 3, 4, 3);
+  estilo(w4, 3, 11, 10);
+  estilo(w5, 3, 12, 9);
 
   XLSX.writeFile(wb, `analisis_transito_${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}.xlsx`);
 }
@@ -16417,10 +16453,6 @@ function _construirDatosLogistica(entregasRaw) {
 
 function _renderLogisticaUI(cont, data) {
   _renderLogisticaUIBase(cont, data);
-  // Tránsito por etapa + alarma de entregados sin venta + duraciones —
-  // antepuesto en cada render (los filtros re-renderizan la sección completa)
-  cont.insertAdjacentHTML('afterbegin', _transitoPorEtapaHTML());
-  _renderDuracionEtapas();
 }
 function _renderLogisticaUIBase(cont, data) {
   // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
