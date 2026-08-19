@@ -16066,6 +16066,50 @@ function _transitoPorEtapaHTML() {
   });
   criticos.sort((a, b) => b.dias - a.dias);
   window.__transitoCriticos = criticos;
+
+  // Rollup por COORDINADOR y ANTIGÜEDAD (mismas lecturas que el análisis oficial)
+  const porCoord = {};
+  Object.entries(porSup).forEach(([s, p]) => {
+    const k = p.coord || '—';
+    if (!porCoord[k]) porCoord[k] = { centro: p.centro, et: { 'Solicitado': 0, 'En preparacion': 0, 'Back Office': 0, 'En entrega': 0, 'Entregado': 0 }, total: 0, m8: 0, m57: 0, sinVenta: 0 };
+    const c = porCoord[k];
+    ETAPAS.forEach(e => c.et[e] += p.et[e]);
+    c.total += p.total; c.m8 += p.m8; c.m57 += p.m57; c.sinVenta += p.sinVenta;
+  });
+  const rangosDef = [
+    ['1 a 2 días', d => d <= 2, 'Flujo normal'],
+    ['3 a 4 días', d => d >= 3 && d <= 4, 'Dentro de rango'],
+    ['5 a 7 días', d => d >= 5 && d <= 7, 'Alerta: seguimiento hoy'],
+    ['8 a 14 días', d => d >= 8 && d <= 14, 'Crítico: rescatar ya'],
+    ['15+ días', d => d >= 15, 'Muy crítico: riesgo de pérdida']
+  ];
+  const diasDeAll = abiertos.map(r => Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000));
+  window.__transitoRangos = rangosDef.map(([lbl, fn, lect]) => {
+    const n = diasDeAll.filter(fn).length;
+    return { lbl, n, pct: abiertos.length ? n / abiertos.length * 100 : 0, lect };
+  });
+  window.__transitoPorCoord = porCoord;
+  window.__transitoPorSup = porSup;
+  window.__transitoAbiertos = abiertos.length;
+
+  const filasCoord = Object.entries(porCoord).sort((a, b) => b[1].total - a[1].total).map(([k, p]) => `<tr>
+    <td style="padding:5px 8px; font-weight:700;">${k}</td>
+    <td style="padding:5px 8px; text-align:center;">${p.centro}</td>
+    ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${p.et[e] || '—'}</td>`).join('')}
+    <td style="text-align:center; padding:5px 8px; font-weight:800;">${p.total}</td>
+    <td style="text-align:center; padding:5px 8px; font-weight:700; color:${p.sinVenta > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.sinVenta || '—'}</td>
+    <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
+    <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
+    <td style="text-align:center; padding:5px 8px;">${(p.total / abiertos.length * 100).toFixed(1)}%</td>
+  </tr>`).join('');
+
+  const filasRangos = window.__transitoRangos.map(r => `<tr>
+    <td style="padding:5px 8px; font-weight:700;">${r.lbl}</td>
+    <td style="text-align:center; padding:5px 8px;">${r.n}</td>
+    <td style="text-align:center; padding:5px 8px;">${r.pct.toFixed(1)}%</td>
+    <td style="padding:5px 8px; font-size:11px; color:${r.lbl.startsWith('8') || r.lbl.startsWith('15') ? 'var(--red)' : r.lbl.startsWith('5') ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${r.lect}</td>
+  </tr>`).join('');
+
   const filas = Object.entries(porSup).sort((a, b) => b[1].total - a[1].total).map(([s, p]) => `<tr>
     <td style="padding:5px 8px; font-weight:700;">${s}</td>
     <td style="padding:5px 8px; font-size:11px;">${p.coord}</td>
@@ -16091,6 +16135,24 @@ function _transitoPorEtapaHTML() {
         <button onclick="exportarTransitoEtapas()" style="background:#0077A8; color:white; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-left:10px;">📥 Excel tránsito</button>
       </div>
       ${alarma}
+      <div style="font-weight:700; font-size:13px; margin:6px 0;">Por coordinador</div>
+      <div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+        <thead><tr style="background:var(--att-navy); color:white;">
+          <th style="padding:6px 8px; text-align:left;">Coordinador</th><th style="padding:6px 8px;">Centro</th>
+          ${ETAPAS.map(e => `<th style="padding:6px 8px;">${e}</th>`).join('')}
+          <th style="padding:6px 8px;">Total</th><th style="padding:6px 8px;">Entregado<br>sin venta</th><th style="padding:6px 8px;">8+ días</th><th style="padding:6px 8px;">5-7 días</th><th style="padding:6px 8px;">% del total</th>
+        </tr></thead><tbody>${filasCoord}</tbody>
+      </table></div>
+      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; margin-top:12px;">
+        <div>
+          <div style="font-weight:700; font-size:13px; margin-bottom:6px;">Antigüedad del tránsito <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(días desde fecha BO)</span></div>
+          <table style="border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
+            <thead><tr style="background:var(--att-navy); color:white;"><th style="padding:6px 8px;">Rango</th><th style="padding:6px 8px;">Folios</th><th style="padding:6px 8px;">% del total</th><th style="padding:6px 8px; text-align:left;">Lectura</th></tr></thead>
+            <tbody>${filasRangos}</tbody>
+          </table>
+        </div>
+      </div>
+      <div style="font-weight:700; font-size:13px; margin:14px 0 6px;">Por supervisor <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(ordenado por volumen)</span></div>
       <div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
         <thead><tr style="background:var(--att-navy); color:white;">
           <th style="padding:6px 8px; text-align:left;">Supervisor</th><th style="padding:6px 8px; text-align:left;">Coordinador</th><th style="padding:6px 8px;">Centro</th>
@@ -16133,28 +16195,121 @@ async function _renderDuracionEtapas() {
 }
 
 function exportarTransitoEtapas() {
+  // Réplica del análisis oficial de tránsito: 5 hojas con el mismo formato
   const abiertos = (ventasData || []).filter(r => r && ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.fecha_bo);
+  if (!abiertos.length) { alert('Sin folios abiertos.'); return; }
   const entMap = {};
   (_entregasCache || []).forEach(e => { if (e && e.folio) entMap[String(e.folio)] = e; });
   const hoy = new Date();
+  const MES_N = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const corteStr = `${hoy.getDate()}-${MES_N[hoy.getMonth()]}-${hoy.getFullYear()}`;
+  const porCoord = window.__transitoPorCoord || {};
+  const porSup = window.__transitoPorSup || {};
+  const rangos = window.__transitoRangos || [];
+  const criticos = window.__transitoCriticos || [];
+  const ETAPAS = ['Solicitado', 'En preparacion', 'Back Office', 'En entrega', 'Entregado'];
+  const total = abiertos.length;
   const wb = XLSX.utils.book_new();
-  const aoa = [['Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Días', 'Etapa', 'Plaza', 'Centro']];
-  abiertos.sort((a, b) => String(a.fecha_bo).localeCompare(String(b.fecha_bo))).forEach(r => {
+
+  // ---- Hoja 1: Por coordinador ----
+  const a1 = [
+    ['VENTAS EN TRANSITO POR COORDINADOR'],
+    [`Corte ${corteStr} | ${total} folios abiertos`],
+    [],
+    ['Coordinador', 'Centro', ...ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', '5-7 dias', '% del total']
+  ];
+  Object.entries(porCoord).sort((x, y) => y[1].total - x[1].total).forEach(([k, p]) => {
+    a1.push([k, p.centro, ...ETAPAS.map(e => p.et[e] || 0), p.total, p.sinVenta, p.m8, p.m57, Number((p.total / total).toFixed(4))]);
+  });
+  a1.push(['TOTAL', '', ...ETAPAS.map(e => Object.values(porCoord).reduce((s, p) => s + (p.et[e] || 0), 0)),
+    total, criticos.length,
+    Object.values(porCoord).reduce((s, p) => s + p.m8, 0),
+    Object.values(porCoord).reduce((s, p) => s + p.m57, 0), 1]);
+  const w1 = XLSX.utils.aoa_to_sheet(a1);
+  w1['!cols'] = [{ wch: 22 }, { wch: 8 }, ...ETAPAS.map(() => ({ wch: 13 })), { wch: 7 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 11 }];
+  XLSX.utils.book_append_sheet(wb, w1, '1. Por coordinador');
+
+  // ---- Hoja 2: Por supervisor ----
+  const a2 = [
+    ['VENTAS EN TRANSITO POR SUPERVISOR'],
+    ['Ordenado de mayor a menor volumen'],
+    [],
+    ['Supervisor', 'Coordinador', 'Centro', ...ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', '5-7 dias', 'Dias prom.']
+  ];
+  const diasPorSup = {};
+  abiertos.forEach(r => {
+    const s = r.supervisor || '—';
+    const d = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
+    if (!diasPorSup[s]) diasPorSup[s] = [];
+    diasPorSup[s].push(d);
+  });
+  Object.entries(porSup).sort((x, y) => y[1].total - x[1].total).forEach(([s, p]) => {
+    const ds = diasPorSup[s] || [];
+    const prom = ds.length ? ds.reduce((a, b) => a + b, 0) / ds.length : 0;
+    a2.push([s, p.coord, p.centro, ...ETAPAS.map(e => p.et[e] || 0), p.total, p.sinVenta, p.m8, p.m57, Number(prom.toFixed(2))]);
+  });
+  const w2 = XLSX.utils.aoa_to_sheet(a2);
+  w2['!cols'] = [{ wch: 30 }, { wch: 22 }, { wch: 8 }, ...ETAPAS.map(() => ({ wch: 13 })), { wch: 7 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 10 }];
+  XLSX.utils.book_append_sheet(wb, w2, '2. Por supervisor');
+
+  // ---- Hoja 3: Antigüedad ----
+  const a3 = [
+    ['ANTIGUEDAD DEL TRANSITO'],
+    ['Dias naturales transcurridos desde la fecha BO'],
+    [],
+    ['Rango', 'Folios', '% del total', 'Lectura']
+  ];
+  rangos.forEach(r => a3.push([r.lbl, r.n, Number((r.pct / 100).toFixed(4)), r.lect]));
+  const w3 = XLSX.utils.aoa_to_sheet(a3);
+  w3['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 11 }, { wch: 30 }];
+  XLSX.utils.book_append_sheet(wb, w3, '3. Antiguedad');
+
+  // ---- Preparar detalle común ----
+  const coordDeS = {};
+  Object.entries(porSup).forEach(([s, p]) => { coordDeS[s] = p.coord; });
+  const detalleRows = abiertos.map(r => {
     const det = entMap[String(r.folio)] || {};
     const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
-    aoa.push([r.supervisor, r.ejecutivo, det.cliente || '', r.telefono || '', r.folio, String(r.fecha_bo).substring(0, 10), dias, det.estatus_entrega || 'Back Office', det.plaza || '', r.centro || '']);
+    const etTxt = det.estatus_entrega || 'Back Office';
+    const sem = dias >= 8 ? 'CRITICO - 8+ dias' : dias >= 5 ? 'ALERTA - 5 a 7 dias' : 'OK - flujo normal';
+    return {
+      coord: coordDeS[r.supervisor || '—'] || '—', sup: r.supervisor || '—', eje: r.ejecutivo || '',
+      cliente: det.cliente || '', tel: r.telefono || '', folio: r.folio,
+      fbo: String(r.fecha_bo).substring(0, 10), dias, etapa: etTxt, plaza: det.plaza || '', centro: r.centro || ''
+    };
   });
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 14 }, { wch: 7 }, { wch: 7 }];
-  XLSX.utils.book_append_sheet(wb, ws, 'Transito detalle');
-  const cr = window.__transitoCriticos || [];
-  const aoa2 = [['Supervisor', 'Ejecutivo', 'Folio', 'Días', 'Plaza', 'Revisar']];
-  cr.forEach(c => aoa2.push([c.sup, c.eje, c.folio, c.dias, c.plaza, 'Equipo YA entregado sin venta activada']));
-  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
-  ws2['!cols'] = [{ wch: 24 }, { wch: 28 }, { wch: 12 }, { wch: 6 }, { wch: 7 }, { wch: 36 }];
-  XLSX.utils.book_append_sheet(wb, ws2, 'Entregado sin venta');
-  const h = new Date();
-  XLSX.writeFile(wb, `transito_etapas_${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}.xlsx`);
+
+  // ---- Hoja 4: Críticos (entregados sin venta y/o 8+ días) ----
+  const crit = detalleRows.filter(d => String(d.etapa).toLowerCase().startsWith('entregado') || d.dias >= 8)
+    .sort((a, b) => b.dias - a.dias);
+  const a4 = [
+    ['CASOS CRITICOS - REVISION UNO A UNO'],
+    [`${crit.length} folios: entregados sin venta activada y/o 8+ dias en transito`],
+    [],
+    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Plaza', 'Que revisar']
+  ];
+  crit.forEach(d => a4.push([d.coord, d.sup, d.eje, d.cliente, d.tel, d.folio, d.fbo, d.dias, d.etapa, d.plaza,
+    String(d.etapa).toLowerCase().startsWith('entregado') ? 'Equipo YA entregado sin venta activada' : '8+ dias en transito: rastrear con logistica']));
+  const w4 = XLSX.utils.aoa_to_sheet(a4);
+  w4['!cols'] = [{ wch: 22 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 14 }, { wch: 7 }, { wch: 38 }];
+  XLSX.utils.book_append_sheet(wb, w4, '4. Criticos');
+
+  // ---- Hoja 5: Detalle completo ----
+  const a5 = [
+    ['DETALLE DE VENTAS EN TRANSITO'],
+    [`Corte al ${hoy.getDate()} de ${['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][hoy.getMonth()]} de ${hoy.getFullYear()}`],
+    [],
+    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Semaforo', 'Centro', 'Plaza']
+  ];
+  detalleRows.sort((a, b) => b.dias - a.dias).forEach(d => {
+    const sem = d.dias >= 8 ? 'CRITICO - 8+ dias' : d.dias >= 5 ? 'ALERTA - 5 a 7 dias' : 'OK - flujo normal';
+    a5.push([d.coord, d.sup, d.eje, d.cliente, d.tel, d.folio, d.fbo, d.dias, d.etapa, sem, d.centro, d.plaza]);
+  });
+  const w5 = XLSX.utils.aoa_to_sheet(a5);
+  w5['!cols'] = [{ wch: 22 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 14 }, { wch: 18 }, { wch: 7 }, { wch: 7 }];
+  XLSX.utils.book_append_sheet(wb, w5, `Detalle ${total}`);
+
+  XLSX.writeFile(wb, `analisis_transito_${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}.xlsx`);
 }
 
 async function renderLogistica() {
