@@ -843,6 +843,7 @@ async function procesar() {
         supervisor_act: supervisorAct || null,
         supervisor_can: supervisorCan || null,
         fecha_bo: fechaBO,
+        etapa_entrega: r['Estatus'] ? String(r['Estatus']).trim() : null,
         fecha_activacion: actInfo ? actInfo.fecha : null,
         hora_activacion: actInfo ? actInfo.hora : null,
         // Solo guardamos fecha_cancelacion si la cancelación NO fue superada por una reactivación
@@ -1131,12 +1132,12 @@ async function cargarASupabase() {
           const hoyE = (() => { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}-${String(h.getDate()).padStart(2, '0')}`; })();
           const vistos = new Set();
           const etapasRows = [];
-          state.registrosEntregas.forEach(r => {
-            if (!r.folio || !r.estatus_entrega) return;
-            const k = `${r.folio}||${r.estatus_entrega}`;
+          (state.registros || []).forEach(r => {
+            if (!r.folio || !r.etapa_entrega) return;
+            const k = `${r.folio}||${r.etapa_entrega}`;
             if (vistos.has(k)) return;
             vistos.add(k);
-            etapasRows.push({ folio: String(r.folio), etapa: String(r.estatus_entrega).trim(), fecha_deteccion: hoyE });
+            etapasRows.push({ folio: String(r.folio), etapa: String(r.etapa_entrega).trim(), fecha_deteccion: hoyE });
           });
           let regEt = 0;
           for (let i = 0; i < etapasRows.length; i += 500) {
