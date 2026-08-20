@@ -2312,7 +2312,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, ejecutivo, supervisor, supervisor_act, supervisor_can, fecha_bo, fecha_activacion, hora_activacion, fecha_cancelacion, estatus, telefono, precio, centro, renta_sin_impuestos, plan')
+      .select('folio, ejecutivo, supervisor, supervisor_act, supervisor_can, fecha_bo, fecha_activacion, hora_activacion, fecha_cancelacion, estatus, telefono, precio, centro, renta_sin_impuestos, plan, etapa_entrega')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
