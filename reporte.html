@@ -1117,6 +1117,11 @@
                 title="Descarga la tabla maestra tal como se ve, en Excel.">
           📊 Excel maestra
         </button>
+        <button id="btn-excel-leads"
+                style="background:#7C3AED; color:white; border:none; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px;"
+                title="Lista en Excel de los agentes marcados 🎯 en la campaña de leads, con su supervisor y coordinador.">
+          🎯 Excel campaña leads
+        </button>
         <button id="btn-toggle-transito"
                 style="background:#fff; border:1.5px solid var(--border); padding:6px 12px; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; color:var(--text); display:flex; align-items:center; gap:6px;"
                 title="Las columnas Tránsito y Gap potencial muestran datos no garantizados. Útil ocultarlas al compartir capturas con el equipo.">
@@ -2426,6 +2431,12 @@ async function cargarDatos() {
 
   const { data: pisosCfg } = await db.from('pisos_config').select('*').order('vigente_desde', { ascending: true });
   pisosConfigData = pisosCfg || [];
+
+  try {
+    const { data: leadsRows } = await db.from('campania_leads').select('ejecutivo, marcado_desde');
+    window.__leadsSet = new Set((leadsRows || []).map(x => x.ejecutivo));
+    window.__leadsFechas = Object.fromEntries((leadsRows || []).map(x => [x.ejecutivo, x.marcado_desde]));
+  } catch (e) { window.__leadsSet = new Set(); window.__leadsFechas = {}; }
 
   // Prefetch de entregas para el ajuste DHL (detalle por agente y comisiones)
   Promise.resolve().then(() => _cargarEntregasData()).catch(() => null).then(() => {
@@ -4619,6 +4630,71 @@ function renderAvanceMensual(wActual) {
   }
 }
 
+// ===== CAMPAÑA DE LEADS: insignia 🎯, toggle (solo director) y export =====
+async function toggleCampaniaLead(btn) {
+  if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede editar la campaña.'); return; }
+  const nombre = decodeURIComponent(btn.getAttribute('data-lead'));
+  const marcado = window.__leadsSet.has(nombre);
+  try {
+    if (marcado) {
+      const { error } = await db.from('campania_leads').delete().eq('ejecutivo', nombre);
+      if (error) throw error;
+      window.__leadsSet.delete(nombre);
+    } else {
+      const { error } = await db.from('campania_leads').insert({ ejecutivo: nombre });
+      if (error) throw error;
+      window.__leadsSet.add(nombre);
+      window.__leadsFechas[nombre] = new Date().toISOString().substring(0, 10);
+    }
+    document.querySelectorAll(`.lead-badge[data-lead="${btn.getAttribute('data-lead')}"]`).forEach(el => {
+      el.style.display = window.__leadsSet.has(nombre) ? 'inline' : 'none';
+    });
+    document.querySelectorAll(`.lead-toggle[data-lead="${btn.getAttribute('data-lead')}"]`).forEach(el => {
+      el.textContent = window.__leadsSet.has(nombre) ? '➖' : '➕';
+    });
+  } catch (e) {
+    alert('Error al guardar (¿corriste el SQL de campania_leads?): ' + (e.message || e));
+  }
+}
+
+function exportarCampaniaLeads() {
+  const set = window.__leadsSet || new Set();
+  if (set.size === 0) { alert('No hay agentes marcados en la campaña de leads.'); return; }
+  const plantMapL = {};
+  (plantillaData || []).forEach(p => { if (p && p.nombre) plantMapL[p.nombre] = p; });
+  const hoy = new Date();
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  const coordDeL = {};
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStr && (!cs.fecha_fin || cs.fecha_fin >= hoyStr)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDeL[cs.supervisor] = c.nombre || c.nombre_corto;
+    }
+  });
+  const filas = [...set].map(n => {
+    const p = plantMapL[n] || {};
+    return { n, sup: p.supervisor || '—', coord: coordDeL[p.supervisor] || '—',
+      centro: p.centro || '—', desde: (window.__leadsFechas || {})[n] || '',
+      baja: p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : '' };
+  }).sort((a, b) => (a.coord + a.sup + a.n).localeCompare(b.coord + b.sup + b.n));
+  const aoa = [
+    ['AGENTES EN CAMPAÑA DE LEADS'],
+    [`Corte ${hoyStr} | ${filas.length} agentes marcados`],
+    [],
+    ['Ejecutivo', 'Supervisor', 'Coordinador', 'Centro', 'En campaña desde', 'Baja']];
+  filas.forEach(f => aoa.push([f.n, f.sup, f.coord, f.centro, f.desde, f.baja]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 36 }, { wch: 26 }, { wch: 24 }, { wch: 8 }, { wch: 15 }, { wch: 11 }];
+  const NAVY = '1F3864';
+  const celdaL = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+  if (celdaL(0, 0)) celdaL(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+  if (celdaL(1, 0)) celdaL(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+  for (let c = 0; c < 6; c++) { const h = celdaL(3, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+  const wbL = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbL, ws, 'Campania leads');
+  XLSX.writeFile(wbL, `campania_leads_${hoyStr}.xlsx`);
+}
+
 function _montarTransitoEnDetalle() {
   const slot = document.getElementById('transito-etapa-slot');
   if (!slot) return;
@@ -5535,6 +5611,9 @@ function renderAvanceUI() {
     };
   })();
 
+  const btnLeadsW = document.getElementById('btn-excel-leads');
+  if (btnLeadsW) btnLeadsW.onclick = exportarCampaniaLeads;
+
   // Wire del botón "Excel maestra"
   (function wireDescargarMaestra() {
     const btnM = document.getElementById('btn-descargar-maestra');
@@ -6382,7 +6461,7 @@ function renderDetalleAgentesConMes(mesKey) {
 
                   return `<tr style="${colorFila}" ${fechaBajaTooltip}>
                     <td class="num" style="text-align:center; color:var(--text-soft); font-weight:600;">${idx + 1}</td>
-                    <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: ${a.esBaja ? '#6B7280' : 'var(--att-blue-dark)'}; text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a></td>
+                    <td><a href="javascript:void(0)" class="link-agente" data-agente="${a.ejecutivo}" data-supervisor="${s.sup}" style="color: ${a.esBaja ? '#6B7280' : 'var(--att-blue-dark)'}; text-decoration: none; font-weight: 600; cursor: pointer;">${a.ejecutivo}</a><span class="lead-badge" data-lead="${encodeURIComponent(a.ejecutivo)}" title="En campaña de leads" style="display:${(window.__leadsSet && window.__leadsSet.has(a.ejecutivo)) ? 'inline' : 'none'}; margin-left:4px;">🎯</span>${(window.__accesoModo || 'director') === 'director' ? `<button class="lead-toggle" data-lead="${encodeURIComponent(a.ejecutivo)}" onclick="toggleCampaniaLead(this)" title="Marcar/desmarcar campaña de leads (solo director)" style="border:none; background:transparent; cursor:pointer; font-size:10px; opacity:.55; margin-left:2px;">${(window.__leadsSet && window.__leadsSet.has(a.ejecutivo)) ? '➖' : '➕'}</button>` : ''}</td>
                     <td style="text-align:center;"><span title="${a.cambiaNivelA ? 'Cruza a ' + (TIPO_LBL[a.cambiaNivelA] || a.cambiaNivelA) + ' durante este mes' : ''}" style="padding:2px 8px; border-radius:4px; font-size:10px; font-weight:700; ${tipoBadge}">${tipoLbl}</span></td>
                     <td class="num" style="text-align:center; font-weight:700;">${a.comMes == null ? '—' : '$' + Math.round(a.comMes).toLocaleString('es-MX')}</td>
                     <td style="text-align:center; font-size:10px;">${a.bracketLbl || '—'}</td>
