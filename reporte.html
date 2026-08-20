@@ -4660,6 +4660,11 @@ async function toggleCampaniaLead(btn) {
 function exportarCampaniaLeads() {
   const set = window.__leadsSet || new Set();
   if (set.size === 0) { alert('No hay agentes marcados en la campaña de leads.'); return; }
+  const dd = window.__detalleAgentesData;
+  const porNombre = {};
+  if (dd && dd.agentesPorSup) {
+    Object.values(dd.agentesPorSup).forEach(lista => lista.forEach(a => { porNombre[a.ejecutivo] = a; }));
+  }
   const plantMapL = {};
   (plantillaData || []).forEach(p => { if (p && p.nombre) plantMapL[p.nombre] = p; });
   const hoy = new Date();
@@ -4671,27 +4676,74 @@ function exportarCampaniaLeads() {
       if (c) coordDeL[cs.supervisor] = c.nombre || c.nombre_corto;
     }
   });
+  const NAVY = '1F3864', RIESGO = 'F8CBAD', BIEN = 'E2EFDA';
+  const estilizaL = (ws, nCols, fillsFn) => {
+    const rango = XLSX.utils.decode_range(ws['!ref']);
+    const celdaL = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+    if (celdaL(0, 0)) celdaL(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+    if (celdaL(1, 0)) celdaL(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+    for (let c = 0; c < nCols; c++) { const h = celdaL(3, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+    for (let r = 4; r <= rango.e.r; r++) {
+      const fill = fillsFn ? fillsFn(r - 4) : null;
+      for (let c = 0; c < nCols; c++) {
+        const x = celdaL(r, c);
+        if (!x) continue;
+        const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
+        if (fill) s.fill = { fgColor: { rgb: fill } };
+        x.s = s;
+      }
+    }
+  };
+
+  // ---- Hoja 1: agentes EN campaña, con semáforo de riesgo de rotación ----
   const filas = [...set].map(n => {
     const p = plantMapL[n] || {};
-    return { n, sup: p.supervisor || '—', coord: coordDeL[p.supervisor] || '—',
-      centro: p.centro || '—', desde: (window.__leadsFechas || {})[n] || '',
-      baja: p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : '' };
+    const a = porNombre[n];
+    const meta = a ? (a.meta || 0) : 0;
+    const av = a ? (a.activadas != null ? a.activadas : (a.avance || 0)) : 0;
+    const esp = a && a.esperadoHoy != null ? a.esperadoHoy : null;
+    const enRiesgo = meta > 0 && esp != null && av < esp;
+    return { n, sup: p.supervisor || '—', coord: coordDeL[p.supervisor] || '—', centro: p.centro || '—',
+      desde: (window.__leadsFechas || {})[n] || '', baja: p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : '',
+      meta, av, esp, dif: esp != null ? av - esp : null,
+      estatus: p.fecha_baja ? 'BAJA' : (meta <= 0 || esp == null ? 'SIN META' : (enRiesgo ? 'EN RIESGO DE ROTACION' : 'EN META')), enRiesgo };
   }).sort((a, b) => (a.coord + a.sup + a.n).localeCompare(b.coord + b.sup + b.n));
-  const aoa = [
+  const a1 = [
     ['AGENTES EN CAMPAÑA DE LEADS'],
-    [`Corte ${hoyStr} | ${filas.length} agentes marcados`],
+    [`Corte ${hoyStr} | ${filas.length} marcados | ${filas.filter(f => f.enRiesgo).length} en riesgo de rotación (debajo de su esperado al día)`],
     [],
-    ['Ejecutivo', 'Supervisor', 'Coordinador', 'Centro', 'En campaña desde', 'Baja']];
-  filas.forEach(f => aoa.push([f.n, f.sup, f.coord, f.centro, f.desde, f.baja]));
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 36 }, { wch: 26 }, { wch: 24 }, { wch: 8 }, { wch: 15 }, { wch: 11 }];
-  const NAVY = '1F3864';
-  const celdaL = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
-  if (celdaL(0, 0)) celdaL(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
-  if (celdaL(1, 0)) celdaL(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-  for (let c = 0; c < 6; c++) { const h = celdaL(3, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+    ['Ejecutivo', 'Supervisor', 'Coordinador', 'Centro', 'En campaña desde', 'Meta', 'Activadas', 'Esperado hoy', 'Dif.', 'Estatus', 'Baja']];
+  filas.forEach(f => a1.push([f.n, f.sup, f.coord, f.centro, f.desde, f.meta || '', f.av, f.esp == null ? '' : f.esp, f.dif == null ? '' : f.dif, f.estatus, f.baja]));
+  const ws = XLSX.utils.aoa_to_sheet(a1);
+  ws['!cols'] = [{ wch: 36 }, { wch: 26 }, { wch: 24 }, { wch: 8 }, { wch: 15 }, { wch: 6 }, { wch: 9 }, { wch: 12 }, { wch: 6 }, { wch: 24 }, { wch: 11 }];
+  estilizaL(ws, 11, i => { const f = filas[i]; return f ? (f.enRiesgo ? RIESGO : (f.estatus === 'EN META' ? BIEN : null)) : null; });
   const wbL = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbL, ws, 'Campania leads');
+
+  // ---- Hoja 2: sugerencias de nuevos ingresos al programa ----
+  // Criterio: NO están en campaña, activos, con meta, y van AL DÍA o arriba de
+  // su esperado — gente con ritmo probado que aprovecharía los leads.
+  const candidatos = Object.values(porNombre).filter(a =>
+    a && !set.has(a.ejecutivo) && !a.esBaja && (a.meta || 0) > 0 && a.esperadoHoy != null &&
+    (a.activadas != null ? a.activadas : (a.avance || 0)) >= a.esperadoHoy
+  ).map(a => {
+    const p = plantMapL[a.ejecutivo] || {};
+    const av = a.activadas != null ? a.activadas : (a.avance || 0);
+    return { n: a.ejecutivo, sup: p.supervisor || '—', coord: coordDeL[p.supervisor] || '—', centro: p.centro || '—',
+      tipo: (typeof TIPO_LBL !== 'undefined' && TIPO_LBL[a.tipo]) || a.tipo || '', meta: a.meta, av, esp: a.esperadoHoy,
+      pctEsp: a.esperadoHoy > 0 ? av / a.esperadoHoy * 100 : 100 };
+  }).sort((x, y) => y.pctEsp - x.pctEsp || y.av - x.av);
+  const a2 = [
+    ['SUGERENCIAS DE NUEVOS INGRESOS AL PROGRAMA'],
+    [`Corte ${hoyStr} | ${candidatos.length} candidatos: activos, con meta, al día o arriba de su esperado — ordenados por % vs esperado`],
+    [],
+    ['#', 'Ejecutivo', 'Supervisor', 'Coordinador', 'Centro', 'Tipo', 'Meta', 'Activadas', 'Esperado hoy', '% vs esperado']];
+  candidatos.forEach((f, i) => a2.push([i + 1, f.n, f.sup, f.coord, f.centro, f.tipo, f.meta, f.av, f.esp, Number(f.pctEsp.toFixed(0))]));
+  const ws2 = XLSX.utils.aoa_to_sheet(a2);
+  ws2['!cols'] = [{ wch: 4 }, { wch: 36 }, { wch: 26 }, { wch: 24 }, { wch: 8 }, { wch: 9 }, { wch: 6 }, { wch: 9 }, { wch: 12 }, { wch: 13 }];
+  estilizaL(ws2, 10, i => i < 5 ? BIEN : null);
+  XLSX.utils.book_append_sheet(wbL, ws2, 'Sugerencias ingreso');
+
   XLSX.writeFile(wbL, `campania_leads_${hoyStr}.xlsx`);
 }
 
