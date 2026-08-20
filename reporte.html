@@ -16005,7 +16005,12 @@ async function exportarPivoteEquipos() {
 
     const wb = XLSX.utils.book_new();
     const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, mesMax), 'Total', 'Inventario', 'Cobertura (meses)', 'Prom 3m', 'Prom 6m', 'Media', 'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %', 'Pedido sugerido (1.3×prom3 − inv)'];
-    const aoa = [H];
+    const hoyF = new Date();
+    const aoa = [
+      ['EQUIPOS E INVENTARIO — DEMANDA Y STOCK'],
+      [`Ventas activadas ${anioAct} por modelo | Inventario HUB del último corte | Generado el ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
+      [],
+      H];
     filas.forEach(f => aoa.push([
       f.marca, f.equipo, ...f.meses, f.tot,
       f.invT == null ? '' : f.invT,
@@ -16014,8 +16019,42 @@ async function exportarPivoteEquipos() {
       f.mejorMes, f.mejor, Number(f.multi.toFixed(2)), Number(f.tendencia.toFixed(1)),
       f.pedido == null ? '' : f.pedido
     ]));
+    // Fila TOTAL del pivote
+    const nColsP = H.length;
+    const totalRow = ['TOTAL', ''];
+    for (let m = 0; m < mesMax; m++) totalRow.push(filas.reduce((a, f) => a + (f.meses[m] || 0), 0));
+    totalRow.push(filas.reduce((a, f) => a + f.tot, 0));
+    totalRow.push(filas.reduce((a, f) => a + (f.invT || 0), 0));
+    while (totalRow.length < nColsP) totalRow.push('');
+    aoa.push(totalRow);
+
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
     ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(mesMax).fill({ wch: 6 }), { wch: 7 }, { wch: 10 }, { wch: 15 }, { wch: 8 }, { wch: 8 }, { wch: 7 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }];
+    // Formato ejecutivo: título, encabezados navy, cobertura crítica resaltada
+    (() => {
+      const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA';
+      const rango = XLSX.utils.decode_range(ws1['!ref']);
+      const celda = (r, c) => ws1[XLSX.utils.encode_cell({ r, c })];
+      if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+      if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: GRIS } } };
+      for (let c = 0; c < nColsP; c++) {
+        const h = celda(3, c);
+        if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
+      }
+      const colCob = 2 + mesMax + 2, colPed = nColsP - 1;
+      for (let r = 4; r <= rango.e.r; r++) {
+        const esTotal = r === rango.e.r;
+        for (let c = 0; c < nColsP; c++) {
+          const x = celda(r, c);
+          if (!x) continue;
+          const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
+          if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+          else if (c === colCob && typeof x.v === 'number') s.fill = { fgColor: { rgb: x.v < 1 ? CRIT : OKF } };
+          else if (c === colPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
+          x.s = s;
+        }
+      }
+    })();
     XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
 
     const aoa2 = [['Nombre', 'Almacén', 'Existencia', 'Categoría', 'Corte']];
@@ -16115,7 +16154,20 @@ function _transitoPorEtapaHTML() {
     <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
     <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
     <td style="text-align:center; padding:5px 8px;">${(p.total / abiertos.length * 100).toFixed(1)}%</td>
-  </tr>`).join('');
+  </tr>`).join('') + (() => {
+    const t = Object.values(porCoord).reduce((a, p) => ({
+      et: Object.fromEntries(ETAPAS.map(e => [e, (a.et[e] || 0) + (p.et[e] || 0)])),
+      total: a.total + p.total, m8: a.m8 + p.m8, m57: a.m57 + p.m57, sinVenta: a.sinVenta + p.sinVenta
+    }), { et: {}, total: 0, m8: 0, m57: 0, sinVenta: 0 });
+    window.__transitoTotG = t;
+    return `<tr style="background:var(--bg); font-weight:800;"><td style="padding:5px 8px;">TOTAL</td><td></td>
+      ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${t.et[e] || 0}</td>`).join('')}
+      <td style="text-align:center; padding:5px 8px;">${t.total}</td>
+      <td style="text-align:center; padding:5px 8px; color:${t.sinVenta > 0 ? 'var(--red)' : 'inherit'};">${t.sinVenta}</td>
+      <td style="text-align:center; padding:5px 8px;">${t.m8}</td>
+      <td style="text-align:center; padding:5px 8px;">${t.m57}</td>
+      <td style="text-align:center; padding:5px 8px;">100%</td></tr>`;
+  })();
 
   const filasRangos = window.__transitoRangos.map(r => `<tr>
     <td style="padding:5px 8px; font-weight:700;">${r.lbl}</td>
@@ -16133,7 +16185,15 @@ function _transitoPorEtapaHTML() {
     <td style="text-align:center; padding:5px 8px; font-weight:700; color:${p.sinVenta > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.sinVenta || '—'}</td>
     <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
     <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
-  </tr>`).join('');
+  </tr>`).join('') + (() => {
+    const t = window.__transitoTotG || { et: {}, total: 0, m8: 0, m57: 0, sinVenta: 0 };
+    return `<tr style="background:var(--bg); font-weight:800;"><td style="padding:5px 8px;">TOTAL</td><td></td><td></td>
+      ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${t.et[e] || 0}</td>`).join('')}
+      <td style="text-align:center; padding:5px 8px;">${t.total}</td>
+      <td style="text-align:center; padding:5px 8px; color:${t.sinVenta > 0 ? 'var(--red)' : 'inherit'};">${t.sinVenta}</td>
+      <td style="text-align:center; padding:5px 8px;">${t.m8}</td>
+      <td style="text-align:center; padding:5px 8px;">${t.m57}</td></tr>`;
+  })();
   const totSinVenta = criticos.length;
   const alarma = totSinVenta > 0 ? `
     <div style="background:#FEF2F2; border:1.5px solid #DC2626; border-radius:10px; padding:12px 16px; margin-bottom:12px; display:flex; align-items:center; gap:12px;">
@@ -16432,6 +16492,10 @@ function _construirDatosLogistica(entregasRaw) {
 
 function _renderLogisticaUI(cont, data) {
   _renderLogisticaUIBase(cont, data);
+  // El botón del Excel de equipos+inventario debe sobrevivir al re-render
+  cont.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:12px;">
+    <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📥 Excel equipos + inventario</button>
+  </div>`);
 }
 function _renderLogisticaUIBase(cont, data) {
   // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
