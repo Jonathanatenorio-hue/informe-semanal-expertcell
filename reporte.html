@@ -16160,7 +16160,7 @@ async function exportarPivoteEquipos() {
     let ci = iMesIni + nMes;
     const cTot = ci; ci++;
     const iPctIni = ci; ci += nMes;                          // % por mes (una col por mes)
-    const cProy = ci++, cPedProy = ci++;
+    const cRitmo = ci++, cProy = ci++, cPedProy = ci++;
     const cInv = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
       cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++;
     const nCols = ci;
@@ -16182,7 +16182,7 @@ async function exportarPivoteEquipos() {
 
     const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
       ...MESES_L.slice(0, nMes).map(m => `% ${m}`),
-      `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
+      'Ritmo 3m (unid / agente·día)', `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
       'Inventario', 'Cobertura (meses)', 'Días cobertura',
       `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, 'Prom 6m', 'Media (meses completos)',
       'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
@@ -16198,12 +16198,11 @@ async function exportarPivoteEquipos() {
     filaDias[iPctIni + 3] = 145;
     const filaAge = ['Agentes del mes', ''];
     for (let m = 0; m < nMes; m++) filaAge[iMesIni + m] = agentesDelMes[m];
-    filaAge[iPctIni] = '← editables (recalculan proyección)';
     for (let k = 0; k < nCols; k++) { if (filaDias[k] === undefined) filaDias[k] = ''; if (filaAge[k] === undefined) filaAge[k] = ''; }
 
     const aoa = [
       ['EQUIPOS E INVENTARIO — DEMANDA, STOCK Y PROYECCIÓN'],
-      [`Ventas activadas ${anioAct} por modelo | Estadísticos con meses completos ${MESES_L[0]}-${MESES_L[mesComp - 1]} (${MESES_L[mesMax - 1]} se muestra, no promedia) | Proyección: ritmo por agente·día háb. de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × agentes proy. × días háb. de ${MESES_L[mesSig - 1]} | Generado ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
+      [`Ventas activadas ${anioAct} por modelo`],
       filaDias,
       filaAge,
       H];
@@ -16230,7 +16229,8 @@ async function exportarPivoteEquipos() {
       for (let m = c3ini; m <= mesComp; m++) {
         ritmos.push(`${letra(m - 1)}${r}/${letra(m - 1)}$${FILA_DIAS}/${letra(m - 1)}$${FILA_AGE}`);
       }
-      fila[cProy] = F(0, `ROUND(AVERAGE(${ritmos.join(',')})*${PV_AGEN}*${PV_DIAS},0)`);
+      fila[cRitmo] = F(0, `AVERAGE(${ritmos.join(',')})`, '0.0000');
+      fila[cProy] = F(0, `ROUND(${col(cRitmo)}${r}*${PV_AGEN}*${PV_DIAS},0)`);
       fila[cPedProy] = inv2 == null
         ? F(0, `${col(cProy)}${r}`)
         : F(0, `MAX(0,${col(cProy)}${r}-${col(cInv)}${r})`);
@@ -16261,7 +16261,7 @@ async function exportarPivoteEquipos() {
 
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
     ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 },
-      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 12 },
+      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 12 },
       { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }];
 
     (() => {
@@ -16294,7 +16294,7 @@ async function exportarPivoteEquipos() {
           else if (c === cDias && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 30 ? CRIT : OKF } };
           else if (c === cPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
           else if (c === cPromo && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'BF5B00' }; }
-          else if (c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
+          else if (c === cRitmo || c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
           x.s = s;
         }
       }
