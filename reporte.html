@@ -16080,14 +16080,36 @@ async function exportarPivoteEquipos() {
     const filasLog = _construirDatosLogistica(_entregasCache || []);
     if (!filasLog.length) { alert('Sin ventas activadas cargadas.'); return; }
 
-    const anioAct = new Date().getFullYear();
+    const hoyF = new Date();
+    const anioAct = hoyF.getFullYear();
+    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
     const mesesConVenta = filasLog
       .filter(f => String(f.fecha_activacion).startsWith(String(anioAct)))
       .map(f => parseInt(String(f.fecha_activacion).substring(5, 7)));
     if (!mesesConVenta.length) { alert('Sin ventas del año en curso.'); return; }
-    const mesMax = Math.max(...mesesConVenta);
-    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const mesMax = Math.max(...mesesConVenta);              // último mes con venta (puede ir parcial)
+    const mesComp = Math.min(mesMax, hoyF.getMonth());       // último mes COMPLETO (mes actual - 1)
+    if (mesComp < 1) { alert('Aún no hay meses completos para promediar.'); return; }
+    const c3ini = Math.max(1, mesComp - 2), c6ini = Math.max(1, mesComp - 5);
 
+    // Días hábiles (L-V = 1, sábado = 0.5, domingo = 0), sin festivos
+    const diasHabilesMes = (a, m) => {
+      let d = 0;
+      const fin = new Date(a, m, 0).getDate();
+      for (let i = 1; i <= fin; i++) {
+        const dw = new Date(a, m - 1, i).getDay();
+        d += dw === 0 ? 0 : (dw === 6 ? 0.5 : 1);
+      }
+      return d;
+    };
+    const mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;   // mes a proyectar
+    const anioSig = mesSig === 1 ? anioAct + 1 : anioAct;
+    const dhSig = diasHabilesMes(anioSig, mesSig);
+    let dh3 = 0;
+    for (let m = c3ini; m <= mesComp; m++) dh3 += diasHabilesMes(anioAct, m);
+    const agentesActivos = (plantillaData || []).filter(p => p && p.nombre && !p.fecha_baja).length || 1;
+
+    // Ventas por equipo × mes
     const porEquipo = {};
     filasLog.forEach(f => {
       if (!String(f.fecha_activacion).startsWith(String(anioAct))) return;
@@ -16097,6 +16119,7 @@ async function exportarPivoteEquipos() {
       porEquipo[key].meses[m - 1]++;
     });
 
+    // Inventario (cruce por nombre normalizado)
     const invPorNorm = {};
     inventario.forEach(i => {
       const k = _normEquipo(i.nombre);
@@ -16115,84 +16138,122 @@ async function exportarPivoteEquipos() {
       return null;
     };
 
-    const filas = Object.entries(porEquipo).map(([equipo, d]) => {
-      const tot = d.meses.reduce((a, b) => a + b, 0);
-      const activos = d.meses.slice(0, mesMax);
-      const ult3 = activos.slice(-3);
-      const ult6 = activos.slice(-6);
-      const prom3 = ult3.length ? ult3.reduce((a, b) => a + b, 0) / ult3.length : 0;
-      const prom6 = ult6.length ? ult6.reduce((a, b) => a + b, 0) / ult6.length : 0;
-      const media = activos.length ? tot / activos.length : 0;
-      const mejor = Math.max(...activos, 0);
-      const mejorMes = MESES_L[activos.indexOf(mejor)] || '—';
-      const multi = media > 0 ? mejor / media : 0;
-      const invT = equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo));
-      const cobertura = (invT != null && prom3 > 0) ? invT / prom3 : null;
-      const pedido = (invT != null) ? Math.max(0, Math.ceil(prom3 * 1.3 - invT)) : null;
-      // Escenario promo/lanzamiento: demanda = prom3 × multiplicador de pico,
-      // con colchón del 20% (los lanzamientos pegan más que la mejor promo normal)
-      const pedidoPromo = (invT != null && multi > 0) ? Math.max(0, Math.ceil(prom3 * multi * 1.2 - invT)) : null;
-      const ultimo = activos[activos.length - 1] || 0;
-      const tendencia = prom3 > 0 ? (ultimo / prom3 - 1) * 100 : 0;
-      return { equipo, marca: d.marca, meses: activos, tot, prom3, prom6, media, mejor, mejorMes, multi, invT, cobertura, pedido, pedidoPromo, tendencia };
-    }).sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
+    const modelos = Object.entries(porEquipo).map(([equipo, d]) => ({
+      equipo, marca: d.marca, meses: d.meses.slice(0, mesMax),
+      invT: equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo))
+    })).sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
 
-    const wb = XLSX.utils.book_new();
-    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, mesMax), 'Total', 'Inventario', 'Cobertura (meses)', 'Días cobertura', 'Prom 3m', 'Prom 6m', 'Media', 'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %', 'Pedido sugerido (1.3×prom3 − inv)', 'Pedido escenario promo ((prom3 × multiplicador × 1.2) − inv)'];
-    const hoyF = new Date();
+    // ===== Construcción con FÓRMULAS VIVAS =====
+    const col = i => XLSX.utils.encode_col(i);
+    const nMes = mesMax;
+    const iMesIni = 2;                                       // C = Ene
+    const letra = mIdx => col(iMesIni + mIdx);
+    const L3i = letra(c3ini - 1), L3f = letra(mesComp - 1);
+    const L6i = letra(c6ini - 1);
+    const LcompIni = letra(0), LcompFin = letra(mesComp - 1);
+    let ci = iMesIni + nMes;
+    const cTot = ci++, cInv = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
+      cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++,
+      cPart = ci++, cProy = ci++, cPedProy = ci++;
+    const nCols = ci;
+
+    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total', 'Inventario',
+      'Cobertura (meses)', 'Días cobertura', `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`,
+      'Prom 6m', 'Media (meses completos)', 'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
+      'Pedido sugerido (1.3×prom3 − inv)', 'Pedido escenario promo ((prom3 × multiplicador × 1.2) − inv)',
+      `Part. ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`];
+
+    const filaTotal = 4 + modelos.length + 1;
+    const F = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
+
     const aoa = [
-      ['EQUIPOS E INVENTARIO — DEMANDA Y STOCK'],
-      [`Ventas activadas ${anioAct} por modelo | Inventario HUB del último corte | Generado el ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
-      [],
+      ['EQUIPOS E INVENTARIO — DEMANDA, STOCK Y PROYECCIÓN'],
+      [`Ventas activadas ${anioAct} por modelo (estadísticos con meses completos ${MESES_L[0]}-${MESES_L[mesComp - 1]}; ${MESES_L[mesMax - 1]} se muestra pero no promedia) | Generado ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
+      ['PARÁMETROS →', 'Agentes proyectados', 145, `Días háb. ${MESES_L[mesSig - 1]}`, dhSig,
+        'Agentes actuales', agentesActivos, 'Días háb. prom 3m', dh3,
+        `Proy. total ${MESES_L[mesSig - 1]}`,
+        F(0, `ROUND(SUM(${L3i}${filaTotal}:${L3f}${filaTotal})/$I$3/$G$3*$C$3*$E$3,0)`)],
       H];
-    filas.forEach(f => aoa.push([
-      f.marca, f.equipo, ...f.meses, f.tot,
-      f.invT == null ? '' : f.invT,
-      f.cobertura == null ? '' : Number(f.cobertura.toFixed(2)),
-      f.cobertura == null ? '' : Math.round(f.cobertura * 30),
-      Number(f.prom3.toFixed(1)), Number(f.prom6.toFixed(1)), Number(f.media.toFixed(1)),
-      f.mejorMes, f.mejor, Number(f.multi.toFixed(2)), Number(f.tendencia.toFixed(1)),
-      f.pedido == null ? '' : f.pedido,
-      f.pedidoPromo == null ? '' : f.pedidoPromo
-    ]));
-    // Fila TOTAL del pivote
-    const nColsP = H.length;
-    const totalRow = ['TOTAL', ''];
-    for (let m = 0; m < mesMax; m++) totalRow.push(filas.reduce((a, f) => a + (f.meses[m] || 0), 0));
-    totalRow.push(filas.reduce((a, f) => a + f.tot, 0));
-    totalRow.push(filas.reduce((a, f) => a + (f.invT || 0), 0));
-    while (totalRow.length < nColsP) totalRow.push('');
-    aoa.push(totalRow);
+
+    modelos.forEach((mo, idx) => {
+      const r = 5 + idx;
+      const inv2 = mo.invT;
+      const sum3 = mo.meses.slice(c3ini - 1, mesComp).reduce((a, b) => a + b, 0);
+      const p3v = sum3 / Math.max(1, mesComp - c3ini + 1);
+      const p6v = mo.meses.slice(c6ini - 1, mesComp).reduce((a, b) => a + b, 0) / Math.max(1, mesComp - c6ini + 1);
+      const compl = mo.meses.slice(0, mesComp);
+      const medv = compl.reduce((a, b) => a + b, 0) / Math.max(1, compl.length);
+      const picov = Math.max(...compl, 0);
+      const multiv = medv > 0 ? picov / medv : 0;
+      const fila = [mo.marca, mo.equipo, ...mo.meses];
+      fila[cTot] = F(mo.meses.reduce((a, b) => a + b, 0), `SUM(${letra(0)}${r}:${letra(nMes - 1)}${r})`);
+      fila[cInv] = inv2 == null ? '' : inv2;
+      fila[cCob] = inv2 == null ? '' : F(p3v > 0 ? inv2 / p3v : 0, `IF(${col(cP3)}${r}>0,${col(cInv)}${r}/${col(cP3)}${r},0)`, '0.00');
+      fila[cDias] = inv2 == null ? '' : F(p3v > 0 ? Math.round(inv2 / p3v * 30) : 0, `ROUND(${col(cCob)}${r}*30,0)`);
+      fila[cP3] = F(p3v, `AVERAGE(${L3i}${r}:${L3f}${r})`, '0.0');
+      fila[cP6] = F(p6v, `AVERAGE(${L6i}${r}:${L3f}${r})`, '0.0');
+      fila[cMed] = F(medv, `AVERAGE(${LcompIni}${r}:${LcompFin}${r})`, '0.0');
+      fila[cMejor] = MESES_L[compl.indexOf(picov)] || '—';
+      fila[cPico] = F(picov, `MAX(${LcompIni}${r}:${LcompFin}${r})`);
+      fila[cMulti] = F(multiv, `IF(${col(cMed)}${r}>0,${col(cPico)}${r}/${col(cMed)}${r},0)`, '0.00');
+      fila[cTend] = F(p3v > 0 ? (mo.meses[mesComp - 1] || 0) / p3v - 1 : 0, `IF(${col(cP3)}${r}>0,${L3f}${r}/${col(cP3)}${r}-1,0)`, '0.0%');
+      fila[cPed] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * 1.3 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*1.3-${col(cInv)}${r},0))`);
+      fila[cPromo] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * multiv * 1.2 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*${col(cMulti)}${r}*1.2-${col(cInv)}${r},0))`);
+      fila[cPart] = F(0, `IF(SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal})>0,SUM(${L3i}${r}:${L3f}${r})/SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal}),0)`, '0.00%');
+      fila[cProy] = F(0, `ROUND(${col(cPart)}${r}*$K$3,0)`);
+      fila[cPedProy] = inv2 == null ? F(0, `${col(cProy)}${r}`) : F(0, `MAX(0,${col(cProy)}${r}-${col(cInv)}${r})`);
+      for (let k = 0; k < nCols; k++) if (fila[k] === undefined) fila[k] = '';
+      aoa.push(fila);
+    });
+
+    const tRow = ['TOTAL', ''];
+    for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}5:${letra(m)}${filaTotal - 1})`);
+    tRow[cTot] = F(0, `SUM(${col(cTot)}5:${col(cTot)}${filaTotal - 1})`);
+    tRow[cInv] = F(0, `SUM(${col(cInv)}5:${col(cInv)}${filaTotal - 1})`);
+    tRow[cProy] = F(0, `SUM(${col(cProy)}5:${col(cProy)}${filaTotal - 1})`);
+    tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}5:${col(cPedProy)}${filaTotal - 1})`);
+    for (let k = 0; k < nCols; k++) if (tRow[k] === undefined) tRow[k] = '';
+    aoa.push(tRow);
 
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
-    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(mesMax).fill({ wch: 6 }), { wch: 7 }, { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 7 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 28 }];
-    // Formato ejecutivo: título, encabezados navy, cobertura crítica resaltada
+    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 }, { wch: 10 },
+      { wch: 15 }, { wch: 12 }, { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 },
+      { wch: 11 }, { wch: 26 }, { wch: 28 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
+
     (() => {
-      const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA';
+      const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA', PARAM = 'FFF2CC', PROY = 'E8E0F5';
       const rango = XLSX.utils.decode_range(ws1['!ref']);
       const celda = (r, c) => ws1[XLSX.utils.encode_cell({ r, c })];
       if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
       if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: GRIS } } };
-      for (let c = 0; c < nColsP; c++) {
+      for (let c = 0; c <= 10; c++) {
+        const x = celda(2, c);
+        if (!x) continue;
+        x.s = (typeof x.v === 'number' || x.f)
+          ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 10 } }
+          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
+      }
+      for (let c = 0; c < nCols; c++) {
         const h = celda(3, c);
         if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
       }
-      const colCob = 2 + mesMax + 2, colDias = colCob + 1, colPed = nColsP - 2, colPromo = nColsP - 1;
       for (let r = 4; r <= rango.e.r; r++) {
         const esTotal = r === rango.e.r;
-        for (let c = 0; c < nColsP; c++) {
+        for (let c = 0; c < nCols; c++) {
           const x = celda(r, c);
           if (!x) continue;
           const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
           if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
-          else if (c === colCob && typeof x.v === 'number') s.fill = { fgColor: { rgb: x.v < 1 ? CRIT : OKF } };
-          else if (c === colDias && typeof x.v === 'number') s.fill = { fgColor: { rgb: x.v < 30 ? CRIT : OKF } };
-          else if (c === colPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
-          else if (c === colPromo && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'BF5B00' }; }
+          else if (c === cCob && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 1 ? CRIT : OKF } };
+          else if (c === cDias && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 30 ? CRIT : OKF } };
+          else if (c === cPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
+          else if (c === cPromo && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'BF5B00' }; }
+          else if (c === cPart || c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
           x.s = s;
         }
       }
     })();
+    const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
 
     const aoa2 = [['Nombre', 'Almacén', 'Existencia', 'Categoría', 'Corte']];
@@ -16215,314 +16276,6 @@ async function exportarPivoteEquipos() {
     console.error('[PivoteEquipos]', e);
     alert('Error al generar: ' + (e.message || e));
   }
-}
-
-// ===== TRÁNSITO POR ETAPA + ALARMA "ENTREGADO SIN VENTA" + DURACIONES =====
-function _transitoPorEtapaHTML() {
-  const abiertos = (ventasData || []).filter(r => r && ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.fecha_bo);
-  if (!abiertos.length) return '';
-  const entMap = {};
-  (_entregasCache || []).forEach(e => { if (e && e.folio) entMap[String(e.folio)] = e; });
-  const hoy = new Date();
-  const coordDe = {};
-  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-  (coordSupData || []).forEach(cs => {
-    if (cs.fecha_inicio <= hoyStr && (!cs.fecha_fin || cs.fecha_fin >= hoyStr)) {
-      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
-      if (c) coordDe[cs.supervisor] = c.nombre || c.nombre_corto;
-    }
-  });
-  const ETAPAS = ['Solicitado', 'En preparacion', 'Back Office', 'En entrega', 'Entregado'];
-  const normEt = e => {
-    const t = String(e || '').trim().toLowerCase();
-    if (t.startsWith('solicit')) return 'Solicitado';
-    if (t.startsWith('en prep') || t.startsWith('prepar')) return 'En preparacion';
-    if (t.includes('back')) return 'Back Office';
-    if (t.startsWith('en entrega') || t.startsWith('entrega ') || t === 'en entrega') return 'En entrega';
-    if (t.startsWith('entregado')) return 'Entregado';
-    return 'Back Office';
-  };
-  const porSup = {};
-  const criticos = [];
-  abiertos.forEach(r => {
-    const sup = r.supervisor || '—';
-    if (!porSup[sup]) porSup[sup] = { coord: coordDe[sup] || '—', centro: r.centro || '—', et: { 'Solicitado': 0, 'En preparacion': 0, 'Back Office': 0, 'En entrega': 0, 'Entregado': 0 }, total: 0, m8: 0, m57: 0, sinVenta: 0 };
-    const det = entMap[String(r.folio)];
-    const et = normEt(r.etapa_entrega || (det && det.estatus_entrega) || 'Back Office');
-    const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
-    const p = porSup[sup];
-    p.et[et]++; p.total++;
-    if (dias >= 8) p.m8++; else if (dias >= 5) p.m57++;
-    if (et === 'Entregado') { p.sinVenta++; criticos.push({ sup, eje: r.ejecutivo, folio: r.folio, dias, plaza: det ? (det.plaza || '') : '' }); }
-  });
-  criticos.sort((a, b) => b.dias - a.dias);
-  window.__transitoCriticos = criticos;
-
-  // Rollup por COORDINADOR y ANTIGÜEDAD (mismas lecturas que el análisis oficial)
-  const porCoord = {};
-  Object.entries(porSup).forEach(([s, p]) => {
-    const k = p.coord || '—';
-    if (!porCoord[k]) porCoord[k] = { centro: p.centro, et: { 'Solicitado': 0, 'En preparacion': 0, 'Back Office': 0, 'En entrega': 0, 'Entregado': 0 }, total: 0, m8: 0, m57: 0, sinVenta: 0 };
-    const c = porCoord[k];
-    ETAPAS.forEach(e => c.et[e] += p.et[e]);
-    c.total += p.total; c.m8 += p.m8; c.m57 += p.m57; c.sinVenta += p.sinVenta;
-  });
-  const rangosDef = [
-    ['1 a 2 días', d => d <= 2, 'Flujo normal'],
-    ['3 a 4 días', d => d >= 3 && d <= 4, 'Dentro de rango'],
-    ['5 a 7 días', d => d >= 5 && d <= 7, 'Alerta: seguimiento hoy'],
-    ['8 a 14 días', d => d >= 8 && d <= 14, 'Crítico: rescatar ya'],
-    ['15+ días', d => d >= 15, 'Muy crítico: riesgo de pérdida']
-  ];
-  const diasDeAll = abiertos.map(r => Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000));
-  window.__transitoRangos = rangosDef.map(([lbl, fn, lect]) => {
-    const n = diasDeAll.filter(fn).length;
-    return { lbl, n, pct: abiertos.length ? n / abiertos.length * 100 : 0, lect };
-  });
-  window.__transitoPorCoord = porCoord;
-  window.__transitoPorSup = porSup;
-  window.__transitoAbiertos = abiertos.length;
-
-  const filasCoord = Object.entries(porCoord).sort((a, b) => b[1].total - a[1].total).map(([k, p]) => `<tr>
-    <td style="padding:5px 8px; font-weight:700;">${k}</td>
-    <td style="padding:5px 8px; text-align:center;">${p.centro}</td>
-    ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${p.et[e] || '—'}</td>`).join('')}
-    <td style="text-align:center; padding:5px 8px; font-weight:800;">${p.total}</td>
-    <td style="text-align:center; padding:5px 8px; font-weight:700; color:${p.sinVenta > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.sinVenta || '—'}</td>
-    <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
-    <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
-    <td style="text-align:center; padding:5px 8px;">${(p.total / abiertos.length * 100).toFixed(1)}%</td>
-  </tr>`).join('') + (() => {
-    const t = Object.values(porCoord).reduce((a, p) => ({
-      et: Object.fromEntries(ETAPAS.map(e => [e, (a.et[e] || 0) + (p.et[e] || 0)])),
-      total: a.total + p.total, m8: a.m8 + p.m8, m57: a.m57 + p.m57, sinVenta: a.sinVenta + p.sinVenta
-    }), { et: {}, total: 0, m8: 0, m57: 0, sinVenta: 0 });
-    window.__transitoTotG = t;
-    return `<tr style="background:var(--bg); font-weight:800;"><td style="padding:5px 8px;">TOTAL</td><td></td>
-      ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${t.et[e] || 0}</td>`).join('')}
-      <td style="text-align:center; padding:5px 8px;">${t.total}</td>
-      <td style="text-align:center; padding:5px 8px; color:${t.sinVenta > 0 ? 'var(--red)' : 'inherit'};">${t.sinVenta}</td>
-      <td style="text-align:center; padding:5px 8px;">${t.m8}</td>
-      <td style="text-align:center; padding:5px 8px;">${t.m57}</td>
-      <td style="text-align:center; padding:5px 8px;">100%</td></tr>`;
-  })();
-
-  const filasRangos = window.__transitoRangos.map(r => `<tr>
-    <td style="padding:5px 8px; font-weight:700;">${r.lbl}</td>
-    <td style="text-align:center; padding:5px 8px;">${r.n}</td>
-    <td style="text-align:center; padding:5px 8px;">${r.pct.toFixed(1)}%</td>
-    <td style="padding:5px 8px; font-size:11px; color:${r.lbl.startsWith('8') || r.lbl.startsWith('15') ? 'var(--red)' : r.lbl.startsWith('5') ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${r.lect}</td>
-  </tr>`).join('');
-
-  const filas = Object.entries(porSup).sort((a, b) => b[1].total - a[1].total).map(([s, p]) => `<tr>
-    <td style="padding:5px 8px; font-weight:700;">${s}</td>
-    <td style="padding:5px 8px; font-size:11px;">${p.coord}</td>
-    <td style="padding:5px 8px; text-align:center;">${p.centro}</td>
-    ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${p.et[e] || '—'}</td>`).join('')}
-    <td style="text-align:center; padding:5px 8px; font-weight:800;">${p.total}</td>
-    <td style="text-align:center; padding:5px 8px; font-weight:700; color:${p.sinVenta > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.sinVenta || '—'}</td>
-    <td style="text-align:center; padding:5px 8px; color:${p.m8 > 0 ? 'var(--red)' : 'var(--text-soft)'};">${p.m8 || '—'}</td>
-    <td style="text-align:center; padding:5px 8px; color:${p.m57 > 0 ? 'var(--amber, #D97706)' : 'var(--text-soft)'};">${p.m57 || '—'}</td>
-  </tr>`).join('') + (() => {
-    const t = window.__transitoTotG || { et: {}, total: 0, m8: 0, m57: 0, sinVenta: 0 };
-    return `<tr style="background:var(--bg); font-weight:800;"><td style="padding:5px 8px;">TOTAL</td><td></td><td></td>
-      ${ETAPAS.map(e => `<td style="text-align:center; padding:5px 8px;">${t.et[e] || 0}</td>`).join('')}
-      <td style="text-align:center; padding:5px 8px;">${t.total}</td>
-      <td style="text-align:center; padding:5px 8px; color:${t.sinVenta > 0 ? 'var(--red)' : 'inherit'};">${t.sinVenta}</td>
-      <td style="text-align:center; padding:5px 8px;">${t.m8}</td>
-      <td style="text-align:center; padding:5px 8px;">${t.m57}</td></tr>`;
-  })();
-  const totSinVenta = criticos.length;
-  const alarma = totSinVenta > 0 ? `
-    <div style="background:#FEF2F2; border:1.5px solid #DC2626; border-radius:10px; padding:12px 16px; margin-bottom:12px; display:flex; align-items:center; gap:12px;">
-      <span style="font-size:22px;">🚨</span>
-      <div>
-        <div style="font-weight:800; color:#B91C1C;">${totSinVenta} equipos ENTREGADOS SIN VENTA ACTIVADA</div>
-        <div style="font-size:12px; color:#7F1D1D;">Equipo ya en manos del cliente sin activación — el más añejo lleva ${criticos[0].dias} días. Lista completa en el Excel de tránsito.</div>
-      </div>
-    </div>` : '';
-  return `
-    <div style="margin-bottom:24px;">
-      <div style="font-weight:800; font-size:15px; color:var(--att-navy); margin-bottom:8px;">🚚 Tránsito por etapa <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(corte de hoy · ${abiertos.length} folios abiertos)</span>
-        <button onclick="exportarTransitoEtapas()" style="background:#0077A8; color:white; border:none; padding:6px 14px; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-left:10px;">📥 Excel tránsito</button>
-      </div>
-      ${alarma}
-      <div style="font-weight:700; font-size:13px; margin:6px 0;">Por coordinador</div>
-      <div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
-        <thead><tr style="background:var(--att-navy); color:white;">
-          <th style="padding:6px 8px; text-align:left;">Coordinador</th><th style="padding:6px 8px;">Centro</th>
-          ${ETAPAS.map(e => `<th style="padding:6px 8px;">${e}</th>`).join('')}
-          <th style="padding:6px 8px;">Total</th><th style="padding:6px 8px;">Entregado<br>sin venta</th><th style="padding:6px 8px;">8+ días</th><th style="padding:6px 8px;">5-7 días</th><th style="padding:6px 8px;">% del total</th>
-        </tr></thead><tbody>${filasCoord}</tbody>
-      </table></div>
-      <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start; margin-top:12px;">
-        <div>
-          <div style="font-weight:700; font-size:13px; margin-bottom:6px;">Antigüedad del tránsito <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(días desde fecha BO)</span></div>
-          <table style="border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
-            <thead><tr style="background:var(--att-navy); color:white;"><th style="padding:6px 8px;">Rango</th><th style="padding:6px 8px;">Folios</th><th style="padding:6px 8px;">% del total</th><th style="padding:6px 8px; text-align:left;">Lectura</th></tr></thead>
-            <tbody>${filasRangos}</tbody>
-          </table>
-        </div>
-      </div>
-      <div style="font-weight:700; font-size:13px; margin:14px 0 6px;">Por supervisor <span style="font-weight:400; font-size:11px; color:var(--text-soft);">(ordenado por volumen)</span></div>
-      <div style="overflow:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; border:1px solid var(--border);">
-        <thead><tr style="background:var(--att-navy); color:white;">
-          <th style="padding:6px 8px; text-align:left;">Supervisor</th><th style="padding:6px 8px; text-align:left;">Coordinador</th><th style="padding:6px 8px;">Centro</th>
-          ${ETAPAS.map(e => `<th style="padding:6px 8px;">${e}</th>`).join('')}
-          <th style="padding:6px 8px;">Total</th><th style="padding:6px 8px;">Entregado<br>sin venta</th><th style="padding:6px 8px;">8+ días</th><th style="padding:6px 8px;">5-7 días</th>
-        </tr></thead><tbody>${filas}</tbody>
-      </table></div>
-      <div id="duracion-etapas" style="margin-top:14px;"></div>
-    </div>`;
-}
-
-async function _renderDuracionEtapas() {
-  const cont = document.getElementById('duracion-etapas');
-  if (!cont) return;
-  try {
-    const { data } = await db.from('etapas_folio').select('folio, etapa, fecha_deteccion').order('fecha_deteccion', { ascending: true });
-    const regs = data || [];
-    if (regs.length === 0) {
-      cont.innerHTML = '<div style="font-size:12px; color:var(--text-soft);">⏱️ Duración por etapa: sin registros aún — se nutre con cada carga diaria del archivo de detalle (curva confiable tras 2-3 semanas).</div>';
-      return;
-    }
-    const porFolio = {};
-    regs.forEach(r => { if (!porFolio[r.folio]) porFolio[r.folio] = []; porFolio[r.folio].push(r); });
-    const dur = {};
-    Object.values(porFolio).forEach(arr => {
-      arr.sort((a, b) => String(a.fecha_deteccion).localeCompare(String(b.fecha_deteccion)));
-      for (let i = 0; i < arr.length - 1; i++) {
-        const d = Math.floor((new Date(arr[i + 1].fecha_deteccion) - new Date(arr[i].fecha_deteccion)) / 86400000);
-        if (d < 0 || d > 90) continue;
-        if (!dur[arr[i].etapa]) dur[arr[i].etapa] = { suma: 0, n: 0 };
-        dur[arr[i].etapa].suma += d; dur[arr[i].etapa].n++;
-      }
-    });
-    const desde = String(regs[0].fecha_deteccion).substring(0, 10);
-    const items = Object.entries(dur).filter(([, v]) => v.n > 0).map(([e, v]) => `<strong>${e}</strong>: ${(v.suma / v.n).toFixed(1)} días (${v.n} transiciones)`);
-    cont.innerHTML = `<div style="font-size:12px; color:var(--text);">⏱️ <strong>Duración promedio por etapa</strong> <span style="color:var(--text-soft);">(midiendo desde ${desde}; entre más días de cargas, más precisa)</span>: ${items.length ? items.join(' · ') : 'aún sin transiciones registradas — se nutre con las cargas diarias'}</div>`;
-  } catch (e) {
-    cont.innerHTML = '<div style="font-size:12px; color:var(--text-soft);">⏱️ Duración por etapa: corre el SQL de la tabla etapas_folio para activar la medición.</div>';
-  }
-}
-
-function exportarTransitoEtapas() {
-  // Excel calcado del análisis oficial de tránsito (formato, colores y anchos)
-  const abiertos = (ventasData || []).filter(r => r && ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.fecha_bo);
-  if (!abiertos.length) { alert('Sin folios abiertos.'); return; }
-  const entMap = {};
-  (_entregasCache || []).forEach(e => { if (e && e.folio) entMap[String(e.folio)] = e; });
-  const hoy = new Date();
-  const MES_N = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  const MES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const corteStr = `${hoy.getDate()}-${MES_N[hoy.getMonth()]}-${hoy.getFullYear()}`;
-  const porCoord = window.__transitoPorCoord || {};
-  const porSup = window.__transitoPorSup || {};
-  const rangos = window.__transitoRangos || [];
-  const criticosT = window.__transitoCriticos || [];
-  const ETAPAS = ['Solicitado', 'En preparacion', 'Back Office', 'En entrega', 'Entregado'];
-  const total = abiertos.length;
-  const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', ALER = 'FFE699';
-  const wb = XLSX.utils.book_new();
-
-  const estiliza = (ws, nCols, anchos, pctCols, fillsPorFila) => {
-    ws['!cols'] = anchos.map(w => ({ wch: w }));
-    const rango = XLSX.utils.decode_range(ws['!ref']);
-    const celda = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
-    if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
-    if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: GRIS } } };
-    for (let c = 0; c < nCols; c++) {
-      const h = celda(3, c);
-      if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { vertical: 'center' } };
-    }
-    for (let r = 4; r <= rango.e.r; r++) {
-      const fillRow = fillsPorFila ? fillsPorFila(r - 4) : null;
-      for (let c = 0; c < nCols; c++) {
-        const x = celda(r, c);
-        if (!x) continue;
-        const s = { font: { name: 'Calibri', sz: 10 } };
-        if (fillRow) s.fill = { fgColor: { rgb: fillRow } };
-        if (pctCols && pctCols.includes(c)) x.z = '0.0%';
-        x.s = s;
-      }
-    }
-  };
-
-  // ---- 1. Por coordinador ----
-  const a1 = [['VENTAS EN TRANSITO POR COORDINADOR'], [`Corte ${corteStr} | ${total} folios abiertos`], [],
-    ['Coordinador', 'Centro', ...ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', '5-7 dias', '% del total']];
-  const coordOrden = Object.entries(porCoord).sort((x, y) => y[1].total - x[1].total);
-  coordOrden.forEach(([k, p]) => a1.push([k, p.centro, ...ETAPAS.map(e => p.et[e] || 0), p.total, p.sinVenta, p.m8, p.m57, p.total / total]));
-  a1.push(['TOTAL', '', ...ETAPAS.map(e => coordOrden.reduce((s, [, p]) => s + (p.et[e] || 0), 0)), total,
-    coordOrden.reduce((s, [, p]) => s + p.sinVenta, 0), coordOrden.reduce((s, [, p]) => s + p.m8, 0),
-    coordOrden.reduce((s, [, p]) => s + p.m57, 0), 1]);
-  const w1 = XLSX.utils.aoa_to_sheet(a1);
-  estiliza(w1, 12, [24, 8, 11, 14, 12, 11, 11, 8, 19, 9, 10, 11], [11], null);
-  XLSX.utils.book_append_sheet(wb, w1, '1. Por coordinador');
-
-  // ---- 2. Por supervisor ----
-  const diasPorSup = {};
-  abiertos.forEach(r => {
-    const s = r.supervisor || '—';
-    const d = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
-    (diasPorSup[s] = diasPorSup[s] || []).push(d);
-  });
-  const a2 = [['VENTAS EN TRANSITO POR SUPERVISOR'], ['Ordenado de mayor a menor volumen'], [],
-    ['Supervisor', 'Coordinador', 'Centro', ...ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', '5-7 dias', 'Dias prom.']];
-  Object.entries(porSup).sort((x, y) => y[1].total - x[1].total).forEach(([s, p]) => {
-    const ds = diasPorSup[s] || [];
-    a2.push([s, p.coord, p.centro, ...ETAPAS.map(e => p.et[e] || 0), p.total, p.sinVenta, p.m8, p.m57,
-      Number((ds.length ? ds.reduce((a, b) => a + b, 0) / ds.length : 0).toFixed(2))]);
-  });
-  const w2 = XLSX.utils.aoa_to_sheet(a2);
-  estiliza(w2, 13, [36, 22, 8, 11, 14, 12, 11, 11, 8, 19, 9, 10, 11], null, null);
-  XLSX.utils.book_append_sheet(wb, w2, '2. Por supervisor');
-
-  // ---- 3. Antiguedad ----
-  const a3 = [['ANTIGUEDAD DEL TRANSITO'], ['Dias naturales transcurridos desde la fecha BO'], [],
-    ['Rango', 'Folios', '% del total', 'Lectura']];
-  rangos.forEach(r => a3.push([r.lbl.replace('días', 'dias'), r.n, r.pct / 100, r.lect]));
-  a3.push(['TOTAL', total, 1, '']);
-  const w3 = XLSX.utils.aoa_to_sheet(a3);
-  estiliza(w3, 4, [20, 12, 14, 52], [2], null);
-  XLSX.utils.book_append_sheet(wb, w3, '3. Antiguedad');
-
-  // ---- Detalle común ----
-  const coordDeS = {};
-  Object.entries(porSup).forEach(([s, p]) => { coordDeS[s] = p.coord; });
-  const detalleRows = abiertos.map(r => {
-    const det = entMap[String(r.folio)] || {};
-    const dias = Math.floor((hoy - new Date(String(r.fecha_bo).substring(0, 10) + 'T12:00:00')) / 86400000);
-    const etTxt = r.etapa_entrega || det.estatus_entrega || 'Back Office';
-    return { coord: coordDeS[r.supervisor || '—'] || '—', sup: r.supervisor || '—', eje: r.ejecutivo || '',
-      cliente: det.cliente || '', tel: r.telefono || '', folio: r.folio, fbo: String(r.fecha_bo).substring(0, 10),
-      dias, etapa: etTxt, plaza: det.plaza || '', centro: r.centro || '' };
-  }).sort((a, b) => b.dias - a.dias);
-
-  // ---- 4. Criticos ----
-  const crit = detalleRows.filter(d => String(d.etapa).toLowerCase().startsWith('entregado') || d.dias >= 8);
-  const a4 = [['CASOS CRITICOS - REVISION UNO A UNO'],
-    [`${crit.length} folios: entregados sin venta activada y/o 8+ dias en transito`], [],
-    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Plaza', 'Que revisar']];
-  crit.forEach(d => a4.push([d.coord, d.sup, d.eje, d.cliente, d.tel, d.folio, d.fbo, d.dias, d.etapa, d.plaza,
-    String(d.etapa).toLowerCase().startsWith('entregado') ? 'Equipo YA entregado sin venta activada' : '8+ dias en transito: rastrear con logistica']));
-  const w4 = XLSX.utils.aoa_to_sheet(a4);
-  estiliza(w4, 11, [21, 32, 30, 30, 13, 12, 11, 7, 14, 9, 62], null, () => CRIT);
-  XLSX.utils.book_append_sheet(wb, w4, '4. Criticos');
-
-  // ---- 5. Detalle N ----
-  const a5 = [['DETALLE DE VENTAS EN TRANSITO'],
-    [`Corte al ${hoy.getDate()} de ${MES_L[hoy.getMonth()]} de ${hoy.getFullYear()}`], [],
-    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Semaforo', 'Centro', 'Plaza']];
-  const semDe = d => d.dias >= 8 || String(d.etapa).toLowerCase().startsWith('entregado')
-    ? 'CRITICO - 8+ dias o entregado' : d.dias >= 5 ? 'ALERTA - 5 a 7 dias' : 'OK - flujo normal';
-  detalleRows.forEach(d => a5.push([d.coord, d.sup, d.eje, d.cliente, d.tel, d.folio, d.fbo, d.dias, d.etapa, semDe(d), d.centro, d.plaza]));
-  const w5 = XLSX.utils.aoa_to_sheet(a5);
-  estiliza(w5, 12, [21, 32, 34, 30, 13, 12, 11, 7, 15, 30, 9, 8], null,
-    i => { const d = detalleRows[i]; if (!d) return null; const s = semDe(d); return s.startsWith('CRITICO') ? CRIT : s.startsWith('ALERTA') ? ALER : null; });
-  XLSX.utils.book_append_sheet(wb, w5, `Detalle ${total}`);
-
-  XLSX.writeFile(wb, `analisis_transito_${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}.xlsx`);
 }
 
 async function renderLogistica() {
