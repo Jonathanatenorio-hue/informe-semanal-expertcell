@@ -16087,29 +16087,37 @@ async function exportarPivoteEquipos() {
       .filter(f => String(f.fecha_activacion).startsWith(String(anioAct)))
       .map(f => parseInt(String(f.fecha_activacion).substring(5, 7)));
     if (!mesesConVenta.length) { alert('Sin ventas del año en curso.'); return; }
-    const mesMax = Math.max(...mesesConVenta);              // último mes con venta (puede ir parcial)
-    const mesComp = Math.min(mesMax, hoyF.getMonth());       // último mes COMPLETO (mes actual - 1)
+    const mesMax = Math.max(...mesesConVenta);
+    const mesComp = Math.min(mesMax, hoyF.getMonth());
     if (mesComp < 1) { alert('Aún no hay meses completos para promediar.'); return; }
     const c3ini = Math.max(1, mesComp - 2), c6ini = Math.max(1, mesComp - 5);
 
-    // Días hábiles (L-V = 1, sábado = 0.5, domingo = 0), sin festivos
     const diasHabilesMes = (a, m) => {
       let d = 0;
-      const fin = new Date(a, m, 0).getDate();
-      for (let i = 1; i <= fin; i++) {
+      const finM = new Date(a, m, 0).getDate();
+      for (let i = 1; i <= finM; i++) {
         const dw = new Date(a, m - 1, i).getDay();
         d += dw === 0 ? 0 : (dw === 6 ? 0.5 : 1);
       }
       return d;
     };
-    const mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;   // mes a proyectar
+    const mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;
     const anioSig = mesSig === 1 ? anioAct + 1 : anioAct;
     const dhSig = diasHabilesMes(anioSig, mesSig);
-    let dh3 = 0;
-    for (let m = c3ini; m <= mesComp; m++) dh3 += diasHabilesMes(anioAct, m);
-    const agentesActivos = (plantillaData || []).filter(p => p && p.nombre && !p.fecha_baja).length || 1;
 
-    // Ventas por equipo × mes
+    // Agentes activos que TENÍAMOS cada mes (al último día del mes)
+    const agentesDelMes = [];
+    for (let m = 1; m <= mesMax; m++) {
+      const finMesStr = `${anioAct}-${String(m).padStart(2, '0')}-${String(new Date(anioAct, m, 0).getDate()).padStart(2, '0')}`;
+      const n = (plantillaData || []).filter(p => {
+        if (!p || !p.nombre) return false;
+        const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+        const baja = p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : null;
+        return (!ing || ing <= finMesStr) && (!baja || baja > finMesStr);
+      }).length;
+      agentesDelMes.push(n || 1);
+    }
+
     const porEquipo = {};
     filasLog.forEach(f => {
       if (!String(f.fecha_activacion).startsWith(String(anioAct))) return;
@@ -16119,7 +16127,6 @@ async function exportarPivoteEquipos() {
       porEquipo[key].meses[m - 1]++;
     });
 
-    // Inventario (cruce por nombre normalizado)
     const invPorNorm = {};
     inventario.forEach(i => {
       const k = _normEquipo(i.nombre);
@@ -16143,40 +16150,66 @@ async function exportarPivoteEquipos() {
       invT: equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo))
     })).sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
 
-    // ===== Construcción con FÓRMULAS VIVAS =====
+    // ===== Layout espejo del ejercicio del director =====
+    // Marca | Modelo | meses | Total | % de cada mes | Proy. sig | Pedido proy |
+    // Inventario | Cobertura | Días | Prom3 | Prom6 | Media | Mejor | Pico | Multi | Tendencia | Pedido | Pedido promo
     const col = i => XLSX.utils.encode_col(i);
     const nMes = mesMax;
-    const iMesIni = 2;                                       // C = Ene
+    const iMesIni = 2;
     const letra = mIdx => col(iMesIni + mIdx);
+    let ci = iMesIni + nMes;
+    const cTot = ci; ci++;
+    const iPctIni = ci; ci += nMes;                          // % por mes (una col por mes)
+    const cProy = ci++, cPedProy = ci++;
+    const cInv = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
+      cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++;
+    const nCols = ci;
+    const letraPct = mIdx => col(iPctIni + mIdx);
     const L3i = letra(c3ini - 1), L3f = letra(mesComp - 1);
     const L6i = letra(c6ini - 1);
     const LcompIni = letra(0), LcompFin = letra(mesComp - 1);
-    let ci = iMesIni + nMes;
-    const cTot = ci++, cInv = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
-      cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++,
-      cPart = ci++, cProy = ci++, cPedProy = ci++;
-    const nCols = ci;
 
-    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total', 'Inventario',
-      'Cobertura (meses)', 'Días cobertura', `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`,
-      'Prom 6m', 'Media (meses completos)', 'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
-      'Pedido sugerido (1.3×prom3 − inv)', 'Pedido escenario promo ((prom3 × multiplicador × 1.2) − inv)',
-      `Part. ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`];
+    const FILA_DIAS = 3, FILA_AGE = 4, FILA_HDR = 5;         // filas Excel 1-based
+    const filaIni = FILA_HDR + 1;
+    const filaTotal = filaIni + modelos.length;
+    const F = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v) || !isFinite(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
 
-    const filaTotal = 4 + modelos.length + 1;
-    const F = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
+    // Celdas de parámetros (a la derecha de los días/agentes, en la zona de %)
+    const cParamLbl1 = letraPct(0), cParamVal1 = letraPct(1);   // Días háb. mes proyectado
+    const cParamLbl2 = letraPct(2), cParamVal2 = letraPct(3);   // Agentes proyectados
+    const PV_DIAS = `$${cParamVal1}$${FILA_DIAS}`;
+    const PV_AGEN = `$${cParamVal2}$${FILA_DIAS}`;
+
+    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
+      ...MESES_L.slice(0, nMes).map(m => `% ${m}`),
+      `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
+      'Inventario', 'Cobertura (meses)', 'Días cobertura',
+      `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, 'Prom 6m', 'Media (meses completos)',
+      'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
+      'Pedido sugerido (1.3×prom3 − inv)', 'Pedido promo ((prom3 × mult × 1.2) − inv)'];
+
+    // Fila 3: días hábiles por mes + parámetros · Fila 4: agentes de cada mes
+    const filaDias = ['Días hábiles', ''];
+    for (let m = 1; m <= nMes; m++) filaDias[iMesIni + m - 1] = diasHabilesMes(anioAct, m);
+    filaDias[cTot] = '';
+    filaDias[iPctIni] = `Días háb. ${MESES_L[mesSig - 1]}:`;
+    filaDias[iPctIni + 1] = dhSig;
+    filaDias[iPctIni + 2] = 'Agentes proy.:';
+    filaDias[iPctIni + 3] = 145;
+    const filaAge = ['Agentes del mes', ''];
+    for (let m = 0; m < nMes; m++) filaAge[iMesIni + m] = agentesDelMes[m];
+    filaAge[iPctIni] = '← editables (recalculan proyección)';
+    for (let k = 0; k < nCols; k++) { if (filaDias[k] === undefined) filaDias[k] = ''; if (filaAge[k] === undefined) filaAge[k] = ''; }
 
     const aoa = [
       ['EQUIPOS E INVENTARIO — DEMANDA, STOCK Y PROYECCIÓN'],
-      [`Ventas activadas ${anioAct} por modelo (estadísticos con meses completos ${MESES_L[0]}-${MESES_L[mesComp - 1]}; ${MESES_L[mesMax - 1]} se muestra pero no promedia) | Generado ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
-      ['PARÁMETROS →', 'Agentes proyectados', 145, `Días háb. ${MESES_L[mesSig - 1]}`, dhSig,
-        'Agentes actuales', agentesActivos, 'Días háb. prom 3m', dh3,
-        `Proy. total ${MESES_L[mesSig - 1]}`,
-        F(0, `ROUND(SUM(${L3i}${filaTotal}:${L3f}${filaTotal})/$I$3/$G$3*$C$3*$E$3,0)`)],
+      [`Ventas activadas ${anioAct} por modelo | Estadísticos con meses completos ${MESES_L[0]}-${MESES_L[mesComp - 1]} (${MESES_L[mesMax - 1]} se muestra, no promedia) | Proyección: ritmo por agente·día háb. de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × agentes proy. × días háb. de ${MESES_L[mesSig - 1]} | Generado ${hoyF.getDate()}/${hoyF.getMonth() + 1}/${anioAct}`],
+      filaDias,
+      filaAge,
       H];
 
     modelos.forEach((mo, idx) => {
-      const r = 5 + idx;
+      const r = filaIni + idx;
       const inv2 = mo.invT;
       const sum3 = mo.meses.slice(c3ini - 1, mesComp).reduce((a, b) => a + b, 0);
       const p3v = sum3 / Math.max(1, mesComp - c3ini + 1);
@@ -16185,8 +16218,22 @@ async function exportarPivoteEquipos() {
       const medv = compl.reduce((a, b) => a + b, 0) / Math.max(1, compl.length);
       const picov = Math.max(...compl, 0);
       const multiv = medv > 0 ? picov / medv : 0;
+
       const fila = [mo.marca, mo.equipo, ...mo.meses];
       fila[cTot] = F(mo.meses.reduce((a, b) => a + b, 0), `SUM(${letra(0)}${r}:${letra(nMes - 1)}${r})`);
+      // % de cada mes = venta del modelo ÷ total del mes (fila TOTAL)
+      for (let m = 0; m < nMes; m++) {
+        fila[iPctIni + m] = F(0, `IF(${letra(m)}$${filaTotal}>0,${letra(m)}${r}/${letra(m)}$${filaTotal},0)`, '0.00%');
+      }
+      // Proyección con TUS datos: ritmo por agente·día háb. (3 meses completos) × agentes proy. × días del mes
+      const ritmos = [];
+      for (let m = c3ini; m <= mesComp; m++) {
+        ritmos.push(`${letra(m - 1)}${r}/${letra(m - 1)}$${FILA_DIAS}/${letra(m - 1)}$${FILA_AGE}`);
+      }
+      fila[cProy] = F(0, `ROUND(AVERAGE(${ritmos.join(',')})*${PV_AGEN}*${PV_DIAS},0)`);
+      fila[cPedProy] = inv2 == null
+        ? F(0, `${col(cProy)}${r}`)
+        : F(0, `MAX(0,${col(cProy)}${r}-${col(cInv)}${r})`);
       fila[cInv] = inv2 == null ? '' : inv2;
       fila[cCob] = inv2 == null ? '' : F(p3v > 0 ? inv2 / p3v : 0, `IF(${col(cP3)}${r}>0,${col(cInv)}${r}/${col(cP3)}${r},0)`, '0.00');
       fila[cDias] = inv2 == null ? '' : F(p3v > 0 ? Math.round(inv2 / p3v * 30) : 0, `ROUND(${col(cCob)}${r}*30,0)`);
@@ -16199,26 +16246,23 @@ async function exportarPivoteEquipos() {
       fila[cTend] = F(p3v > 0 ? (mo.meses[mesComp - 1] || 0) / p3v - 1 : 0, `IF(${col(cP3)}${r}>0,${L3f}${r}/${col(cP3)}${r}-1,0)`, '0.0%');
       fila[cPed] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * 1.3 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*1.3-${col(cInv)}${r},0))`);
       fila[cPromo] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * multiv * 1.2 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*${col(cMulti)}${r}*1.2-${col(cInv)}${r},0))`);
-      fila[cPart] = F(0, `IF(SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal})>0,SUM(${L3i}${r}:${L3f}${r})/SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal}),0)`, '0.00%');
-      fila[cProy] = F(0, `ROUND(${col(cPart)}${r}*$K$3,0)`);
-      fila[cPedProy] = inv2 == null ? F(0, `${col(cProy)}${r}`) : F(0, `MAX(0,${col(cProy)}${r}-${col(cInv)}${r})`);
       for (let k = 0; k < nCols; k++) if (fila[k] === undefined) fila[k] = '';
       aoa.push(fila);
     });
 
     const tRow = ['TOTAL', ''];
-    for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}5:${letra(m)}${filaTotal - 1})`);
-    tRow[cTot] = F(0, `SUM(${col(cTot)}5:${col(cTot)}${filaTotal - 1})`);
-    tRow[cInv] = F(0, `SUM(${col(cInv)}5:${col(cInv)}${filaTotal - 1})`);
-    tRow[cProy] = F(0, `SUM(${col(cProy)}5:${col(cProy)}${filaTotal - 1})`);
-    tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}5:${col(cPedProy)}${filaTotal - 1})`);
+    for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}${filaIni}:${letra(m)}${filaTotal - 1})`);
+    tRow[cTot] = F(0, `SUM(${col(cTot)}${filaIni}:${col(cTot)}${filaTotal - 1})`);
+    tRow[cProy] = F(0, `SUM(${col(cProy)}${filaIni}:${col(cProy)}${filaTotal - 1})`);
+    tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}${filaIni}:${col(cPedProy)}${filaTotal - 1})`);
+    tRow[cInv] = F(0, `SUM(${col(cInv)}${filaIni}:${col(cInv)}${filaTotal - 1})`);
     for (let k = 0; k < nCols; k++) if (tRow[k] === undefined) tRow[k] = '';
     aoa.push(tRow);
 
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
-    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 }, { wch: 10 },
-      { wch: 15 }, { wch: 12 }, { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 },
-      { wch: 11 }, { wch: 26 }, { wch: 28 }, { wch: 12 }, { wch: 13 }, { wch: 15 }];
+    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 },
+      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 12 },
+      { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }];
 
     (() => {
       const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA', PARAM = 'FFF2CC', PROY = 'E8E0F5';
@@ -16226,18 +16270,20 @@ async function exportarPivoteEquipos() {
       const celda = (r, c) => ws1[XLSX.utils.encode_cell({ r, c })];
       if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
       if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: GRIS } } };
-      for (let c = 0; c <= 10; c++) {
-        const x = celda(2, c);
-        if (!x) continue;
-        x.s = (typeof x.v === 'number' || x.f)
-          ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 10 } }
-          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
+      for (const rr of [FILA_DIAS - 1, FILA_AGE - 1]) {
+        for (let c = 0; c < nCols; c++) {
+          const x = celda(rr, c);
+          if (!x || x.v === '') continue;
+          x.s = (typeof x.v === 'number')
+            ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 9 }, alignment: { horizontal: 'center' } }
+            : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
+        }
       }
       for (let c = 0; c < nCols; c++) {
-        const h = celda(3, c);
+        const h = celda(FILA_HDR - 1, c);
         if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
       }
-      for (let r = 4; r <= rango.e.r; r++) {
+      for (let r = FILA_HDR; r <= rango.e.r; r++) {
         const esTotal = r === rango.e.r;
         for (let c = 0; c < nCols; c++) {
           const x = celda(r, c);
@@ -16248,10 +16294,11 @@ async function exportarPivoteEquipos() {
           else if (c === cDias && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 30 ? CRIT : OKF } };
           else if (c === cPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
           else if (c === cPromo && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'BF5B00' }; }
-          else if (c === cPart || c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
+          else if (c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
           x.s = s;
         }
       }
+      ws1['!freeze'] = { xSplit: 2, ySplit: FILA_HDR };
     })();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
