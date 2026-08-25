@@ -16412,6 +16412,26 @@ async function exportarPivoteEquipos() {
     ws3['!cols'] = [{ wch: 42 }, { wch: 14 }, { wch: 50 }];
     XLSX.utils.book_append_sheet(wb, ws3, 'Inventario sin cruzar');
 
+    // ===== Hoja DATOS: renglón por venta activada (motor del dashboard) =====
+    const entMapD = {};
+    (_entregasCache || []).forEach(e => { if (e && e.folio) entMapD[String(e.folio)] = e; });
+    const lunesDeD = f => { const d = new Date(f + 'T12:00:00'); const dw = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dw); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const aoaD = [['Fecha', 'Mes', 'Semana (lunes)', 'Marca', 'Equipo', 'Plan', 'Region', 'Entrega', 'Centro']];
+    (ventasData || []).forEach(r => {
+      if (r.estatus !== 'activada' || !r.fecha_activacion) return;
+      const f = String(r.fecha_activacion).substring(0, 10);
+      if (!f.startsWith(String(anioAct))) return;
+      const det = entMapD[String(r.folio)];
+      aoaD.push([f, parseInt(f.substring(5, 7)), lunesDeD(f),
+        det ? (det.marca || '—') : 'SIM', det ? (det.equipo || '—') : 'SIM',
+        r.plan || '', det ? (det.plaza || '') : '',
+        (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local',
+        r.centro || '']);
+    });
+    const wsD = XLSX.utils.aoa_to_sheet(aoaD);
+    wsD['!cols'] = [{ wch: 11 }, { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 36 }, { wch: 14 }, { wch: 8 }, { wch: 7 }, { wch: 7 }];
+    XLSX.utils.book_append_sheet(wb, wsD, 'Datos');
+
     XLSX.writeFile(wb, `equipos_inventario_${anioAct}.xlsx`);
   } catch (e) {
     console.error('[PivoteEquipos]', e);
