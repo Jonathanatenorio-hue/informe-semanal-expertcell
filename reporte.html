@@ -5693,10 +5693,17 @@ function renderTendenciaMes() {
   ventasData.forEach(r => {
     if (!r.fecha_activacion) return;
     if (r.fecha_activacion < iniMesStr || r.fecha_activacion > fechaCorteStr) return;
-    // Antes exigía supervisor oficial, lo que tiraba las ventas de agentes nuevos
-    // o aún sin asignar (y las de supervisores no dados de alta todavía). Ahora
-    // basta con que la venta tenga centro: cuenta en su centro aunque no tenga equipo.
-    if (!SUPERVISORES.includes(r.supervisor) && !r.centro) return;
+    // Respeta la VISTA activa (coordinador/centro): cuenta si su supervisor está
+    // en la vista, o si es huérfano (sin supervisor reconocido) de un CENTRO de la vista.
+    const _supOk = SUPERVISORES.includes(r.supervisor);
+    if (!_supOk) {
+      const _supConocido = r.supervisor && (supConfigData || []).some(s => s.supervisor === r.supervisor);
+      if (_supConocido) return; // pertenece a otra vista
+      const _centrosVista = window.__centrosVistaTend || (window.__centrosVistaTend = null);
+      const cv = new Set((supConfigData || []).filter(s => SUPERVISORES.includes(s.supervisor)).map(s => _accesoNormCentro(s.centro) || s.centro));
+      const cNorm = _accesoNormCentro(r.centro) || r.centro;
+      if (!r.centro || !cv.has(cNorm)) return;
+    }
     activadasPorFecha[r.fecha_activacion] = (activadasPorFecha[r.fecha_activacion] || 0) + (r.peso_venta || 1);
   });
 
@@ -16161,7 +16168,7 @@ async function exportarPivoteEquipos() {
     const cTot = ci; ci++;
     const iPctIni = ci; ci += nMes;                          // % por mes (una col por mes)
     const cRitmo = ci++, cProy = ci++, cPedProy = ci++;
-    const cInv = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
+    const cInv = ci++, cInvCC = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
       cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++;
     const nCols = ci;
     const letraPct = mIdx => col(iPctIni + mIdx);
@@ -16179,14 +16186,16 @@ async function exportarPivoteEquipos() {
     const cParamLbl2 = letraPct(2), cParamVal2 = letraPct(3);   // Agentes proyectados
     const PV_DIAS = `$${cParamVal1}$${FILA_DIAS}`;
     const PV_AGEN = `$${cParamVal2}$${FILA_DIAS}`;
+    const PV_CC = `$${letraPct(5)}$${FILA_DIAS}`;
+    const PCT_CC = 0.15;
 
     const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
       ...MESES_L.slice(0, nMes).map(m => `% ${m}`),
       'Ritmo 3m (unid / agente·día)', `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
-      'Inventario', 'Cobertura (meses)', 'Días cobertura',
+      'Inventario HUB', 'Inv. CC efectivo (× % CC)', 'Cobertura CC (meses)', 'Días cobertura CC',
       `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, 'Prom 6m', 'Media (meses completos)',
       'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
-      'Pedido sugerido (1.3×prom3 − inv)', 'Pedido promo ((prom3 × mult × 1.2) − inv)'];
+      'Pedido sugerido (1.3×prom3 − inv CC)', 'Pedido promo ((prom3 × mult × 1.2) − inv CC)'];
 
     // Fila 3: días hábiles por mes + parámetros · Fila 4: agentes de cada mes
     const filaDias = ['Días hábiles', ''];
@@ -16196,6 +16205,8 @@ async function exportarPivoteEquipos() {
     filaDias[iPctIni + 1] = dhSig;
     filaDias[iPctIni + 2] = 'Agentes proy.:';
     filaDias[iPctIni + 3] = 145;
+    filaDias[iPctIni + 4] = '% inv. asignado a CC:';
+    filaDias[iPctIni + 5] = { t: 'n', v: 0.15, z: '0%' };
     const filaAge = ['Agentes del mes', ''];
     for (let m = 0; m < nMes; m++) filaAge[iMesIni + m] = agentesDelMes[m];
     for (let k = 0; k < nCols; k++) { if (filaDias[k] === undefined) filaDias[k] = ''; if (filaAge[k] === undefined) filaAge[k] = ''; }
@@ -16233,10 +16244,12 @@ async function exportarPivoteEquipos() {
       fila[cProy] = F(0, `ROUND(${col(cRitmo)}${r}*${PV_AGEN}*${PV_DIAS},0)`);
       fila[cPedProy] = inv2 == null
         ? F(0, `${col(cProy)}${r}`)
-        : F(0, `MAX(0,${col(cProy)}${r}-${col(cInv)}${r})`);
+        : F(0, `MAX(0,${col(cProy)}${r}-${col(cInvCC)}${r})`);
       fila[cInv] = inv2 == null ? '' : inv2;
-      fila[cCob] = inv2 == null ? '' : F(p3v > 0 ? inv2 / p3v : 0, `IF(${col(cP3)}${r}>0,${col(cInv)}${r}/${col(cP3)}${r},0)`, '0.00');
-      fila[cDias] = inv2 == null ? '' : F(p3v > 0 ? Math.round(inv2 / p3v * 30) : 0, `ROUND(${col(cCob)}${r}*30,0)`);
+      const invCC = inv2 == null ? null : inv2 * PCT_CC;
+      fila[cInvCC] = inv2 == null ? '' : F(Math.round(invCC), `ROUND(${col(cInv)}${r}*${PV_CC},0)`);
+      fila[cCob] = inv2 == null ? '' : F(p3v > 0 ? invCC / p3v : 0, `IF(${col(cP3)}${r}>0,${col(cInvCC)}${r}/${col(cP3)}${r},0)`, '0.00');
+      fila[cDias] = inv2 == null ? '' : F(p3v > 0 ? Math.round(invCC / p3v * 30) : 0, `ROUND(${col(cCob)}${r}*30,0)`);
       fila[cP3] = F(p3v, `AVERAGE(${L3i}${r}:${L3f}${r})`, '0.0');
       fila[cP6] = F(p6v, `AVERAGE(${L6i}${r}:${L3f}${r})`, '0.0');
       fila[cMed] = F(medv, `AVERAGE(${LcompIni}${r}:${LcompFin}${r})`, '0.0');
@@ -16244,8 +16257,8 @@ async function exportarPivoteEquipos() {
       fila[cPico] = F(picov, `MAX(${LcompIni}${r}:${LcompFin}${r})`);
       fila[cMulti] = F(multiv, `IF(${col(cMed)}${r}>0,${col(cPico)}${r}/${col(cMed)}${r},0)`, '0.00');
       fila[cTend] = F(p3v > 0 ? (mo.meses[mesComp - 1] || 0) / p3v - 1 : 0, `IF(${col(cP3)}${r}>0,${L3f}${r}/${col(cP3)}${r}-1,0)`, '0.0%');
-      fila[cPed] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * 1.3 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*1.3-${col(cInv)}${r},0))`);
-      fila[cPromo] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * multiv * 1.2 - inv2)), `MAX(0,ROUND(${col(cP3)}${r}*${col(cMulti)}${r}*1.2-${col(cInv)}${r},0))`);
+      fila[cPed] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * 1.3 - invCC)), `MAX(0,ROUND(${col(cP3)}${r}*1.3-${col(cInvCC)}${r},0))`);
+      fila[cPromo] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * multiv * 1.2 - invCC)), `MAX(0,ROUND(${col(cP3)}${r}*${col(cMulti)}${r}*1.2-${col(cInvCC)}${r},0))`);
       for (let k = 0; k < nCols; k++) if (fila[k] === undefined) fila[k] = '';
       aoa.push(fila);
     });
@@ -16256,12 +16269,13 @@ async function exportarPivoteEquipos() {
     tRow[cProy] = F(0, `SUM(${col(cProy)}${filaIni}:${col(cProy)}${filaTotal - 1})`);
     tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}${filaIni}:${col(cPedProy)}${filaTotal - 1})`);
     tRow[cInv] = F(0, `SUM(${col(cInv)}${filaIni}:${col(cInv)}${filaTotal - 1})`);
+    tRow[cInvCC] = F(0, `SUM(${col(cInvCC)}${filaIni}:${col(cInvCC)}${filaTotal - 1})`);
     for (let k = 0; k < nCols; k++) if (tRow[k] === undefined) tRow[k] = '';
     aoa.push(tRow);
 
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
     ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 },
-      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 12 },
+      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 },
       { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }];
 
     (() => {
@@ -16302,6 +16316,75 @@ async function exportarPivoteEquipos() {
     })();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
+
+    // ===== Hoja: VISTA SEMANAL (últimas 10 semanas, lunes a domingo) =====
+    const lunesDe = f => { const d = new Date(f + 'T12:00:00'); const dw = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dw); return d; };
+    const fmtD = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const lunActual = lunesDe(fmtD(hoyF));
+    const semanas = [];
+    for (let k = 9; k >= 0; k--) {
+      const d = new Date(lunActual); d.setDate(d.getDate() - k * 7);
+      semanas.push({ ini: fmtD(d), lbl: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` });
+    }
+    const idxSem = f => {
+      const l = fmtD(lunesDe(f));
+      return semanas.findIndex(s => s.ini === l);
+    };
+    const porEquipoSem = {};
+    filasLog.forEach(f => {
+      if (!f.fecha_activacion) return;
+      const i = idxSem(String(f.fecha_activacion).substring(0, 10));
+      if (i < 0) return;
+      const key = f.equipo || 'SIM';
+      if (!porEquipoSem[key]) porEquipoSem[key] = { marca: f.marca || '—', sem: Array(10).fill(0) };
+      porEquipoSem[key].sem[i]++;
+    });
+    const modSem = Object.entries(porEquipoSem).map(([e, d]) => ({ equipo: e, marca: d.marca, sem: d.sem }))
+      .sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
+    const colS = i => XLSX.utils.encode_col(2 + i);
+    const cSTot = 12, cSProm = 13, cSTend = 14;
+    const filaTotS = 4 + modSem.length + 1;
+    const aoaS = [
+      ['VISTA SEMANAL POR MODELO'],
+      [`Últimas 10 semanas (lunes a domingo) | semana en curso al final, parcial`],
+      [],
+      ['Marca', 'Modelo / Equipo', ...semanas.map(s => `Sem ${s.lbl}`), 'Total 10 sem', 'Prom 4 sem completas', 'Últ. completa vs prom']];
+    modSem.forEach((mo, idx) => {
+      const r = 5 + idx;
+      const fila = [mo.marca, mo.equipo, ...mo.sem];
+      fila[cSTot] = F(mo.sem.reduce((a, b) => a + b, 0), `SUM(C${r}:L${r})`);
+      const ult4 = mo.sem.slice(5, 9);
+      const prom4 = ult4.reduce((a, b) => a + b, 0) / 4;
+      fila[cSProm] = F(prom4, `AVERAGE(H${r}:K${r})`, '0.0');
+      fila[cSTend] = F(prom4 > 0 ? (mo.sem[8] || 0) / prom4 - 1 : 0, `IF(${XLSX.utils.encode_col(cSProm)}${r}>0,K${r}/${XLSX.utils.encode_col(cSProm)}${r}-1,0)`, '0.0%');
+      aoaS.push(fila);
+    });
+    const tS = ['TOTAL', ''];
+    for (let i = 0; i < 10; i++) tS[2 + i] = F(0, `SUM(${colS(i)}5:${colS(i)}${filaTotS - 1})`);
+    tS[cSTot] = F(0, `SUM(M5:M${filaTotS - 1})`);
+    tS[cSProm] = ''; tS[cSTend] = '';
+    aoaS.push(tS);
+    const wsS = XLSX.utils.aoa_to_sheet(aoaS);
+    wsS['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(10).fill({ wch: 9 }), { wch: 10 }, { wch: 12 }, { wch: 12 }];
+    (() => {
+      const NAVY = '1F3864';
+      const rango = XLSX.utils.decode_range(wsS['!ref']);
+      const cel = (r, c) => wsS[XLSX.utils.encode_cell({ r, c })];
+      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+      for (let c = 0; c < 15; c++) { const h = cel(3, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      for (let r = 4; r <= rango.e.r; r++) {
+        const esT = r === rango.e.r;
+        for (let c = 0; c < 15; c++) {
+          const x = cel(r, c);
+          if (!x) continue;
+          x.s = { font: { name: 'Calibri', sz: 10, bold: esT || c === 0 } };
+          if (esT) x.s.fill = { fgColor: { rgb: 'DDEBF7' } };
+        }
+      }
+      wsS['!freeze'] = { xSplit: 2, ySplit: 4 };
+    })();
+    XLSX.utils.book_append_sheet(wb, wsS, 'Vista semanal');
 
     const aoa2 = [['Nombre', 'Almacén', 'Existencia', 'Categoría', 'Corte']];
     inventario.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
