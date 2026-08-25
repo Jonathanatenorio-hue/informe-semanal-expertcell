@@ -16424,7 +16424,7 @@ async function exportarPivoteEquipos() {
       const det = entMapD[String(r.folio)];
       aoaD.push([f, parseInt(f.substring(5, 7)), lunesDeD(f),
         det ? (det.marca || '—') : 'SIM', det ? (det.equipo || '—') : 'SIM',
-        r.plan || '', det ? (det.plaza || '') : '',
+        r.plan || '', det ? (det.region || det.plaza || '') : '',
         (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local',
         r.centro || '']);
     });
