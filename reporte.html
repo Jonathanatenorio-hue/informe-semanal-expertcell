@@ -16155,7 +16155,12 @@ async function exportarPivoteEquipos() {
     const modelos = Object.entries(porEquipo).map(([equipo, d]) => ({
       equipo, marca: d.marca, meses: d.meses.slice(0, mesMax),
       invT: equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo))
-    })).sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
+    })).map(mo => {
+      let s = 0, n = 0;
+      for (let m = c3ini; m <= mesComp; m++) { s += (mo.meses[m - 1] || 0) / diasHabilesMes(anioAct, m) / (agentesDelMes[m - 1] || 1); n++; }
+      mo.proyV = (n ? s / n : 0) * 145 * dhSig;
+      return mo;
+    }).sort((a, b) => b.proyV - a.proyV || (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
 
     // ===== Layout espejo del ejercicio del director =====
     // Marca | Modelo | meses | Total | % de cada mes | Proy. sig | Pedido proy |
@@ -16178,7 +16183,7 @@ async function exportarPivoteEquipos() {
 
     const FILA_DIAS = 3, FILA_AGE = 4, FILA_HDR = 5;         // filas Excel 1-based
     const filaIni = FILA_HDR + 1;
-    const filaTotal = filaIni + modelos.length;
+    const filaTotal = filaIni + modelos.length + 1; // +1: fila en blanco antes del TOTAL (ordenar sin arrastrarlo)
     const F = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v) || !isFinite(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
 
     // Celdas de parámetros (a la derecha de los días/agentes, en la zona de %)
@@ -16263,6 +16268,7 @@ async function exportarPivoteEquipos() {
       aoa.push(fila);
     });
 
+    aoa.push(Array(nCols).fill(''));
     const tRow = ['TOTAL', ''];
     for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}${filaIni}:${letra(m)}${filaTotal - 1})`);
     tRow[cTot] = F(0, `SUM(${col(cTot)}${filaIni}:${col(cTot)}${filaTotal - 1})`);
@@ -16295,7 +16301,10 @@ async function exportarPivoteEquipos() {
       }
       for (let c = 0; c < nCols; c++) {
         const h = celda(FILA_HDR - 1, c);
-        if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
+        if (!h) continue;
+        const hFill = (c >= iPctIni && c < iPctIni + nMes) ? '0077A8'
+          : (c === cRitmo || c === cProy || c === cPedProy) ? '5B3A8E' : NAVY;
+        h.s = { fill: { fgColor: { rgb: hFill } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
       }
       for (let r = FILA_HDR; r <= rango.e.r; r++) {
         const esTotal = r === rango.e.r;
@@ -16304,6 +16313,7 @@ async function exportarPivoteEquipos() {
           if (!x) continue;
           const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
           if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+          else if (c >= iPctIni && c < iPctIni + nMes) s.fill = { fgColor: { rgb: 'EAF4FA' } };
           else if (c === cCob && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 1 ? CRIT : OKF } };
           else if (c === cDias && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 30 ? CRIT : OKF } };
           else if (c === cPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
@@ -16313,6 +16323,7 @@ async function exportarPivoteEquipos() {
         }
       }
       ws1['!freeze'] = { xSplit: 2, ySplit: FILA_HDR };
+      ws1['!autofilter'] = { ref: `A${FILA_HDR}:${col(nCols - 1)}${filaTotal - 2}` };
     })();
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
