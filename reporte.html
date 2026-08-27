@@ -16480,9 +16480,9 @@ async function exportarPivoteEquipos() {
       'Agentes prom', agPromP, 'Agentes proy.', 145, `Días ${MESES_L[mesSig - 1]}`, dhSig,
       'PROY. ENTREGAS', CF(proyEntV, 'ROUND(C3/E3/G3*I3*K3,0)'),
       'Equipos 3m', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMesP})`),
-      'PROY. EQUIPOS', CF(proyEqV, 'ROUND(N3/E3/G3*I3*K3,0)')]);
+      'PROY. EQUIPOS', CF(proyEqV, 'ROUND(O3/E3/G3*I3*K3,0)')]);
     aoaP.push([]);
-    const PENT = '$L$3', PEQ = '$P$3', BENT = '$C$3', BEQ = '$N$3';
+    const PENT = '$M$3', PEQ = '$Q$3', BENT = '$C$3', BEQ = '$O$3';
 
     const regionesP = [...new Set(regsDet.map(x => x.region))].sort();
     const mesesP = [...new Set(regsDet.map(x => x.mes))].sort((a, b) => a - b);
