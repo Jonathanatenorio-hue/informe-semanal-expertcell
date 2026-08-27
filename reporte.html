@@ -16455,103 +16455,267 @@ async function exportarPivoteEquipos() {
     wsDet['!autofilter'] = { ref: `A1:J${aoaDet.length}` };
     XLSX.utils.book_append_sheet(wb, wsDet, 'Detalle programacion');
 
-    // ===== Hoja PIVOTE ENTREGAS (cruces pre-armados) =====
-    const cruz = (filtro, kFila, kCol, topCols) => {
-      const cnt = {}, colSet = {};
-      regsDet.filter(filtro).forEach(x => {
-        const fk = kFila(x), ck = kCol(x);
-        if (!cnt[fk]) cnt[fk] = {};
-        cnt[fk][ck] = (cnt[fk][ck] || 0) + 1;
-        colSet[ck] = (colSet[ck] || 0) + 1;
-      });
-      let cols = Object.entries(colSet).sort((a, b) => b[1] - a[1]).map(e => e[0]);
-      if (topCols && cols.length > topCols) {
-        const keep = cols.slice(0, topCols);
-        Object.values(cnt).forEach(row => {
-          let otras = 0;
-          Object.keys(row).forEach(k => { if (!keep.includes(k)) { otras += row[k]; delete row[k]; } });
-          if (otras) row['Otras'] = otras;
-        });
-        cols = [...keep, 'Otras'];
-      } else cols.sort();
-      return { cnt, cols };
-    };
+    // ===== Hoja PIVOTE ENTREGAS (fórmulas + proyección Sep en morado) =====
+    const DET = "'Detalle programacion'";
+    const CF = (v, f) => ({ t: 'n', v: v == null || isNaN(v) ? 0 : v, f });
+    const nDet = (fn) => regsDet.filter(fn).length;
+    const esc = s => String(s).replace(/"/g, '""');
+    const critMesP = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
+    let dh3P = 0;
+    for (let m = c3ini; m <= mesComp; m++) dh3P += diasHabilesMes(anioAct, m);
+    let agPromP = 0, nAgP = 0;
+    for (let m = c3ini; m <= mesComp; m++) { agPromP += (agentesDelMes[m - 1] || 0); nAgP++; }
+    agPromP = nAgP ? Math.round(agPromP / nAgP) : 1;
+    const ent3m = nDet(x => x.mes >= c3ini && x.mes <= mesComp);
+    const eq3m = nDet(x => x.marca !== 'SIM' && x.mes >= c3ini && x.mes <= mesComp);
+    const proyEntV = (ent3m && dh3P && agPromP) ? Math.round(ent3m / dh3P / agPromP * 145 * dhSig) : 0;
+    const proyEqV = (eq3m && dh3P && agPromP) ? Math.round(eq3m / dh3P / agPromP * 145 * dhSig) : 0;
+    const lblProy = `Proy ${MESES_L[mesSig - 1]}`;
+
     const aoaP = [];
-    const mete = (titulo, filasKeys, cruce, filaLbl) => {
-      aoaP.push([titulo]);
-      aoaP.push([filaLbl, ...cruce.cols, 'Total']);
-      let colTot = {};
-      filasKeys.forEach(fk => {
-        const row = cruce.cnt[fk] || {};
-        const vals = cruce.cols.map(c => row[c] || 0);
-        vals.forEach((v, i) => colTot[i] = (colTot[i] || 0) + v);
-        aoaP.push([fk, ...vals, vals.reduce((a, b) => a + b, 0)]);
-      });
-      aoaP.push(['TOTAL', ...cruce.cols.map((c, i) => colTot[i] || 0), Object.values(colTot).reduce((a, b) => a + b, 0)]);
-      aoaP.push([]);
-    };
-    const c1 = cruz(() => true, x => `M${String(x.mes).padStart(2, '0')}`, x => x.region);
-    mete('ENTREGAS POR MES Y REGION', [...new Set(regsDet.map(x => `M${String(x.mes).padStart(2, '0')}`))].sort(), c1, 'Mes');
-    const c2 = cruz(() => true, x => x.region, x => x.centro || '—');
-    mete('ENTREGAS POR REGION Y CENTRO', [...new Set(regsDet.map(x => x.region))].sort(), c2, 'Region');
-    const c3 = cruz(x => x.marca !== 'SIM', x => x.region, x => x.marca, 8);
-    mete('EQUIPOS POR REGION Y MARCA (sin SIM)', [...new Set(regsDet.filter(x => x.marca !== 'SIM').map(x => x.region))].sort(), c3, 'Region');
-    const supsTop = Object.entries(regsDet.reduce((a, x) => { a[x.sup] = (a[x.sup] || 0) + 1; return a; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 15).map(e => e[0]);
-    const c4 = cruz(x => supsTop.includes(x.sup), x => x.sup, x => x.region);
-    mete('TOP 15 SUPERVISORES POR REGION', supsTop, c4, 'Supervisor');
-    aoaP.push(['Para segmentación libre: Insertar → Tabla dinámica sobre la hoja "Detalle programacion".']);
-    const wsP = XLSX.utils.aoa_to_sheet(aoaP);
-    wsP['!cols'] = [{ wch: 28 }, ...Array(12).fill({ wch: 9 })];
-    aoaP.forEach((f, r) => {
-      if (f.length === 1 && typeof f[0] === 'string' && f[0] === f[0].toUpperCase() && f[0].length > 10) {
-        const x = wsP[XLSX.utils.encode_cell({ r, c: 0 })];
-        if (x) x.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: '1F3864' } } };
-      }
+    const titulosP = [], hdrRowsP = [], proyRowsP = [];
+    aoaP.push(['ENTREGAS Y PROYECCIÓN POR REGIÓN']);
+    aoaP.push([`Cifras reales con fórmulas sobre "Detalle programacion" · columnas/filas moradas "${lblProy}" = proyección (participación 3 meses completos × proyección total) · parámetros editables abajo`]);
+    aoaP.push(['PARÁMETROS:', 'Entregas 3m', CF(ent3m, `COUNTIFS(${critMesP})`), 'Días háb. 3m', dh3P,
+      'Agentes prom', agPromP, 'Agentes proy.', 145, `Días ${MESES_L[mesSig - 1]}`, dhSig,
+      'PROY. ENTREGAS', CF(proyEntV, 'ROUND(C3/E3/G3*I3*K3,0)'),
+      'Equipos 3m', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMesP})`),
+      'PROY. EQUIPOS', CF(proyEqV, 'ROUND(N3/E3/G3*I3*K3,0)')]);
+    aoaP.push([]);
+    const PENT = '$L$3', PEQ = '$P$3', BENT = '$C$3', BEQ = '$N$3';
+
+    const regionesP = [...new Set(regsDet.map(x => x.region))].sort();
+    const mesesP = [...new Set(regsDet.map(x => x.mes))].sort((a, b) => a - b);
+
+    // --- T1: Mes × Región + fila proyección ---
+    titulosP.push(aoaP.length);
+    aoaP.push(['1. ENTREGAS POR MES Y REGIÓN']);
+    hdrRowsP.push(aoaP.length);
+    aoaP.push(['Mes', ...regionesP, 'Total']);
+    const f1 = aoaP.length + 1;
+    mesesP.forEach(m => {
+      const rE = aoaP.length + 1;
+      const row = [MESES_L[m - 1]];
+      regionesP.forEach(rg => row.push(CF(nDet(x => x.mes === m && x.region === rg),
+        `COUNTIFS(${DET}!$C:$C,${m},${DET}!$D:$D,"${esc(rg)}")`)));
+      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
+      aoaP.push(row);
     });
+    const l1 = aoaP.length;
+    proyRowsP.push(aoaP.length);
+    const rowP1 = [lblProy];
+    {
+      const rE = aoaP.length + 1;
+      regionesP.forEach(rg => {
+        const n3 = nDet(x => x.region === rg && x.mes >= c3ini && x.mes <= mesComp);
+        rowP1.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
+          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${critMesP})/${BENT}*${PENT},0)`));
+      });
+      rowP1.push(CF(0, `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
+    }
+    aoaP.push(rowP1);
+    const tR1 = ['TOTAL real'];
+    for (let c = 1; c <= regionesP.length + 1; c++) {
+      const L = XLSX.utils.encode_col(c);
+      tR1.push(CF(0, `SUM(${L}${f1}:${L}${l1})`));
+    }
+    aoaP.push(tR1);
+    aoaP.push([]);
+
+    // --- T2: Región × Centro + columna proyección ---
+    const centrosP = [...new Set(regsDet.map(x => x.centro || ''))].sort();
+    titulosP.push(aoaP.length);
+    aoaP.push(['2. ENTREGAS POR REGIÓN Y CENTRO']);
+    hdrRowsP.push(aoaP.length);
+    aoaP.push(['Región', ...centrosP.map(c => c || '(sin centro)'), 'Total', lblProy]);
+    const f2 = aoaP.length + 1;
+    regionesP.forEach(rg => {
+      const rE = aoaP.length + 1;
+      const row = [rg];
+      centrosP.forEach(ce => row.push(CF(nDet(x => x.region === rg && (x.centro || '') === ce),
+        `COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$E:$E,"${esc(ce)}")`)));
+      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(centrosP.length)}${rE})`));
+      const n3 = nDet(x => x.region === rg && x.mes >= c3ini && x.mes <= mesComp);
+      row.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
+        `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${critMesP})/${BENT}*${PENT},0)`));
+      aoaP.push(row);
+    });
+    const l2 = aoaP.length;
+    const tR2 = ['TOTAL'];
+    for (let c = 1; c <= centrosP.length + 2; c++) {
+      const L = XLSX.utils.encode_col(c);
+      tR2.push(CF(0, `SUM(${L}${f2}:${L}${l2})`));
+    }
+    aoaP.push(tR2);
+    aoaP.push([]);
+
+    // --- T3: por cada REGIÓN (HUB), marcas × meses + proyección ---
+    titulosP.push(aoaP.length);
+    aoaP.push(['3. EQUIPOS POR HUB: MARCA × MES (sin SIM) — con proyección']);
+    const regionesEq = regionesP.filter(rg => nDet(x => x.region === rg && x.marca !== 'SIM') > 0)
+      .sort((a, b) => nDet(x => x.region === b && x.marca !== 'SIM') - nDet(x => x.region === a && x.marca !== 'SIM'));
+    regionesEq.forEach(rg => {
+      titulosP.push(aoaP.length);
+      aoaP.push([`HUB ${rg}`]);
+      hdrRowsP.push(aoaP.length);
+      aoaP.push(['Marca', ...mesesP.map(m => MESES_L[m - 1]), 'Total', lblProy]);
+      const fR = aoaP.length + 1;
+      const marcasRg = Object.entries(regsDet.filter(x => x.region === rg && x.marca !== 'SIM')
+        .reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
+        .sort((a, b) => b[1] - a[1]).slice(0, 6).map(e => e[0]);
+      marcasRg.forEach(mk => {
+        const rE = aoaP.length + 1;
+        const row = [mk];
+        mesesP.forEach(m => row.push(CF(nDet(x => x.region === rg && x.marca === mk && x.mes === m),
+          `COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${DET}!$C:$C,${m})`)));
+        row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(mesesP.length)}${rE})`));
+        const n3 = nDet(x => x.region === rg && x.marca === mk && x.mes >= c3ini && x.mes <= mesComp);
+        row.push(CF(eq3m ? Math.round(n3 / eq3m * proyEqV) : 0,
+          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${critMesP})/${BEQ}*${PEQ},0)`));
+        aoaP.push(row);
+      });
+      const lR = aoaP.length;
+      const tRr = ['TOTAL ' + rg];
+      for (let c = 1; c <= mesesP.length + 2; c++) {
+        const L = XLSX.utils.encode_col(c);
+        tRr.push(CF(0, `SUM(${L}${fR}:${L}${lR})`));
+      }
+      aoaP.push(tRr);
+      aoaP.push([]);
+    });
+
+    // --- T4: Top supervisores × región + proyección ---
+    const supsCnt = {};
+    regsDet.forEach(x => { supsCnt[x.sup] = (supsCnt[x.sup] || 0) + 1; });
+    const supsTop = Object.entries(supsCnt).sort((a, b) => b[1] - a[1]).slice(0, 15).map(e => e[0]);
+    titulosP.push(aoaP.length);
+    aoaP.push(['4. TOP 15 SUPERVISORES POR REGIÓN']);
+    hdrRowsP.push(aoaP.length);
+    aoaP.push(['Supervisor', ...regionesP, 'Total', lblProy]);
+    const f4 = aoaP.length + 1;
+    supsTop.forEach(sp => {
+      const rE = aoaP.length + 1;
+      const row = [sp];
+      regionesP.forEach(rg => row.push(CF(nDet(x => x.sup === sp && x.region === rg),
+        `COUNTIFS(${DET}!$F:$F,"${esc(sp)}",${DET}!$D:$D,"${esc(rg)}")`)));
+      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
+      const n3 = nDet(x => x.sup === sp && x.mes >= c3ini && x.mes <= mesComp);
+      row.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
+        `ROUND(COUNTIFS(${DET}!$F:$F,"${esc(sp)}",${critMesP})/${BENT}*${PENT},0)`));
+      aoaP.push(row);
+    });
+    const l4 = aoaP.length;
+    const tR4 = ['TOTAL'];
+    for (let c = 1; c <= regionesP.length + 2; c++) {
+      const L = XLSX.utils.encode_col(c);
+      tR4.push(CF(0, `SUM(${L}${f4}:${L}${l4})`));
+    }
+    aoaP.push(tR4);
+    aoaP.push([]);
+    aoaP.push(['Celdas moradas = PROYECCIÓN calculada · resto = datos reales. Fórmulas vivas sobre "Detalle programacion"; tabla dinámica libre: Insertar → Tabla dinámica sobre esa hoja.']);
+
+    const wsP = XLSX.utils.aoa_to_sheet(aoaP);
+    const maxColsP = Math.max(regionesP.length + 2, centrosP.length + 3, mesesP.length + 3, 16);
+    wsP['!cols'] = [{ wch: 30 }, ...Array(maxColsP).fill({ wch: 9 })];
+    (() => {
+      const NAVY = '1F3864', PROY = 'E8E0F5', PARAM = 'FFF2CC';
+      const cel = (r, c) => wsP[XLSX.utils.encode_cell({ r, c })];
+      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+      for (let c = 0; c < 17; c++) {
+        const x = cel(2, c);
+        if (!x) continue;
+        x.s = (typeof x.v === 'number' || x.f)
+          ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 9 } }
+          : { font: { name: 'Calibri', bold: true, sz: 8.5, color: { rgb: NAVY } } };
+      }
+      titulosP.forEach(r => { const x = cel(r, 0); if (x) x.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: NAVY } } }; });
+      hdrRowsP.forEach(r => {
+        for (let c = 0; c < maxColsP; c++) {
+          const x = cel(r, c);
+          if (x && x.v !== '') x.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } };
+        }
+      });
+      const rango = XLSX.utils.decode_range(wsP['!ref']);
+      for (let r = 3; r <= rango.e.r; r++) {
+        const primero = cel(r, 0);
+        const esTotal = primero && typeof primero.v === 'string' && primero.v.startsWith('TOTAL');
+        const esProyFila = proyRowsP.includes(r);
+        for (let c = 0; c < maxColsP; c++) {
+          const x = cel(r, c);
+          if (!x || hdrRowsP.includes(r) || titulosP.includes(r) || r <= 2) continue;
+          const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
+          const esProyCelda = x.f && (x.f.includes(PENT.replace(/\$/g, '$')) || x.f.includes(PEQ.replace(/\$/g, '$')) || esProyFila);
+          if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+          if (esProyCelda && !esTotal) { s.fill = { fgColor: { rgb: PROY } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
+          x.s = s;
+        }
+      }
+    })();
     XLSX.utils.book_append_sheet(wb, wsP, 'Pivote entregas');
 
-    // ===== Hoja FORECAST por REGION x MARCA (mes siguiente) =====
+    // ===== Hoja FORECAST por REGION x MARCA (fórmulas y parámetros editables) =====
     const eq3 = regsDet.filter(x => x.marca !== 'SIM' && x.mes >= c3ini && x.mes <= mesComp);
     const totEq3 = eq3.length;
     let agProm = 0, nAg = 0;
     for (let m = c3ini; m <= mesComp; m++) { agProm += (agentesDelMes[m - 1] || 0); nAg++; }
-    agProm = nAg ? agProm / nAg : 1;
+    agProm = nAg ? Math.round(agProm / nAg) : 1;
     let dh3F = 0;
     for (let m = c3ini; m <= mesComp; m++) dh3F += diasHabilesMes(anioAct, m);
     const proyEqTotal = (totEq3 > 0 && dh3F > 0 && agProm > 0) ? Math.round(totEq3 / dh3F / agProm * 145 * dhSig) : 0;
-    const marcasF = [...new Set(eq3.map(x => x.marca))].map(m => [m, eq3.filter(x => x.marca === m).length])
+    const critMes = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
+    const marcasF = Object.entries(eq3.reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
       .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
     const regionesF = [...new Set(eq3.map(x => x.region))].sort();
     const aoaF = [
       [`FORECAST ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS POR REGION Y MARCA`],
-      [`Método: participación de cada región×marca en ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (ritmo por agente·día × ${145} agentes × ${dhSig} días háb.) = ${proyEqTotal.toLocaleString()} equipos proyectados`],
+      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la proyección total. Parámetros editables (fila 3): todo recalcula.`],
+      ['Equipos 3m:', CF(totEq3, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
+        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Agentes proy.:', 145,
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)')],
       [],
       ['Region', ...marcasF, 'Otras', 'TOTAL']];
-    const totCol = Array(marcasF.length + 2).fill(0);
+    const firstF = 6;
+    const colOtrasF = XLSX.utils.encode_col(marcasF.length + 1);
+    const colUltF = XLSX.utils.encode_col(marcasF.length);
     regionesF.forEach(rg => {
+      const rExcel = aoaF.length + 1;
       const fila = [rg];
-      let totR = 0, acumR = 0;
-      marcasF.forEach((mk, i) => {
+      marcasF.forEach(mk => {
         const n = eq3.filter(x => x.region === rg && x.marca === mk).length;
-        const p = Math.round(n / totEq3 * proyEqTotal);
-        fila.push(p); totR += p; acumR += n; totCol[i] += p;
+        fila.push(CF(totEq3 ? Math.round(n / totEq3 * proyEqTotal) : 0,
+          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${critMes})/$B$3*$L$3,0)`));
       });
-      const nOtras = eq3.filter(x => x.region === rg).length - acumR;
-      const pOtras = Math.round(nOtras / totEq3 * proyEqTotal);
-      fila.push(pOtras); totR += pOtras; totCol[marcasF.length] += pOtras;
-      fila.push(totR); totCol[marcasF.length + 1] += totR;
+      const nReg = eq3.filter(x => x.region === rg).length;
+      const nOtras = nReg - fila.slice(1).reduce((a, x) => a + 0, 0);
+      const vMarcas = fila.slice(1).reduce((a, x) => a + (x.v || 0), 0);
+      fila.push(CF(totEq3 ? Math.max(0, Math.round(nReg / totEq3 * proyEqTotal) - vMarcas) : 0,
+        `MAX(0,ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"<>SIM",${critMes})/$B$3*$L$3,0)-SUM(B${rExcel}:${colUltF}${rExcel}))`));
+      fila.push(CF(0, `SUM(B${rExcel}:${colOtrasF}${rExcel})`));
       aoaF.push(fila);
     });
-    aoaF.push(['TOTAL', ...totCol]);
+    const lastF = aoaF.length;
+    const tF = ['TOTAL'];
+    for (let c = 1; c <= marcasF.length + 2; c++) {
+      const L = XLSX.utils.encode_col(c);
+      tF.push(CF(0, `SUM(${L}${firstF}:${L}${lastF})`));
+    }
+    aoaF.push(tF);
     const wsF = XLSX.utils.aoa_to_sheet(aoaF);
-    wsF['!cols'] = [{ wch: 12 }, ...Array(marcasF.length + 2).fill({ wch: 10 })];
+    wsF['!cols'] = [{ wch: 13 }, ...Array(marcasF.length + 2).fill({ wch: 10 })];
     (() => {
       const cel = (r, c) => wsF[XLSX.utils.encode_cell({ r, c })];
       if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
       if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < marcasF.length + 3; c++) { const h = cel(3, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
-      const last = aoaF.length - 1;
-      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(last, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+      for (let c = 0; c < 12; c++) {
+        const x = cel(2, c);
+        if (!x) continue;
+        x.s = (typeof x.v === 'number' || x.f)
+          ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } }
+          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
+      }
+      for (let c = 0; c < marcasF.length + 3; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(aoaF.length - 1, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
     })();
     XLSX.utils.book_append_sheet(wb, wsF, `Forecast ${MESES_L[mesSig - 1]}`);
 
