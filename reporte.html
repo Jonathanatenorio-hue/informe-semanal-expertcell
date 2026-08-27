@@ -16516,7 +16516,9 @@ async function exportarPivoteEquipos() {
     let agProm = 0, nAg = 0;
     for (let m = c3ini; m <= mesComp; m++) { agProm += (agentesDelMes[m - 1] || 0); nAg++; }
     agProm = nAg ? agProm / nAg : 1;
-    const proyEqTotal = totEq3 > 0 ? Math.round(totEq3 / dh3 / agProm * 145 * dhSig) : 0;
+    let dh3F = 0;
+    for (let m = c3ini; m <= mesComp; m++) dh3F += diasHabilesMes(anioAct, m);
+    const proyEqTotal = (totEq3 > 0 && dh3F > 0 && agProm > 0) ? Math.round(totEq3 / dh3F / agProm * 145 * dhSig) : 0;
     const marcasF = [...new Set(eq3.map(x => x.marca))].map(m => [m, eq3.filter(x => x.marca === m).length])
       .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
     const regionesF = [...new Set(eq3.map(x => x.region))].sort();
