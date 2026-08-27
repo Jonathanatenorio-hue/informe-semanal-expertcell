@@ -16433,6 +16433,13 @@ async function exportarPivoteEquipos() {
     XLSX.utils.book_append_sheet(wb, wsD, 'Datos');
 
     // ===== Hoja DETALLE PROGRAMACION (fuente para tabla dinámica) =====
+    const COLORES_EQ = ['NEGRO','BLACK','BLANCO','WHITE','AZUL','BLUE','NAVY','ROJO','RED','VERDE','GREEN','MORADO','PURPLE','PURPURA','ROSA','PINK','ORO','DORADO','GOLD','PLATA','PLATEADO','SILVER','GRIS','GRAY','GREY','GRAFITO','GRAPHITE','MEDIANOCHE','MIDNIGHT','ESTELAR','STARLIGHT','LAVANDA','LAVENDER','LILA','MENTA','MINT','CREMA','CREAM','BEIGE','CORAL','AMARILLO','YELLOW','NARANJA','ORANGE','VIOLETA','CIAN','TURQUESA','OBSIDIANA','NIEVE','MARFIL','CHAMPAGNE','TITANIO','TITANIUM','NATURAL','DESIERTO','DESERT','ULTRAMARINO','ULTRAMARINE','COSMICO','COSMIC','AURORA','OCEANO','CELESTE','INDIGO','TEAL'];
+    const _modeloBase = eq => {
+      if (!eq || eq === '—' || eq === 'SIM') return eq || '—';
+      let t = String(eq).toUpperCase();
+      COLORES_EQ.forEach(c => { t = t.replace(new RegExp('\\b' + c + '\\b', 'g'), ' '); });
+      return t.replace(/\s+/g, ' ').trim();
+    };
     const regsDet = [];
     (ventasData || []).forEach(r => {
       if (r.estatus !== 'activada' || !r.fecha_activacion) return;
@@ -16444,15 +16451,16 @@ async function exportarPivoteEquipos() {
         region: det ? (det.region || det.plaza || 'Sin region') : 'Sin region',
         centro: r.centro || '', sup: r.supervisor || '',
         marca: det ? (det.marca || '—') : 'SIM', equipo: det ? (det.equipo || '—') : 'SIM',
-        plan: r.plan || '', ent: (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local'
+        plan: r.plan || '', ent: (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local',
+        modeloB: det ? _modeloBase(det.equipo || '—') : 'SIM'
       });
     });
-    const aoaDet = [['Folio', 'Fecha', 'Mes', 'Region', 'Centro', 'Supervisor', 'Marca', 'Equipo', 'Plan', 'Entrega']];
-    regsDet.forEach(x => aoaDet.push([x.folio, x.f, x.mes, x.region, x.centro, x.sup, x.marca, x.equipo, x.plan, x.ent]));
+    const aoaDet = [['Folio', 'Fecha', 'Mes', 'Region', 'Centro', 'Supervisor', 'Marca', 'Equipo', 'Plan', 'Entrega', 'Modelo (sin color)']];
+    regsDet.forEach(x => aoaDet.push([x.folio, x.f, x.mes, x.region, x.centro, x.sup, x.marca, x.equipo, x.plan, x.ent, x.modeloB]));
     const wsDet = XLSX.utils.aoa_to_sheet(aoaDet);
-    wsDet['!cols'] = [{ wch: 12 }, { wch: 11 }, { wch: 5 }, { wch: 9 }, { wch: 7 }, { wch: 26 }, { wch: 10 }, { wch: 34 }, { wch: 14 }, { wch: 7 }];
-    for (let c = 0; c < 10; c++) { const h = wsDet[XLSX.utils.encode_cell({ r: 0, c })]; if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
-    wsDet['!autofilter'] = { ref: `A1:J${aoaDet.length}` };
+    wsDet['!cols'] = [{ wch: 12 }, { wch: 11 }, { wch: 5 }, { wch: 9 }, { wch: 7 }, { wch: 26 }, { wch: 10 }, { wch: 34 }, { wch: 14 }, { wch: 7 }, { wch: 30 }];
+    for (let c = 0; c < 11; c++) { const h = wsDet[XLSX.utils.encode_cell({ r: 0, c })]; if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+    wsDet['!autofilter'] = { ref: `A1:K${aoaDet.length}` };
     XLSX.utils.book_append_sheet(wb, wsDet, 'Detalle programacion');
 
     // ===== Hoja PIVOTE ENTREGAS (fórmulas + proyección Sep en morado) =====
@@ -16672,7 +16680,8 @@ async function exportarPivoteEquipos() {
       [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la proyección total. Parámetros editables (fila 3): todo recalcula.`],
       ['Equipos 3m:', CF(totEq3, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
         'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Agentes proy.:', 145,
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)')],
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)'),
+        'Factor ajuste:', 1.1],
       [],
       ['Region', ...marcasF, 'Otras', 'TOTAL']];
     const firstF = 6;
@@ -16701,13 +16710,38 @@ async function exportarPivoteEquipos() {
       tF.push(CF(0, `SUM(${L}${firstF}:${L}${lastF})`));
     }
     aoaF.push(tF);
+    const idxTotMat = aoaF.length - 1;
+
+    // --- FORECAST POR MODELO (colores agrupados) ---
+    aoaF.push([]);
+    const idxTitMod = aoaF.length;
+    aoaF.push([`FORECAST POR MODELO — unidades a considerar para ${MESES_L[mesSig - 1]} (colores agrupados)`]);
+    const idxHdrMod = aoaF.length;
+    aoaF.push(['Marca', 'Modelo (sin color)', 'Ventas 3m', 'Part. %', `Proy ${MESES_L[mesSig - 1]}`, 'Proy AJUSTADA (× factor)']);
+    const modCnt = {};
+    eq3.forEach(x => { const k = x.modeloB || x.equipo; if (!modCnt[k]) modCnt[k] = { n: 0, marca: x.marca }; modCnt[k].n++; });
+    const modelosF2 = Object.entries(modCnt).sort((a, b) => b[1].n - a[1].n);
+    const firstMod = aoaF.length + 1;
+    modelosF2.forEach(([mk, d]) => {
+      const rE = aoaF.length + 1;
+      const pv = eq3m ? Math.round(d.n / eq3m * proyEqTotal) : 0;
+      aoaF.push([d.marca, mk,
+        CF(d.n, `COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})`),
+        { t: 'n', v: eq3m ? d.n / eq3m : 0, f: `C${rE}/$B$3`, z: '0.0%' },
+        CF(pv, `ROUND(D${rE}*$L$3,0)`),
+        CF(Math.round(pv * 1.1), `ROUND(E${rE}*$N$3,0)`)]);
+    });
+    const lastMod = aoaF.length;
+    aoaF.push(['TOTAL', '', CF(0, `SUM(C${firstMod}:C${lastMod})`), '',
+      CF(0, `SUM(E${firstMod}:E${lastMod})`), CF(0, `SUM(F${firstMod}:F${lastMod})`)]);
+    const idxTotMod = aoaF.length - 1;
     const wsF = XLSX.utils.aoa_to_sheet(aoaF);
-    wsF['!cols'] = [{ wch: 13 }, ...Array(marcasF.length + 2).fill({ wch: 10 })];
+    wsF['!cols'] = [{ wch: 13 }, { wch: 27 }, ...Array(Math.max(marcasF.length + 1, 5)).fill({ wch: 11 })];
     (() => {
       const cel = (r, c) => wsF[XLSX.utils.encode_cell({ r, c })];
       if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
       if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < 12; c++) {
+      for (let c = 0; c < 14; c++) {
         const x = cel(2, c);
         if (!x) continue;
         x.s = (typeof x.v === 'number' || x.f)
@@ -16715,7 +16749,21 @@ async function exportarPivoteEquipos() {
           : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
       }
       for (let c = 0; c < marcasF.length + 3; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
-      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(aoaF.length - 1, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(idxTotMat, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+      const t = cel(idxTitMod, 0);
+      if (t) t.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: '1F3864' } } };
+      for (let c = 0; c < 6; c++) { const h = cel(idxHdrMod, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      for (let r = idxHdrMod + 1; r < idxTotMod; r++) {
+        for (let c = 0; c < 6; c++) {
+          const x = cel(r, c);
+          if (!x) continue;
+          const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
+          if (c === 4) { s.fill = { fgColor: { rgb: 'E8E0F5' } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
+          if (c === 5) { s.fill = { fgColor: { rgb: 'DCC9F0' } }; s.font.bold = true; s.font.color = { rgb: '3E2566' }; }
+          x.s = s;
+        }
+      }
+      for (let c = 0; c < 6; c++) { const x = cel(idxTotMod, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
     })();
     XLSX.utils.book_append_sheet(wb, wsF, `Forecast ${MESES_L[mesSig - 1]}`);
 
