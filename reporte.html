@@ -16432,6 +16432,127 @@ async function exportarPivoteEquipos() {
     wsD['!cols'] = [{ wch: 11 }, { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 36 }, { wch: 14 }, { wch: 8 }, { wch: 7 }, { wch: 7 }];
     XLSX.utils.book_append_sheet(wb, wsD, 'Datos');
 
+    // ===== Hoja DETALLE PROGRAMACION (fuente para tabla dinámica) =====
+    const regsDet = [];
+    (ventasData || []).forEach(r => {
+      if (r.estatus !== 'activada' || !r.fecha_activacion) return;
+      const f = String(r.fecha_activacion).substring(0, 10);
+      if (!f.startsWith(String(anioAct))) return;
+      const det = entMapD[String(r.folio)];
+      regsDet.push({
+        folio: r.folio, f, mes: parseInt(f.substring(5, 7)),
+        region: det ? (det.region || det.plaza || 'Sin region') : 'Sin region',
+        centro: r.centro || '', sup: r.supervisor || '',
+        marca: det ? (det.marca || '—') : 'SIM', equipo: det ? (det.equipo || '—') : 'SIM',
+        plan: r.plan || '', ent: (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local'
+      });
+    });
+    const aoaDet = [['Folio', 'Fecha', 'Mes', 'Region', 'Centro', 'Supervisor', 'Marca', 'Equipo', 'Plan', 'Entrega']];
+    regsDet.forEach(x => aoaDet.push([x.folio, x.f, x.mes, x.region, x.centro, x.sup, x.marca, x.equipo, x.plan, x.ent]));
+    const wsDet = XLSX.utils.aoa_to_sheet(aoaDet);
+    wsDet['!cols'] = [{ wch: 12 }, { wch: 11 }, { wch: 5 }, { wch: 9 }, { wch: 7 }, { wch: 26 }, { wch: 10 }, { wch: 34 }, { wch: 14 }, { wch: 7 }];
+    for (let c = 0; c < 10; c++) { const h = wsDet[XLSX.utils.encode_cell({ r: 0, c })]; if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+    wsDet['!autofilter'] = { ref: `A1:J${aoaDet.length}` };
+    XLSX.utils.book_append_sheet(wb, wsDet, 'Detalle programacion');
+
+    // ===== Hoja PIVOTE ENTREGAS (cruces pre-armados) =====
+    const cruz = (filtro, kFila, kCol, topCols) => {
+      const cnt = {}, colSet = {};
+      regsDet.filter(filtro).forEach(x => {
+        const fk = kFila(x), ck = kCol(x);
+        if (!cnt[fk]) cnt[fk] = {};
+        cnt[fk][ck] = (cnt[fk][ck] || 0) + 1;
+        colSet[ck] = (colSet[ck] || 0) + 1;
+      });
+      let cols = Object.entries(colSet).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+      if (topCols && cols.length > topCols) {
+        const keep = cols.slice(0, topCols);
+        Object.values(cnt).forEach(row => {
+          let otras = 0;
+          Object.keys(row).forEach(k => { if (!keep.includes(k)) { otras += row[k]; delete row[k]; } });
+          if (otras) row['Otras'] = otras;
+        });
+        cols = [...keep, 'Otras'];
+      } else cols.sort();
+      return { cnt, cols };
+    };
+    const aoaP = [];
+    const mete = (titulo, filasKeys, cruce, filaLbl) => {
+      aoaP.push([titulo]);
+      aoaP.push([filaLbl, ...cruce.cols, 'Total']);
+      let colTot = {};
+      filasKeys.forEach(fk => {
+        const row = cruce.cnt[fk] || {};
+        const vals = cruce.cols.map(c => row[c] || 0);
+        vals.forEach((v, i) => colTot[i] = (colTot[i] || 0) + v);
+        aoaP.push([fk, ...vals, vals.reduce((a, b) => a + b, 0)]);
+      });
+      aoaP.push(['TOTAL', ...cruce.cols.map((c, i) => colTot[i] || 0), Object.values(colTot).reduce((a, b) => a + b, 0)]);
+      aoaP.push([]);
+    };
+    const c1 = cruz(() => true, x => `M${String(x.mes).padStart(2, '0')}`, x => x.region);
+    mete('ENTREGAS POR MES Y REGION', [...new Set(regsDet.map(x => `M${String(x.mes).padStart(2, '0')}`))].sort(), c1, 'Mes');
+    const c2 = cruz(() => true, x => x.region, x => x.centro || '—');
+    mete('ENTREGAS POR REGION Y CENTRO', [...new Set(regsDet.map(x => x.region))].sort(), c2, 'Region');
+    const c3 = cruz(x => x.marca !== 'SIM', x => x.region, x => x.marca, 8);
+    mete('EQUIPOS POR REGION Y MARCA (sin SIM)', [...new Set(regsDet.filter(x => x.marca !== 'SIM').map(x => x.region))].sort(), c3, 'Region');
+    const supsTop = Object.entries(regsDet.reduce((a, x) => { a[x.sup] = (a[x.sup] || 0) + 1; return a; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 15).map(e => e[0]);
+    const c4 = cruz(x => supsTop.includes(x.sup), x => x.sup, x => x.region);
+    mete('TOP 15 SUPERVISORES POR REGION', supsTop, c4, 'Supervisor');
+    aoaP.push(['Para segmentación libre: Insertar → Tabla dinámica sobre la hoja "Detalle programacion".']);
+    const wsP = XLSX.utils.aoa_to_sheet(aoaP);
+    wsP['!cols'] = [{ wch: 28 }, ...Array(12).fill({ wch: 9 })];
+    aoaP.forEach((f, r) => {
+      if (f.length === 1 && typeof f[0] === 'string' && f[0] === f[0].toUpperCase() && f[0].length > 10) {
+        const x = wsP[XLSX.utils.encode_cell({ r, c: 0 })];
+        if (x) x.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: '1F3864' } } };
+      }
+    });
+    XLSX.utils.book_append_sheet(wb, wsP, 'Pivote entregas');
+
+    // ===== Hoja FORECAST por REGION x MARCA (mes siguiente) =====
+    const eq3 = regsDet.filter(x => x.marca !== 'SIM' && x.mes >= c3ini && x.mes <= mesComp);
+    const totEq3 = eq3.length;
+    let agProm = 0, nAg = 0;
+    for (let m = c3ini; m <= mesComp; m++) { agProm += (agentesDelMes[m - 1] || 0); nAg++; }
+    agProm = nAg ? agProm / nAg : 1;
+    const proyEqTotal = totEq3 > 0 ? Math.round(totEq3 / dh3 / agProm * 145 * dhSig) : 0;
+    const marcasF = [...new Set(eq3.map(x => x.marca))].map(m => [m, eq3.filter(x => x.marca === m).length])
+      .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
+    const regionesF = [...new Set(eq3.map(x => x.region))].sort();
+    const aoaF = [
+      [`FORECAST ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS POR REGION Y MARCA`],
+      [`Método: participación de cada región×marca en ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (ritmo por agente·día × ${145} agentes × ${dhSig} días háb.) = ${proyEqTotal.toLocaleString()} equipos proyectados`],
+      [],
+      ['Region', ...marcasF, 'Otras', 'TOTAL']];
+    const totCol = Array(marcasF.length + 2).fill(0);
+    regionesF.forEach(rg => {
+      const fila = [rg];
+      let totR = 0, acumR = 0;
+      marcasF.forEach((mk, i) => {
+        const n = eq3.filter(x => x.region === rg && x.marca === mk).length;
+        const p = Math.round(n / totEq3 * proyEqTotal);
+        fila.push(p); totR += p; acumR += n; totCol[i] += p;
+      });
+      const nOtras = eq3.filter(x => x.region === rg).length - acumR;
+      const pOtras = Math.round(nOtras / totEq3 * proyEqTotal);
+      fila.push(pOtras); totR += pOtras; totCol[marcasF.length] += pOtras;
+      fila.push(totR); totCol[marcasF.length + 1] += totR;
+      aoaF.push(fila);
+    });
+    aoaF.push(['TOTAL', ...totCol]);
+    const wsF = XLSX.utils.aoa_to_sheet(aoaF);
+    wsF['!cols'] = [{ wch: 12 }, ...Array(marcasF.length + 2).fill({ wch: 10 })];
+    (() => {
+      const cel = (r, c) => wsF[XLSX.utils.encode_cell({ r, c })];
+      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
+      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+      for (let c = 0; c < marcasF.length + 3; c++) { const h = cel(3, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
+      const last = aoaF.length - 1;
+      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(last, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+    })();
+    XLSX.utils.book_append_sheet(wb, wsF, `Forecast ${MESES_L[mesSig - 1]}`);
+
     XLSX.writeFile(wb, `equipos_inventario_${anioAct}.xlsx`);
   } catch (e) {
     console.error('[PivoteEquipos]', e);
