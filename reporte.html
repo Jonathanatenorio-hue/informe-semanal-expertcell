@@ -2084,6 +2084,14 @@ const TIPO_BADGE = {
 function aplicarFiltroCoordinador(fechaConsultaStr) {
   const vigentes = calcularSupervisoresVigentes(fechaConsultaStr);
 
+  // Acceso de SUPERVISOR: la vista queda clavada en su equipo, en toda fecha.
+  if (String(window.__accesoModo || '').startsWith('sup:')) {
+    const sN = window.__accesoModo.slice(4);
+    SUPERVISORES = vigentes.filter(s => s === sN);
+    if (!SUPERVISORES.length && vigentes.includes(sN)) SUPERVISORES = [sN];
+    return;
+  }
+
   if (coordinadorFiltro === 'todos') {
     SUPERVISORES = vigentes;
     return;
@@ -16389,6 +16397,23 @@ function aplicarFiltroAcceso() {
   let C = null;
   if (String(modo).startsWith('sup:')) {
     // Acceso de SUPERVISOR: solo su equipo (config, plantilla y todo lo que cascadea)
+    ['sec-comisiones'].forEach(id => {
+      const s = document.getElementById(id);
+      if (s) s.style.display = 'none';
+      const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
+      if (b) b.style.display = 'none';
+    });
+    // Apagador configurable: tabla acceso_secciones (sup_visible = false → oculta)
+    db.from('acceso_secciones').select('seccion, sup_visible').then(({ data }) => {
+      (data || []).forEach(x => {
+        if (x.sup_visible === false) {
+          const s = document.getElementById(x.seccion);
+          if (s) s.style.display = 'none';
+          const b = document.querySelector(`.nav-btn[data-target="${x.seccion}"]`);
+          if (b) b.style.display = 'none';
+        }
+      });
+    }).catch(() => {});
     const supN = modo.slice(4);
     window.__accesoSupNombre = supN;
     supConfigData = (supConfigData || []).filter(s => s.supervisor === supN);
@@ -16489,8 +16514,60 @@ function agregarBotonSalir() {
   document.body.appendChild(b);
 }
 
+// ===== PANEL DE DIRECTOR: prender/apagar secciones para supervisores =====
+function agregarBotonSecciones() {
+  const b = document.createElement('button');
+  b.textContent = '⚙️ Secciones supervisor';
+  b.title = 'Configurar qué secciones ven los accesos de supervisor';
+  b.style.cssText = 'position:fixed; bottom:14px; left:14px; z-index:9000; background:#5B3A8E; color:white; border:none; padding:7px 12px; border-radius:20px; font-size:11px; font-weight:700; cursor:pointer; opacity:0.85;';
+  b.onclick = abrirPanelSecciones;
+  document.body.appendChild(b);
+}
+
+async function abrirPanelSecciones() {
+  const FIJAS_DIR = ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos'];
+  const estados = {};
+  try {
+    const { data, error } = await db.from('acceso_secciones').select('seccion, sup_visible');
+    if (error) throw error;
+    (data || []).forEach(x => { estados[x.seccion] = x.sup_visible !== false; });
+  } catch (e) {
+    alert('Primero corre el SQL de la tabla acceso_secciones. Detalle: ' + (e.message || e));
+    return;
+  }
+  const secs = [...document.querySelectorAll('.section[id^="sec-"]')].map(s => ({
+    id: s.id,
+    titulo: ((s.querySelector('.section-title') || {}).textContent || s.id).trim()
+  })).filter(s => !FIJAS_DIR.includes(s.id));
+  const div = document.createElement('div');
+  div.id = 'panel-secciones-sup';
+  div.style.cssText = 'position:fixed; inset:0; background:rgba(0,20,40,.55); z-index:9500; display:flex; align-items:center; justify-content:center;';
+  div.innerHTML = `<div style="background:white; border-radius:12px; padding:20px 22px; width:430px; max-height:82vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="font-weight:800; color:#002B5C; font-size:15px; margin-bottom:4px;">⚙️ Secciones visibles para SUPERVISORES</div>
+    <div style="font-size:11px; color:#64748B; margin-bottom:12px;">Palomita = la ven · sin palomita = oculta. Se guarda al instante y aplica cuando ellos recargan. Comisiones siempre queda oculta. Las secciones de dirección nunca se muestran a supervisores.</div>
+    ${secs.map(s => `<label style="display:flex; gap:8px; align-items:center; padding:5px 2px; font-size:13px; cursor:pointer; ${s.id === 'sec-comisiones' ? 'opacity:.45;' : ''}">
+      <input type="checkbox" data-sec="${s.id}" ${s.id !== 'sec-comisiones' && estados[s.id] !== false ? 'checked' : ''} ${s.id === 'sec-comisiones' ? 'disabled' : ''}>
+      <span>${s.titulo}</span></label>`).join('')}
+    <button onclick="document.getElementById('panel-secciones-sup').remove()" style="margin-top:12px; width:100%; padding:9px; background:#002B5C; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Cerrar</button>
+  </div>`;
+  div.addEventListener('change', async e => {
+    const cb = e.target.closest('input[data-sec]');
+    if (!cb) return;
+    try {
+      const { error } = await db.from('acceso_secciones').upsert({ seccion: cb.dataset.sec, sup_visible: cb.checked });
+      if (error) throw error;
+    } catch (err) {
+      alert('No se guardó (¿corriste el SQL con las políticas de escritura?): ' + (err.message || err));
+      cb.checked = !cb.checked;
+    }
+  });
+  div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+  document.body.appendChild(div);
+}
+
 function arrancarReporte() {
   agregarBotonSalir();
+  if ((window.__accesoModo || 'director') === 'director') agregarBotonSecciones();
   cargarDatos().catch(e => console.error(e));
 }
 
