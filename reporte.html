@@ -3359,7 +3359,10 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     let diasTrans = 0;
     calendarioData.forEach(d => {
       if (!d.fecha) return;
+      // Mes en curso: HOY no cuenta como transcurrido (día incompleto);
+      // se mide hasta el último día completo (ayer).
       if (d.fecha < iniMesStr || d.fecha > cortePara) return;
+      if (esMesEnCurso && d.fecha === hoyStr) return;
       diasTrans += parseFloat(d.factor_dia || 0);
     });
 
@@ -3468,6 +3471,32 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
 
     const pctLogro = metaSupTotal > 0 ? (ventas / metaSupTotal * 100) : 0;
     const diasHabilesMes = diasHabilesPorMes[mes] || 0;
+    // Sin meta: ingresos del mes, rampa de 7 días (entran en lunes), días hábiles EFECTIVOS
+    const _sm = { n: 0, rampa: 0, vtas: 0, diasEf: 0 };
+    (plantillaData || []).forEach(p => {
+      if (!p || !p.nombre || p.supervisor !== sup) return;
+      const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+      if (!ing || ing <= iniMesStr || ing > cortePara) return;
+      if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= cortePara) return;
+      const dI = new Date(ing + 'T12:00:00');
+      dI.setDate(dI.getDate() + 7);
+      const iniEf = `${dI.getFullYear()}-${String(dI.getMonth() + 1).padStart(2, '0')}-${String(dI.getDate()).padStart(2, '0')}`;
+      _sm.n++;
+      if (iniEf > cortePara) { _sm.rampa++; return; }
+      let dEf = 0;
+      calendarioData.forEach(d => {
+        if (!d.fecha || d.fecha < iniEf || d.fecha > cortePara) return;
+        if (esMesEnCurso && d.fecha === hoyStr) return;
+        dEf += parseFloat(d.factor_dia || 0);
+      });
+      let vA = 0;
+      ventasData.forEach(r => {
+        if (r.estatus === 'activada' && r.ejecutivo === p.nombre && r.fecha_activacion &&
+          String(r.fecha_activacion).substring(0, 7) === iniMesStr.substring(0, 7)) vA++;
+      });
+      _sm.vtas += vA;
+      _sm.diasEf += dEf;
+    });
     // Mes en curso: productividad A RITMO (proyectada con los días transcurridos)
     const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
     const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
@@ -3494,7 +3523,9 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       prodMaduros,
       promDia,
       diasHabilesMes,
-      diasTrans
+      diasTrans,
+      smVtas: _sm.vtas, smDiasEf: _sm.diasEf, smN: _sm.n,
+      prodSinMeta: _sm.diasEf > 0 ? _sm.vtas / _sm.diasEf * diasHabilesMes : 0
     });
   }
 
@@ -3559,8 +3590,9 @@ function renderAnalisisAnualSupervisor(sup, anio) {
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
+        { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
-        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: v => v > 0 ? v.toFixed(1) : '—' }
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: (v, f) => f && f.esMesEnCurso && f.diasTrans != null ? `${Number(f.diasTrans).toFixed(1)} de ${Number(v).toFixed(1)}` : (v > 0 ? v.toFixed(1) : '—') }
       ]
     }
   ];
@@ -3669,6 +3701,7 @@ function exportarAnalisisAnualExcel(sup, anio) {
         { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
         { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
         { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+      { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
         { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
         { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
       ]
@@ -3851,6 +3884,9 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
     const esMesEnCurso = filasReales.some(f => f.esMesEnCurso);
 
     // Recalcular derivados (mes en curso: productividad A RITMO)
+    const _smV = filasReales.reduce((a, f) => a + (f.smVtas || 0), 0);
+    const _smD = filasReales.reduce((a, f) => a + (f.smDiasEf || 0), 0);
+    const prodSinMeta = _smD > 0 ? _smV / _smD * diasHabilesMes : 0;
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
     const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
     const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
@@ -3862,7 +3898,7 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
       mes, esMesEnCurso,
       meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
       totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
-      prodGeneral, prodNuevos, prodMaduros, promDia,
+      prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
       diasHabilesMes, diasTrans
     });
   }
@@ -3914,8 +3950,9 @@ function renderAnalisisAnualCoordinador(coordNombre, anio) {
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
+        { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
-        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: v => v > 0 ? v.toFixed(1) : '—' }
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: (v, f) => f && f.esMesEnCurso && f.diasTrans != null ? `${Number(f.diasTrans).toFixed(1)} de ${Number(v).toFixed(1)}` : (v > 0 ? v.toFixed(1) : '—') }
       ]
     }
   ];
@@ -4007,6 +4044,7 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
       { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+      { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
       { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
       { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
     ]}
@@ -4134,6 +4172,9 @@ function _calcularAnalisisAnualGlobal(anio) {
     const esMesEnCurso = filasReales.some(f => f.esMesEnCurso);
 
     // Recalcular derivados (mes en curso: productividad A RITMO)
+    const _smV = filasReales.reduce((a, f) => a + (f.smVtas || 0), 0);
+    const _smD = filasReales.reduce((a, f) => a + (f.smDiasEf || 0), 0);
+    const prodSinMeta = _smD > 0 ? _smV / _smD * diasHabilesMes : 0;
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
     const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
     const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
@@ -4145,7 +4186,7 @@ function _calcularAnalisisAnualGlobal(anio) {
       mes, esMesEnCurso,
       meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
       totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
-      prodGeneral, prodNuevos, prodMaduros, promDia,
+      prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
       diasHabilesMes, diasTrans
     });
   }
@@ -4195,8 +4236,9 @@ function renderAnalisisAnualGlobal(anio) {
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
+        { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
-        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: v => v > 0 ? v.toFixed(1) : '—' }
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', fmt: (v, f) => f && f.esMesEnCurso && f.diasTrans != null ? `${Number(f.diasTrans).toFixed(1)} de ${Number(v).toFixed(1)}` : (v > 0 ? v.toFixed(1) : '—') }
       ]
     }
   ];
@@ -4286,6 +4328,7 @@ function exportarAnalisisAnualGlobalExcel(anio) {
       { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+      { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
       { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
       { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
     ]}
