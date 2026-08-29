@@ -16527,6 +16527,7 @@ function agregarBotonSecciones() {
 async function abrirPanelSecciones() {
   const FIJAS_DIR = ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos'];
   const estados = {};
+  let usuarios = [];
   try {
     const { data, error } = await db.from('acceso_secciones').select('seccion, sup_visible');
     if (error) throw error;
@@ -16535,6 +16536,11 @@ async function abrirPanelSecciones() {
     alert('Primero corre el SQL de la tabla acceso_secciones. Detalle: ' + (e.message || e));
     return;
   }
+  try {
+    const { data } = await db.from('accesos_supervisor').select('supervisor, activo').order('supervisor');
+    usuarios = data || [];
+  } catch (e) { usuarios = []; }
+  const sinClave = (typeof SUPERVISORES !== 'undefined' ? SUPERVISORES : []).filter(s => !usuarios.find(u => u.supervisor === s));
   const secs = [...document.querySelectorAll('.section[id^="sec-"]')].map(s => ({
     id: s.id,
     titulo: ((s.querySelector('.section-title') || {}).textContent || s.id).trim()
@@ -16542,26 +16548,77 @@ async function abrirPanelSecciones() {
   const div = document.createElement('div');
   div.id = 'panel-secciones-sup';
   div.style.cssText = 'position:fixed; inset:0; background:rgba(0,20,40,.55); z-index:9500; display:flex; align-items:center; justify-content:center;';
-  div.innerHTML = `<div style="background:white; border-radius:12px; padding:20px 22px; width:430px; max-height:82vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.3);">
-    <div style="font-weight:800; color:#002B5C; font-size:15px; margin-bottom:4px;">⚙️ Secciones visibles para SUPERVISORES</div>
-    <div style="font-size:11px; color:#64748B; margin-bottom:12px;">Palomita = la ven · sin palomita = oculta. Se guarda al instante y aplica cuando ellos recargan. Comisiones siempre queda oculta. Las secciones de dirección nunca se muestran a supervisores.</div>
-    ${secs.map(s => `<label style="display:flex; gap:8px; align-items:center; padding:5px 2px; font-size:13px; cursor:pointer; ${s.id === 'sec-comisiones' ? 'opacity:.45;' : ''}">
+  div.innerHTML = `<div style="background:white; border-radius:12px; padding:20px 22px; width:460px; max-height:85vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.3);">
+    <div style="font-weight:800; color:#002B5C; font-size:15px; margin-bottom:10px;">⚙️ Configuración de accesos de SUPERVISOR</div>
+
+    <div style="font-weight:700; color:#5B3A8E; font-size:13px; margin-bottom:4px;">👤 Usuarios</div>
+    <div style="font-size:11px; color:#64748B; margin-bottom:8px;">Palomita = puede entrar · 🔑 genera clave nueva (se muestra UNA vez, cópiala).</div>
+    ${usuarios.length ? usuarios.map(u => `<div style="display:flex; gap:8px; align-items:center; padding:4px 2px; font-size:13px;">
+      <input type="checkbox" data-user="${encodeURIComponent(u.supervisor)}" ${u.activo !== false ? 'checked' : ''}>
+      <span style="flex:1;">${u.supervisor}</span>
+      <button data-regen="${encodeURIComponent(u.supervisor)}" title="Generar clave nueva" style="border:none; background:#F1F5F9; border-radius:6px; padding:3px 8px; cursor:pointer; font-size:12px;">🔑</button>
+    </div>`).join('') : '<div style="font-size:12px; color:#94A3B8; padding:4px 2px;">Sin usuarios aún.</div>'}
+    ${sinClave.length ? `<div style="display:flex; gap:6px; margin-top:8px;">
+      <select id="alta-sup-sel" style="flex:1; padding:6px; border:1px solid #CBD5E1; border-radius:6px; font-size:12px;">
+        ${sinClave.map(s => `<option value="${encodeURIComponent(s)}">${s}</option>`).join('')}
+      </select>
+      <button id="btn-alta-sup" style="background:#16A34A; color:white; border:none; border-radius:6px; padding:6px 12px; font-size:12px; font-weight:700; cursor:pointer;">➕ Dar acceso</button>
+    </div>` : ''}
+
+    <div style="font-weight:700; color:#5B3A8E; font-size:13px; margin:16px 0 4px;">📑 Secciones visibles</div>
+    <div style="font-size:11px; color:#64748B; margin-bottom:8px;">Palomita = la ven. Aplica cuando recargan. Comisiones siempre oculta.</div>
+    ${secs.map(s => `<label style="display:flex; gap:8px; align-items:center; padding:4px 2px; font-size:13px; cursor:pointer; ${s.id === 'sec-comisiones' ? 'opacity:.45;' : ''}">
       <input type="checkbox" data-sec="${s.id}" ${s.id !== 'sec-comisiones' && estados[s.id] !== false ? 'checked' : ''} ${s.id === 'sec-comisiones' ? 'disabled' : ''}>
       <span>${s.titulo}</span></label>`).join('')}
     <button onclick="document.getElementById('panel-secciones-sup').remove()" style="margin-top:12px; width:100%; padding:9px; background:#002B5C; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Cerrar</button>
   </div>`;
+
+  const claveNueva = () => 'EC26-SUP-' + Math.random().toString(36).slice(2, 8).toUpperCase();
   div.addEventListener('change', async e => {
-    const cb = e.target.closest('input[data-sec]');
-    if (!cb) return;
-    try {
-      const { error } = await db.from('acceso_secciones').upsert({ seccion: cb.dataset.sec, sup_visible: cb.checked });
-      if (error) throw error;
-    } catch (err) {
-      alert('No se guardó (¿corriste el SQL con las políticas de escritura?): ' + (err.message || err));
-      cb.checked = !cb.checked;
+    const cbS = e.target.closest('input[data-sec]');
+    if (cbS) {
+      try {
+        const { error } = await db.from('acceso_secciones').upsert({ seccion: cbS.dataset.sec, sup_visible: cbS.checked });
+        if (error) throw error;
+      } catch (err) { alert('No se guardó: ' + (err.message || err)); cbS.checked = !cbS.checked; }
+      return;
+    }
+    const cbU = e.target.closest('input[data-user]');
+    if (cbU) {
+      const nom = decodeURIComponent(cbU.dataset.user);
+      try {
+        const { error } = await db.from('accesos_supervisor').update({ activo: cbU.checked }).eq('supervisor', nom);
+        if (error) throw error;
+      } catch (err) { alert('No se guardó (¿corriste las políticas de escritura?): ' + (err.message || err)); cbU.checked = !cbU.checked; }
     }
   });
-  div.addEventListener('click', e => { if (e.target === div) div.remove(); });
+  div.addEventListener('click', async e => {
+    if (e.target === div) { div.remove(); return; }
+    const bR = e.target.closest('button[data-regen]');
+    if (bR) {
+      const nom = decodeURIComponent(bR.dataset.regen);
+      if (!confirm(`¿Clave NUEVA para ${nom}? La anterior deja de servir.`)) return;
+      const clave = claveNueva();
+      try {
+        const { error } = await db.from('accesos_supervisor').update({ clave_hash: await _hashClave(clave), activo: true }).eq('supervisor', nom);
+        if (error) throw error;
+        prompt(`Clave nueva de ${nom} (cópiala, no se vuelve a mostrar):`, clave);
+      } catch (err) { alert('No se pudo: ' + (err.message || err)); }
+      return;
+    }
+    if (e.target.id === 'btn-alta-sup') {
+      const sel = document.getElementById('alta-sup-sel');
+      const nom = decodeURIComponent(sel.value);
+      const clave = claveNueva();
+      try {
+        const { error } = await db.from('accesos_supervisor').insert({ supervisor: nom, clave_hash: await _hashClave(clave) });
+        if (error) throw error;
+        prompt(`Clave de ${nom} (cópiala, no se vuelve a mostrar):`, clave);
+        div.remove();
+        abrirPanelSecciones();
+      } catch (err) { alert('No se pudo dar de alta: ' + (err.message || err)); }
+    }
+  });
   document.body.appendChild(div);
 }
 
