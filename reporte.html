@@ -2937,7 +2937,8 @@ function renderRadiografiaObjetivos() {
   const sel = document.getElementById('radiografia-filtro');
   const filtro = sel ? sel.value : 'glob';
   const anioR = (window.__avanceData || {}).anio || new Date().getFullYear();
-  const mesHoy = new Date().getMonth() + 1;
+  const selMes = document.getElementById('radiografia-mes');
+  const mesHoy = (selMes && selMes.value) ? Number(selMes.value) : (new Date().getMonth() + 1);
   const hoyR = new Date();
   const hoyStrR = `${hoyR.getFullYear()}-${String(hoyR.getMonth() + 1).padStart(2, '0')}-${String(hoyR.getDate()).padStart(2, '0')}`;
   const centroDe = {};
@@ -2951,13 +2952,15 @@ function renderRadiografiaObjetivos() {
   });
   // Sin meta: ingresos del mes (siempre en lunes). Rampa = 7 días naturales de
   // capacitación; cuentan desde el lunes siguiente, con días hábiles EFECTIVOS.
-  const mesIniStr = hoyStrR.substring(0, 8) + '01';
+  const mesIniStr = `${anioR}-${String(mesHoy).padStart(2, '0')}-01`;
+  const finMesStr = `${anioR}-${String(mesHoy).padStart(2, '0')}-${String(new Date(anioR, mesHoy, 0).getDate()).padStart(2, '0')}`;
+  const corteStr = hoyStrR < finMesStr ? hoyStrR : finMesStr;
   const factorDia = {};
-  (calendarioData || []).forEach(d => { if (d.fecha && d.fecha >= mesIniStr && d.fecha <= hoyStrR) factorDia[d.fecha] = parseFloat(d.factor_dia || 0); });
+  (calendarioData || []).forEach(d => { if (d.fecha && d.fecha >= mesIniStr && d.fecha <= corteStr) factorDia[d.fecha] = parseFloat(d.factor_dia || 0); });
   const habilesDesde = ini => { let s = 0; Object.entries(factorDia).forEach(([f, v]) => { if (f >= ini) s += v; }); return s; };
   const vtasMesAg = {};
   (ventasData || []).forEach(r => {
-    if (r.estatus === 'activada' && r.fecha_activacion && String(r.fecha_activacion).substring(0, 7) === hoyStrR.substring(0, 7)) {
+    if (r.estatus === 'activada' && r.fecha_activacion && String(r.fecha_activacion).substring(0, 7) === mesIniStr.substring(0, 7)) {
       vtasMesAg[r.ejecutivo] = (vtasMesAg[r.ejecutivo] || 0) + 1;
     }
   });
@@ -2965,14 +2968,14 @@ function renderRadiografiaObjetivos() {
   (plantillaData || []).forEach(p => {
     if (!p || !p.nombre || !p.supervisor) return;
     const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
-    if (!ing || ing <= mesIniStr || ing > hoyStrR) return;
-    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= hoyStrR) return;
+    if (!ing || ing <= mesIniStr || ing > corteStr) return;
+    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= corteStr) return;
     const d = new Date(ing + 'T12:00:00');
     d.setDate(d.getDate() + 7);
     const iniEf = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const g = sinMetaPorSup[p.supervisor] || (sinMetaPorSup[p.supervisor] = { n: 0, rampa: 0, vtas: 0, diasEf: 0 });
     g.n++;
-    if (iniEf > hoyStrR) { g.rampa++; return; }
+    if (iniEf > corteStr) { g.rampa++; return; }
     g.vtas += vtasMesAg[p.nombre] || 0;
     g.diasEf += habilesDesde(iniEf);
   });
@@ -3066,7 +3069,9 @@ function exportarRadiografiaObjetivos() {
     ['Días hábiles del mes', dh, 'Días transcurridos', dt, 'Factor programadas', 1.1],
     [],
     ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Meta Programadas (110%)', 'Obj. Diario Activadas', 'Obj. Diario Programadas', 'Meta × Agente', 'Activadas hoy', 'Prom. × Agente', 'Esperado hoy', 'Δ vs esperado']];
-  const filaCalc = r => {
+  // Con FÓRMULAS vivas: referencias a los parámetros (B4 días háb., D4 transcurridos, F4 factor)
+  const CX = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
+  const filaCalc = (r, rE) => {
     const metaProg = Math.ceil((r.meta || 0) * 1.1);
     const objDia = dh > 0 ? r.meta / dh : 0;
     const esperado = dh > 0 ? r.meta / dh * dt : 0;
@@ -3074,28 +3079,32 @@ function exportarRadiografiaObjetivos() {
     return [r.sup, r.centro || '', r.coord || '', r.totalAgentes || 0,
       sm.n ? `${sm.n}${sm.rampa ? ` (${sm.rampa} rampa)` : ''}` : 0,
       sm.diasEf > 0 ? Number((sm.vtas / sm.diasEf).toFixed(2)) : (sm.n ? 'rampa' : 0),
-      r.meta || 0, metaProg,
-      Number(objDia.toFixed(2)), Number((dh > 0 ? metaProg / dh : 0).toFixed(2)),
-      Number((r.totalAgentes > 0 ? r.meta / r.totalAgentes : 0).toFixed(2)),
-      r.ventas || 0, Number((r.totalAgentes > 0 ? r.ventas / r.totalAgentes : 0).toFixed(2)),
-      Number(esperado.toFixed(1)), Number(((r.ventas || 0) - esperado).toFixed(1))];
+      r.meta || 0,
+      CX(metaProg, `ROUNDUP(G${rE}*$F$4,0)`),
+      CX(objDia, `IF($B$4>0,G${rE}/$B$4,0)`, '0.00'),
+      CX(dh > 0 ? metaProg / dh : 0, `IF($B$4>0,H${rE}/$B$4,0)`, '0.00'),
+      CX(r.totalAgentes > 0 ? r.meta / r.totalAgentes : 0, `IF(D${rE}>0,G${rE}/D${rE},0)`, '0.00'),
+      r.ventas || 0,
+      CX(r.totalAgentes > 0 ? r.ventas / r.totalAgentes : 0, `IF(D${rE}>0,L${rE}/D${rE},0)`, '0.00'),
+      CX(esperado, `IF($B$4>0,G${rE}/$B$4*$D$4,0)`, '0.0'),
+      CX((r.ventas || 0) - esperado, `L${rE}-N${rE}`, '0.0')];
   };
   const marcas = [];
   const centrosE = [...new Set(D.filasR.map(r => r.centro))];
   centrosE.forEach(ce => {
     const grupo = D.filasR.filter(r => r.centro === ce);
-    grupo.forEach(r => aoa.push(filaCalc(r)));
+    grupo.forEach(r => aoa.push(filaCalc(r, aoa.length + 1)));
     if (centrosE.length > 1 && grupo.length > 1) {
       const st = { sup: `Subtotal ${ce}`, centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
       grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
       marcas.push({ r: aoa.length, tipo: 'sub' });
-      aoa.push(filaCalc(st));
+      aoa.push(filaCalc(st, aoa.length + 1));
     }
   });
   const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
   D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
   marcas.push({ r: aoa.length, tipo: 'tot' });
-  aoa.push(filaCalc(tot));
+  aoa.push(filaCalc(tot, aoa.length + 1));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }];
   const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
@@ -3143,6 +3152,13 @@ function _wireRadiografia() {
     (coordSet.size ? `<optgroup label="🏢 Coordinadores">${[...coordSet].sort().map(c => `<option value="coord:${c}">${c}</option>`).join('')}</optgroup>` : '') +
     `<optgroup label="👤 Supervisores">${SUPERVISORES.map(s => `<option value="sup:${s}">${s}</option>`).join('')}</optgroup>`;
   sel.onchange = renderRadiografiaObjetivos;
+  const selM = document.getElementById('radiografia-mes');
+  if (selM) {
+    const MESES_R = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    const mAct = new Date().getMonth() + 1;
+    selM.innerHTML = Array.from({ length: mAct }, (_, i) => `<option value="${i + 1}" ${i + 1 === mAct ? 'selected' : ''}>${MESES_R[i]}</option>`).join('');
+    selM.onchange = renderRadiografiaObjetivos;
+  }
   const btnR = document.getElementById('radiografia-btn-excel');
   if (btnR) btnR.onclick = exportarRadiografiaObjetivos;
   renderRadiografiaObjetivos();
@@ -3187,6 +3203,7 @@ function renderProductividadEquipos() {
             <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Arranque de mes por supervisor: metas de activadas y programadas (110%), objetivos diarios, agentes y promedios — con avance y esperado a hoy.</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
+            <select id="radiografia-mes" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;"></select>
             <select id="radiografia-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:230px;"></select>
             <button id="radiografia-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
           </div>
