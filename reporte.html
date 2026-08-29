@@ -19104,7 +19104,11 @@ function renderComisionesSupervisores() {
       <div style="font-size:10.5px; color:var(--text-soft); margin-top:8px;">El bono en gris entre paréntesis es el monto potencial si se destraban las condiciones. Cifras sin sueldo base. Nota DHL: AZUL 2 / LITE 2 por DHL quedan en $50 neto en niveles 1-2 y $75 neto en el bracket 16+. El par de medios (AZUL, AZUL 1, LITE 1) por DHL netea como un Azul 2 DHL del bracket: $50 el par en niveles 1-2 y $75 el par en 16+ (ej: 15 Azul 2 + 2 Azul 1 = 16 cuotas → ese par paga $100, o $75 si fue DHL). El resto de planes descuenta −$50 por venta DHL.</div>
     </div>`;
 
-  html += _comCoordHTML(filas, anio, mes, esAgoMes);
+  // El bloque de comisiones de COORDINADORES solo lo ven director y coordinadores
+  // (en acceso de supervisor mostraría cálculos parciales de un solo equipo).
+  if (!String(window.__accesoModo || '').startsWith('sup:')) {
+    html += _comCoordHTML(filas, anio, mes, esAgoMes);
+  }
   html += _pisosPanelHTML();
   cont.innerHTML = html;
   window.__comSupFilas = { filas, anio, mes, esAgoMes };
