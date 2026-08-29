@@ -2089,6 +2089,17 @@ function aplicarFiltroCoordinador(fechaConsultaStr) {
     const sN = window.__accesoModo.slice(4);
     SUPERVISORES = vigentes.filter(s => s === sN);
     if (!SUPERVISORES.length && vigentes.includes(sN)) SUPERVISORES = [sN];
+    // Refuerzo: si los datos base traen gente/ventas de otros (recarga posterior
+    // al filtro de acceso), se estrechan aquí — corre en cada render.
+    if ((plantillaData || []).some(p => p && p.supervisor && p.supervisor !== sN)) {
+      plantillaData = plantillaData.filter(p => p && p.supervisor === sN);
+    }
+    if ((ventasData || []).some(r => r && r.supervisor && r.supervisor !== sN)) {
+      ventasData = ventasData.filter(r => r && r.supervisor === sN);
+    }
+    if ((supConfigData || []).some(s => s.supervisor !== sN)) {
+      supConfigData = supConfigData.filter(s => s.supervisor === sN);
+    }
     return;
   }
 
@@ -3546,6 +3557,58 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
   return filas;
 }
 
+// Hoja 2 del Excel anual: desglose agente por agente de los SIN META del mes
+function _hojaSinMetaDetalle(wb, filtroSup) {
+  try {
+    const hoy = new Date();
+    const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    const mesIni = hoyStr.substring(0, 8) + '01';
+    const rows = [];
+    (plantillaData || []).forEach(p => {
+      if (!p || !p.nombre || !filtroSup(p.supervisor)) return;
+      const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+      if (!ing || ing <= mesIni || ing > hoyStr) return;
+      if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= hoyStr) return;
+      const d = new Date(ing + 'T12:00:00');
+      d.setDate(d.getDate() + 7);
+      const iniEf = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      const enRampa = iniEf > hoyStr;
+      let dEf = 0;
+      (calendarioData || []).forEach(c => {
+        if (c.fecha && c.fecha >= iniEf && c.fecha <= hoyStr && c.fecha !== hoyStr) dEf += parseFloat(c.factor_dia || 0);
+      });
+      let v = 0;
+      (ventasData || []).forEach(r => {
+        if (r.estatus === 'activada' && r.ejecutivo === p.nombre && String(r.fecha_activacion || '').substring(0, 7) === mesIni.substring(0, 7)) v++;
+      });
+      rows.push([p.nombre, p.supervisor || '', ing, enRampa ? 'EN RAMPA (aún no marca)' : iniEf,
+        enRampa ? '' : Number(dEf.toFixed(1)), v, (!enRampa && dEf > 0) ? Number((v / dEf).toFixed(2)) : '', enRampa]);
+    });
+    rows.sort((a, b) => (a[1] + a[0]).localeCompare(b[1] + b[0]));
+    const aoa = [['DESGLOSE SIN META — MES EN CURSO'],
+      ['Ingresos del mes (rampa 7 días, entran en lunes): miden desde su inicio efectivo, días hábiles con sábado 0.5, sin contar hoy. Los EN RAMPA no entran al cálculo.'],
+      ['Agente', 'Supervisor', 'Fecha ingreso', 'Marca desde', 'Días efectivos', 'Ventas del mes', 'Ritmo / día ef.']];
+    rows.forEach(r => aoa.push(r.slice(0, 7)));
+    if (!rows.length) aoa.push(['(sin ingresos del mes en esta vista)']);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 34 }, { wch: 26 }, { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+    const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+    if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: '1F3864' } } };
+    if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+    for (let c = 0; c < 7; c++) { const h = cel(2, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+    rows.forEach((r, i) => {
+      for (let c = 0; c < 7; c++) {
+        const x = cel(3 + i, c);
+        if (!x) continue;
+        const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
+        if (r[7]) s.fill = { fgColor: { rgb: 'FFE699' } };
+        x.s = s;
+      }
+    });
+    XLSX.utils.book_append_sheet(wb, ws, 'Sin meta detalle');
+  } catch (e) { console.warn('[SinMetaHoja]', e); }
+}
+
 // Fórmulas vivas del Excel anual: cada métrica derivada referencia sus filas fuente
 function _aasFormulas(ws, filas, rk) {
   const R = k => rk[k];
@@ -3848,6 +3911,7 @@ function exportarAnalisisAnualExcel(sup, anio) {
   });
 
   XLSX.utils.book_append_sheet(wb, ws, `${sup}_${anio}`.substring(0, 31));
+  _hojaSinMetaDetalle(wb, s => s === sup);
   XLSX.writeFile(wb, `analisis_anual_${sup}_${anio}.xlsx`);
 }
 
@@ -4188,6 +4252,7 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
   });
 
   XLSX.utils.book_append_sheet(wb, ws, `Coord_${coordNombre}_${anio}`.substring(0, 31));
+  _hojaSinMetaDetalle(wb, s => SUPERVISORES.includes(s));
   XLSX.writeFile(wb, `analisis_anual_coord_${coordNombre}_${anio}.xlsx`);
 }
 
@@ -4479,6 +4544,7 @@ function exportarAnalisisAnualGlobalExcel(anio) {
   });
 
   XLSX.utils.book_append_sheet(wb, ws, `Global_${anio}`.substring(0, 31));
+  _hojaSinMetaDetalle(wb, s => SUPERVISORES.includes(s));
   XLSX.writeFile(wb, `analisis_anual_global_${anio}.xlsx`);
 }
 
@@ -16418,6 +16484,7 @@ function aplicarFiltroAcceso() {
     window.__accesoSupNombre = supN;
     supConfigData = (supConfigData || []).filter(s => s.supervisor === supN);
     plantillaData = (plantillaData || []).filter(p => p && p.supervisor === supN);
+    ventasData = (ventasData || []).filter(r => r && r.supervisor === supN);
     const filaS = supConfigData[0];
     C = filaS ? _accesoNormCentro(filaS.centro) : null;
   } else if (String(modo).startsWith('coord:')) {
@@ -16625,7 +16692,10 @@ async function abrirPanelSecciones() {
 function arrancarReporte() {
   agregarBotonSalir();
   if ((window.__accesoModo || 'director') === 'director') agregarBotonSecciones();
-  cargarDatos().catch(e => console.error(e));
+  cargarDatos().then(() => setTimeout(() => {
+    // Arranque limpio: todas las secciones colapsadas; se abren desde el navegador
+    document.querySelectorAll('.section.collapsible.abierto').forEach(s => s.classList.remove('abierto'));
+  }, 300)).catch(e => console.error(e));
 }
 
 async function iniciarAcceso() {
