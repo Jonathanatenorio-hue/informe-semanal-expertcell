@@ -604,6 +604,9 @@
     text-overflow: ellipsis;
   }
   .nav-btn:hover { background: var(--att-navy); color: white; }
+  /* Acceso de supervisor: ve logística pero sin descargas de inventario */
+  body.modo-sup button[onclick*="exportarPivoteEquipos"],
+  body.modo-sup #btn-excel-leads { display: none !important; }
   .nav-btn.active { background: var(--att-orange); color: white; }
 
   /* Botón toggle para mostrar/ocultar nav (solo aparece cuando hay nav lateral) */
@@ -16479,23 +16482,23 @@ function aplicarFiltroAcceso() {
   let C = null;
   if (String(modo).startsWith('sup:')) {
     // Acceso de SUPERVISOR: solo su equipo (config, plantilla y todo lo que cascadea)
-    ['sec-comisiones'].forEach(id => {
-      const s = document.getElementById(id);
-      if (s) s.style.display = 'none';
-      const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
-      if (b) b.style.display = 'none';
-    });
-    // Apagador configurable: tabla acceso_secciones (sup_visible = false → oculta)
+    document.body.classList.add('modo-sup');
+    // Apagador configurable: acceso_secciones. Comisiones: oculta SALVO que el
+    // director la habilite explícitamente desde el panel (sup_visible = true).
     db.from('acceso_secciones').select('seccion, sup_visible').then(({ data }) => {
-      (data || []).forEach(x => {
-        if (x.sup_visible === false) {
-          const s = document.getElementById(x.seccion);
-          if (s) s.style.display = 'none';
-          const b = document.querySelector(`.nav-btn[data-target="${x.seccion}"]`);
-          if (b) b.style.display = 'none';
-        }
-      });
-    }).catch(() => {});
+      const ocultar = id => {
+        const s = document.getElementById(id);
+        if (s) s.style.display = 'none';
+        const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
+        if (b) b.style.display = 'none';
+      };
+      (data || []).forEach(x => { if (x.sup_visible === false) ocultar(x.seccion); });
+      const rowCom = (data || []).find(x => x.seccion === 'sec-comisiones');
+      if (!rowCom || rowCom.sup_visible !== true) ocultar('sec-comisiones');
+    }).catch(() => {
+      const s = document.getElementById('sec-comisiones');
+      if (s) s.style.display = 'none';
+    });
     const supN = modo.slice(4);
     window.__accesoSupNombre = supN;
     supConfigData = (supConfigData || []).filter(s => s.supervisor === supN);
@@ -16649,10 +16652,10 @@ async function abrirPanelSecciones() {
     </div>` : ''}
 
     <div style="font-weight:700; color:#5B3A8E; font-size:13px; margin:16px 0 4px;">📑 Secciones visibles</div>
-    <div style="font-size:11px; color:#64748B; margin-bottom:8px;">Palomita = la ven. Aplica cuando recargan. Comisiones siempre oculta.</div>
-    ${secs.map(s => `<label style="display:flex; gap:8px; align-items:center; padding:4px 2px; font-size:13px; cursor:pointer; ${s.id === 'sec-comisiones' ? 'opacity:.45;' : ''}">
-      <input type="checkbox" data-sec="${s.id}" ${s.id !== 'sec-comisiones' && estados[s.id] !== false ? 'checked' : ''} ${s.id === 'sec-comisiones' ? 'disabled' : ''}>
-      <span>${s.titulo}</span></label>`).join('')}
+    <div style="font-size:11px; color:#64748B; margin-bottom:8px;">Palomita = la ven. Aplica cuando recargan. Comisiones arranca apagada: préndela solo si quieres que cada supervisor vea la suya.</div>
+    ${secs.map(s => `<label style="display:flex; gap:8px; align-items:center; padding:4px 2px; font-size:13px; cursor:pointer;">
+      <input type="checkbox" data-sec="${s.id}" ${s.id === 'sec-comisiones' ? (estados[s.id] === true ? 'checked' : '') : (estados[s.id] !== false ? 'checked' : '')}>
+      <span>${s.titulo}${s.id === 'sec-comisiones' ? ' <span style="font-size:10px; color:#D97706;">(apagada por defecto)</span>' : ''}</span></label>`).join('')}
     <button onclick="document.getElementById('panel-secciones-sup').remove()" style="margin-top:12px; width:100%; padding:9px; background:#002B5C; color:white; border:none; border-radius:8px; font-weight:700; cursor:pointer;">Cerrar</button>
   </div>`;
 
@@ -16874,6 +16877,10 @@ function _normEquipo(s) {
     .trim();
 }
 async function exportarPivoteEquipos() {
+  if (String(window.__accesoModo || '').startsWith('sup:')) {
+    alert('La descarga de inventarios es exclusiva de dirección y coordinación.');
+    return;
+  }
   try {
     await _cargarEntregasData().catch(() => null);
     const { data: inv } = await db.from('inventario_actual').select('*');
