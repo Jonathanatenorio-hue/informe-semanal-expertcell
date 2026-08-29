@@ -2930,6 +2930,224 @@ function renderEmbudo(actual, anterior) {
 // Implementación robusta con caché + try/catch para que un error aquí
 // nunca tumbe el render principal del reporte.
 // =====================================================================
+// ===== RADIOGRAFÍA DE OBJETIVOS DEL MES (por supervisor, con filtros) =====
+function renderRadiografiaObjetivos() {
+  const cont = document.getElementById('radiografia-tabla');
+  if (!cont) return;
+  const sel = document.getElementById('radiografia-filtro');
+  const filtro = sel ? sel.value : 'glob';
+  const anioR = (window.__avanceData || {}).anio || new Date().getFullYear();
+  const mesHoy = new Date().getMonth() + 1;
+  const hoyR = new Date();
+  const hoyStrR = `${hoyR.getFullYear()}-${String(hoyR.getMonth() + 1).padStart(2, '0')}-${String(hoyR.getDate()).padStart(2, '0')}`;
+  const centroDe = {};
+  (supConfigData || []).forEach(s => { if (s.supervisor) centroDe[s.supervisor] = s.centro || ''; });
+  const coordDe = {};
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStrR && (!cs.fecha_fin || cs.fecha_fin >= hoyStrR)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre || c.nombre_corto;
+    }
+  });
+  // Sin meta: ingresos del mes (siempre en lunes). Rampa = 7 días naturales de
+  // capacitación; cuentan desde el lunes siguiente, con días hábiles EFECTIVOS.
+  const mesIniStr = hoyStrR.substring(0, 8) + '01';
+  const factorDia = {};
+  (calendarioData || []).forEach(d => { if (d.fecha && d.fecha >= mesIniStr && d.fecha <= hoyStrR) factorDia[d.fecha] = parseFloat(d.factor_dia || 0); });
+  const habilesDesde = ini => { let s = 0; Object.entries(factorDia).forEach(([f, v]) => { if (f >= ini) s += v; }); return s; };
+  const vtasMesAg = {};
+  (ventasData || []).forEach(r => {
+    if (r.estatus === 'activada' && r.fecha_activacion && String(r.fecha_activacion).substring(0, 7) === hoyStrR.substring(0, 7)) {
+      vtasMesAg[r.ejecutivo] = (vtasMesAg[r.ejecutivo] || 0) + 1;
+    }
+  });
+  const sinMetaPorSup = {};
+  (plantillaData || []).forEach(p => {
+    if (!p || !p.nombre || !p.supervisor) return;
+    const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+    if (!ing || ing <= mesIniStr || ing > hoyStrR) return;
+    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= hoyStrR) return;
+    const d = new Date(ing + 'T12:00:00');
+    d.setDate(d.getDate() + 7);
+    const iniEf = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const g = sinMetaPorSup[p.supervisor] || (sinMetaPorSup[p.supervisor] = { n: 0, rampa: 0, vtas: 0, diasEf: 0 });
+    g.n++;
+    if (iniEf > hoyStrR) { g.rampa++; return; }
+    g.vtas += vtasMesAg[p.nombre] || 0;
+    g.diasEf += habilesDesde(iniEf);
+  });
+
+  let sups = [...SUPERVISORES];
+  if (filtro.startsWith('centro:')) sups = sups.filter(s => (centroDe[s] || '') === filtro.slice(7));
+  else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
+  else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
+
+  const filasR = [];
+  sups.forEach(sup => {
+    try {
+      const fs = _calcularAnalisisAnualSupervisor(sup, anioR);
+      const f = (fs || []).find(x => x.mes === mesHoy);
+      if (!f || (!f.meta && !f.ventas && !f.totalAgentes)) return;
+      filasR.push({ sup, centro: centroDe[sup] || '—', coord: coordDe[sup] || '—', ...f, sm: sinMetaPorSup[sup] || { n: 0, rampa: 0, vtas: 0, diasEf: 0 } });
+    } catch (e) { console.warn('[Radiografia]', sup, e); }
+  });
+  if (!filasR.length) { cont.innerHTML = '<div style="padding:14px; color:var(--text-soft); font-size:12px;">Sin datos para este filtro en el mes en curso.</div>'; window.__radiografiaData = null; return; }
+  filasR.sort((a, b) => (a.centro + '').localeCompare(b.centro + '') || b.meta - a.meta);
+  window.__radiografiaData = { filasR, filtroTxt: sel ? sel.options[sel.selectedIndex].text : 'Global' };
+
+  const F1 = n => Number(n || 0).toFixed(1);
+  const fila = (r, esSub, esTot) => {
+    const dh = r.diasHabilesMes || 0, dt = r.diasTrans || 0;
+    const metaProg = Math.ceil((r.meta || 0) * 1.1);
+    const objDia = dh > 0 ? r.meta / dh : 0;
+    const objDiaProg = dh > 0 ? metaProg / dh : 0;
+    const metaXAg = r.totalAgentes > 0 ? r.meta / r.totalAgentes : 0;
+    const promXAg = r.totalAgentes > 0 ? r.ventas / r.totalAgentes : 0;
+    const esperado = dh > 0 ? r.meta / dh * dt : 0;
+    const dif = r.ventas - esperado;
+    const okD = dif >= 0;
+    const bg = esTot ? 'background:#DDEBF7; font-weight:700;' : (esSub ? 'background:#F1F5F9; font-weight:700;' : '');
+    return `<tr style="${bg}">
+      <td style="padding:6px 8px; font-weight:600; white-space:nowrap;">${r.sup}</td>
+      <td style="padding:6px 8px;">${esTot || esSub ? '' : r.centro}</td>
+      <td style="padding:6px 8px;">${esTot || esSub ? '' : r.coord}</td>
+      <td style="padding:6px 8px; text-align:right;">${r.totalAgentes || 0}</td>
+      <td style="padding:6px 8px; text-align:right;">${(r.sm && r.sm.n) ? `${r.sm.n}${r.sm.rampa ? ` <span title="en capacitación">(${r.sm.rampa}🎓)</span>` : ''}` : '—'}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700; ${(() => { if (!r.sm || r.sm.diasEf <= 0) return ''; const est = (r.diasHabilesMes > 0 ? 6 / r.diasHabilesMes : 0.26); return 'color:' + (r.sm.vtas / r.sm.diasEf >= est ? '#16A34A' : '#DC2626') + ';'; })()}">${(r.sm && r.sm.diasEf > 0) ? (r.sm.vtas / r.sm.diasEf).toFixed(2) : ((r.sm && r.sm.n) ? '🎓' : '—')}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700;">${r.meta || 0}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700; color:#5B3A8E;">${metaProg}</td>
+      <td style="padding:6px 8px; text-align:right;">${F1(objDia)}</td>
+      <td style="padding:6px 8px; text-align:right; color:#5B3A8E;">${F1(objDiaProg)}</td>
+      <td style="padding:6px 8px; text-align:right;">${F1(metaXAg)}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700;">${r.ventas || 0}</td>
+      <td style="padding:6px 8px; text-align:right;">${F1(promXAg)}</td>
+      <td style="padding:6px 8px; text-align:right;">${F1(esperado)}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700; color:${okD ? '#16A34A' : '#DC2626'};">${okD ? '+' : ''}${F1(dif)}</td>
+    </tr>`;
+  };
+  const suma = arr => {
+    const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+    arr.forEach(r => {
+      t.meta += r.meta || 0; t.ventas += r.ventas || 0; t.totalAgentes += r.totalAgentes || 0;
+      if (r.sm) { t.sm.n += r.sm.n; t.sm.rampa += r.sm.rampa; t.sm.vtas += r.sm.vtas; t.sm.diasEf += r.sm.diasEf; }
+    });
+    return t;
+  };
+  let cuerpo = '';
+  const centros = [...new Set(filasR.map(r => r.centro))];
+  centros.forEach(ce => {
+    const grupo = filasR.filter(r => r.centro === ce);
+    grupo.forEach(r => { cuerpo += fila(r, false, false); });
+    if (centros.length > 1 && grupo.length > 1) {
+      const st = suma(grupo); st.sup = `Subtotal ${ce}`;
+      cuerpo += fila(st, true, false);
+    }
+  });
+  const tot = suma(filasR); tot.sup = 'TOTAL';
+  cuerpo += fila(tot, false, true);
+  const th = t => `<th style="padding:7px 8px; background:var(--att-navy); color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
+  cont.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Meta programadas (110%)', 'Obj. diario act.', 'Obj. diario prog.', 'Meta × agente', 'Activadas hoy', 'Prom. × agente', 'Esperado hoy', 'Δ vs esperado'].map(th).join('')}</tr></thead>
+    <tbody>${cuerpo}</tbody></table>
+    <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · Programadas = 110% de la meta de activadas · Sin meta: ventas por día hábil EFECTIVO (desde el lunes posterior a su semana de capacitación) vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día (verde = arriba) · 🎓 = aún en capacitación.</div>`;
+}
+
+function exportarRadiografiaObjetivos() {
+  const D = window.__radiografiaData;
+  if (!D || !D.filasR.length) { alert('No hay datos de radiografía para exportar.'); return; }
+  const MESES_N = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const hoyE = new Date();
+  const dh = D.filasR[0].diasHabilesMes || 0, dt = D.filasR[0].diasTrans || 0;
+  const NAVY = '1F3864';
+  const aoa = [
+    [`RADIOGRAFÍA DE OBJETIVOS — ${MESES_N[hoyE.getMonth()].toUpperCase()} ${hoyE.getFullYear()}`],
+    [`ExpertCell · ${D.filtroTxt} · Generado ${hoyE.getDate()}/${hoyE.getMonth() + 1}/${hoyE.getFullYear()}`],
+    ['Parámetros (sábado = 0.5 día):'],
+    ['Días hábiles del mes', dh, 'Días transcurridos', dt, 'Factor programadas', 1.1],
+    [],
+    ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Meta Programadas (110%)', 'Obj. Diario Activadas', 'Obj. Diario Programadas', 'Meta × Agente', 'Activadas hoy', 'Prom. × Agente', 'Esperado hoy', 'Δ vs esperado']];
+  const filaCalc = r => {
+    const metaProg = Math.ceil((r.meta || 0) * 1.1);
+    const objDia = dh > 0 ? r.meta / dh : 0;
+    const esperado = dh > 0 ? r.meta / dh * dt : 0;
+    const sm = r.sm || { n: 0, rampa: 0, vtas: 0, diasEf: 0 };
+    return [r.sup, r.centro || '', r.coord || '', r.totalAgentes || 0,
+      sm.n ? `${sm.n}${sm.rampa ? ` (${sm.rampa} rampa)` : ''}` : 0,
+      sm.diasEf > 0 ? Number((sm.vtas / sm.diasEf).toFixed(2)) : (sm.n ? 'rampa' : 0),
+      r.meta || 0, metaProg,
+      Number(objDia.toFixed(2)), Number((dh > 0 ? metaProg / dh : 0).toFixed(2)),
+      Number((r.totalAgentes > 0 ? r.meta / r.totalAgentes : 0).toFixed(2)),
+      r.ventas || 0, Number((r.totalAgentes > 0 ? r.ventas / r.totalAgentes : 0).toFixed(2)),
+      Number(esperado.toFixed(1)), Number(((r.ventas || 0) - esperado).toFixed(1))];
+  };
+  const marcas = [];
+  const centrosE = [...new Set(D.filasR.map(r => r.centro))];
+  centrosE.forEach(ce => {
+    const grupo = D.filasR.filter(r => r.centro === ce);
+    grupo.forEach(r => aoa.push(filaCalc(r)));
+    if (centrosE.length > 1 && grupo.length > 1) {
+      const st = { sup: `Subtotal ${ce}`, centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+      grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
+      marcas.push({ r: aoa.length, tipo: 'sub' });
+      aoa.push(filaCalc(st));
+    }
+  });
+  const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+  D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
+  marcas.push({ r: aoa.length, tipo: 'tot' });
+  aoa.push(filaCalc(tot));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }];
+  const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+  if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+  if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+  if (cel(2, 0)) cel(2, 0).s = { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
+  for (let c = 0; c < 6; c++) { const x = cel(3, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } }; }
+  for (let c = 0; c < 15; c++) { const h = cel(5, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
+  const rango = XLSX.utils.decode_range(ws['!ref']);
+  for (let r = 6; r <= rango.e.r; r++) {
+    const marca = marcas.find(m => m.r === r);
+    for (let c = 0; c < 15; c++) {
+      const x = cel(r, c);
+      if (!x) continue;
+      const s = { font: { name: 'Calibri', sz: 10, bold: !!marca || c === 0 } };
+      if (marca) s.fill = { fgColor: { rgb: marca.tipo === 'tot' ? 'DDEBF7' : 'F1F5F9' } };
+      if (c === 14 && typeof x.v === 'number') s.font.color = { rgb: x.v >= 0 ? '16A34A' : 'C00000' };
+      if (c === 5 && typeof x.v === 'number' && dh > 0) s.font.color = { rgb: x.v >= 6 / dh ? '16A34A' : 'C00000' };
+      if (c === 7 || c === 9) s.font.color = s.font.color || { rgb: '5B3A8E' };
+      x.s = s;
+    }
+  }
+  ws['!freeze'] = { xSplit: 1, ySplit: 6 };
+  const wbR = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbR, ws, `Radiografia ${MESES_N[hoyE.getMonth()]}`);
+  XLSX.writeFile(wbR, `Radiografia_Objetivos_${MESES_N[hoyE.getMonth()]}_${hoyE.getFullYear()}.xlsx`);
+}
+
+function _wireRadiografia() {
+  const sel = document.getElementById('radiografia-filtro');
+  if (!sel) return;
+  const centroDe = {};
+  (supConfigData || []).forEach(s => { if (s.supervisor && SUPERVISORES.includes(s.supervisor)) centroDe[s.supervisor] = s.centro || ''; });
+  const hoyStrW = new Date().toISOString().substring(0, 10);
+  const coordSet = new Set();
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStrW && (!cs.fecha_fin || cs.fecha_fin >= hoyStrW)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c && SUPERVISORES.includes(cs.supervisor)) coordSet.add(c.nombre || c.nombre_corto);
+    }
+  });
+  const centros = [...new Set(Object.values(centroDe).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="glob">🌐 Global · Toda la operación</option>` +
+    (centros.length ? `<optgroup label="🏭 Centros">${centros.map(c => `<option value="centro:${c}">${c}</option>`).join('')}</optgroup>` : '') +
+    (coordSet.size ? `<optgroup label="🏢 Coordinadores">${[...coordSet].sort().map(c => `<option value="coord:${c}">${c}</option>`).join('')}</optgroup>` : '') +
+    `<optgroup label="👤 Supervisores">${SUPERVISORES.map(s => `<option value="sup:${s}">${s}</option>`).join('')}</optgroup>`;
+  sel.onchange = renderRadiografiaObjetivos;
+  const btnR = document.getElementById('radiografia-btn-excel');
+  if (btnR) btnR.onclick = exportarRadiografiaObjetivos;
+  renderRadiografiaObjetivos();
+}
+
 function renderProductividadEquipos() {
   const cont = document.getElementById('productividad-equipos-contenido');
   if (!cont) return;
@@ -2961,6 +3179,21 @@ function renderProductividadEquipos() {
 
     let html = '';
 
+    html += `
+      <div style="margin-bottom:26px; border:1px solid var(--border); border-radius:10px; padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:700; color:var(--att-navy); font-size:14px;">🎯 Radiografía de objetivos del mes</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Arranque de mes por supervisor: metas de activadas y programadas (110%), objetivos diarios, agentes y promedios — con avance y esperado a hoy.</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="radiografia-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:230px;"></select>
+            <button id="radiografia-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
+          </div>
+        </div>
+        <div id="radiografia-tabla" style="overflow-x:auto;"></div>
+      </div>`;
+
     // ============================================================
     // Análisis Anual por Supervisor o Coordinador (única vista)
     // ============================================================
@@ -2987,7 +3220,7 @@ function renderProductividadEquipos() {
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:12px;">
           <div>
             <div style="font-weight:700; color:var(--att-navy); font-size:14px;">📅 Análisis Anual por Supervisor o Coordinador</div>
-            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Vista completa de los 12 meses del año con todas las métricas clave para análisis directivo.</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Vista completa de los 12 meses del año con todas las métricas clave para análisis directivo. El mes en curso (*) muestra productividad A RITMO: proyectada con los días transcurridos.</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             <select id="aas-target-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:200px;">
@@ -3014,6 +3247,8 @@ function renderProductividadEquipos() {
     // ============================================================
 
     cont.innerHTML = html;
+
+    _wireRadiografia();
 
     // Wire-up del Análisis Anual por Supervisor o Coordinador
     const aasTarget = document.getElementById('aas-target-select');
@@ -3215,11 +3450,13 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     });
 
     const pctLogro = metaSupTotal > 0 ? (ventas / metaSupTotal * 100) : 0;
-    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes : 0;
-    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos : 0;
-    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros : 0;
-    const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
     const diasHabilesMes = diasHabilesPorMes[mes] || 0;
+    // Mes en curso: productividad A RITMO (proyectada con los días transcurridos)
+    const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
+    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
+    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos * _fRitmo : 0;
+    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros * _fRitmo : 0;
+    const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
 
     filas.push({
       mes,
@@ -3596,11 +3833,12 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
     const diasTrans = filasReales[0].diasTrans || 0; // Igual para todos
     const esMesEnCurso = filasReales.some(f => f.esMesEnCurso);
 
-    // Recalcular derivados
+    // Recalcular derivados (mes en curso: productividad A RITMO)
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
-    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes : 0;
-    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos : 0;
-    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros : 0;
+    const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
+    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
+    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos * _fRitmo : 0;
+    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros * _fRitmo : 0;
     const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
 
     filas.push({
@@ -3878,11 +4116,12 @@ function _calcularAnalisisAnualGlobal(anio) {
     const diasTrans = filasReales[0].diasTrans || 0; // Igual para todos
     const esMesEnCurso = filasReales.some(f => f.esMesEnCurso);
 
-    // Recalcular derivados
+    // Recalcular derivados (mes en curso: productividad A RITMO)
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
-    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes : 0;
-    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos : 0;
-    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros : 0;
+    const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
+    const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
+    const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos * _fRitmo : 0;
+    const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros * _fRitmo : 0;
     const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
 
     filas.push({
@@ -4747,11 +4986,210 @@ function exportarCampaniaLeads() {
   XLSX.writeFile(wbL, `campania_leads_${hoyStr}.xlsx`);
 }
 
+// ===== MÓDULO DE TRÁNSITO POR ETAPAS (reconstruido) =====
+const _TR_ETAPAS = ['Solicitado', 'En preparacion', 'Back Office', 'En entrega', 'Entregado'];
+
+function _transitoDatos() {
+  const hoy = new Date();
+  const hoyMs = new Date(`${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}T12:00:00`).getTime();
+  const hoyStr = new Date().toISOString().substring(0, 10);
+  const centroDe = {};
+  (supConfigData || []).forEach(s => { if (s.supervisor) centroDe[s.supervisor] = s.centro || ''; });
+  const coordDe = {};
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStr && (!cs.fecha_fin || cs.fecha_fin >= hoyStr)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre || c.nombre_corto;
+    }
+  });
+  const entMapT = {};
+  if (typeof _entregasCache !== 'undefined' && Array.isArray(_entregasCache)) {
+    _entregasCache.forEach(e => { if (e && e.folio) entMapT[String(e.folio)] = e; });
+  }
+  const filas = [];
+  (ventasData || []).forEach(r => {
+    if (!['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) || !r.fecha_bo) return;
+    if (!SUPERVISORES.includes(r.supervisor)) return;
+    const fbo = String(r.fecha_bo).substring(0, 10);
+    const dias = Math.max(0, Math.floor((hoyMs - new Date(fbo + 'T12:00:00').getTime()) / 86400000));
+    let etapa = r.etapa_entrega || 'Back Office';
+    if (!_TR_ETAPAS.includes(etapa)) etapa = 'Back Office';
+    const det = entMapT[String(r.folio)];
+    filas.push({
+      folio: r.folio, cliente: r.cliente || '', telefono: r.telefono || '',
+      ejecutivo: r.ejecutivo || '', sup: r.supervisor,
+      coord: coordDe[r.supervisor] || '—', centro: centroDe[r.supervisor] || '',
+      fbo, dias, etapa, plaza: det ? (det.region || det.plaza || '') : ''
+    });
+  });
+  return filas;
+}
+
+function _transitoPorEtapaHTML() {
+  const filas = _transitoDatos();
+  window.__transitoFilas = filas;
+  if (!filas.length) return '<div style="padding:14px; color:var(--text-soft); font-size:12px;">Sin ventas en tránsito. 🎉</div>';
+  const entregadosSV = filas.filter(f => f.etapa === 'Entregado').length;
+  const agrupa = key => {
+    const m = {};
+    filas.forEach(f => {
+      const k = f[key];
+      if (!m[k]) m[k] = { etapas: Object.fromEntries(_TR_ETAPAS.map(e => [e, 0])), total: 0, esv: 0, d8: 0, d57: 0, dias: 0, coord: f.coord, centro: f.centro };
+      const g = m[k];
+      g.etapas[f.etapa]++; g.total++; g.dias += f.dias;
+      if (f.etapa === 'Entregado') g.esv++;
+      if (f.dias >= 8) g.d8++; else if (f.dias >= 5) g.d57++;
+    });
+    return m;
+  };
+  const porCoord = agrupa('coord'), porSup = agrupa('sup');
+  const filaHtml = (nombre, g, extra) => `<tr>
+    <td style="padding:5px 8px; font-weight:600; white-space:nowrap;">${nombre}</td>${extra || ''}
+    ${_TR_ETAPAS.map(e => `<td style="padding:5px 8px; text-align:right;">${g.etapas[e] || 0}</td>`).join('')}
+    <td style="padding:5px 8px; text-align:right; font-weight:700;">${g.total}</td>
+    <td style="padding:5px 8px; text-align:right; font-weight:700; color:${g.esv ? '#DC2626' : 'inherit'};">${g.esv}</td>
+    <td style="padding:5px 8px; text-align:right; color:${g.d8 ? '#DC2626' : 'inherit'};">${g.d8}</td>
+    <td style="padding:5px 8px; text-align:right; color:${g.d57 ? '#D97706' : 'inherit'};">${g.d57}</td></tr>`;
+  const totalG = { etapas: Object.fromEntries(_TR_ETAPAS.map(e => [e, filas.filter(f => f.etapa === e).length])), total: filas.length, esv: entregadosSV, d8: filas.filter(f => f.dias >= 8).length, d57: filas.filter(f => f.dias >= 5 && f.dias < 8).length };
+  const th = t => `<th style="padding:6px 8px; background:var(--att-navy); color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
+  const ths = extra => `<tr>${th(extra)}${extra === 'Supervisor' ? th('Coordinador') : ''}${_TR_ETAPAS.map(th).join('')}${th('Total')}${th('Entregado sin venta')}${th('8+ días')}${th('5-7 días')}</tr>`;
+  const rangos = [[1, 2, 'Flujo normal'], [3, 4, 'Dentro de rango'], [5, 7, 'Alerta: dar seguimiento'], [8, 14, 'Crítico: escalar'], [15, 9999, 'Muy crítico: revisar con logística']];
+  const antHtml = rangos.map(([a, b, lect]) => {
+    const n = filas.filter(f => f.dias >= a && f.dias <= b).length;
+    return `<tr><td style="padding:5px 8px;">${a}${b > 100 ? '+ ' : ' a ' + b} días</td><td style="padding:5px 8px; text-align:right; font-weight:700;">${n}</td><td style="padding:5px 8px; text-align:right;">${(n / filas.length * 100).toFixed(1)}%</td><td style="padding:5px 8px; color:var(--text-soft);">${lect}</td></tr>`;
+  }).join('');
+  return `
+    ${entregadosSV ? `<div style="background:#FEE2E2; border:1.5px solid #DC2626; border-radius:8px; padding:10px 14px; margin-bottom:12px; font-size:13px; font-weight:700; color:#991B1B;">🚨 ${entregadosSV} folios con equipo ENTREGADO y venta sin activar — prioridad de llamada hoy.</div>` : ''}
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+      <div style="font-weight:700; color:var(--att-navy); font-size:13px;">Por coordinador</div>
+      <button id="btn-transito-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel tránsito</button>
+    </div>
+    <div style="overflow-x:auto; margin-bottom:14px;"><table style="width:100%; border-collapse:collapse; font-size:12px;"><thead>${ths('Coordinador')}</thead><tbody>
+      ${Object.entries(porCoord).sort((a, b) => b[1].total - a[1].total).map(([n, g]) => filaHtml(n, g)).join('')}
+      ${filaHtml('<strong>TOTAL</strong>', totalG)}</tbody></table></div>
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:6px;">Por supervisor</div>
+    <div style="overflow-x:auto; margin-bottom:14px;"><table style="width:100%; border-collapse:collapse; font-size:12px;"><thead>${ths('Supervisor')}</thead><tbody>
+      ${Object.entries(porSup).sort((a, b) => b[1].total - a[1].total).map(([n, g]) => filaHtml(n, g, `<td style="padding:5px 8px;">${g.coord}</td>`)).join('')}</tbody></table></div>
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:6px;">Antigüedad del tránsito</div>
+    <div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:12px; min-width:420px;"><thead><tr>${th('Rango')}${th('Folios')}${th('% del total')}${th('Lectura')}</tr></thead><tbody>${antHtml}</tbody></table></div>
+    <div id="transito-duraciones" style="font-size:11px; color:var(--text-soft); margin-top:8px;"></div>`;
+}
+
+async function _renderDuracionEtapas() {
+  const div = document.getElementById('transito-duraciones');
+  if (!div) return;
+  try {
+    const { data } = await db.from('etapas_folio').select('etapa, folio');
+    if (!data || !data.length) return;
+    const c = {};
+    data.forEach(x => { c[x.etapa] = (c[x.etapa] || 0) + 1; });
+    div.textContent = '⏱️ Etapas registradas (histórico para duraciones): ' + _TR_ETAPAS.filter(e => c[e]).map(e => `${e}: ${c[e]}`).join(' · ');
+  } catch (e) { /* tabla aún sin datos */ }
+}
+
+function exportarAnalisisTransito() {
+  const filas = window.__transitoFilas || _transitoDatos();
+  if (!filas.length) { alert('Sin ventas en tránsito.'); return; }
+  const hoy = new Date();
+  const MES_C = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  const corte = `${hoy.getDate()}-${MES_C[hoy.getMonth()]}-${hoy.getFullYear()}`;
+  const NAVY = '1F3864', CRIT = 'F8CBAD', WARN = 'FFE699';
+  const wb = XLSX.utils.book_new();
+  const estiliza = (ws, nCols, hdrRow, fillsFn) => {
+    const rango = XLSX.utils.decode_range(ws['!ref']);
+    const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+    if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
+    if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+    for (let c = 0; c < nCols; c++) { const h = cel(hdrRow, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+    for (let r = hdrRow + 1; r <= rango.e.r; r++) {
+      const fill = fillsFn ? fillsFn(r - hdrRow - 1) : null;
+      for (let c = 0; c < nCols; c++) {
+        const x = cel(r, c);
+        if (!x) continue;
+        const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
+        if (fill) s.fill = { fgColor: { rgb: fill } };
+        x.s = s;
+      }
+    }
+  };
+  const agrupa = key => {
+    const m = {};
+    filas.forEach(f => {
+      const k = f[key];
+      if (!m[k]) m[k] = { etapas: Object.fromEntries(_TR_ETAPAS.map(e => [e, 0])), total: 0, esv: 0, d8: 0, d57: 0, dias: 0, coord: f.coord, centro: f.centro };
+      const g = m[k];
+      g.etapas[f.etapa]++; g.total++; g.dias += f.dias;
+      if (f.etapa === 'Entregado') g.esv++;
+      if (f.dias >= 8) g.d8++; else if (f.dias >= 5) g.d57++;
+    });
+    return m;
+  };
+  // Hoja 1: por coordinador
+  const pc = agrupa('coord');
+  const a1 = [['VENTAS EN TRANSITO — POR COORDINADOR'], [`Corte ${corte} · ${filas.length} folios abiertos`],
+    ['Coordinador', 'Centro', ..._TR_ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', '5-7 dias']];
+  const entC = Object.entries(pc).sort((a, b) => b[1].total - a[1].total);
+  entC.forEach(([n, g]) => a1.push([n, g.centro, ..._TR_ETAPAS.map(e => g.etapas[e] || 0), g.total, g.esv, g.d8, g.d57]));
+  a1.push(['TOTAL', '', ..._TR_ETAPAS.map(e => filas.filter(f => f.etapa === e).length), filas.length,
+    filas.filter(f => f.etapa === 'Entregado').length, filas.filter(f => f.dias >= 8).length, filas.filter(f => f.dias >= 5 && f.dias < 8).length]);
+  const ws1 = XLSX.utils.aoa_to_sheet(a1);
+  ws1['!cols'] = [{ wch: 22 }, { wch: 7 }, ...Array(9).fill({ wch: 11 })];
+  estiliza(ws1, 11, 2, i => i === entC.length ? 'DDEBF7' : null);
+  XLSX.utils.book_append_sheet(wb, ws1, '1. Por coordinador');
+  // Hoja 2: por supervisor
+  const ps = agrupa('sup');
+  const a2 = [['VENTAS EN TRANSITO — POR SUPERVISOR'], ['Ordenado de mayor a menor volumen'],
+    ['Supervisor', 'Coordinador', 'Centro', ..._TR_ETAPAS, 'Total', 'Entregado sin venta', '8+ dias', 'Dias prom.']];
+  Object.entries(ps).sort((a, b) => b[1].total - a[1].total)
+    .forEach(([n, g]) => a2.push([n, g.coord, g.centro, ..._TR_ETAPAS.map(e => g.etapas[e] || 0), g.total, g.esv, g.d8, Number((g.dias / g.total).toFixed(1))]));
+  const ws2 = XLSX.utils.aoa_to_sheet(a2);
+  ws2['!cols'] = [{ wch: 30 }, { wch: 22 }, { wch: 7 }, ...Array(9).fill({ wch: 11 })];
+  estiliza(ws2, 12, 2);
+  XLSX.utils.book_append_sheet(wb, ws2, '2. Por supervisor');
+  // Hoja 3: antigüedad
+  const rangos = [[1, 2, 'Flujo normal'], [3, 4, 'Dentro de rango'], [5, 7, 'Alerta: dar seguimiento'], [8, 14, 'Critico: escalar'], [15, 9999, 'Muy critico: revisar con logistica']];
+  const a3 = [['ANTIGUEDAD DEL TRANSITO'], ['Dias naturales transcurridos desde fecha BO'], ['Rango', 'Folios', '% del total', 'Lectura']];
+  rangos.forEach(([a, b, l]) => {
+    const n = filas.filter(f => f.dias >= a && f.dias <= b).length;
+    a3.push([`${a}${b > 100 ? '+' : ' a ' + b} dias`, n, filas.length ? n / filas.length : 0, l]);
+  });
+  const ws3 = XLSX.utils.aoa_to_sheet(a3);
+  ws3['!cols'] = [{ wch: 14 }, { wch: 8 }, { wch: 11 }, { wch: 34 }];
+  estiliza(ws3, 4, 2);
+  XLSX.utils.book_append_sheet(wb, ws3, '3. Antiguedad');
+  // Hoja 4: críticos
+  const criticos = filas.filter(f => f.dias >= 8 || f.etapa === 'Entregado').sort((a, b) => b.dias - a.dias);
+  const a4 = [['CASOS CRITICOS - REVISAR HOY'], [`${criticos.length} folios: entregados sin venta o con 8+ dias en transito`],
+    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Plaza', 'Que revisar']];
+  criticos.forEach(f => a4.push([f.coord, f.sup, f.ejecutivo, f.cliente, f.telefono, f.folio, f.fbo, f.dias, f.etapa, f.plaza,
+    f.etapa === 'Entregado' ? 'Equipo YA entregado: activar la venta' : 'Transito largo: rastrear con logistica']));
+  const ws4 = XLSX.utils.aoa_to_sheet(a4);
+  ws4['!cols'] = [{ wch: 20 }, { wch: 28 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 6 }, { wch: 13 }, { wch: 7 }, { wch: 36 }];
+  estiliza(ws4, 11, 2, () => CRIT);
+  XLSX.utils.book_append_sheet(wb, ws4, '4. Criticos');
+  // Hoja 5: detalle completo con semáforo
+  const a5 = [['DETALLE DE VENTAS EN TRANSITO'], [`Corte al ${corte}`],
+    ['Coordinador', 'Supervisor', 'Ejecutivo', 'Cliente', 'Telefono', 'Folio', 'Fecha BO', 'Dias', 'Estatus', 'Semaforo', 'Centro', 'Plaza']];
+  const ordenadas = [...filas].sort((a, b) => b.dias - a.dias);
+  ordenadas.forEach(f => a5.push([f.coord, f.sup, f.ejecutivo, f.cliente, f.telefono, f.folio, f.fbo, f.dias, f.etapa,
+    f.dias >= 8 ? 'CRITICO - 8+ dias' : (f.dias >= 5 ? 'ALERTA - 5 a 7 dias' : 'En rango'), f.centro, f.plaza]));
+  const ws5 = XLSX.utils.aoa_to_sheet(a5);
+  ws5['!cols'] = ws4['!cols'].concat([{ wch: 7 }]);
+  estiliza(ws5, 12, 2, i => { const f = ordenadas[i]; return f ? (f.dias >= 8 ? CRIT : (f.dias >= 5 ? WARN : null)) : null; });
+  ws5['!autofilter'] = { ref: `A3:L${a5.length}` };
+  XLSX.utils.book_append_sheet(wb, ws5, `Detalle ${filas.length}`);
+  XLSX.writeFile(wb, `analisis_transito_${hoy.toISOString().substring(0, 10)}.xlsx`);
+}
+
 function _montarTransitoEnDetalle() {
   const slot = document.getElementById('transito-etapa-slot');
   if (!slot) return;
-  slot.innerHTML = _transitoPorEtapaHTML();
-  _renderDuracionEtapas();
+  try {
+    slot.innerHTML = _transitoPorEtapaHTML();
+    const btnT = document.getElementById('btn-transito-excel');
+    if (btnT) btnT.onclick = exportarAnalisisTransito;
+    _renderDuracionEtapas();
+  } catch (e) { console.error('[Transito]', e); }
 }
 function _renderAvanceMensualImpl(wActual) {
   const rangoSem = fechasDeSemana(wActual);
