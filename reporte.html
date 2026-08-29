@@ -1066,7 +1066,10 @@
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
         <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
         <button class="nav-btn" data-target="sec-vista-tiempo">📊 Diaria/Semanal</button>
+        <button class="nav-btn" data-target="sec-distribucion">👥 Distribución</button>
+        <button class="nav-btn" data-target="sec-cohortes">🎓 Grupos de ingreso</button>
         <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
+        <button class="nav-btn" data-target="sec-transito">🚚 Tránsito</button>
         <button class="nav-btn" data-target="sec-estado">⏳ Estado cierre</button>
         <button class="nav-btn" data-target="sec-historico">📉 Histórico</button>
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
@@ -1438,12 +1441,15 @@
       </div>
     </div>
 
+    <div class="section collapsible" id="sec-transito">
       <div class="section-title">🚚 Ventas en tránsito</div>
       <div class="section-body">
         <div class="section-subtitle">Foto viva del tránsito nutrida del backoffice diario: por coordinador, por supervisor, antigüedad y casos críticos. El botón genera el Excel con el formato del análisis oficial.</div>
         <div id="transito-etapa-slot"></div>
       </div>
+    </div>
 
+    <div class="section collapsible" id="sec-estado">
       <div class="section-title">Estado de cierre por semana</div>
       <div class="section-body">
       <div class="section-subtitle">De lo que se programó cada semana, qué porcentaje ya se activó, canceló o sigue pendiente. Lo ideal es que las semanas pasadas estén al 100% entre activadas + canceladas.</div>
@@ -3532,6 +3538,34 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
   return filas;
 }
 
+// Fórmulas vivas del Excel anual: cada métrica derivada referencia sus filas fuente
+function _aasFormulas(ws, filas, rk) {
+  const R = k => rk[k];
+  const put = (key, fB) => {
+    const r = R(key);
+    if (!r) return;
+    filas.forEach((f, i) => {
+      if (!f || f.esMesFuturo) return;
+      const ref = XLSX.utils.encode_cell({ r: r - 1, c: i + 1 });
+      const cell = ws[ref];
+      if (!cell || typeof cell.v !== 'number') return;
+      const L = XLSX.utils.encode_col(i + 1);
+      cell.f = fB(L);
+    });
+  };
+  if (R('meta') && R('ventas')) put('pctLogro', L => `IF(${L}${R('meta')}>0,${L}${R('ventas')}/${L}${R('meta')}*100,0)`);
+  const prod = (k, vk, ak) => {
+    if (R(vk) && R(ak) && R('diasTrans') && R('diasHabilesMes'))
+      put(k, L => `IF(AND(${L}${R(ak)}>0,${L}${R('diasTrans')}>0),${L}${R(vk)}/${L}${R(ak)}/${L}${R('diasTrans')}*${L}${R('diasHabilesMes')},0)`);
+  };
+  prod('prodGeneral', 'ventas', 'totalAgentes');
+  prod('prodNuevos', 'ventasNuevos', 'agentesNuevos');
+  prod('prodMaduros', 'ventasMaduros', 'agentesMaduros');
+  if (R('ventas') && R('diasTrans')) put('promDia', L => `IF(${L}${R('diasTrans')}>0,${L}${R('ventas')}/${L}${R('diasTrans')},0)`);
+  if (R('smVtas') && R('smDiasEf') && R('diasHabilesMes'))
+    put('prodSinMeta', L => `IF(${L}${R('smDiasEf')}>0,${L}${R('smVtas')}/${L}${R('smDiasEf')}*${L}${R('diasHabilesMes')},0)`);
+}
+
 function _fmtNum(n, dec) {
   if (n === null || n === undefined) return '—';
   if (n === 0) return '—';
@@ -3702,17 +3736,22 @@ function exportarAnalisisAnualExcel(sup, anio) {
         { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
         { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
+      { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
+      { label: 'Dias efectivos sin meta', key: 'smDiasEf', tipo: 'dec' },
         { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
-        { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
+        { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' },
+        { label: 'Días transcurridos', key: 'diasTrans', tipo: 'dec' }
       ]
     }
   ];
 
+  const rowDeKey = {};
   grupos.forEach(g => {
     const rGrupo = aoa.length;
     aoa.push([g.titulo, ...new Array(12).fill('')]);
     merges.push({ s: { r: rGrupo, c: 0 }, e: { r: rGrupo, c: 12 } });
     g.filas.forEach(rowDef => {
+      rowDeKey[rowDef.key] = aoa.length + 1;
       const fila = [rowDef.label];
       filas.forEach(f => {
         if (f.esMesFuturo) {
@@ -3735,6 +3774,7 @@ function exportarAnalisisAnualExcel(sup, anio) {
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  _aasFormulas(ws, filas, rowDeKey);
   ws['!merges'] = merges;
   ws['!cols'] = [{ wch: 26 }, ...new Array(12).fill({ wch: 9 })];
   const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 8 }, { hpt: 22 }];
@@ -3899,6 +3939,7 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
       meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
       totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
       prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
+      smVtas: _smV, smDiasEf: _smD,
       diasHabilesMes, diasTrans
     });
   }
@@ -4045,16 +4086,21 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
+      { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
+      { label: 'Dias efectivos sin meta', key: 'smDiasEf', tipo: 'dec' },
       { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
-      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
+      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' },
+      { label: 'Días transcurridos', key: 'diasTrans', tipo: 'dec' }
     ]}
   ];
 
+  const rowDeKey = {};
   grupos.forEach(g => {
     const rGrupo = aoa.length;
     aoa.push([g.titulo, ...new Array(12).fill('')]);
     merges.push({ s: { r: rGrupo, c: 0 }, e: { r: rGrupo, c: 12 } });
     g.filas.forEach(rowDef => {
+      rowDeKey[rowDef.key] = aoa.length + 1;
       const fila = [rowDef.label];
       filas.forEach(f => {
         if (f.esMesFuturo) { fila.push(null); }
@@ -4071,6 +4117,7 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  _aasFormulas(ws, filas, rowDeKey);
   ws['!merges'] = merges;
   ws['!cols'] = [{ wch: 26 }, ...new Array(12).fill({ wch: 9 })];
   const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 8 }, { hpt: 22 }];
@@ -4187,6 +4234,7 @@ function _calcularAnalisisAnualGlobal(anio) {
       meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
       totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
       prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
+      smVtas: _smV, smDiasEf: _smD,
       diasHabilesMes, diasTrans
     });
   }
@@ -4329,16 +4377,21 @@ function exportarAnalisisAnualGlobalExcel(anio) {
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
+      { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
+      { label: 'Dias efectivos sin meta', key: 'smDiasEf', tipo: 'dec' },
       { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
-      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' }
+      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' },
+      { label: 'Días transcurridos', key: 'diasTrans', tipo: 'dec' }
     ]}
   ];
 
+  const rowDeKey = {};
   grupos.forEach(g => {
     const rGrupo = aoa.length;
     aoa.push([g.titulo, ...new Array(12).fill('')]);
     merges.push({ s: { r: rGrupo, c: 0 }, e: { r: rGrupo, c: 12 } });
     g.filas.forEach(rowDef => {
+      rowDeKey[rowDef.key] = aoa.length + 1;
       const fila = [rowDef.label];
       filas.forEach(f => {
         if (f.esMesFuturo) { fila.push(null); }
@@ -4355,6 +4408,7 @@ function exportarAnalisisAnualGlobalExcel(anio) {
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  _aasFormulas(ws, filas, rowDeKey);
   ws['!merges'] = merges;
   ws['!cols'] = [{ wch: 26 }, ...new Array(12).fill({ wch: 9 })];
   const rows = [{ hpt: 28 }, { hpt: 18 }, { hpt: 8 }, { hpt: 22 }];
