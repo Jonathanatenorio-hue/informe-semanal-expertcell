@@ -16344,6 +16344,17 @@ async function _hashClave(txt) {
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Resuelve un hash: accesos fijos o la tabla accesos_supervisor (claves
+// individuales administrables desde Supabase, sin tocar código).
+async function _resolverHash(h) {
+  if (ACCESOS_HASH[h]) return ACCESOS_HASH[h];
+  try {
+    const { data } = await db.from('accesos_supervisor').select('supervisor').eq('clave_hash', h).eq('activo', true).limit(1);
+    if (data && data.length) return 'sup:' + data[0].supervisor;
+  } catch (e) { console.warn('[Acceso] accesos_supervisor:', e); }
+  return null;
+}
+
 function _accesoNormCentro(c) {
   const t = String(c || '').toUpperCase().trim();
   if (!t) return null;
@@ -16376,7 +16387,15 @@ function aplicarFiltroAcceso() {
   // así julio y anteriores se ven completos (regla de era) y desde agosto las
   // secciones del mes reparten solo sus equipos.
   let C = null;
-  if (String(modo).startsWith('coord:')) {
+  if (String(modo).startsWith('sup:')) {
+    // Acceso de SUPERVISOR: solo su equipo (config, plantilla y todo lo que cascadea)
+    const supN = modo.slice(4);
+    window.__accesoSupNombre = supN;
+    supConfigData = (supConfigData || []).filter(s => s.supervisor === supN);
+    plantillaData = (plantillaData || []).filter(p => p && p.supervisor === supN);
+    const filaS = supConfigData[0];
+    C = filaS ? _accesoNormCentro(filaS.centro) : null;
+  } else if (String(modo).startsWith('coord:')) {
     const nom = modo.slice(6).toUpperCase();
     const coordRow = (coordinadoresData || []).find(c => !c.es_centro &&
       (((c.nombre_corto || '') + ' ' + (c.nombre || '')).toUpperCase().includes(nom)));
@@ -16440,8 +16459,9 @@ function mostrarGate() {
   async function intentar() {
     if (!input.value.trim()) return;
     const h = await _hashClave(input.value.trim());
-    if (ACCESOS_HASH[h]) {
-      window.__accesoModo = ACCESOS_HASH[h];
+    const mI = await _resolverHash(h);
+    if (mI) {
+      window.__accesoModo = mI;
       localStorage.setItem('ec_acceso_h', h);
       div.remove();
       const l2 = document.getElementById('loader');
@@ -16460,7 +16480,7 @@ function mostrarGate() {
 
 function agregarBotonSalir() {
   const modo = window.__accesoModo || 'director';
-  const lbl = modo === 'director' ? 'Director' : (String(modo).startsWith('coord:') ? modo.slice(6) : `Acceso ${modo}`);
+  const lbl = modo === 'director' ? 'Director' : (String(modo).startsWith('coord:') ? modo.slice(6) : (String(modo).startsWith('sup:') ? modo.slice(4).split(' ').slice(0, 2).join(' ') : `Acceso ${modo}`));
   const b = document.createElement('button');
   b.textContent = `🔒 ${lbl} · Salir`;
   b.title = 'Cerrar acceso y volver a la pantalla de clave';
@@ -16481,8 +16501,9 @@ async function iniciarAcceso() {
     const claveUrl = p.get('clave');
     if (claveUrl) {
       const h = await _hashClave(claveUrl.trim());
-      if (ACCESOS_HASH[h]) {
-        window.__accesoModo = ACCESOS_HASH[h];
+      const mU = await _resolverHash(h);
+      if (mU) {
+        window.__accesoModo = mU;
         localStorage.setItem('ec_acceso_h', h);
         arrancarReporte();
         return;
@@ -16492,8 +16513,9 @@ async function iniciarAcceso() {
 
   // 2) Sesión guardada en este navegador
   const guardado = localStorage.getItem('ec_acceso_h');
-  if (guardado && ACCESOS_HASH[guardado]) {
-    window.__accesoModo = ACCESOS_HASH[guardado];
+  const mG = guardado ? await _resolverHash(guardado) : null;
+  if (mG) {
+    window.__accesoModo = mG;
     arrancarReporte();
     return;
   }
