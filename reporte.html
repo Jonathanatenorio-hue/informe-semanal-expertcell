@@ -1197,7 +1197,7 @@
     <div id="embudo-section"></div>
 
     <!-- COMPARATIVO POR SUPERVISOR -->
-    <div class="section" id="sec-comparativo">
+    <div class="section collapsible" id="sec-comparativo">
       <div class="section-title">Comparativo por supervisor</div>
       <div class="section-subtitle" id="comp-sup-subtitle"></div>
       <div class="legend" id="comp-sup-legend"></div>
@@ -1386,7 +1386,7 @@
     </div>
 
     <!-- DISTRIBUCIÓN DE PLANTILLA: NUEVOS vs EXPERIMENTADOS -->
-    <div class="section" id="sec-distribucion">
+    <div class="section collapsible" id="sec-distribucion">
       <div class="section-title">👥 Distribución de plantilla</div>
       <div class="section-body">
       <div class="section-subtitle">Cómo está repartida tu plantilla activa entre <strong>nuevos ingresos</strong> (≤42 días de antigüedad, en curva de aprendizaje) y <strong>experimentados</strong> (43 días o más).</div>
@@ -1970,7 +1970,7 @@
     </div>
 
     <!-- CALENDARIO -->
-    <div class="section" id="sec-calendario">
+    <div class="section collapsible" id="sec-calendario">
       <div class="section-title">Explorar otras semanas</div>
       <div class="section-subtitle">Haz clic en cualquier semana para regenerar el reporte con esa semana como base de comparación.</div>
       <div class="calendar" id="calendar"></div>
@@ -2803,6 +2803,22 @@ function agregarPorBloqueBO(inicioStr, finStr) {
 }
 
 function renderReporte(wActual, wCurrent) {
+  // Modo SUPERVISOR: blindaje final antes de dibujar — los datos base pueden
+  // haberse recargado (paginado) después del filtro de acceso; aquí se estrechan
+  // SIEMPRE, en cada render, antes de que cualquier sección los lea.
+  if (String(window.__accesoModo || '').startsWith('sup:')) {
+    const _sN = window.__accesoModo.slice(4);
+    if ((ventasData || []).some(r => r && r.supervisor && r.supervisor !== _sN)) {
+      ventasData = ventasData.filter(r => r && r.supervisor === _sN);
+    }
+    if ((plantillaData || []).some(p => p && p.supervisor && p.supervisor !== _sN)) {
+      plantillaData = plantillaData.filter(p => p && p.supervisor === _sN);
+    }
+    if ((supConfigData || []).some(s => s.supervisor !== _sN)) {
+      supConfigData = supConfigData.filter(s => s.supervisor === _sN);
+    }
+  }
+
   const wAnterior = wActual - 1;
   const rangoActual = fechasDeSemana(wActual);
   const rangoAnterior = fechasDeSemana(wAnterior);
