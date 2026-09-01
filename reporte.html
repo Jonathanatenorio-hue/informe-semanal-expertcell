@@ -6323,7 +6323,7 @@ function renderAvanceUI() {
     </div>
   `;
 
-  window.__semaforoCtx = { supervisoresData, diasTranscurridos, diasTot: estadoTotal.diasHabilesTotales, diasRestantes, proyeccionModo, iniMesStr, finMesStr: finMesStrTabla };
+  window.__semaforoCtx = { supervisoresData, diasTranscurridos, diasTot: estadoTotal.diasHabilesTotales, diasRestantes, proyeccionModo, iniMesStr: iniMesStrTabla, finMesStr: finMesStrTabla };
   try { _pintarSemaforo(); } catch (e) { console.error('[Semaforo]', e); }
 
   document.getElementById('avance-tabla').innerHTML = `
