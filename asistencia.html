@@ -26,6 +26,7 @@
   button.b { background:var(--navy); color:white; border:none; padding:7px 14px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; }
   .tag { padding:2px 7px; border-radius:4px; font-size:10.5px; font-weight:800; }
   .A{background:#DCFCE7;color:#166534}.R{background:#EDE9FE;color:#5B21B6}.FR{background:#FEE2E2;color:#991B1B}.FA{background:#FCA5A5;color:#7F1D1D}.SA{background:#FEF3C7;color:#92400E}
+  .P,.I,.V{background:#DBEAFE;color:#1E40AF}.D{background:#FEF9C3;color:#854D0E}
 </style>
 </head>
 <body>
@@ -39,16 +40,16 @@
   </div>
   <div class="card">
     <h2>2. Checadas · archivo del biométrico (JV o CC2)</h2>
-    <div class="hint">Reconoce ambos formatos. Reglas: entrada = primera checada (07-08 = noche · 09-11 = mañana · 01-06 = tarde) · hasta 10:00 = A · 10:01-10:10 = R · 10:11+ = FR (falta por retardo) · salida antes de 19:00 = SA · domingo = descanso. Sin checada en día laborable = FA (falta por ausencia) — la calcula el reporte. Se reemplaza lo automático del mismo día; las correcciones manuales se respetan.</div>
+    <div class="hint">Reconoce ambos formatos. Reglas: entrada = primera checada (08-11 = mañana · 12 = mediodía · 01-07 = tarde/noche) · hasta 10:00 = A · 10:01-10:10 = R · 10:11+ = FR (falta por retardo) · salida antes de 19:00 = SA · domingo = descanso. Sin checada en día laborable = FA (falta por ausencia) — la calcula el reporte. Se reemplaza lo automático del mismo día; las correcciones manuales se respetan.</div>
     <div class="drop" id="drop-bio">🖐️ Arrastra aquí el biométrico (.xls)<input type="file" id="f-bio" accept=".xls,.xlsx" style="display:none" multiple></div>
     <div class="log" id="log-bio"></div>
   </div>
   <div class="card">
     <h2>3. Correcciones con rastro</h2>
-    <div class="hint">Cambia el código de un día y deja el motivo. Queda marcado como MANUAL con tu nombre y fecha para auditoría.</div>
+    <div class="hint">Cambia el código de un día y deja el motivo. Queda marcado como MANUAL con tu nombre y fecha para auditoría. P / I / V son justificadas: no cuentan como falta ni en el denominador del % de asistencia.</div>
     <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
       <input type="date" id="c-fecha"> <select id="c-agente" style="min-width:260px"><option value="">— agente —</option></select>
-      <select id="c-codigo"><option value="A">A · Asistencia</option><option value="R">R · Retardo</option><option value="FR">FR · Falta por retardo</option><option value="FA">FA · Falta por ausencia</option><option value="J">J · Justificada (permiso/incapacidad/vacaciones)</option><option value="D">D · Descanso</option></select>
+      <select id="c-codigo"><option value="A">A · Asistencia</option><option value="R">R · Retardo</option><option value="FR">FR · Falta por retardo</option><option value="FA">FA · Falta por ausencia</option><option value="P">P · Permiso (justificada)</option><option value="I">I · Incapacidad (justificada)</option><option value="V">V · Vacaciones (justificada)</option><option value="D">D · Descanso</option></select>
       <input type="text" id="c-motivo" placeholder="motivo" style="min-width:220px"> <input type="text" id="c-quien" placeholder="tu nombre" style="width:140px">
       <button class="b" id="c-btn">Guardar corrección</button>
     </div>
@@ -60,6 +61,7 @@
 const db = window.supabase.createClient('https://hfvbekuerjjigtdekllh.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4');
 const $ = id => document.getElementById(id);
 const log = (id, t, cls) => { $(id).innerHTML = '<span class="' + (cls || '') + '">' + t + '</span>'; };
+const logAdd = (id, t, cls) => { $(id).innerHTML += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed #E2E8F0;"><span class="' + (cls || '') + '">' + t + '</span></div>'; };
 function wireDrop(dropId, inputId, fn) {
   const d = $(dropId), i = $(inputId);
   d.onclick = () => i.click();
@@ -108,7 +110,7 @@ wireDrop('drop-hc', 'f-hc', async file => {
 function horaReal(hhmm) { // 12h sin AM/PM → 24h con la regla del turno
   const [h, m] = hhmm.split(':').map(Number);
   let H = h;
-  if (h >= 1 && h <= 8) H = h + 12;          // 01-06 tarde, 07-08 noche
+  if (h >= 1 && h <= 7) H = h + 12;          // 01-07 = tarde/noche (nadie llega antes de las 8; nadie sale después de las 19)
   return H * 60 + (m || 0);                   // minutos del día
 }
 function codigoEntrada(minEnt) {
@@ -118,7 +120,7 @@ function codigoEntrada(minEnt) {
 }
 wireDrop('drop-bio', 'f-bio', async file => {
   try {
-    log('log-bio', 'Leyendo ' + file.name + '…');
+    logAdd('log-bio', '📄 ' + file.name + ' — leyendo…');
     const wb = XLSX.read(await file.arrayBuffer(), { codepage: 1252 });
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: false });
     const hdr = (rows[0] || []).map(x => String(x || '').toUpperCase());
@@ -126,9 +128,10 @@ wireDrop('drop-bio', 'f-bio', async file => {
     const cDpto = hdr.findIndex(x => x.includes('DEPART') || x.includes('DPTO'));
     let cRFC = hdr.findIndex(x => x.includes('ID NUM') || x.includes('ID NÚM'));
     const cNom = hdr.findIndex(x => x === 'NAME' || x.includes('NOMBRE'));
-    if (cFecha < 0) { log('log-bio', 'No reconozco el formato (sin columna Fecha/Hora).', 'err'); return; }
+    if (cFecha < 0) { logAdd('log-bio', file.name + ': no reconozco el formato (sin columna Fecha/Hora).', 'err'); return; }
     const { data: mapa } = await db.from('asistencia_rfc').select('rfc, agente, centro');
-    const porRFC = {}; (mapa || []).forEach(m => porRFC[m.rfc] = m);
+    const porRFC = {};
+    (mapa || []).forEach(m => { porRFC[m.rfc] = m; if (m.rfc.length > 10) porRFC[m.rfc.substring(0, 10)] = m; });
     const porDia = {}; const noId = new Set();
     rows.slice(1).forEach(f => {
       if (!f || !f[cFecha]) return;
@@ -154,7 +157,7 @@ wireDrop('drop-bio', 'f-bio', async file => {
       return { fecha: d.fecha, agente: d.agente, rfc: d.rfc, centro: d.centro, hora_entrada: hh(d.primera), hora_salida: d.marcas > 1 ? hh(d.ultima) : null,
         marcas: d.marcas, codigo, salida_anticipada: d.marcas > 1 && d.ultima < 19 * 60, origen: 'auto', archivo: file.name };
     });
-    if (!regs.length) { log('log-bio', 'Sin checadas identificables. No identificados: ' + [...noId].slice(0, 10).join(', '), 'err'); return; }
+    if (!regs.length) { logAdd('log-bio', file.name + ': sin checadas identificables. No identificados: ' + [...noId].slice(0, 10).join(', '), 'err'); return; }
     // No pisar correcciones manuales de esos días
     const fechas = [...new Set(regs.map(r => r.fecha))];
     const { data: manuales } = await db.from('asistencia_dias').select('fecha, agente').eq('origen', 'manual').in('fecha', fechas);
@@ -165,10 +168,10 @@ wireDrop('drop-bio', 'f-bio', async file => {
       if (error) throw error;
     }
     const res = {}; aSubir.forEach(r => res[r.codigo] = (res[r.codigo] || 0) + 1);
-    log('log-bio', '✅ ' + aSubir.length + ' registros (' + fechas.join(', ') + ') · ' + Object.entries(res).map(([c, n]) => c + ': ' + n).join(' · ') +
+    logAdd('log-bio', '✅ ' + file.name + ' → ' + aSubir.length + ' registros (' + fechas.join(', ') + ') · ' + Object.entries(res).map(([c, n]) => c + ': ' + n).join(' · ') +
       (bloq.size ? ' · ' + bloq.size + ' con corrección manual respetada' : '') +
       (noId.size ? '\n⚠️ Sin identificar (sube el HC con su RFC): ' + [...noId].slice(0, 15).join(' | ') : ''), 'ok');
-  } catch (e) { log('log-bio', 'Error: ' + (e.message || e), 'err'); }
+  } catch (e) { logAdd('log-bio', file.name + ': error ' + (e.message || e), 'err'); }
 });
 
 // ---------- 3. Correcciones ----------
