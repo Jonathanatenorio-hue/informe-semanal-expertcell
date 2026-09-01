@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExpertCell · Asistencia (biométrico)</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root { --navy:#002B5C; --blue:#009FDB; --orange:#FF7200; --bg:#F4F7FA; --border:#E2E8F0; --soft:#64748B; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:'Segoe UI', system-ui, sans-serif; background:var(--bg); color:#1A2233; }
+  header { background:linear-gradient(120deg, var(--navy), #01426A 60%, #0077A8); color:white; padding:18px 28px; }
+  header h1 { font-size:18px; font-weight:800; } header .sub { font-size:12px; opacity:.85; margin-top:3px; }
+  main { max-width:1100px; margin:0 auto; padding:20px 24px; }
+  .card { background:white; border-radius:12px; padding:18px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,43,92,.08); }
+  .card h2 { font-size:14px; color:var(--navy); margin-bottom:6px; }
+  .hint { font-size:11.5px; color:var(--soft); margin-bottom:10px; }
+  .drop { border:2.5px dashed var(--blue); border-radius:10px; padding:26px; text-align:center; cursor:pointer; font-weight:700; color:var(--navy); }
+  .drop.over { background:#E8F6FC; border-color:var(--orange); }
+  .ok { color:#16A34A; font-weight:700; } .err { color:#DC2626; font-weight:700; } .log { font-size:12px; margin-top:8px; white-space:pre-line; }
+  table { width:100%; border-collapse:collapse; font-size:12px; margin-top:10px; }
+  th { background:var(--navy); color:white; padding:6px 8px; text-align:left; font-size:11px; }
+  td { padding:5px 8px; border-bottom:1px solid var(--border); }
+  select, input { padding:5px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px; }
+  button.b { background:var(--navy); color:white; border:none; padding:7px 14px; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px; }
+  .tag { padding:2px 7px; border-radius:4px; font-size:10.5px; font-weight:800; }
+  .A{background:#DCFCE7;color:#166534}.R{background:#EDE9FE;color:#5B21B6}.FR{background:#FEE2E2;color:#991B1B}.FA{background:#FCA5A5;color:#7F1D1D}.SA{background:#FEF3C7;color:#92400E}
+</style>
+</head>
+<body>
+<header><h1>⏱️ ExpertCell · Asistencia por biométrico</h1><div class="sub">Coordinadores: 1) sube el HC una vez (RFC ↔ agente) · 2) sube el biométrico diario/semanal · 3) corrige con rastro</div></header>
+<main>
+  <div class="card">
+    <h2>1. Identidad · HC de plantilla con RFC</h2>
+    <div class="hint">Se guarda el cruce RFC → nombre del agente (como aparece en plantilla). Súbelo de nuevo cuando entre gente. Detecta columnas por encabezado: "RFC" y "Nombre".</div>
+    <div class="drop" id="drop-hc">📇 Arrastra aquí el HC (.xlsx)<input type="file" id="f-hc" accept=".xlsx,.xls,.csv" style="display:none"></div>
+    <div class="log" id="log-hc"></div>
+  </div>
+  <div class="card">
+    <h2>2. Checadas · archivo del biométrico (JV o CC2)</h2>
+    <div class="hint">Reconoce ambos formatos. Reglas: entrada = primera checada (07-08 = noche · 09-11 = mañana · 01-06 = tarde) · hasta 10:00 = A · 10:01-10:10 = R · 10:11+ = FR (falta por retardo) · salida antes de 19:00 = SA · domingo = descanso. Sin checada en día laborable = FA (falta por ausencia) — la calcula el reporte. Se reemplaza lo automático del mismo día; las correcciones manuales se respetan.</div>
+    <div class="drop" id="drop-bio">🖐️ Arrastra aquí el biométrico (.xls)<input type="file" id="f-bio" accept=".xls,.xlsx" style="display:none" multiple></div>
+    <div class="log" id="log-bio"></div>
+  </div>
+  <div class="card">
+    <h2>3. Correcciones con rastro</h2>
+    <div class="hint">Cambia el código de un día y deja el motivo. Queda marcado como MANUAL con tu nombre y fecha para auditoría.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+      <input type="date" id="c-fecha"> <select id="c-agente" style="min-width:260px"><option value="">— agente —</option></select>
+      <select id="c-codigo"><option value="A">A · Asistencia</option><option value="R">R · Retardo</option><option value="FR">FR · Falta por retardo</option><option value="FA">FA · Falta por ausencia</option><option value="J">J · Justificada (permiso/incapacidad/vacaciones)</option><option value="D">D · Descanso</option></select>
+      <input type="text" id="c-motivo" placeholder="motivo" style="min-width:220px"> <input type="text" id="c-quien" placeholder="tu nombre" style="width:140px">
+      <button class="b" id="c-btn">Guardar corrección</button>
+    </div>
+    <div class="log" id="log-c"></div>
+    <div id="c-lista"></div>
+  </div>
+</main>
+<script>
+const db = window.supabase.createClient('https://hfvbekuerjjigtdekllh.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4');
+const $ = id => document.getElementById(id);
+const log = (id, t, cls) => { $(id).innerHTML = '<span class="' + (cls || '') + '">' + t + '</span>'; };
+function wireDrop(dropId, inputId, fn) {
+  const d = $(dropId), i = $(inputId);
+  d.onclick = () => i.click();
+  d.ondragover = e => { e.preventDefault(); d.classList.add('over'); };
+  d.ondragleave = () => d.classList.remove('over');
+  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); [...e.dataTransfer.files].forEach(fn); };
+  i.onchange = () => { [...i.files].forEach(fn); i.value = ''; };
+}
+const normRFC = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 13);
+const normNombre = s => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
+
+// ---------- 1. HC ----------
+wireDrop('drop-hc', 'f-hc', async file => {
+  try {
+    log('log-hc', 'Leyendo…');
+    const wb = XLSX.read(await file.arrayBuffer());
+    let filas = [];
+    for (const n of wb.SheetNames) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: null });
+      let h = -1, cR = -1, cN = -1, cC = -1;
+      for (let r = 0; r < Math.min(15, rows.length); r++) {
+        const v = (rows[r] || []).map(x => String(x || '').toUpperCase().trim());
+        const ir = v.findIndex(x => x === 'RFC' || x.startsWith('RFC'));
+        const inm = v.findIndex(x => x.includes('NOMBRE'));
+        if (ir >= 0 && inm >= 0) { h = r; cR = ir; cN = inm; cC = v.findIndex(x => x.includes('CENTRO') || x.includes('SUCURSAL')); break; }
+      }
+      if (h < 0) continue;
+      for (let r = h + 1; r < rows.length; r++) {
+        const f = rows[r] || [];
+        const rfc = normRFC(f[cR]), nom = normNombre(f[cN]);
+        if (rfc.length >= 10 && nom) filas.push({ rfc, agente: nom, centro: cC >= 0 ? String(f[cC] || '').trim() : null });
+      }
+    }
+    if (!filas.length) { log('log-hc', 'No encontré columnas RFC y Nombre en el archivo.', 'err'); return; }
+    const vistos = {}; filas = filas.filter(f => !vistos[f.rfc] && (vistos[f.rfc] = 1));
+    for (let i = 0; i < filas.length; i += 300) {
+      const { error } = await db.from('asistencia_rfc').upsert(filas.slice(i, i + 300), { onConflict: 'rfc' });
+      if (error) throw error;
+    }
+    log('log-hc', '✅ ' + filas.length + ' agentes con RFC guardados.', 'ok');
+    cargarAgentes();
+  } catch (e) { log('log-hc', 'Error: ' + (e.message || e) + ' (¿corriste el SQL?)', 'err'); }
+});
+
+// ---------- 2. Biométrico ----------
+function horaReal(hhmm) { // 12h sin AM/PM → 24h con la regla del turno
+  const [h, m] = hhmm.split(':').map(Number);
+  let H = h;
+  if (h >= 1 && h <= 8) H = h + 12;          // 01-06 tarde, 07-08 noche
+  return H * 60 + (m || 0);                   // minutos del día
+}
+function codigoEntrada(minEnt) {
+  if (minEnt <= 10 * 60) return 'A';
+  if (minEnt <= 10 * 60 + 10) return 'R';
+  return 'FR';
+}
+wireDrop('drop-bio', 'f-bio', async file => {
+  try {
+    log('log-bio', 'Leyendo ' + file.name + '…');
+    const wb = XLSX.read(await file.arrayBuffer(), { codepage: 1252 });
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: false });
+    const hdr = (rows[0] || []).map(x => String(x || '').toUpperCase());
+    const cFecha = hdr.findIndex(x => x.includes('DATE') || x.includes('FECHA'));
+    const cDpto = hdr.findIndex(x => x.includes('DEPART') || x.includes('DPTO'));
+    let cRFC = hdr.findIndex(x => x.includes('ID NUM') || x.includes('ID NÚM'));
+    const cNom = hdr.findIndex(x => x === 'NAME' || x.includes('NOMBRE'));
+    if (cFecha < 0) { log('log-bio', 'No reconozco el formato (sin columna Fecha/Hora).', 'err'); return; }
+    const { data: mapa } = await db.from('asistencia_rfc').select('rfc, agente, centro');
+    const porRFC = {}; (mapa || []).forEach(m => porRFC[m.rfc] = m);
+    const porDia = {}; const noId = new Set();
+    rows.slice(1).forEach(f => {
+      if (!f || !f[cFecha]) return;
+      const fh = String(f[cFecha]).trim();
+      const m = fh.match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})/);
+      if (!m) return;
+      const fecha = m[3] + '-' + m[2] + '-' + m[1];
+      const min = horaReal(m[4] + ':' + m[5]);
+      let rfc = cRFC >= 0 ? normRFC(f[cRFC]) : '';
+      if (rfc.length < 10 && cNom >= 0) rfc = normRFC(f[cNom]);          // JV: el "Name" es el RFC
+      const id = porRFC[rfc] || (rfc.length >= 10 && porRFC[rfc.substring(0, 10)]) || null;
+      const dpto = cDpto >= 0 ? String(f[cDpto] || '') : '';
+      if (!id) { noId.add(rfc + (cNom >= 0 && f[cNom] ? ' · ' + f[cNom] : '')); return; }
+      const k = fecha + '|' + id.agente;
+      if (!porDia[k]) porDia[k] = { fecha, agente: id.agente, rfc, centro: id.centro || (dpto.includes('2') ? 'CC2' : 'JV'), primera: min, ultima: min, marcas: 0 };
+      const d = porDia[k];
+      d.primera = Math.min(d.primera, min); d.ultima = Math.max(d.ultima, min); d.marcas++;
+    });
+    const regs = Object.values(porDia).map(d => {
+      const dow = new Date(d.fecha + 'T12:00:00').getDay();
+      const codigo = dow === 0 ? 'D' : codigoEntrada(d.primera);
+      const hh = mm => String(Math.floor(mm / 60)).padStart(2, '0') + ':' + String(mm % 60).padStart(2, '0');
+      return { fecha: d.fecha, agente: d.agente, rfc: d.rfc, centro: d.centro, hora_entrada: hh(d.primera), hora_salida: d.marcas > 1 ? hh(d.ultima) : null,
+        marcas: d.marcas, codigo, salida_anticipada: d.marcas > 1 && d.ultima < 19 * 60, origen: 'auto', archivo: file.name };
+    });
+    if (!regs.length) { log('log-bio', 'Sin checadas identificables. No identificados: ' + [...noId].slice(0, 10).join(', '), 'err'); return; }
+    // No pisar correcciones manuales de esos días
+    const fechas = [...new Set(regs.map(r => r.fecha))];
+    const { data: manuales } = await db.from('asistencia_dias').select('fecha, agente').eq('origen', 'manual').in('fecha', fechas);
+    const bloq = new Set((manuales || []).map(x => x.fecha + '|' + x.agente));
+    const aSubir = regs.filter(r => !bloq.has(r.fecha + '|' + r.agente));
+    for (let i = 0; i < aSubir.length; i += 300) {
+      const { error } = await db.from('asistencia_dias').upsert(aSubir.slice(i, i + 300), { onConflict: 'fecha,agente' });
+      if (error) throw error;
+    }
+    const res = {}; aSubir.forEach(r => res[r.codigo] = (res[r.codigo] || 0) + 1);
+    log('log-bio', '✅ ' + aSubir.length + ' registros (' + fechas.join(', ') + ') · ' + Object.entries(res).map(([c, n]) => c + ': ' + n).join(' · ') +
+      (bloq.size ? ' · ' + bloq.size + ' con corrección manual respetada' : '') +
+      (noId.size ? '\n⚠️ Sin identificar (sube el HC con su RFC): ' + [...noId].slice(0, 15).join(' | ') : ''), 'ok');
+  } catch (e) { log('log-bio', 'Error: ' + (e.message || e), 'err'); }
+});
+
+// ---------- 3. Correcciones ----------
+async function cargarAgentes() {
+  const { data } = await db.from('asistencia_rfc').select('agente').order('agente');
+  const sel = $('c-agente');
+  sel.innerHTML = '<option value="">— agente —</option>' + (data || []).map(a => '<option>' + a.agente + '</option>').join('');
+}
+$('c-fecha').value = new Date().toISOString().substring(0, 10);
+$('c-btn').onclick = async () => {
+  const fecha = $('c-fecha').value, agente = $('c-agente').value, codigo = $('c-codigo').value, motivo = $('c-motivo').value.trim(), quien = $('c-quien').value.trim();
+  if (!fecha || !agente || !motivo || !quien) { log('log-c', 'Fecha, agente, motivo y tu nombre son obligatorios.', 'err'); return; }
+  try {
+    const { data: prev } = await db.from('asistencia_dias').select('codigo, origen').eq('fecha', fecha).eq('agente', agente).maybeSingle();
+    const { error } = await db.from('asistencia_dias').upsert({ fecha, agente, codigo, origen: 'manual', corregido_por: quien, motivo, codigo_auto: prev ? (prev.codigo_auto || prev.codigo) : null, corregido_en: new Date().toISOString() }, { onConflict: 'fecha,agente' });
+    if (error) throw error;
+    log('log-c', '✅ Corrección guardada (' + (prev ? 'antes: ' + prev.codigo : 'sin registro previo → era falta por ausencia') + ').', 'ok');
+    listarCorrecciones();
+  } catch (e) { log('log-c', 'Error: ' + (e.message || e), 'err'); }
+};
+async function listarCorrecciones() {
+  const { data } = await db.from('asistencia_dias').select('fecha, agente, codigo, codigo_auto, motivo, corregido_por, corregido_en').eq('origen', 'manual').order('corregido_en', { ascending: false }).limit(40);
+  $('c-lista').innerHTML = (data && data.length) ? '<table><tr><th>Fecha</th><th>Agente</th><th>Auto → Manual</th><th>Motivo</th><th>Quién</th><th>Cuándo</th></tr>' +
+    data.map(x => '<tr><td>' + x.fecha + '</td><td>' + x.agente + '</td><td><span class="tag ' + (x.codigo_auto || 'FA') + '">' + (x.codigo_auto || 'FA') + '</span> → <span class="tag ' + x.codigo + '">' + x.codigo + '</span></td><td>' + x.motivo + '</td><td>' + x.corregido_por + '</td><td>' + String(x.corregido_en).substring(0, 16).replace('T', ' ') + '</td></tr>').join('') + '</table>' : '';
+}
+cargarAgentes(); listarCorrecciones();
+</script>
+</body>
+</html>
