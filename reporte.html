@@ -1467,7 +1467,7 @@
     <div class="section collapsible" id="sec-asistencia">
       <div class="section-title">⏱️ Asistencia (biométrico)</div>
       <div class="section-body">
-        <div class="section-subtitle">Matriz agente × día del mes. A = asistencia · R = retardo · FR = falta por retardo · FA = falta por ausencia · D = descanso (domingo y sábados ganados desde la venta 14) · P/I/V = justificadas. 3 retardos = 1 falta. Celdas con ✎ fueron corregidas por un coordinador (pasa el mouse para ver quién y por qué).</div>
+        <div class="section-subtitle">Matriz agente × día del mes. A = asistencia · R = retardo · FR = falta por retardo · FA = falta por ausencia · D = descanso (domingo y sábados ganados desde la venta 14) · P/I/V = justificadas · ? = día sin biométrico cargado (no cuenta). 3 retardos = 1 falta. Celdas con ✎ fueron corregidas por un coordinador (pasa el mouse para ver quién y por qué).</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
           <select id="asis-mes" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white;"></select>
           <select id="asis-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; min-width:230px;"></select>
@@ -16995,7 +16995,12 @@ async function renderAsistencia() {
   else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
   else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
   const porAg = {};
-  regs.forEach(r => { (porAg[r.agente] = porAg[r.agente] || {})[r.fecha] = r; });
+  const fechasConDatos = {};   // centro → fechas con al menos una checada (defensa contra días sin export)
+  regs.forEach(r => {
+    (porAg[r.agente] = porAg[r.agente] || {})[r.fecha] = r;
+    const cN = _accesoNormCentro(r.centro) || r.centro || '';
+    (fechasConDatos[cN] = fechasConDatos[cN] || new Set()).add(r.fecha);
+  });
   const ventasAg = {};
   (ventasData || []).forEach(r => {
     if (r.estatus === 'activada' && r.fecha_activacion && r.ejecutivo) {
@@ -17014,6 +17019,8 @@ async function renderAsistencia() {
     const vts = (ventasAg[p.nombre] || []).sort();
     const fecha14 = vts.length >= 14 ? vts[13] : null;
     const regsAg = porAg[p.nombre] || {};
+    const cAg = _accesoNormCentro(centroDe[p.supervisor] || p.centro || '') || '';
+    const hayDatos = f => (fechasConDatos[cAg] && fechasConDatos[cAg].has(f)) || Object.values(fechasConDatos).some(s => s.has(f));
     const celdas = [], c = { A: 0, R: 0, FR: 0, FA: 0, D: 0, J: 0, SA: 0 };
     dias.forEach(dd => {
       let cod = '', r = regsAg[dd.f], manual = r && r.origen === 'manual';
@@ -17021,8 +17028,8 @@ async function renderAsistencia() {
       else if (r) cod = r.codigo;
       else if (dd.dow === 0) cod = 'D';
       else if (dd.dow === 6 && fecha14 && dd.f >= fecha14) cod = 'D';
-      else if (dd.f < hoyStr) cod = 'FA';
-      else if (dd.f === hoyStr) cod = '?';
+      else if (dd.f < hoyStr && hayDatos(dd.f)) cod = 'FA';
+      else if (dd.f <= hoyStr) cod = '?';   // sin biométrico cargado ese día: no cuenta
       if (cod === 'A' || cod === 'R' || cod === 'FR' || cod === 'FA' || cod === 'D') c[cod]++;
       else if (cod === 'P' || cod === 'I' || cod === 'V') c.J++;
       if (r && r.salida_anticipada && (cod === 'A' || cod === 'R')) c.SA++;
