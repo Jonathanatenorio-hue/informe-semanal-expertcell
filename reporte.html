@@ -1073,6 +1073,7 @@
         <button class="nav-btn" data-target="sec-cohortes">🎓 Grupos de ingreso</button>
         <button class="nav-btn" data-target="sec-estructura">🎯 Estructura</button>
         <button class="nav-btn" data-target="sec-transito">🚚 Tránsito</button>
+        <button class="nav-btn" data-target="sec-asistencia">⏱️ Asistencia</button>
         <button class="nav-btn" data-target="sec-estado">⏳ Estado cierre</button>
         <button class="nav-btn" data-target="sec-historico">📉 Histórico</button>
         <button class="nav-btn" data-target="sec-flujo">🚚 Flujo entrega</button>
@@ -1112,7 +1113,13 @@
 
       <div id="avance-tarjeta-principal"></div>
 
-      <div style="font-weight: 600; font-size: 15px; margin: 24px 0 12px; color: var(--att-navy);">Estatus por supervisor</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin: 24px 0 12px;">
+        <div style="font-weight: 600; font-size: 15px; color: var(--att-navy);" id="semaforo-titulo">Estatus por supervisor</div>
+        <div id="semaforo-toggle" style="display:flex; gap:6px;">
+          <button onclick="window.__semaforoModo='sup'; _pintarSemaforo();" id="sem-btn-sup" style="padding:5px 12px; border-radius:6px; border:1.5px solid var(--att-navy); background:var(--att-navy); color:white; font-size:11px; font-weight:700; cursor:pointer;">👤 Supervisores</button>
+          <button onclick="window.__semaforoModo='coord'; _pintarSemaforo();" id="sem-btn-coord" style="padding:5px 12px; border-radius:6px; border:1.5px solid var(--att-navy); background:white; color:var(--att-navy); font-size:11px; font-weight:700; cursor:pointer;">🏢 Coordinadores</button>
+        </div>
+      </div>
       <div id="avance-semaforo-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px;"></div>
 
       <div style="display:flex; align-items:center; justify-content:space-between; margin: 28px 0 12px; gap:12px; flex-wrap:wrap;">
@@ -1175,6 +1182,11 @@
           <div style="padding:24px; text-align:center;">
             <button onclick="renderLogistica()" id="btn-cargar-logistica" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📦 Cargar análisis de logística</button>
             <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; margin-left:10px;">📥 Excel equipos + inventario</button>
+            <label id="zona-lista-precios" style="display:inline-flex; align-items:center; gap:8px; margin-left:10px; padding:10px 16px; border:2px dashed #0077A8; border-radius:8px; font-size:12px; color:#0077A8; font-weight:700; cursor:pointer; background:#F0F9FD;">
+              📋 Subir lista de precios (.xlsm)
+              <input type="file" accept=".xlsm,.xlsx" style="display:none;" onchange="procesarListaPrecios(this.files[0]); this.value='';">
+            </label>
+            <span id="lista-precios-info" style="font-size:11px; color:#64748B; margin-left:8px;"></span>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
           </div>
         </div>
@@ -1449,6 +1461,20 @@
       <div class="section-body">
         <div class="section-subtitle">Foto viva del tránsito nutrida del backoffice diario: por coordinador, por supervisor, antigüedad y casos críticos. El botón genera el Excel con el formato del análisis oficial.</div>
         <div id="transito-etapa-slot"></div>
+      </div>
+    </div>
+
+    <div class="section collapsible" id="sec-asistencia">
+      <div class="section-title">⏱️ Asistencia (biométrico)</div>
+      <div class="section-body">
+        <div class="section-subtitle">Matriz agente × día del mes. A = asistencia · R = retardo · FR = falta por retardo · FA = falta por ausencia · D = descanso (domingo y sábados ganados desde la venta 14) · P/I/V = justificadas. 3 retardos = 1 falta. Celdas con ✎ fueron corregidas por un coordinador (pasa el mouse para ver quién y por qué).</div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+          <select id="asis-mes" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white;"></select>
+          <select id="asis-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; min-width:230px;"></select>
+          <button id="asis-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
+        </div>
+        <div id="asis-kpis" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-bottom:12px;"></div>
+        <div id="asis-tabla" style="overflow-x:auto;"></div>
       </div>
     </div>
 
@@ -2461,6 +2487,13 @@ async function cargarDatos() {
   pisosConfigData = pisosCfg || [];
 
   try {
+    const { data: estRows } = await db.from('equipos_estatus').select('modelo, estatus');
+    if (estRows && estRows.length) {
+      window.__estatusDB = Object.fromEntries(estRows.map(x => [String(x.modelo).toUpperCase(), String(x.estatus).toUpperCase()]));
+    }
+  } catch (e) { /* tabla opcional: usa el catálogo embebido */ }
+
+  try {
     const { data: leadsRows } = await db.from('campania_leads').select('ejecutivo, marcado_desde');
     window.__leadsSet = new Set((leadsRows || []).map(x => x.ejecutivo));
     window.__leadsFechas = Object.fromEntries((leadsRows || []).map(x => [x.ejecutivo, x.marcado_desde]));
@@ -3177,6 +3210,161 @@ function exportarRadiografiaObjetivos() {
   XLSX.writeFile(wbR, `Radiografia_Objetivos_${MESES_N[hoyE.getMonth()]}_${hoyE.getFullYear()}.xlsx`);
 }
 
+// ===== AGENTES EN RIESGO =====
+const RIESGO_UMBRAL = { maduro: 12, medio: 8, nuevo: 6 };
+
+function _calcularRiesgo(filtro) {
+  const hoy = new Date();
+  const anio = hoy.getFullYear(), mesAct = hoy.getMonth() + 1;
+  const pad = n => String(n).padStart(2, '0');
+  const hoyStr = `${anio}-${pad(mesAct)}-${pad(hoy.getDate())}`;
+  const dia1 = new Date(anio, mesAct - 1, 1);
+  const iniMes = `${anio}-${pad(mesAct)}-01`;
+  const finMes = `${anio}-${pad(mesAct)}-${pad(new Date(anio, mesAct, 0).getDate())}`;
+  let dhMes = 0, dhTrans = 0;
+  (calendarioData || []).forEach(d => {
+    if (!d.fecha || d.fecha < iniMes || d.fecha > finMes) return;
+    const f = parseFloat(d.factor_dia || 0);
+    dhMes += f;
+    if (d.fecha < hoyStr) dhTrans += f;
+  });
+  const mesesC = [];
+  for (let k = 3; k >= 1; k--) {
+    let m = mesAct - k, a = anio;
+    if (m <= 0) { m += 12; a -= 1; }
+    mesesC.push({ key: `${a}-${pad(m)}`, lbl: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m - 1] });
+  }
+  const centroDe = {}, coordDe = {};
+  (supConfigData || []).forEach(s => { if (s.supervisor) centroDe[s.supervisor] = s.centro || ''; });
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= hoyStr && (!cs.fecha_fin || cs.fecha_fin >= hoyStr)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre || c.nombre_corto;
+    }
+  });
+  let sups = [...SUPERVISORES];
+  if (filtro.startsWith('centro:')) sups = sups.filter(s => (centroDe[s] || '') === filtro.slice(7));
+  else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
+  else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
+  const vtas = {};
+  (ventasData || []).forEach(r => {
+    if (r.estatus !== 'activada' || !r.fecha_activacion || !r.ejecutivo) return;
+    const k = String(r.fecha_activacion).substring(0, 7);
+    if (!vtas[r.ejecutivo]) vtas[r.ejecutivo] = {};
+    vtas[r.ejecutivo][k] = (vtas[r.ejecutivo][k] || 0) + 1;
+  });
+  const trans = {};
+  (ventasData || []).forEach(r => { if (['en_transito', 'por_activar', 'pendiente'].includes(r.estatus) && r.ejecutivo) trans[r.ejecutivo] = (trans[r.ejecutivo] || 0) + 1; });
+  const filas = [];
+  (plantillaData || []).forEach(p => {
+    if (!p || !p.nombre || !sups.includes(p.supervisor)) return;
+    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= hoyStr) return;
+    const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+    if (!ing) return;
+    const dias = Math.floor((dia1 - new Date(ing + 'T12:00:00')) / 86400000) + 1;
+    if (dias <= 0) return;
+    const tipo = dias <= 42 ? 'nuevo' : dias <= 89 ? 'medio' : 'maduro';
+    const umbral = RIESGO_UMBRAL[tipo];
+    const v = vtas[p.nombre] || {};
+    const serie = mesesC.map(mc => (ing <= mc.key + '-31') ? (v[mc.key] || 0) : null);
+    const medidos = serie.filter(x => x !== null);
+    if (!medidos.length) return;
+    const prom3 = medidos.reduce((a, b) => a + b, 0) / medidos.length;
+    const real = v[`${anio}-${pad(mesAct)}`] || 0;
+    const proy = dhTrans > 0 ? real / dhTrans * dhMes : 0;
+    const bajo3 = prom3 < umbral, bajoAct = proy < umbral;
+    let clas = 'OK';
+    if (bajo3 && bajoAct) clas = (proy < umbral / 2 || prom3 < umbral / 2) ? 'CRÍTICO' : 'RIESGO';
+    else if (bajo3) clas = 'RECUPERACIÓN';
+    else if (bajoAct) clas = 'ALERTA';
+    if (clas === 'OK') return;
+    const desc = medidos.length >= 2 && medidos[medidos.length - 1] < medidos[0];
+    const accion = clas === 'CRÍTICO' ? 'Evaluación con coordinador' : clas === 'RIESGO' ? (desc ? 'Plan de mejora + capacitación' : 'Plan de mejora') : clas === 'ALERTA' ? 'Seguimiento del supervisor esta semana' : 'Sostener ritmo; sin acción';
+    filas.push({ n: p.nombre, sup: p.supervisor, coord: coordDe[p.supervisor] || '—', centro: centroDe[p.supervisor] || p.centro || '', tipo, dias, umbral,
+      serie, medidos: medidos.length, prom3, real, proy, pct: umbral > 0 ? proy / umbral * 100 : 0, trans: trans[p.nombre] || 0, clas, accion,
+      tend: medidos.join(' → ') });
+  });
+  const orden = { 'CRÍTICO': 0, 'RIESGO': 1, 'ALERTA': 2, 'RECUPERACIÓN': 3 };
+  filas.sort((a, b) => orden[a.clas] - orden[b.clas] || a.pct - b.pct);
+  return { filas, mesesC, dhMes, dhTrans };
+}
+
+function renderRiesgo() {
+  const cont = document.getElementById('riesgo-tabla');
+  if (!cont) return;
+  const sel = document.getElementById('riesgo-filtro');
+  const R = _calcularRiesgo(sel ? sel.value : 'glob');
+  window.__riesgoData = R;
+  if (!R.filas.length) { cont.innerHTML = '<div style="padding:12px; color:#16A34A; font-size:12px; font-weight:700;">✅ Sin agentes en riesgo con este filtro.</div>'; return; }
+  const COL = { 'CRÍTICO': '#7F1D1D', 'RIESGO': '#DC2626', 'ALERTA': '#D97706', 'RECUPERACIÓN': '#16A34A' };
+  const BG = { 'CRÍTICO': '#FECACA', 'RIESGO': '#FEE2E2', 'ALERTA': '#FEF3C7', 'RECUPERACIÓN': '#DCFCE7' };
+  const th = t => `<th style="padding:6px 8px; background:#991B1B; color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
+  const resumen = ['CRÍTICO', 'RIESGO', 'ALERTA', 'RECUPERACIÓN'].map(c => { const n = R.filas.filter(f => f.clas === c).length; return n ? `<span style="color:${COL[c]}; font-weight:700;">${c}: ${n}</span>` : ''; }).filter(Boolean).join(' · ');
+  cont.innerHTML = `<div style="font-size:12px; margin-bottom:8px;">${resumen} · Mes en curso: ${R.dhTrans.toFixed(1)} de ${R.dhMes.toFixed(1)} días hábiles</div>
+  <table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${['Agente', 'Supervisor', 'Tipo', 'Antig. (días)', 'Umbral', ...R.mesesC.map(m => m.lbl), 'Prom 3m', 'Mes real', 'Mes proy.', '% vs umbral', 'Tránsito', 'Clasificación', 'Acción sugerida'].map(th).join('')}</tr></thead>
+  <tbody>${R.filas.map(f => `<tr style="background:${BG[f.clas]};">
+    <td style="padding:5px 8px; font-weight:600; white-space:nowrap;">${f.n}</td><td style="padding:5px 8px;">${f.sup}</td>
+    <td style="padding:5px 8px;">${f.tipo}</td><td style="padding:5px 8px; text-align:right;">${f.dias}</td><td style="padding:5px 8px; text-align:right; font-weight:700;">${f.umbral}</td>
+    ${f.serie.map(x => `<td style="padding:5px 8px; text-align:right;">${x === null ? '—' : x}</td>`).join('')}
+    <td style="padding:5px 8px; text-align:right;">${f.prom3.toFixed(1)}</td><td style="padding:5px 8px; text-align:right;">${f.real}</td>
+    <td style="padding:5px 8px; text-align:right; font-weight:700;">${f.proy.toFixed(1)}</td>
+    <td style="padding:5px 8px; text-align:right; font-weight:700; color:${COL[f.clas]};">${f.pct.toFixed(0)}%</td>
+    <td style="padding:5px 8px; text-align:right; color:#D97706;">${f.trans}</td>
+    <td style="padding:5px 8px; font-weight:800; color:${COL[f.clas]};">${f.clas}</td>
+    <td style="padding:5px 8px;">${f.accion}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function exportarRiesgo() {
+  const R = window.__riesgoData;
+  if (!R || !R.filas.length) { alert('No hay agentes en riesgo para exportar.'); return; }
+  const hoy = new Date();
+  const CX = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
+  const aoa = [
+    ['AGENTES EN RIESGO — ' + ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'][hoy.getMonth()] + ' ' + hoy.getFullYear()],
+    ['Cruce de promedio 3 meses completos con mes en curso a ritmo. Umbrales editables (fila 3): recalcula umbral, % y clasificación. Generado ' + hoy.toLocaleDateString('es-MX')],
+    ['Umbral maduro', RIESGO_UMBRAL.maduro, 'Umbral medio', RIESGO_UMBRAL.medio, 'Umbral nuevo', RIESGO_UMBRAL.nuevo, 'Días háb. mes', Number(R.dhMes.toFixed(1)), 'Transcurridos', Number(R.dhTrans.toFixed(1))],
+    [],
+    ['Agente', 'Supervisor', 'Coordinador', 'Centro', 'Tipo', 'Antig. (días)', 'Umbral', ...R.mesesC.map(m => m.lbl), 'Meses medidos', 'Prom 3m', 'Mes real', 'Mes proy.', '% vs umbral', 'Clasificación', 'Tránsito', 'Tendencia', 'Acción sugerida']];
+  R.filas.forEach(f => {
+    const r = aoa.length + 1;
+    aoa.push([f.n, f.sup, f.coord, f.centro, f.tipo, f.dias,
+      CX(f.umbral, `IF(E${r}="maduro",$B$3,IF(E${r}="medio",$D$3,$F$3))`),
+      ...f.serie.map(x => x === null ? '' : x),
+      f.medidos,
+      CX(f.prom3, `IF(K${r}>0,SUM(H${r}:J${r})/K${r},0)`, '0.0'),
+      f.real,
+      CX(f.proy, `IF($J$3>0,M${r}/$J$3*$H$3,0)`, '0.0'),
+      CX(f.pct / 100, `IF(G${r}>0,N${r}/G${r},0)`, '0%'),
+      { t: 's', v: f.clas, f: `IF(AND(L${r}<G${r},N${r}<G${r}),IF(OR(N${r}<G${r}/2,L${r}<G${r}/2),"CRÍTICO","RIESGO"),IF(L${r}<G${r},"RECUPERACIÓN",IF(N${r}<G${r},"ALERTA","OK")))` },
+      f.trans, f.tend, f.accion]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 32 }, { wch: 24 }, { wch: 20 }, { wch: 7 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 9 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 34 }];
+  const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+  if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '991B1B' } } };
+  if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+  for (let c = 0; c < 10; c++) { const x = cel(2, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } }; }
+  for (let c = 0; c < 19; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '991B1B' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+  const FILL = { 'CRÍTICO': 'F4B6B6', 'RIESGO': 'F8CBAD', 'ALERTA': 'FFE699', 'RECUPERACIÓN': 'E2EFDA' };
+  R.filas.forEach((f, i) => { for (let c = 0; c < 19; c++) { const x = cel(5 + i, c); if (x) x.s = { fill: { fgColor: { rgb: FILL[f.clas] } }, font: { name: 'Calibri', sz: 10, bold: c === 0 || c === 15 } }; } });
+  ws['!freeze'] = { xSplit: 1, ySplit: 5 };
+  ws['!autofilter'] = { ref: `A5:S${aoa.length}` };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Agentes en riesgo');
+  XLSX.writeFile(wb, `Agentes_en_riesgo_${hoy.toISOString().substring(0, 10)}.xlsx`);
+}
+
+function _wireRiesgo() {
+  const sel = document.getElementById('riesgo-filtro');
+  const src = document.getElementById('radiografia-filtro');
+  if (!sel) return;
+  sel.innerHTML = src ? src.innerHTML : '<option value="glob">Global</option>';
+  sel.onchange = renderRiesgo;
+  const b = document.getElementById('riesgo-btn-excel');
+  if (b) b.onclick = exportarRiesgo;
+  renderRiesgo();
+}
+
 function _wireRadiografia() {
   const sel = document.getElementById('radiografia-filtro');
   if (!sel) return;
@@ -3253,6 +3441,19 @@ function renderProductividadEquipos() {
           </div>
         </div>
         <div id="radiografia-tabla" style="overflow-x:auto;"></div>
+      </div>
+      <div style="margin-bottom:26px; border:1px solid #FCA5A5; border-radius:10px; padding:14px; background:#FFF8F8;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
+          <div>
+            <div style="font-weight:700; color:#991B1B; font-size:14px;">🚨 Agentes en riesgo</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Umbral por tipo: maduro &lt; 12 · medio &lt; 8 · nuevo &lt; 6. Cruza promedio de 3 meses completos con el mes en curso a ritmo. Ingresos del mes no aplican.</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select id="riesgo-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:230px;"></select>
+            <button id="riesgo-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
+          </div>
+        </div>
+        <div id="riesgo-tabla" style="overflow-x:auto;"></div>
       </div>`;
 
     // ============================================================
@@ -3310,6 +3511,7 @@ function renderProductividadEquipos() {
     cont.innerHTML = html;
 
     _wireRadiografia();
+    _wireRiesgo();
 
     // Wire-up del Análisis Anual por Supervisor o Coordinador
     const aasTarget = document.getElementById('aas-target-select');
@@ -6121,44 +6323,8 @@ function renderAvanceUI() {
     </div>
   `;
 
-  document.getElementById('avance-semaforo-grid').innerHTML = supervisoresData.map(d => {
-    const proy = proyeccionModo === 'mes' ? d.proyMes : d.proySem;
-    const pctProy = d.meta > 0 ? (proy / d.meta * 100) : 0;
-    const pctAvance = Math.min(100, d.pctCumpl);
-    const pctBarra = Math.min(100, diasTranscurridos / estadoTotal.diasHabilesTotales * 100);
-    const emoji = d.estado === 'verde' ? '🟢' : d.estado === 'amarillo' ? '🟡' : '🔴';
-    const iconProy = pctProy >= 100 ? '✓' : pctProy >= 95 ? '⚠️' : '✗';
-    const colorProy = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
-
-    return `
-      <div class="semaforo-card ${d.estado}">
-        <div class="nombre">${emoji} ${d.sup}</div>
-        <div class="numeros">Meta ${d.meta} · Avance <strong>${d.avance}</strong> (${d.pctCumpl.toFixed(1)}%)</div>
-        <div class="barra">
-          <div class="barra-fill" style="width: ${pctAvance}%"></div>
-          <div class="barra-ideal" style="left: ${pctBarra}%"></div>
-        </div>
-        <div class="detalles">
-          <div class="detalle">
-            <div class="detalle-label">Proyección</div>
-            <div class="detalle-val" style="color: ${colorProy};">${proy} ${iconProy}</div>
-          </div>
-          <div class="detalle">
-            <div class="detalle-label">Ritmo necesario</div>
-            <div class="detalle-val">${d.ritmoNecesario.toFixed(1)}/día</div>
-          </div>
-          <div class="detalle">
-            <div class="detalle-label">En tránsito</div>
-            <div class="detalle-val" style="color: var(--amber);">${d.transito}</div>
-          </div>
-          <div class="detalle">
-            <div class="detalle-label">Prog: fija / dinám</div>
-            <div class="detalle-val" style="font-size: 11px;">${d.metaProgFija} / <strong style="color: var(--amber);">${d.metaProgDinamica}</strong></div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  window.__semaforoCtx = { supervisoresData, diasTranscurridos, diasTot: estadoTotal.diasHabilesTotales, diasRestantes, proyeccionModo, iniMesStr, finMesStr };
+  _pintarSemaforo();
 
   document.getElementById('avance-tabla').innerHTML = `
     <thead>
@@ -16715,12 +16881,234 @@ async function abrirPanelSecciones() {
   document.body.appendChild(div);
 }
 
+// ===== Tarjetas de estatus: por supervisor o agrupadas por coordinador =====
+function _agruparPorCoord(sups, ctx) {
+  const coordDe = {};
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= ctx.finMesStr && (!cs.fecha_fin || cs.fecha_fin >= ctx.iniMesStr)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre_corto || c.nombre;
+    }
+  });
+  const g = {};
+  sups.forEach(d => {
+    const k = coordDe[d.sup] || 'Sin coordinador';
+    if (!g[k]) g[k] = { sup: k, n: 0, meta: 0, avance: 0, proyMes: 0, proySem: 0, transito: 0, metaProgFija: 0, metaProgDinamica: 0 };
+    const a = g[k];
+    a.n++; a.meta += d.meta || 0; a.avance += d.avance || 0; a.proyMes += d.proyMes || 0; a.proySem += d.proySem || 0;
+    a.transito += d.transito || 0; a.metaProgFija += d.metaProgFija || 0; a.metaProgDinamica += d.metaProgDinamica || 0;
+  });
+  return Object.values(g).map(a => {
+    a.pctCumpl = a.meta > 0 ? a.avance / a.meta * 100 : 0;
+    const esperado = ctx.diasTot > 0 ? a.meta * ctx.diasTranscurridos / ctx.diasTot : 0;
+    const pctEsp = esperado > 0 ? a.avance / esperado * 100 : (a.avance > 0 ? 100 : 0);
+    a.estado = pctEsp >= 100 ? 'verde' : pctEsp >= 90 ? 'amarillo' : 'rojo';
+    a.ritmoNecesario = ctx.diasRestantes > 0 ? Math.max(0, a.meta - a.avance) / ctx.diasRestantes : 0;
+    a.sup = `${a.sup} <span style="font-weight:400; font-size:11px; opacity:.75;">(${a.n} sup.)</span>`;
+    return a;
+  }).sort((x, y) => y.meta - x.meta);
+}
+
+function _pintarSemaforo() {
+  const ctx = window.__semaforoCtx;
+  const grid = document.getElementById('avance-semaforo-grid');
+  if (!ctx || !grid) return;
+  const modo = window.__semaforoModo || 'sup';
+  const esSup = String(window.__accesoModo || '').startsWith('sup:');
+  const tg = document.getElementById('semaforo-toggle');
+  if (tg) tg.style.display = esSup ? 'none' : 'flex';
+  const bS = document.getElementById('sem-btn-sup'), bC = document.getElementById('sem-btn-coord');
+  if (bS && bC) {
+    bS.style.background = modo === 'sup' ? 'var(--att-navy)' : 'white'; bS.style.color = modo === 'sup' ? 'white' : 'var(--att-navy)';
+    bC.style.background = modo === 'coord' ? 'var(--att-navy)' : 'white'; bC.style.color = modo === 'coord' ? 'white' : 'var(--att-navy)';
+  }
+  const tit = document.getElementById('semaforo-titulo');
+  if (tit) tit.textContent = modo === 'coord' ? 'Estatus por coordinación' : 'Estatus por supervisor';
+  const datos = (modo === 'coord' && !esSup) ? _agruparPorCoord(ctx.supervisoresData, ctx) : ctx.supervisoresData;
+  grid.innerHTML = datos.map(d => {
+    const proy = ctx.proyeccionModo === 'mes' ? d.proyMes : d.proySem;
+    const pctProy = d.meta > 0 ? (proy / d.meta * 100) : 0;
+    const pctAvance = Math.min(100, d.pctCumpl);
+    const pctBarra = Math.min(100, ctx.diasTranscurridos / ctx.diasTot * 100);
+    const emoji = d.estado === 'verde' ? '🟢' : d.estado === 'amarillo' ? '🟡' : '🔴';
+    const iconProy = pctProy >= 100 ? '✓' : pctProy >= 95 ? '⚠️' : '✗';
+    const colorProy = pctProy >= 100 ? 'var(--green)' : pctProy >= 95 ? 'var(--amber)' : 'var(--red)';
+    return `
+      <div class="semaforo-card ${d.estado}">
+        <div class="nombre">${emoji} ${d.sup}</div>
+        <div class="numeros">Meta ${d.meta} · Avance <strong>${d.avance}</strong> (${d.pctCumpl.toFixed(1)}%)</div>
+        <div class="barra">
+          <div class="barra-fill" style="width: ${pctAvance}%"></div>
+          <div class="barra-ideal" style="left: ${pctBarra}%"></div>
+        </div>
+        <div class="detalles">
+          <div class="detalle">
+            <div class="detalle-label">Proyección</div>
+            <div class="detalle-val" style="color: ${colorProy};">${proy} ${iconProy}</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">Ritmo necesario</div>
+            <div class="detalle-val">${d.ritmoNecesario.toFixed(1)}/día</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">En tránsito</div>
+            <div class="detalle-val" style="color: var(--amber);">${d.transito}</div>
+          </div>
+          <div class="detalle">
+            <div class="detalle-label">Prog: fija / dinám</div>
+            <div class="detalle-val" style="font-size: 11px;">${d.metaProgFija} / <strong style="color: var(--amber);">${d.metaProgDinamica}</strong></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ===== ASISTENCIA (biométrico) =====
+const ASIS_COL = { A: '#DCFCE7', R: '#EDE9FE', FR: '#FEE2E2', FA: '#FCA5A5', D: '#FEF9C3', P: '#DBEAFE', I: '#DBEAFE', V: '#DBEAFE', '?': '#F1F5F9' };
+async function renderAsistencia() {
+  const cont = document.getElementById('asis-tabla');
+  if (!cont) return;
+  const selM = document.getElementById('asis-mes'), selF = document.getElementById('asis-filtro');
+  const hoy = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const hoyStr = `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}-${pad(hoy.getDate())}`;
+  const [anio, mes] = (selM && selM.value ? selM.value : `${hoy.getFullYear()}-${pad(hoy.getMonth() + 1)}`).split('-').map(Number);
+  const ini = `${anio}-${pad(mes)}-01`, nDias = new Date(anio, mes, 0).getDate(), fin = `${anio}-${pad(mes)}-${pad(nDias)}`;
+  cont.innerHTML = '<div style="padding:10px; color:var(--text-soft); font-size:12px;">Cargando asistencia…</div>';
+  let regs = [];
+  try {
+    const { data, error } = await db.from('asistencia_dias').select('*').gte('fecha', ini).lte('fecha', fin);
+    if (error) throw error;
+    regs = data || [];
+  } catch (e) { cont.innerHTML = '<div style="padding:10px; color:#DC2626; font-size:12px;">No pude leer asistencia_dias (¿corriste el SQL?).</div>'; return; }
+  const filtro = selF ? selF.value : 'glob';
+  const centroDe = {}, coordDe = {};
+  (supConfigData || []).forEach(s => { if (s.supervisor) centroDe[s.supervisor] = s.centro || ''; });
+  (coordSupData || []).forEach(cs => {
+    if (cs.fecha_inicio <= fin && (!cs.fecha_fin || cs.fecha_fin >= ini)) {
+      const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
+      if (c) coordDe[cs.supervisor] = c.nombre || c.nombre_corto;
+    }
+  });
+  let sups = [...SUPERVISORES];
+  if (filtro.startsWith('centro:')) sups = sups.filter(s => (centroDe[s] || '') === filtro.slice(7));
+  else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
+  else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
+  const porAg = {};
+  regs.forEach(r => { (porAg[r.agente] = porAg[r.agente] || {})[r.fecha] = r; });
+  const ventasAg = {};
+  (ventasData || []).forEach(r => {
+    if (r.estatus === 'activada' && r.fecha_activacion && r.ejecutivo) {
+      const f = String(r.fecha_activacion).substring(0, 10);
+      if (f >= ini && f <= fin) (ventasAg[r.ejecutivo] = ventasAg[r.ejecutivo] || []).push(f);
+    }
+  });
+  const dias = [];
+  for (let d = 1; d <= nDias; d++) { const f = `${anio}-${pad(mes)}-${pad(d)}`; dias.push({ d, f, dow: new Date(anio, mes - 1, d).getDay() }); }
+  const filas = [];
+  (plantillaData || []).forEach(p => {
+    if (!p || !p.nombre || !sups.includes(p.supervisor)) return;
+    const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : '0000';
+    const baja = p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : null;
+    if (ing > fin || (baja && baja < ini)) return;
+    const vts = (ventasAg[p.nombre] || []).sort();
+    const fecha14 = vts.length >= 14 ? vts[13] : null;
+    const regsAg = porAg[p.nombre] || {};
+    const celdas = [], c = { A: 0, R: 0, FR: 0, FA: 0, D: 0, J: 0, SA: 0 };
+    dias.forEach(dd => {
+      let cod = '', r = regsAg[dd.f], manual = r && r.origen === 'manual';
+      if (dd.f < ing || (baja && dd.f >= baja)) cod = '';
+      else if (r) cod = r.codigo;
+      else if (dd.dow === 0) cod = 'D';
+      else if (dd.dow === 6 && fecha14 && dd.f >= fecha14) cod = 'D';
+      else if (dd.f < hoyStr) cod = 'FA';
+      else if (dd.f === hoyStr) cod = '?';
+      if (cod === 'A' || cod === 'R' || cod === 'FR' || cod === 'FA' || cod === 'D') c[cod]++;
+      else if (cod === 'P' || cod === 'I' || cod === 'V') c.J++;
+      if (r && r.salida_anticipada && (cod === 'A' || cod === 'R')) c.SA++;
+      celdas.push({ cod, manual, r, ganado: cod === 'D' && dd.dow === 6 && !r });
+    });
+    const laborables = c.A + c.R + c.FR + c.FA;
+    if (!laborables && !c.D && !c.J) return;
+    const faltas = c.FA + c.FR + Math.floor(c.R / 3);
+    const pct = laborables > 0 ? Math.max(0, laborables - faltas) / laborables * 100 : 0;
+    const benef = Math.max(0, vts.length - 14);
+    filas.push({ n: p.nombre, sup: p.supervisor, celdas, c, laborables, faltas, pct, ventas: vts.length, saSin: Math.max(0, c.SA - benef) });
+  });
+  filas.sort((a, b) => a.pct - b.pct || (a.sup + a.n).localeCompare(b.sup + b.n));
+  window.__asisData = { filas, dias, anio, mes };
+  const tot = filas.reduce((a, f) => { a.lab += f.laborables; a.fal += f.faltas; a.R += f.c.R; a.FR += f.c.FR; a.FA += f.c.FA; a.sa += f.saSin; return a; }, { lab: 0, fal: 0, R: 0, FR: 0, FA: 0, sa: 0 });
+  const kpi = (l, v, col) => `<div style="background:white; border-left:4px solid ${col}; border-radius:8px; padding:8px 12px;"><div style="font-size:10px; color:var(--text-soft); text-transform:uppercase; font-weight:700;">${l}</div><div style="font-size:20px; font-weight:800; color:var(--att-navy);">${v}</div></div>`;
+  document.getElementById('asis-kpis').innerHTML =
+    kpi('% asistencia', tot.lab ? ((tot.lab - tot.fal) / tot.lab * 100).toFixed(1) + '%' : '—', '#16A34A') +
+    kpi('Faltas (con 3R=1F)', tot.fal, '#DC2626') + kpi('Por ausencia', tot.FA, '#7F1D1D') + kpi('Por retardo', tot.FR, '#DC2626') +
+    kpi('Retardos', tot.R, '#5B21B6') + kpi('Salidas ant. sin beneficio', tot.sa, '#D97706') + kpi('Agentes', filas.length, '#0077A8');
+  if (!filas.length) { cont.innerHTML = '<div style="padding:10px; color:var(--text-soft); font-size:12px;">Sin agentes con datos de asistencia en este mes/filtro.</div>'; return; }
+  const th = (t, w) => `<th style="padding:4px 5px; background:var(--att-navy); color:white; font-size:10px; text-align:center; ${w ? 'min-width:' + w : ''}">${t}</th>`;
+  cont.innerHTML = `<table style="border-collapse:collapse; font-size:11px; white-space:nowrap;"><thead><tr>${th('Agente', '180px')}${th('Sup.')}${dias.map(dd => th(String(dd.d) + (dd.dow === 0 ? '<br>D' : dd.dow === 6 ? '<br>S' : ''))).join('')}${th('Lab.')}${th('R')}${th('Faltas')}${th('% asist.')}${th('Vtas')}</tr></thead><tbody>${filas.map(f => `<tr>
+    <td style="padding:3px 6px; font-weight:600;">${f.n}</td><td style="padding:3px 6px; color:var(--text-soft);">${f.sup}</td>
+    ${f.celdas.map(x => `<td style="padding:2px; text-align:center; background:${x.cod ? ASIS_COL[x.cod] || '#fff' : '#fff'}; font-weight:700; ${x.manual ? 'outline:2px solid #0077A8; outline-offset:-2px;' : ''}" title="${x.manual ? 'Corregido: ' + (x.r.codigo_auto || 'FA') + ' → ' + x.r.codigo + ' · ' + (x.r.motivo || '') + ' · ' + (x.r.corregido_por || '') : (x.r ? 'Entrada ' + (x.r.hora_entrada || '') + (x.r.hora_salida ? ' · Salida ' + x.r.hora_salida : '') : (x.ganado ? 'Sábado ganado (venta 14)' : ''))}">${x.cod}${x.manual ? '✎' : ''}</td>`).join('')}
+    <td style="padding:3px 6px; text-align:right;">${f.laborables}</td><td style="padding:3px 6px; text-align:right; color:#5B21B6;">${f.c.R}</td>
+    <td style="padding:3px 6px; text-align:right; font-weight:700; color:${f.faltas ? '#DC2626' : 'inherit'};">${f.faltas}</td>
+    <td style="padding:3px 6px; text-align:right; font-weight:800; color:${f.pct >= 95 ? '#16A34A' : f.pct >= 85 ? '#D97706' : '#DC2626'};">${f.pct.toFixed(0)}%</td>
+    <td style="padding:3px 6px; text-align:right;">${f.ventas}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function exportarAsistencia() {
+  const D = window.__asisData;
+  if (!D || !D.filas.length) { alert('Sin datos de asistencia para exportar.'); return; }
+  const CX = (v, f, z) => { const c = { t: 'n', v: v || 0, f }; if (z) c.z = z; return c; };
+  const nD = D.dias.length, c0 = 2, cFin = XLSX.utils.encode_col(c0 + nD - 1), cIni = XLSX.utils.encode_col(c0);
+  const aoa = [[`ASISTENCIA ${['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][D.mes - 1]} ${D.anio}`],
+    ['A asistencia · R retardo · FR falta por retardo · FA falta por ausencia · D descanso · P/I/V justificadas · Faltas = FA + FR + INT(R/3) · % = (Lab − Faltas) / Lab · celdas con * = corregidas'],
+    ['Agente', 'Supervisor', ...D.dias.map(d => d.d), 'Laborables', 'A', 'R', 'FR', 'FA', 'Faltas', '% asistencia', 'Ventas']];
+  D.filas.forEach(f => {
+    const r = aoa.length + 1, rg = `${cIni}${r}:${cFin}${r}`;
+    const cL = XLSX.utils.encode_col(c0 + nD), cA = XLSX.utils.encode_col(c0 + nD + 1), cR = XLSX.utils.encode_col(c0 + nD + 2), cFR = XLSX.utils.encode_col(c0 + nD + 3), cFA = XLSX.utils.encode_col(c0 + nD + 4), cF = XLSX.utils.encode_col(c0 + nD + 5);
+    aoa.push([f.n, f.sup, ...f.celdas.map(x => (x.cod === '?' ? '' : x.cod) + (x.manual ? '*' : '')),
+      CX(f.laborables, `COUNTIF(${rg},"A*")+COUNTIF(${rg},"R*")+COUNTIF(${rg},"FR*")+COUNTIF(${rg},"FA*")`),
+      CX(f.c.A, `COUNTIF(${rg},"A*")`), CX(f.c.R, `COUNTIF(${rg},"R*")`), CX(f.c.FR, `COUNTIF(${rg},"FR*")`), CX(f.c.FA, `COUNTIF(${rg},"FA*")`),
+      CX(f.faltas, `${cFA}${r}+${cFR}${r}+INT(${cR}${r}/3)`),
+      CX(f.pct / 100, `IF(${cL}${r}>0,MAX(0,${cL}${r}-${cF}${r})/${cL}${r},0)`, '0%'), f.ventas]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{ wch: 32 }, { wch: 14 }, ...Array(nD).fill({ wch: 4 }), { wch: 9 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 4 }, { wch: 7 }, { wch: 10 }, { wch: 6 }];
+  const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+  if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
+  if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+  const nC = c0 + nD + 8;
+  for (let c = 0; c < nC; c++) { const h = cel(2, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center' } }; }
+  const FILL = { A: 'DCFCE7', R: 'EDE9FE', FR: 'FEE2E2', FA: 'FCA5A5', D: 'FEF9C3', P: 'DBEAFE', I: 'DBEAFE', V: 'DBEAFE' };
+  D.filas.forEach((f, i) => f.celdas.forEach((x, j) => { const cell = cel(3 + i, c0 + j); if (cell && x.cod && FILL[x.cod]) cell.s = { fill: { fgColor: { rgb: FILL[x.cod] } }, font: { name: 'Calibri', sz: 9, bold: true }, alignment: { horizontal: 'center' } }; }));
+  ws['!freeze'] = { xSplit: 2, ySplit: 3 };
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
+  XLSX.writeFile(wb, `Asistencia_${D.anio}-${String(D.mes).padStart(2, '0')}.xlsx`);
+}
+
+function _wireAsistencia() {
+  const selM = document.getElementById('asis-mes'), selF = document.getElementById('asis-filtro'), b = document.getElementById('asis-btn-excel');
+  if (!selM) return;
+  const hoy = new Date();
+  const MES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const ops = [];
+  for (let k = 0; k < 6; k++) { const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1); ops.push(`<option value="${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}">${MES[d.getMonth()]} ${d.getFullYear()}</option>`); }
+  selM.innerHTML = ops.join('');
+  const src = document.getElementById('radiografia-filtro');
+  selF.innerHTML = (src && src.options.length) ? src.innerHTML : '<option value="glob">🌐 Global</option>';
+  selM.onchange = renderAsistencia; selF.onchange = renderAsistencia;
+  if (b) b.onclick = exportarAsistencia;
+  renderAsistencia();
+}
+
 function arrancarReporte() {
   agregarBotonSalir();
   if ((window.__accesoModo || 'director') === 'director') agregarBotonSecciones();
+  else { const z = document.getElementById('zona-lista-precios'); if (z) z.style.display = 'none'; }
   cargarDatos().then(() => setTimeout(() => {
     // Arranque limpio: todas las secciones colapsadas; se abren desde el navegador
     document.querySelectorAll('.section.collapsible.abierto').forEach(s => s.classList.remove('abierto'));
+    try { _wireAsistencia(); } catch (e) { console.warn('[Asistencia]', e); }
   }, 300)).catch(e => console.error(e));
 }
 
@@ -16883,6 +17271,296 @@ function _normEquipo(s) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+// 217 modelos de la lista de precios (corte ago-2026)
+const EQUIPOS_ESTATUS = {"14T BUNDLE WATCH4":"INV. LIMITADO EN CANAL",
+"14T BUNDLE WATCH5":"NO RESURTIBLE",
+"15T BUNDLE BOCINA SOUND OUTDOOR":"NO RESURTIBLE",
+"15T PRO BUNDLE REDMI PAD":"NO RESURTIBLE",
+"17 ULTRA + SOUND PARTY + PHOTO KIT":"INV. LIMITADO EN CANAL",
+"17T BUNDLE SOUND OUTDOOR":"RESURTIBLE",
+"17T PRO BUNDLE REDMI PAD 2":"RESURTIBLE",
+"200 256GB BUNDLE OWS EARBUDS":"NO RESURTIBLE",
+"200 512GB BUNDLE OWS EARBUDS":"INV. LIMITADO EN CANAL",
+"400 512GB BUNDLE HEADPHONES":"NO RESURTIBLE",
+"400 512GB BUNDLE HEADPHONES + BALON":"NO RESURTIBLE",
+"600 512GB":"RESURTIBLE",
+"70 256GB":"INV. LIMITADO EN CANAL",
+"9":"INV. LIMITADO EN CANAL",
+"90 256GB & BUNDLE BAND 7":"INV. LIMITADO EN CANAL",
+"90 512GB":"INV. LIMITADO EN CANAL",
+"90 LITE":"INV. LIMITADO EN CANAL",
+"A04 64GB":"NO RESURTIBLE",
+"A04E 32GB":"INV. LIMITADO EN CANAL",
+"A14 4G 128GB":"INV. LIMITADO EN CANAL",
+"A16 128GB 4G":"NO RESURTIBLE",
+"A17":"NO RESURTIBLE",
+"A17 128GB 4G":"RESURTIBLE",
+"A38 128GB":"INV. LIMITADO EN CANAL",
+"A40":"NO RESURTIBLE",
+"A5":"NO RESURTIBLE",
+"A5 PRO 4G":"NO RESURTIBLE",
+"A5 PRO 5G BUNDLE ENCO BUDS 3":"NO RESURTIBLE",
+"A57":"NO RESURTIBLE",
+"A58 128GB":"INV. LIMITADO EN CANAL",
+"A58 256GB BDL BUDS 2":"INV. LIMITADO EN CANAL",
+"A6 BUNDLE ENCO BUDS 3":"RESURTIBLE",
+"A60":"NO RESURTIBLE",
+"A6K":"NO RESURTIBLE",
+"A6T":"RESURTIBLE",
+"A6X":"NO RESURTIBLE",
+"A78":"INV. LIMITADO EN CANAL",
+"A79":"INV. LIMITADO EN CANAL",
+"A80":"NO RESURTIBLE",
+"C35":"INV. LIMITADO EN CANAL",
+"EDGE 70 FUSION BUNDLE BUDS":"NO RESURTIBLE",
+"FIND X8 PRO":"NO RESURTIBLE",
+"FIND X9 PRO":"NO RESURTIBLE",
+"GALAXY A07 128GB":"NO RESURTIBLE",
+"GALAXY A07 64GB 4G":"NO RESURTIBLE",
+"GALAXY A26 128GB":"NO RESURTIBLE",
+"GALAXY A27 128GB":"NPI",
+"GALAXY A34 5G 128GB":"INV. LIMITADO EN CANAL",
+"GALAXY A35 128GB":"NO RESURTIBLE",
+"GALAXY A36 128GB":"NO RESURTIBLE",
+"GALAXY A37 128GB":"NPI",
+"GALAXY A37 256GB":"NO RESURTIBLE",
+"GALAXY A54 5G 128GB":"INV. LIMITADO EN CANAL",
+"GALAXY A55 128GB":"NO RESURTIBLE",
+"GALAXY A56 256GB":"NO RESURTIBLE",
+"GALAXY A57 256GB":"RESURTIBLE",
+"GALAXY S24 256GB":"NO RESURTIBLE",
+"GALAXY S25 256GB":"NO RESURTIBLE",
+"GALAXY S25 EDGE":"NO RESURTIBLE",
+"GALAXY S25 FE 128GB":"NO RESURTIBLE",
+"GALAXY S25 PLUS 512GB":"NO RESURTIBLE",
+"GALAXY S25 ULTRA 256GB":"NO RESURTIBLE",
+"GALAXY S25 ULTRA 512GB":"INV. LIMITADO EN CANAL",
+"GALAXY S26 256GB":"RESURTIBLE",
+"GALAXY S26 PLUS 512GB":"NO RESURTIBLE",
+"GALAXY S26 ULTRA 512GB":"RESURTIBLE",
+"GALAXY Z FLIP8 512GB":"RESURTIBLE",
+"GALAXY Z FOLD8 512GB":"RESURTIBLE",
+"GALAXY Z FOLD8 ULTRA 512GB":"RESURTIBLE",
+"GALAXY ZFLIP 6 256GB":"INV. LIMITADO EN CANAL",
+"GALAXY ZFLIP7 512GB":"NO RESURTIBLE",
+"GALAXY ZFOLD7 512GB":"INV. LIMITADO EN CANAL",
+"GOOGLE PIXEL 10 128GB":"NO RESURTIBLE",
+"GOOGLE PIXEL 10 256GB":"NO RESURTIBLE",
+"GOOGLE PIXEL 10 PRO 256GB":"NO RESURTIBLE",
+"GOOGLE PIXEL 10 PRO 512GB":"INV. LIMITADO EN CANAL",
+"GOOGLE PIXEL 10 PRO XL 1TB":"NO RESURTIBLE",
+"GOOGLE PIXEL 10 PRO XL 256GB":"RESURTIBLE",
+"GOOGLE PIXEL 10 PRO XL 512GB":"NO RESURTIBLE",
+"GOOGLE PIXEL 9A 128GB":"NO RESURTIBLE",
+"IPHONE 11 64GB":"NO RESURTIBLE",
+"IPHONE 13 128GB":"NO RESURTIBLE",
+"IPHONE 14 128GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 128GB":"RESURTIBLE",
+"IPHONE 15 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 512GB":"NO RESURTIBLE",
+"IPHONE 15 PLUS 128GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PLUS 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PLUS 512GB":"NO RESURTIBLE",
+"IPHONE 15 PRO 128GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO 512GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO MAX 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO MAX 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 15 PRO MAX 512GB":"NO RESURTIBLE",
+"IPHONE 16 128GB":"NO RESURTIBLE",
+"IPHONE 16 256GB":"NO RESURTIBLE",
+"IPHONE 16 512GB":"INV. LIMITADO EN CANAL",
+"IPHONE 16 PLUS 128GB":"NO RESURTIBLE",
+"IPHONE 16 PLUS 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 16 PLUS 512GB":"INV. LIMITADO EN CANAL",
+"IPHONE 16 PRO 128GB":"NO RESURTIBLE",
+"IPHONE 16 PRO 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 16 PRO 256GB":"NO RESURTIBLE",
+"IPHONE 16 PRO 512GB":"NO RESURTIBLE",
+"IPHONE 16 PRO MAX 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 16 PRO MAX 256GB":"NO RESURTIBLE",
+"IPHONE 16 PRO MAX 512GB":"NO RESURTIBLE",
+"IPHONE 16E 128GB":"NO RESURTIBLE",
+"IPHONE 16E 256GB":"INV. LIMITADO EN CANAL",
+"IPHONE 17 256GB":"RESURTIBLE",
+"IPHONE 17 512GB":"NO RESURTIBLE",
+"IPHONE 17 PRO 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 17 PRO 256GB":"RESURTIBLE",
+"IPHONE 17 PRO 512GB":"NO RESURTIBLE",
+"IPHONE 17 PRO MAX 1TB":"INV. LIMITADO EN CANAL",
+"IPHONE 17 PRO MAX 256GB":"RESURTIBLE",
+"IPHONE 17 PRO MAX 512GB":"NO RESURTIBLE",
+"IPHONE 17E 256GB":"RESURTIBLE",
+"IPHONE AIR 256GB":"NO RESURTIBLE",
+"IPHONE AIR 512GB":"NO RESURTIBLE",
+"IPHONE SE 64GB 3RA":"INV. LIMITADO EN CANAL",
+"MAGIC 5 LITE 256GB & BUNDLE BAND 7":"INV. LIMITADO EN CANAL",
+"MAGIC 5 LITE 256GB BUNDLE MAGIC5 LITE 128GB":"INV. LIMITADO EN CANAL",
+"MAGIC 5 LITE 256GB BUNDLE X8A":"INV. LIMITADO EN CANAL",
+"MAGIC 6 LITE & BUNDLE BAND 7":"INV. LIMITADO EN CANAL",
+"MAGIC 6 PRO & BUNDLE PAD X9":"INV. LIMITADO EN CANAL",
+"MAGIC 7 LITE & BUNDLE HEADPHONES":"NO RESURTIBLE",
+"MAGIC 7 PRO":"NO RESURTIBLE",
+"MAGIC 7 PRO + X8C":"NO RESURTIBLE",
+"MAGIC 8 LITE 512GB 5G BUNDLE HEADPHONES":"RESURTIBLE",
+"MAGIC 8 LITE 512GB 5G BUNDLE HEADPHONES + JERSEY":"NO RESURTIBLE",
+"MAGIC 8 PRO BUNDLE PAD X8B":"NO RESURTIBLE",
+"MAGIC V2 & BUNDLE PAD 9":"INV. LIMITADO EN CANAL",
+"MAGIC V3 5G":"INV. LIMITADO EN CANAL",
+"MOTO E20":"INV. LIMITADO EN CANAL",
+"MOTO E22":"INV. LIMITADO EN CANAL",
+"MOTO EDGE 20 LITE":"INV. LIMITADO EN CANAL",
+"MOTO EDGE 50":"NO RESURTIBLE",
+"MOTO EDGE 50 FUSION & BUNDLE MOTO BUDS":"INV. LIMITADO EN CANAL",
+"MOTO EDGE 60 FUSION":"NO RESURTIBLE",
+"MOTO EDGE 60 PRO":"NO RESURTIBLE",
+"MOTO EDGE 60 PRO + WATCH Y BALON":"NO RESURTIBLE",
+"MOTO EDGE 70":"NO RESURTIBLE",
+"MOTO EDGE 70 PRO + WATCH":"RESURTIBLE",
+"MOTO EDGE 70 PRO + WATCH + CHAMARRA":"RESURTIBLE",
+"MOTO G04":"NO RESURTIBLE",
+"MOTO G04S":"INV. LIMITADO EN CANAL",
+"MOTO G05":"INV. LIMITADO EN CANAL",
+"MOTO G06":"NO RESURTIBLE",
+"MOTO G13":"INV. LIMITADO EN CANAL",
+"MOTO G15":"NO RESURTIBLE",
+"MOTO G17":"RESURTIBLE",
+"MOTO G24":"NO RESURTIBLE",
+"MOTO G32":"INV. LIMITADO EN CANAL",
+"MOTO G51 5G":"NO RESURTIBLE",
+"MOTO G54":"INV. LIMITADO EN CANAL",
+"MOTO G54 256GB":"INV. LIMITADO EN CANAL",
+"MOTO G55":"NO RESURTIBLE",
+"MOTO G56":"NO RESURTIBLE",
+"MOTO G60":"NO RESURTIBLE",
+"MOTO G77":"RESURTIBLE",
+"MOTO G84":"INV. LIMITADO EN CANAL",
+"NOTE 13":"INV. LIMITADO EN CANAL",
+"NOTE 13 PRO":"NO RESURTIBLE",
+"NOTE 14":"NO RESURTIBLE",
+"NOTE 14 PRO 5G BUNDLE AUDIFONOS":"NO RESURTIBLE",
+"NOVA 13 BUNDLE WATCH FIT 3":"INV. LIMITADO EN CANAL",
+"NOVA 13 PRO BUNDLE WATCH FIT 3":"INV. LIMITADO EN CANAL",
+"NOVA Y61":"NO RESURTIBLE",
+"NUBIA FLIP 5G":"INV. LIMITADO EN CANAL",
+"RAZR 50 ULTRA":"INV. LIMITADO EN CANAL",
+"RAZR 60 ULTRA":"NO RESURTIBLE",
+"REDMI 12C":"NO RESURTIBLE",
+"REDMI 13":"NO RESURTIBLE",
+"REDMI 13C":"INV. LIMITADO EN CANAL",
+"REDMI 14C":"NO RESURTIBLE",
+"REDMI 15":"NO RESURTIBLE",
+"REDMI 15C":"NO RESURTIBLE",
+"REDMI 17":"NPI",
+"REDMI A2":"INV. LIMITADO EN CANAL",
+"REDMI A3":"NO RESURTIBLE",
+"REDMI A5":"NO RESURTIBLE",
+"REDMI A7 PRO":"RESURTIBLE",
+"REDMI A7 PRO + MOCHILA":"RESURTIBLE",
+"REDMI NOTE 12":"NO RESURTIBLE",
+"REDMI NOTE 15":"NO RESURTIBLE",
+"REDMI NOTE 15 PRO 5G + BUDS 6 ACTIVE + SMART BAND 9 ACTIVE":"NO RESURTIBLE",
+"REDMI NOTE 15 PRO 5G + BUDS 8 ACTIVE + SMART BAND 9 ACTIVE":"NO RESURTIBLE",
+"REDMI NOTE 17 BUNDLE SOUND POCKET":"NPI",
+"RENO 10 256GB":"NO RESURTIBLE",
+"RENO 11":"INV. LIMITADO EN CANAL",
+"RENO 12 5G":"NO RESURTIBLE",
+"RENO 12F 5G":"NO RESURTIBLE",
+"RENO 13 5G":"NO RESURTIBLE",
+"RENO 13 PRO 5G":"NO RESURTIBLE",
+"RENO 13F 5G":"NO RESURTIBLE",
+"RENO 14 5G BUNDLE HEADPHONES":"NO RESURTIBLE",
+"RENO 14F & BUNDLE":"NO RESURTIBLE",
+"RENO 14F STAR WARS VERSION":"NO RESURTIBLE",
+"RENO 7 256GB":"NO RESURTIBLE",
+"RENO16 F & BDL ENCO BUDS 3":"RESURTIBLE",
+"X5":"NO RESURTIBLE",
+"X5B PLUS":"NO RESURTIBLE",
+"X5C PLUS":"NO RESURTIBLE",
+"X5D":"NPI",
+"X6A":"NO RESURTIBLE",
+"X6A PLUS 256GB":"INV. LIMITADO EN CANAL",
+"X6B":"NO RESURTIBLE",
+"X6C":"NO RESURTIBLE",
+"X7B & BUNDLE BOCINA":"INV. LIMITADO EN CANAL",
+"X7C BUNDLE EARBUDS X7I":"NO RESURTIBLE",
+"X7D":"NO RESURTIBLE",
+"X8B & BUNDLE X5 PLUS O X8A":"INV. LIMITADO EN CANAL",
+"X8C & BUNDLE EARBUDS":"NO RESURTIBLE",
+"X8D":"RESURTIBLE"};
+
+// Estatus de resurtido de un modelo (sin color): exacto o por tokens
+function _estatusDe(mb) {
+  if (!mb || mb === 'SIM' || mb === '—') return '';
+  const CAT = (window.__estatusDB && Object.keys(window.__estatusDB).length) ? window.__estatusDB : EQUIPOS_ESTATUS;
+  const MARCAS_EQ = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG'];
+  let k = String(mb).toUpperCase().replace(/\s*GB/g, 'GB').replace(/\s*TB/g, 'TB');
+  k = k.split(' ').filter(t => t && !MARCAS_EQ.includes(t)).join(' ');
+  if (CAT[k]) return CAT[k];
+  const toks = k.split(' ').filter(t => t.length > 1);
+  if (!toks.length) return '';
+  for (const key of Object.keys(CAT)) {
+    const kt = key.split(' ');
+    if (toks.every(t => kt.includes(t)) || kt.every(t => toks.includes(t))) return CAT[key];
+  }
+  return '';
+}
+
+async function procesarListaPrecios(file) {
+  if (!file) return;
+  if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede actualizar la lista.'); return; }
+  const info = document.getElementById('lista-precios-info');
+  const di = t => { if (info) info.textContent = t; };
+  try {
+    di('Leyendo…');
+    const wbP = XLSX.read(await file.arrayBuffer());
+    const MARCAS_EQ = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG'];
+    const PRIO = { 'RESURTIBLE': 3, 'NPI': 2, 'INV. LIMITADO EN CANAL': 1, 'NO RESURTIBLE': 0 };
+    const normP = eq => String(eq).toUpperCase().replace(/\s*GB/g, 'GB').replace(/\s*TB/g, 'TB')
+      .split(/\s+/).filter(t => t && !MARCAS_EQ.includes(t)).join(' ').trim();
+    const mapa = {};
+    wbP.SheetNames.filter(n => /^promo/i.test(n)).forEach(nombre => {
+      const rows = XLSX.utils.sheet_to_json(wbP.Sheets[nombre], { header: 1, defval: null });
+      let hIdx = -1, cE = -1, cQ = -1;
+      for (let r = 0; r < Math.min(12, rows.length); r++) {
+        const vals = (rows[r] || []).map(x => String(x || '').trim().toUpperCase());
+        const iE = vals.indexOf('ESTATUS');
+        if (iE >= 0) { hIdx = r; cE = iE; cQ = vals.indexOf('EQUIPO') >= 0 ? vals.indexOf('EQUIPO') : iE + 3; break; }
+      }
+      if (hIdx < 0) return;
+      for (let r = hIdx + 1; r < rows.length; r++) {
+        const f = rows[r] || [];
+        const e = String(f[cE] || '').trim().toUpperCase();
+        const q = f[cQ];
+        if (!q || !(e in PRIO)) continue;
+        const k = normP(q);
+        if (!k) continue;
+        if (!(k in mapa) || PRIO[e] > PRIO[mapa[k]]) mapa[k] = e;
+      }
+    });
+    const entradas = Object.entries(mapa);
+    if (!entradas.length) { di(''); alert('No encontré hojas de Promociones con columna Estatus. ¿Es la lista correcta?'); return; }
+    di(`Guardando ${entradas.length} modelos…`);
+    const { error: eDel } = await db.from('equipos_estatus').delete().neq('modelo', '');
+    if (eDel) throw eDel;
+    for (let i = 0; i < entradas.length; i += 200) {
+      const lote = entradas.slice(i, i + 200).map(([modelo, estatus]) => ({ modelo, estatus }));
+      const { error } = await db.from('equipos_estatus').insert(lote);
+      if (error) throw error;
+    }
+    window.__estatusDB = Object.fromEntries(entradas);
+    const resumen = {};
+    entradas.forEach(([, e]) => { resumen[e] = (resumen[e] || 0) + 1; });
+    di(`✅ ${entradas.length} modelos · ${new Date().toLocaleDateString('es-MX')}`);
+    alert('Lista de precios actualizada:\n' + Object.entries(resumen).map(([e, n]) => `${e}: ${n}`).join('\n') + '\n\nLos próximos Excel de equipos usarán este catálogo.');
+  } catch (e) {
+    console.error('[ListaPrecios]', e);
+    di('');
+    alert('Error al procesar (¿corriste el SQL de equipos_estatus?): ' + (e.message || e));
+  }
+}
+
 async function exportarPivoteEquipos() {
   if (String(window.__accesoModo || '').startsWith('sup:')) {
     alert('La descarga de inventarios es exclusiva de dirección y coordinación.');
@@ -17525,7 +18203,7 @@ async function exportarPivoteEquipos() {
     const idxTitMod = aoaF.length;
     aoaF.push([`FORECAST POR MODELO — unidades a considerar para ${MESES_L[mesSig - 1]} (colores agrupados)`]);
     const idxHdrMod = aoaF.length;
-    aoaF.push(['Marca', 'Modelo (sin color)', 'Ventas 3m', 'Part. %', `Proy ${MESES_L[mesSig - 1]}`, 'Proy AJUSTADA (× factor)']);
+    aoaF.push(['Marca', 'Modelo (sin color)', 'Estatus lista de precios', 'Ventas 3m', 'Part. %', `Proy ${MESES_L[mesSig - 1]}`, 'Proy AJUSTADA (× factor)']);
     const modCnt = {};
     eq3.forEach(x => { const k = x.modeloB || x.equipo; if (!modCnt[k]) modCnt[k] = { n: 0, marca: x.marca }; modCnt[k].n++; });
     const modelosF2 = Object.entries(modCnt).sort((a, b) => b[1].n - a[1].n);
@@ -17533,18 +18211,18 @@ async function exportarPivoteEquipos() {
     modelosF2.forEach(([mk, d]) => {
       const rE = aoaF.length + 1;
       const pv = eq3m ? Math.round(d.n / eq3m * proyEqTotal) : 0;
-      aoaF.push([d.marca, mk,
+      aoaF.push([d.marca, mk, _estatusDe(mk) || 'SIN LISTA',
         CF(d.n, `COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})`),
-        { t: 'n', v: eq3m ? d.n / eq3m : 0, f: `C${rE}/$B$3`, z: '0.0%' },
-        CF(pv, `ROUND(D${rE}*$L$3,0)`),
-        CF(Math.round(pv * 1.1), `ROUND(E${rE}*$N$3,0)`)]);
+        { t: 'n', v: eq3m ? d.n / eq3m : 0, f: `D${rE}/$B$3`, z: '0.0%' },
+        CF(pv, `ROUND(E${rE}*$L$3,0)`),
+        CF(Math.round(pv * 1.1), `ROUND(F${rE}*$N$3,0)`)]);
     });
     const lastMod = aoaF.length;
-    aoaF.push(['TOTAL', '', CF(0, `SUM(C${firstMod}:C${lastMod})`), '',
-      CF(0, `SUM(E${firstMod}:E${lastMod})`), CF(0, `SUM(F${firstMod}:F${lastMod})`)]);
+    aoaF.push(['TOTAL', '', '', CF(0, `SUM(D${firstMod}:D${lastMod})`), '',
+      CF(0, `SUM(F${firstMod}:F${lastMod})`), CF(0, `SUM(G${firstMod}:G${lastMod})`)]);
     const idxTotMod = aoaF.length - 1;
     const wsF = XLSX.utils.aoa_to_sheet(aoaF);
-    wsF['!cols'] = [{ wch: 13 }, { wch: 27 }, ...Array(Math.max(marcasF.length + 1, 5)).fill({ wch: 11 })];
+    wsF['!cols'] = [{ wch: 13 }, { wch: 27 }, { wch: 20 }, ...Array(Math.max(marcasF.length + 1, 5)).fill({ wch: 11 })];
     (() => {
       const cel = (r, c) => wsF[XLSX.utils.encode_cell({ r, c })];
       if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
@@ -17560,20 +18238,192 @@ async function exportarPivoteEquipos() {
       for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(idxTotMat, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
       const t = cel(idxTitMod, 0);
       if (t) t.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: '1F3864' } } };
-      for (let c = 0; c < 6; c++) { const h = cel(idxHdrMod, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      for (let c = 0; c < 7; c++) { const h = cel(idxHdrMod, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      const EST_COLOR = { 'RESURTIBLE': '16A34A', 'NO RESURTIBLE': 'C00000', 'INV. LIMITADO EN CANAL': 'D97706', 'NPI': '0077A8', 'SIN LISTA': '94A3B8' };
       for (let r = idxHdrMod + 1; r < idxTotMod; r++) {
-        for (let c = 0; c < 6; c++) {
+        for (let c = 0; c < 7; c++) {
           const x = cel(r, c);
           if (!x) continue;
           const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
-          if (c === 4) { s.fill = { fgColor: { rgb: 'E8E0F5' } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
-          if (c === 5) { s.fill = { fgColor: { rgb: 'DCC9F0' } }; s.font.bold = true; s.font.color = { rgb: '3E2566' }; }
+          if (c === 2 && EST_COLOR[x.v]) { s.font.bold = true; s.font.color = { rgb: EST_COLOR[x.v] }; }
+          if (c === 5) { s.fill = { fgColor: { rgb: 'E8E0F5' } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
+          if (c === 6) { s.fill = { fgColor: { rgb: 'DCC9F0' } }; s.font.bold = true; s.font.color = { rgb: '3E2566' }; }
           x.s = s;
         }
       }
-      for (let c = 0; c < 6; c++) { const x = cel(idxTotMod, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+      for (let c = 0; c < 7; c++) { const x = cel(idxTotMod, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
     })();
     XLSX.utils.book_append_sheet(wb, wsF, `Forecast ${MESES_L[mesSig - 1]}`);
+
+    // ===== ESTRATEGIA: pedido por REGIÓN × MODELO (solo RESURTIBLES) =====
+    const resurt = modelosF2.filter(([mk]) => _estatusDe(mk) === 'RESURTIBLE');
+    const nR = regionesF.length;
+    const colRegE = i => XLSX.utils.encode_col(2 + i);
+    const colTotE = XLSX.utils.encode_col(2 + nR);
+    const aoaE = [
+      [`ESTRATEGIA ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS A SOLICITAR POR REGIÓN Y MODELO (SOLO RESURTIBLES)`],
+      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
+      ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
+        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Agentes proy.:', 145,
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)'),
+        'Factor ajuste:', 1.1],
+      [],
+      ['Marca', 'Modelo (resurtible)', ...regionesF, 'TOTAL']];
+    const firstE = aoaE.length + 1;
+    resurt.forEach(([mk, d]) => {
+      const rE = aoaE.length + 1;
+      const fila = [d.marca, mk];
+      regionesF.forEach(rg => {
+        const nRM = eq3.filter(x => (x.modeloB || x.equipo) === mk && x.region === rg).length;
+        fila.push(CF(eq3m ? Math.round(nRM / eq3m * proyEqTotal * 1.1) : 0,
+          `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${DET}!$D:$D,"${esc(rg)}",${critMes})/$B$3*$L$3*$N$3,0)`));
+      });
+      fila.push(CF(0, `SUM(C${rE}:${XLSX.utils.encode_col(1 + nR)}${rE})`));
+      aoaE.push(fila);
+    });
+    const lastE = aoaE.length;
+    if (!resurt.length) aoaE.push(['(ningún modelo vendido cruza como RESURTIBLE en la lista de precios)']);
+    const tE = ['TOTAL', ''];
+    for (let c = 2; c <= 2 + nR; c++) {
+      const L = XLSX.utils.encode_col(c);
+      tE.push(CF(0, `SUM(${L}${firstE}:${L}${lastE})`));
+    }
+    aoaE.push(tE);
+    const idxTotE = aoaE.length - 1;
+    const npis = modelosF2.filter(([mk]) => _estatusDe(mk) === 'NPI');
+    aoaE.push([]);
+    const idxNpi = aoaE.length;
+    aoaE.push(['LANZAMIENTOS (NPI) con venta reciente — pedir por asignación de la marca, sin histórico suficiente:']);
+    npis.forEach(([mk, d]) => aoaE.push([d.marca, mk]));
+    if (!npis.length) aoaE.push(['(sin NPIs con venta en el trimestre)']);
+
+    // Demanda que quedará SIN SURTIR → migrar a equivalentes resurtibles
+    aoaE.push([]);
+    const idxSS = aoaE.length;
+    aoaE.push(['DEMANDA QUE QUEDARÁ SIN SURTIR (no resurtible / inv. limitado) — a migrar hacia resurtibles:']);
+    aoaE.push(['Marca', 'Modelo', 'Estatus', `Proy ${MESES_L[mesSig - 1]} (unid)`, 'Migrar hacia (resurtible más vendido de la marca)']);
+    const topResurtMarca = {};
+    resurt.forEach(([mk, d]) => { if (!topResurtMarca[d.marca]) topResurtMarca[d.marca] = mk; });
+    const topResurtGlobal = resurt.length ? `${resurt[0][1].marca} ${resurt[0][0]}` : '—';
+    const sinSurtir = modelosF2.filter(([mk]) => ['NO RESURTIBLE', 'INV. LIMITADO EN CANAL'].includes(_estatusDe(mk)));
+    const firstSS = idxSS + 3;
+    sinSurtir.forEach(([mk, d]) => {
+      const rE = aoaE.length + 1;
+      const pv = eq3m ? Math.round(d.n / eq3m * proyEqTotal * 1.1) : 0;
+      aoaE.push([d.marca, mk, _estatusDe(mk),
+        CF(pv, `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$B$3*$L$3*$N$3,0)`),
+        topResurtMarca[d.marca] || topResurtGlobal]);
+    });
+    const lastSS = aoaE.length;
+    aoaE.push(['TOTAL A MIGRAR', '', '', sinSurtir.length ? CF(0, `SUM(D${firstSS}:D${lastSS})`) : 0,
+      'Súmalo al pedido de los equivalentes indicados']);
+    const idxTotSS = aoaE.length - 1;
+    const wsE = XLSX.utils.aoa_to_sheet(aoaE);
+    wsE['!cols'] = [{ wch: 12 }, { wch: 30 }, ...Array(nR).fill({ wch: 9 }), { wch: 9 }];
+    (() => {
+      const cel = (r, c) => wsE[XLSX.utils.encode_cell({ r, c })];
+      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
+      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+      for (let c = 0; c < 14; c++) {
+        const x = cel(2, c);
+        if (!x) continue;
+        x.s = (typeof x.v === 'number' || x.f)
+          ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } }
+          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
+      }
+      for (let c = 0; c < nR + 3; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      for (let r = 5; r < idxTotE; r++) {
+        for (let c = 0; c < nR + 3; c++) {
+          const x = cel(r, c);
+          if (!x) continue;
+          x.s = { font: { name: 'Calibri', sz: 10, bold: c === 0 }, fill: c >= 2 ? { fgColor: { rgb: 'E8F5E9' } } : undefined };
+          if (!x.s.fill) delete x.s.fill;
+        }
+      }
+      for (let c = 0; c < nR + 3; c++) { const x = cel(idxTotE, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+      const np = cel(idxNpi, 0);
+      if (np) np.s = { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: '0077A8' } } };
+      const ss = cel(idxSS, 0);
+      if (ss) ss.s = { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: 'C00000' } } };
+      for (let c = 0; c < 5; c++) { const h = cel(idxSS + 1, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+      for (let r = idxSS + 2; r < idxTotSS; r++) {
+        for (let c = 0; c < 5; c++) {
+          const x = cel(r, c);
+          if (!x) continue;
+          x.s = { font: { name: 'Calibri', sz: 10, bold: c === 0 || c === 4, color: c === 3 ? { rgb: 'C00000' } : (c === 4 ? { rgb: '16A34A' } : undefined) } };
+          if (!x.s.font.color) delete x.s.font.color;
+        }
+      }
+      for (let c = 0; c < 5; c++) { const x = cel(idxTotSS, c); if (x) x.s = { fill: { fgColor: { rgb: 'F8CBAD' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
+    })();
+    XLSX.utils.book_append_sheet(wb, wsE, `Estrategia ${MESES_L[mesSig - 1]}`);
+
+    // ===== PROYECCIÓN RESTO DEL AÑO por modelo (mismo ritmo por agente·día) =====
+    const mesesRest = [];
+    for (let m = mesSig; m <= 12; m++) mesesRest.push(m);
+    if (mesesRest.length) {
+      const colMR = i => XLSX.utils.encode_col(3 + i);
+      const colTotR = XLSX.utils.encode_col(3 + mesesRest.length);
+      const aoaR = [
+        ['PROYECCIÓN RESTO DEL AÑO POR MODELO'],
+        [`Mismo ritmo por agente·día hábil del trimestre ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × agentes proyectados × días hábiles de cada mes. Parámetros y días editables — todo recalcula.`],
+        ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
+          'Días háb. 3m:', dh3F, 'Agentes prom 3m:', agProm, 'Agentes proy.:', 145],
+        ['Días hábiles →', '', '', ...mesesRest.map(m => diasHabilesMes(m === 12 && mesSig === 1 ? anioAct : anioAct, m)), ''],
+        ['Marca', 'Modelo', 'Estatus', ...mesesRest.map(m => MESES_L[m - 1]), 'TOTAL resto']];
+      const firstR = aoaR.length + 1;
+      modelosF2.forEach(([mk, d]) => {
+        const rE = aoaR.length + 1;
+        const ritmo = (dh3F > 0 && agProm > 0) ? d.n / dh3F / agProm : 0;
+        const fila = [d.marca, mk, _estatusDe(mk) || 'SIN LISTA'];
+        mesesRest.forEach((m, i) => {
+          fila.push(CF(Math.round(ritmo * 145 * diasHabilesMes(anioAct, m)),
+            `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$D$3/$F$3*$H$3*${colMR(i)}$4,0)`));
+        });
+        fila.push(CF(0, `SUM(${colMR(0)}${rE}:${colMR(mesesRest.length - 1)}${rE})`));
+        aoaR.push(fila);
+      });
+      const lastR = aoaR.length;
+      const tR2 = ['TOTAL', '', ''];
+      for (let c = 3; c <= 3 + mesesRest.length; c++) {
+        const L = XLSX.utils.encode_col(c);
+        tR2.push(CF(0, `SUM(${L}${firstR}:${L}${lastR})`));
+      }
+      aoaR.push(tR2);
+      const wsR = XLSX.utils.aoa_to_sheet(aoaR);
+      wsR['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 18 }, ...Array(mesesRest.length).fill({ wch: 8 }), { wch: 10 }];
+      (() => {
+        const cel = (r, c) => wsR[XLSX.utils.encode_cell({ r, c })];
+        const nC = 4 + mesesRest.length;
+        if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
+        if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+        for (const rr of [2, 3]) {
+          for (let c = 0; c < nC; c++) {
+            const x = cel(rr, c);
+            if (!x || x.v === '') continue;
+            x.s = (typeof x.v === 'number' || x.f)
+              ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 9 }, alignment: { horizontal: 'center' } }
+              : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
+          }
+        }
+        for (let c = 0; c < nC; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+        const rangoR = XLSX.utils.decode_range(wsR['!ref']);
+        for (let r = 5; r <= rangoR.e.r; r++) {
+          const esT = r === rangoR.e.r;
+          for (let c = 0; c < nC; c++) {
+            const x = cel(r, c);
+            if (!x) continue;
+            const s = { font: { name: 'Calibri', sz: 10, bold: esT || c === 0 } };
+            if (esT) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+            else if (c === 2 && x.v === 'RESURTIBLE') s.font.color = { rgb: '16A34A' };
+            else if (c === 2 && x.v === 'NO RESURTIBLE') s.font.color = { rgb: 'C00000' };
+            x.s = s;
+          }
+        }
+        wsR['!freeze'] = { xSplit: 3, ySplit: 5 };
+      })();
+      XLSX.utils.book_append_sheet(wb, wsR, 'Proy resto 2026');
+    }
 
     XLSX.writeFile(wb, `equipos_inventario_${anioAct}.xlsx`);
   } catch (e) {
