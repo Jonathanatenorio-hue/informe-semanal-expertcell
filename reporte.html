@@ -6323,7 +6323,7 @@ function renderAvanceUI() {
     </div>
   `;
 
-  window.__semaforoCtx = { supervisoresData, diasTranscurridos, diasTot: estadoTotal.diasHabilesTotales, diasRestantes, proyeccionModo, iniMesStr: iniMesStrTabla, finMesStr: finMesStrTabla };
+  window.__semaforoCtx = { supervisoresData, diasTranscurridos, diasTot: estadoTotal.diasHabilesTotales, diasRestantes, proyeccionModo };
   try { _pintarSemaforo(); } catch (e) { console.error('[Semaforo]', e); }
 
   document.getElementById('avance-tabla').innerHTML = `
@@ -16883,9 +16883,13 @@ async function abrirPanelSecciones() {
 
 // ===== Tarjetas de estatus: por supervisor o agrupadas por coordinador =====
 function _agruparPorCoord(sups, ctx) {
+  const AV = window.__avanceData || {};
+  const anioC = AV.anio || new Date().getFullYear(), mesC = AV.mes || (new Date().getMonth() + 1);
+  const iniC = `${anioC}-${String(mesC).padStart(2, '0')}-01`;
+  const finC = `${anioC}-${String(mesC).padStart(2, '0')}-${String(new Date(anioC, mesC, 0).getDate()).padStart(2, '0')}`;
   const coordDe = {};
   (coordSupData || []).forEach(cs => {
-    if (cs.fecha_inicio <= ctx.finMesStr && (!cs.fecha_fin || cs.fecha_fin >= ctx.iniMesStr)) {
+    if (cs.fecha_inicio <= finC && (!cs.fecha_fin || cs.fecha_fin >= iniC)) {
       const c = (coordinadoresData || []).find(x => x.id === cs.coordinador_id && !x.es_centro);
       if (c) coordDe[cs.supervisor] = c.nombre_corto || c.nombre;
     }
