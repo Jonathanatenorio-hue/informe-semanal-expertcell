@@ -1467,7 +1467,7 @@
     <div class="section collapsible" id="sec-asistencia">
       <div class="section-title">⏱️ Asistencia (biométrico)</div>
       <div class="section-body">
-        <div class="section-subtitle">Matriz agente × día del mes. A = asistencia · R = retardo · FR = falta por retardo · FA = falta por ausencia · D = descanso (domingo y sábados ganados desde la venta 14) · P/I/V = justificadas · ? = día sin biométrico cargado (no cuenta). 3 retardos = 1 falta. Celdas con ✎ fueron corregidas por un coordinador (pasa el mouse para ver quién y por qué).</div>
+        <div class="section-subtitle">Matriz agente × día del mes. A = asistencia · R = retardo · FR = falta por retardo · FA = falta por ausencia · D = descanso (domingo, feriados/descansos del calendario laboral y sábados ganados desde la venta 14; el sábado laborable cuenta como día completo) · P/I/V = justificadas · B = baja · ? = día sin biométrico cargado (no cuenta). 3 retardos = 1 falta. Celdas con ✎ fueron corregidas por un coordinador (pasa el mouse para ver quién y por qué).</div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
           <select id="asis-mes" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white;"></select>
           <select id="asis-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; min-width:230px;"></select>
@@ -16964,7 +16964,7 @@ function _pintarSemaforo() {
 }
 
 // ===== ASISTENCIA (biométrico) =====
-const ASIS_COL = { A: '#DCFCE7', R: '#EDE9FE', FR: '#FEE2E2', FA: '#FCA5A5', D: '#FEF9C3', P: '#DBEAFE', I: '#DBEAFE', V: '#DBEAFE', '?': '#F1F5F9' };
+const ASIS_COL = { A: '#DCFCE7', R: '#EDE9FE', FR: '#FEE2E2', FA: '#FCA5A5', D: '#FEF9C3', P: '#DBEAFE', I: '#DBEAFE', V: '#DBEAFE', B: '#E5E7EB', '?': '#F1F5F9' };
 async function renderAsistencia() {
   const cont = document.getElementById('asis-tabla');
   if (!cont) return;
@@ -16977,9 +16977,13 @@ async function renderAsistencia() {
   cont.innerHTML = '<div style="padding:10px; color:var(--text-soft); font-size:12px;">Cargando asistencia…</div>';
   let regs = [];
   try {
-    const { data, error } = await db.from('asistencia_dias').select('*').gte('fecha', ini).lte('fecha', fin);
-    if (error) throw error;
-    regs = data || [];
+    // Paginado: Supabase entrega máximo 1,000 filas por consulta y un mes trae más
+    for (let desde = 0; ; desde += 1000) {
+      const { data, error } = await db.from('asistencia_dias').select('*').gte('fecha', ini).lte('fecha', fin).order('fecha').order('agente').range(desde, desde + 999);
+      if (error) throw error;
+      regs = regs.concat(data || []);
+      if (!data || data.length < 1000) break;
+    }
   } catch (e) { cont.innerHTML = '<div style="padding:10px; color:#DC2626; font-size:12px;">No pude leer asistencia_dias (¿corriste el SQL?).</div>'; return; }
   const filtro = selF ? selF.value : 'glob';
   const centroDe = {}, coordDe = {};
@@ -16994,10 +16998,14 @@ async function renderAsistencia() {
   if (filtro.startsWith('centro:')) sups = sups.filter(s => (centroDe[s] || '') === filtro.slice(7));
   else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
   else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
-  const porAg = {};
+  const normN = s => String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const tokKey = s => normN(s).split(' ').filter(Boolean).sort().join(' ');
+  const porAg = {}, porAgTok = {};
   const fechasConDatos = {};   // centro → fechas con al menos una checada (defensa contra días sin export)
   regs.forEach(r => {
-    (porAg[r.agente] = porAg[r.agente] || {})[r.fecha] = r;
+    const k = normN(r.agente), kt = tokKey(r.agente);
+    (porAg[k] = porAg[k] || {})[r.fecha] = r;
+    porAgTok[kt] = porAg[k];
     const cN = _accesoNormCentro(r.centro) || r.centro || '';
     (fechasConDatos[cN] = fechasConDatos[cN] || new Set()).add(r.fecha);
   });
@@ -17008,8 +17016,11 @@ async function renderAsistencia() {
       if (f >= ini && f <= fin) (ventasAg[r.ejecutivo] = ventasAg[r.ejecutivo] || []).push(f);
     }
   });
+  // Calendario laboral del reporte: factor 0 = descanso/feriado oficial (sábado = laborable, cuenta como día completo)
+  const calF = {};
+  (calendarioData || []).forEach(c => { if (c.fecha) calF[c.fecha] = parseFloat(c.factor_dia); });
   const dias = [];
-  for (let d = 1; d <= nDias; d++) { const f = `${anio}-${pad(mes)}-${pad(d)}`; dias.push({ d, f, dow: new Date(anio, mes - 1, d).getDay() }); }
+  for (let d = 1; d <= nDias; d++) { const f = `${anio}-${pad(mes)}-${pad(d)}`; dias.push({ d, f, dow: new Date(anio, mes - 1, d).getDay(), descansoCal: calF[f] === 0 }); }
   const filas = [];
   (plantillaData || []).forEach(p => {
     if (!p || !p.nombre || !sups.includes(p.supervisor)) return;
@@ -17018,22 +17029,23 @@ async function renderAsistencia() {
     if (ing > fin || (baja && baja < ini)) return;
     const vts = (ventasAg[p.nombre] || []).sort();
     const fecha14 = vts.length >= 14 ? vts[13] : null;
-    const regsAg = porAg[p.nombre] || {};
+    const regsAg = porAg[normN(p.nombre)] || porAgTok[tokKey(p.nombre)] || {};
     const cAg = _accesoNormCentro(centroDe[p.supervisor] || p.centro || '') || '';
     const hayDatos = f => (fechasConDatos[cAg] && fechasConDatos[cAg].has(f)) || Object.values(fechasConDatos).some(s => s.has(f));
     const celdas = [], c = { A: 0, R: 0, FR: 0, FA: 0, D: 0, J: 0, SA: 0 };
     dias.forEach(dd => {
       let cod = '', r = regsAg[dd.f], manual = r && r.origen === 'manual';
-      if (dd.f < ing || (baja && dd.f >= baja)) cod = '';
+      if (baja && dd.f >= baja) cod = 'B';          // baja: se marca, no cuenta
+      else if (dd.f < ing) cod = '';
       else if (r) cod = r.codigo;
-      else if (dd.dow === 0) cod = 'D';
+      else if (dd.dow === 0 || dd.descansoCal) cod = 'D';
       else if (dd.dow === 6 && fecha14 && dd.f >= fecha14) cod = 'D';
       else if (dd.f < hoyStr && hayDatos(dd.f)) cod = 'FA';
       else if (dd.f <= hoyStr) cod = '?';   // sin biométrico cargado ese día: no cuenta
       if (cod === 'A' || cod === 'R' || cod === 'FR' || cod === 'FA' || cod === 'D') c[cod]++;
       else if (cod === 'P' || cod === 'I' || cod === 'V') c.J++;
       if (r && r.salida_anticipada && (cod === 'A' || cod === 'R')) c.SA++;
-      celdas.push({ cod, manual, r, ganado: cod === 'D' && dd.dow === 6 && !r });
+      celdas.push({ cod, manual, r, ganado: cod === 'D' && dd.dow === 6 && !r && !dd.descansoCal, cal: dd.descansoCal && !r });
     });
     const laborables = c.A + c.R + c.FR + c.FA;
     if (!laborables && !c.D && !c.J) return;
@@ -17054,7 +17066,7 @@ async function renderAsistencia() {
   const th = (t, w) => `<th style="padding:4px 5px; background:var(--att-navy); color:white; font-size:10px; text-align:center; ${w ? 'min-width:' + w : ''}">${t}</th>`;
   cont.innerHTML = `<table style="border-collapse:collapse; font-size:11px; white-space:nowrap;"><thead><tr>${th('Agente', '180px')}${th('Sup.')}${dias.map(dd => th(String(dd.d) + (dd.dow === 0 ? '<br>D' : dd.dow === 6 ? '<br>S' : ''))).join('')}${th('Lab.')}${th('R')}${th('Faltas')}${th('% asist.')}${th('Vtas')}</tr></thead><tbody>${filas.map(f => `<tr>
     <td style="padding:3px 6px; font-weight:600;">${f.n}</td><td style="padding:3px 6px; color:var(--text-soft);">${f.sup}</td>
-    ${f.celdas.map(x => `<td style="padding:2px; text-align:center; background:${x.cod ? ASIS_COL[x.cod] || '#fff' : '#fff'}; font-weight:700; ${x.manual ? 'outline:2px solid #0077A8; outline-offset:-2px;' : ''}" title="${x.manual ? 'Corregido: ' + (x.r.codigo_auto || 'FA') + ' → ' + x.r.codigo + ' · ' + (x.r.motivo || '') + ' · ' + (x.r.corregido_por || '') : (x.r ? 'Entrada ' + (x.r.hora_entrada || '') + (x.r.hora_salida ? ' · Salida ' + x.r.hora_salida : '') : (x.ganado ? 'Sábado ganado (venta 14)' : ''))}">${x.cod}${x.manual ? '✎' : ''}</td>`).join('')}
+    ${f.celdas.map(x => `<td style="padding:2px; text-align:center; background:${x.cod ? ASIS_COL[x.cod] || '#fff' : '#fff'}; font-weight:700; ${x.manual ? 'outline:2px solid #0077A8; outline-offset:-2px;' : ''}" title="${x.manual ? 'Corregido: ' + (x.r.codigo_auto || 'FA') + ' → ' + x.r.codigo + ' · ' + (x.r.motivo || '') + ' · ' + (x.r.corregido_por || '') : (x.r ? 'Entrada ' + (x.r.hora_entrada || '') + (x.r.hora_salida ? ' · Salida ' + x.r.hora_salida : '') : (x.ganado ? 'Sábado ganado (venta 14)' : (x.cal ? 'Descanso según calendario laboral' : '')))}">${x.cod}${x.manual ? '✎' : ''}</td>`).join('')}
     <td style="padding:3px 6px; text-align:right;">${f.laborables}</td><td style="padding:3px 6px; text-align:right; color:#5B21B6;">${f.c.R}</td>
     <td style="padding:3px 6px; text-align:right; font-weight:700; color:${f.faltas ? '#DC2626' : 'inherit'};">${f.faltas}</td>
     <td style="padding:3px 6px; text-align:right; font-weight:800; color:${f.pct >= 95 ? '#16A34A' : f.pct >= 85 ? '#D97706' : '#DC2626'};">${f.pct.toFixed(0)}%</td>
@@ -17067,7 +17079,7 @@ function exportarAsistencia() {
   const CX = (v, f, z) => { const c = { t: 'n', v: v || 0, f }; if (z) c.z = z; return c; };
   const nD = D.dias.length, c0 = 2, cFin = XLSX.utils.encode_col(c0 + nD - 1), cIni = XLSX.utils.encode_col(c0);
   const aoa = [[`ASISTENCIA ${['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'][D.mes - 1]} ${D.anio}`],
-    ['A asistencia · R retardo · FR falta por retardo · FA falta por ausencia · D descanso · P/I/V justificadas · Faltas = FA + FR + INT(R/3) · % = (Lab − Faltas) / Lab · celdas con * = corregidas'],
+    ['A asistencia · R retardo · FR falta por retardo · FA falta por ausencia · D descanso · P/I/V justificadas · B baja · Faltas = FA + FR + INT(R/3) · % = (Lab − Faltas) / Lab · celdas con * = corregidas'],
     ['Agente', 'Supervisor', ...D.dias.map(d => d.d), 'Laborables', 'A', 'R', 'FR', 'FA', 'Faltas', '% asistencia', 'Ventas']];
   D.filas.forEach(f => {
     const r = aoa.length + 1, rg = `${cIni}${r}:${cFin}${r}`;
@@ -17085,7 +17097,7 @@ function exportarAsistencia() {
   if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
   const nC = c0 + nD + 8;
   for (let c = 0; c < nC; c++) { const h = cel(2, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center' } }; }
-  const FILL = { A: 'DCFCE7', R: 'EDE9FE', FR: 'FEE2E2', FA: 'FCA5A5', D: 'FEF9C3', P: 'DBEAFE', I: 'DBEAFE', V: 'DBEAFE' };
+  const FILL = { A: 'DCFCE7', R: 'EDE9FE', FR: 'FEE2E2', FA: 'FCA5A5', D: 'FEF9C3', P: 'DBEAFE', I: 'DBEAFE', V: 'DBEAFE', B: 'E5E7EB' };
   D.filas.forEach((f, i) => f.celdas.forEach((x, j) => { const cell = cel(3 + i, c0 + j); if (cell && x.cod && FILL[x.cod]) cell.s = { fill: { fgColor: { rgb: FILL[x.cod] } }, font: { name: 'Calibri', sz: 9, bold: true }, alignment: { horizontal: 'center' } }; }));
   ws['!freeze'] = { xSplit: 2, ySplit: 3 };
   const wb = XLSX.utils.book_new();
