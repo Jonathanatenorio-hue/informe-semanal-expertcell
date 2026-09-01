@@ -40,7 +40,7 @@
   </div>
   <div class="card">
     <h2>2. Checadas · archivo del biométrico (JV o CC2)</h2>
-    <div class="hint">Reconoce ambos formatos. Reglas: entrada = primera checada (08-11 = mañana · 12 = mediodía · 01-07 = tarde/noche) · hasta 10:00 = A · 10:01-10:10 = R · 10:11+ = FR (falta por retardo) · salida antes de 19:00 = SA · domingo = descanso. Sin checada en día laborable = FA (falta por ausencia) — la calcula el reporte. Se reemplaza lo automático del mismo día; las correcciones manuales se respetan.</div>
+    <div class="hint">Reconoce ambos formatos. Reglas: entrada = primera checada (08-11 = mañana · 12 = mediodía · 01-07 = tarde/noche) · entre semana: hasta 10:00 = A · 10:01-10:10 = R · 10:11+ = FR · salida antes de 19:00 = SA. Sábado: hasta 9:00 = A · 9:01-9:10 = R · 9:11+ = FR · salida antes de 14:00 = SA. Domingo = descanso. 3 retardos en el mes = 1 falta (lo aplica el reporte). Sin checada en día laborable = FA (falta por ausencia) — la calcula el reporte. Se reemplaza lo automático del mismo día; las correcciones manuales se respetan.</div>
     <div class="drop" id="drop-bio">🖐️ Arrastra aquí el biométrico (.xls)<input type="file" id="f-bio" accept=".xls,.xlsx" style="display:none" multiple></div>
     <div class="log" id="log-bio"></div>
   </div>
@@ -113,9 +113,10 @@ function horaReal(hhmm) { // 12h sin AM/PM → 24h con la regla del turno
   if (h >= 1 && h <= 7) H = h + 12;          // 01-07 = tarde/noche (nadie llega antes de las 8; nadie sale después de las 19)
   return H * 60 + (m || 0);                   // minutos del día
 }
-function codigoEntrada(minEnt) {
-  if (minEnt <= 10 * 60) return 'A';
-  if (minEnt <= 10 * 60 + 10) return 'R';
+function codigoEntrada(minEnt, esSabado) {
+  const base = esSabado ? 9 * 60 : 10 * 60;   // sábado entra a las 9:00, entre semana a las 10:00
+  if (minEnt <= base) return 'A';
+  if (minEnt <= base + 10) return 'R';
   return 'FR';
 }
 wireDrop('drop-bio', 'f-bio', async file => {
@@ -152,10 +153,11 @@ wireDrop('drop-bio', 'f-bio', async file => {
     });
     const regs = Object.values(porDia).map(d => {
       const dow = new Date(d.fecha + 'T12:00:00').getDay();
-      const codigo = dow === 0 ? 'D' : codigoEntrada(d.primera);
+      const codigo = dow === 0 ? 'D' : codigoEntrada(d.primera, dow === 6);
+      const salidaRef = dow === 6 ? 14 * 60 : 19 * 60;
       const hh = mm => String(Math.floor(mm / 60)).padStart(2, '0') + ':' + String(mm % 60).padStart(2, '0');
       return { fecha: d.fecha, agente: d.agente, rfc: d.rfc, centro: d.centro, hora_entrada: hh(d.primera), hora_salida: d.marcas > 1 ? hh(d.ultima) : null,
-        marcas: d.marcas, codigo, salida_anticipada: d.marcas > 1 && d.ultima < 19 * 60, origen: 'auto', archivo: file.name };
+        marcas: d.marcas, codigo, salida_anticipada: d.marcas > 1 && d.ultima < salidaRef, origen: 'auto', archivo: file.name };
     });
     if (!regs.length) { logAdd('log-bio', file.name + ': sin checadas identificables. No identificados: ' + [...noId].slice(0, 10).join(', '), 'err'); return; }
     // No pisar correcciones manuales de esos días
