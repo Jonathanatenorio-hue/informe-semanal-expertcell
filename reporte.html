@@ -6986,6 +6986,11 @@ function renderDetalleAgentesConMes(mesKey) {
   });
 
   window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel, diasTranscurridos, diasHabilesTotales };
+  // Si el prefetch de entregas terminó ANTES de que existiera el detalle,
+  // el ajuste DHL se aplica aquí (cubre ambos órdenes de llegada).
+  if (typeof _dhlFolios !== 'undefined' && _dhlFolios.size && typeof _recalcularComisionesDetalle === 'function') {
+    setTimeout(() => { try { _recalcularComisionesDetalle(); } catch (e) {} }, 0);
+  }
 
   const inactivosPorSup = {};
   let totalInactivos = 0;
@@ -17146,6 +17151,10 @@ function _recalcularComisionesDetalle() {
         } catch (e) { /* agente sin datos: se queda como estaba */ }
       });
     });
+    // Repintar el detalle: la tabla se construye una vez y no lee cambios sola
+    if (typeof renderDetalleAgentesConMes === 'function') {
+      try { renderDetalleAgentesConMes(`${D.anio}-${String(D.mes).padStart(2, '0')}`); } catch (e2) { /* sin detalle visible aún */ }
+    }
   } catch (e) { console.warn('[ComDetalle]', e); }
 }
 
