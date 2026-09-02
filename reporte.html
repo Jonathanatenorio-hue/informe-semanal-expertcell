@@ -3210,11 +3210,68 @@ function exportarRadiografiaObjetivos() {
   ws['!freeze'] = { xSplit: 1, ySplit: 6 };
   const wbR = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbR, ws, `Radiografia ${MESES_N[hoyE.getMonth()]}`);
+  // ---- Hoja 2: CORTES HORARIOS por supervisor (L-V y sábado, con fórmulas) ----
+  try {
+    const pctLV = [0.15, 0.27, 0.41, 0.53, 0.56, 0.63, 0.75, 0.89, 1.0];
+    const hLV = ['10-11', '11-12', '12-13', '13-14', '14-15', '15-16', '16-17', '17-18', '18-19'];
+    const pctSab = [0.21, 0.46, 0.54, 0.79, 1.0];
+    const hSab = ['9-10', '10-11', '11-12', '12-13', '13-14'];
+    const aoaC = [
+      ['CORTES HORARIOS DE PROGRAMACIÓN — POR SUPERVISOR'],
+      ['El corte que manda: 14:00 L-V (53%) y 11:00 sábado (54%). Regla: supervisor 2+ programaciones abajo de su ruta al corte → acción en la hora siguiente. % acumulados editables (fila 4).'],
+      ['Días háb. mes', dh, 'Factor progr.', 1.1, 'Sábado = 50% del día L-V'],
+      ['% acumulado →', '', '', '', ...pctLV, '', ...pctSab],
+      ['Supervisor', 'Meta mes', 'Activ./día', 'Progr./día', ...hLV, 'Progr. SÁB', ...hSab]];
+    const colL = i => XLSX.utils.encode_col(i);
+    D.filasR.forEach(r => {
+      const rE = aoaC.length + 1;
+      const aD = dh > 0 ? Math.round(r.meta / dh) : 0;
+      const pD = Math.round(aD * 1.1);
+      const pS = Math.round(pD * 0.5);
+      const fila = [r.sup, r.meta || 0,
+        CX(aD, `ROUND(B${rE}/$B$3,0)`), CX(pD, `ROUND(C${rE}*$D$3,0)`)];
+      pctLV.forEach((p, i) => fila.push(CX(Math.round(pD * p), `ROUND($D${rE}*${colL(4 + i)}$4,0)`)));
+      fila.push(CX(pS, `ROUND($D${rE}*0.5,0)`));
+      pctSab.forEach((p, i) => fila.push(CX(Math.round(pS * p), `ROUND($N${rE}*${colL(14 + i)}$4,0)`)));
+      aoaC.push(fila);
+    });
+    const ultC = aoaC.length;
+    const tot = ['TOTAL', CX(0, `SUM(B6:B${ultC})`)];
+    for (let c = 2; c <= 18; c++) tot.push(CX(0, `SUM(${colL(c)}6:${colL(c)}${ultC})`));
+    aoaC.push(tot);
+    const wsC = XLSX.utils.aoa_to_sheet(aoaC);
+    wsC['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, ...Array(9).fill({ wch: 6 }), { wch: 9 }, ...Array(5).fill({ wch: 6 })];
+    const celC = (r, c) => wsC[XLSX.utils.encode_cell({ r, c })];
+    if (celC(0, 0)) celC(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } };
+    if (celC(1, 0)) celC(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+    for (let c = 0; c < 19; c++) {
+      const x3 = celC(2, c);
+      if (x3 && x3.v !== '') x3.s = (typeof x3.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 9 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
+      const x4 = celC(3, c);
+      if (x4 && x4.v !== '') { x4.s = { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 9 }, alignment: { horizontal: 'center' } }; if (typeof x4.v === 'number') x4.z = '0%'; }
+      const h5 = celC(4, c);
+      if (h5) h5.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } };
+    }
+    for (let r = 5; r < aoaC.length; r++) {
+      const esT = r === aoaC.length - 1;
+      for (let c = 0; c < 19; c++) {
+        const x = celC(r, c);
+        if (!x) continue;
+        const s = { font: { name: 'Calibri', sz: 9.5, bold: esT || c === 0 } };
+        if (esT) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+        else if (c === 8 || c === 16) s.fill = { fgColor: { rgb: 'FCE4D6' } };
+        x.s = s;
+      }
+    }
+    wsC['!freeze'] = { xSplit: 1, ySplit: 5 };
+    XLSX.utils.book_append_sheet(wbR, wsC, 'Cortes horarios');
+  } catch (eC) { console.warn('[Cortes]', eC); }
   XLSX.writeFile(wbR, `Radiografia_Objetivos_${MESES_N[hoyE.getMonth()]}_${hoyE.getFullYear()}.xlsx`);
 }
 
-// ===== AGENTES EN RIESGO =====
-const RIESGO_UMBRAL = { maduro: 12, medio: 8, nuevo: 6 };
+// ===== AGENTES EN RIESGO v2: cumplimiento vs CURVA esperada por antigüedad =====
+const CURVA_ESPERADA = { nuevo: 6, medio: 8, maduro: 12 };
+const _espPorDias = d => d <= 0 ? 0 : d <= 42 ? 6 : d <= 89 ? 8 : 12;
 
 function _calcularRiesgo(filtro) {
   const hoy = new Date();
@@ -3231,11 +3288,12 @@ function _calcularRiesgo(filtro) {
     dhMes += f;
     if (d.fecha < hoyStr) dhTrans += f;
   });
+  const mesArrancado = dhTrans >= 3;
   const mesesC = [];
   for (let k = 3; k >= 1; k--) {
     let m = mesAct - k, a = anio;
     if (m <= 0) { m += 12; a -= 1; }
-    mesesC.push({ key: `${a}-${pad(m)}`, lbl: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m - 1] });
+    mesesC.push({ key: `${a}-${pad(m)}`, lbl: ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][m - 1], dia1: new Date(a, m - 1, 1) });
   }
   const centroDe = {}, coordDe = {};
   (supConfigData || []).forEach(s => { if (s.supervisor) centroDe[s.supervisor] = s.centro || ''; });
@@ -3264,32 +3322,56 @@ function _calcularRiesgo(filtro) {
     if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= hoyStr) return;
     const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
     if (!ing) return;
-    const dias = Math.floor((dia1 - new Date(ing + 'T12:00:00')) / 86400000) + 1;
-    if (dias <= 0) return;
-    const tipo = dias <= 42 ? 'nuevo' : dias <= 89 ? 'medio' : 'maduro';
-    const umbral = RIESGO_UMBRAL[tipo];
+    const ingD = new Date(ing + 'T12:00:00');
+    const diasHoy = Math.floor((dia1 - ingD) / 86400000) + 1;
+    if (diasHoy <= 0) return;   // ingreso del mes: se mide por día efectivo, no aquí
+    const tipo = diasHoy <= 42 ? 'nuevo' : diasHoy <= 89 ? 'medio' : 'maduro';
     const v = vtas[p.nombre] || {};
-    const serie = mesesC.map(mc => (ing <= mc.key + '-31') ? (v[mc.key] || 0) : null);
+    // Serie: cada mes cerrado contra la curva de SU antigüedad en ese mes
+    const serie = mesesC.map(mc => {
+      const dM = Math.floor((mc.dia1 - ingD) / 86400000) + 1;
+      const esp = _espPorDias(dM);
+      return esp > 0 ? { v: v[mc.key] || 0, e: esp } : null;
+    });
     const medidos = serie.filter(x => x !== null);
     if (!medidos.length) return;
-    const prom3 = medidos.reduce((a, b) => a + b, 0) / medidos.length;
+    const sumV = medidos.reduce((a, x) => a + x.v, 0);
+    const sumE = medidos.reduce((a, x) => a + x.e, 0);
+    const pctPer = sumE > 0 ? sumV / sumE : 0;
+    // Meses CERRADOS consecutivos bajo 70% (desde el más reciente hacia atrás)
+    let consec = 0;
+    for (let i = serie.length - 1; i >= 0; i--) {
+      const x = serie[i];
+      if (!x) break;
+      if (x.v / x.e < 0.7) consec++;
+      else break;
+    }
+    const mesBajo50 = medidos.some(x => x.v / x.e < 0.5);
+    const espAct = _espPorDias(diasHoy);
     const real = v[`${anio}-${pad(mesAct)}`] || 0;
     const proy = dhTrans > 0 ? real / dhTrans * dhMes : 0;
-    const bajo3 = prom3 < umbral, bajoAct = proy < umbral;
-    let clas = 'OK';
-    if (bajo3 && bajoAct) clas = (proy < umbral / 2 || prom3 < umbral / 2) ? 'CRÍTICO' : 'RIESGO';
-    else if (bajo3) clas = 'RECUPERACIÓN';
-    else if (bajoAct) clas = 'ALERTA';
+    const pctMes = espAct > 0 ? proy / espAct : 0;
+    let clas = pctPer < 0.5 ? 'CRÍTICO' : pctPer < 0.7 ? 'RIESGO' : pctPer < 0.9 ? 'OBSERVACIÓN' : 'OK';
+    if (mesArrancado) {
+      if (clas === 'OK' && pctMes < 0.7) clas = 'ALERTA';
+      else if ((clas === 'RIESGO' || clas === 'CRÍTICO') && pctMes >= 0.9) clas = 'RECUPERACIÓN';
+    }
     if (clas === 'OK') return;
-    const desc = medidos.length >= 2 && medidos[medidos.length - 1] < medidos[0];
-    const accion = clas === 'CRÍTICO' ? 'Evaluación con coordinador' : clas === 'RIESGO' ? (desc ? 'Plan de mejora + capacitación' : 'Plan de mejora') : clas === 'ALERTA' ? 'Seguimiento del supervisor esta semana' : 'Sostener ritmo; sin acción';
-    filas.push({ n: p.nombre, sup: p.supervisor, coord: coordDe[p.supervisor] || '—', centro: centroDe[p.supervisor] || p.centro || '', tipo, dias, umbral,
-      serie, medidos: medidos.length, prom3, real, proy, pct: umbral > 0 ? proy / umbral * 100 : 0, trans: trans[p.nombre] || 0, clas, accion,
-      tend: medidos.join(' → ') });
+    let accion;
+    if (clas === 'CRÍTICO' || clas === 'RIESGO') {
+      if (consec >= 3 || (clas === 'CRÍTICO' && tipo === 'maduro' && mesBajo50)) accion = 'Evaluación de baja con coordinador';
+      else if (consec === 2) accion = 'Plan formal con fecha compromiso';
+      else accion = 'Plan con el supervisor';
+    } else if (clas === 'OBSERVACIÓN') accion = 'Seguimiento del supervisor';
+    else if (clas === 'ALERTA') accion = 'Plática esta semana (mes raro, historial sano)';
+    else accion = 'Sostener ritmo; sin acción';
+    filas.push({ n: p.nombre, sup: p.supervisor, coord: coordDe[p.supervisor] || '—', centro: centroDe[p.supervisor] || p.centro || '',
+      tipo, dias: diasHoy, serie, medidos: medidos.length, sumV, sumE, pctPer, consec, real, proy, pctMes, espAct,
+      trans: trans[p.nombre] || 0, clas, accion });
   });
-  const orden = { 'CRÍTICO': 0, 'RIESGO': 1, 'ALERTA': 2, 'RECUPERACIÓN': 3 };
-  filas.sort((a, b) => orden[a.clas] - orden[b.clas] || a.pct - b.pct);
-  return { filas, mesesC, dhMes, dhTrans };
+  const orden = { 'CRÍTICO': 0, 'RIESGO': 1, 'OBSERVACIÓN': 2, 'ALERTA': 3, 'RECUPERACIÓN': 4 };
+  filas.sort((a, b) => orden[a.clas] - orden[b.clas] || a.pctPer - b.pctPer);
+  return { filas, mesesC, dhMes, dhTrans, mesArrancado };
 }
 
 function renderRiesgo() {
@@ -3298,29 +3380,31 @@ function renderRiesgo() {
   const sel = document.getElementById('riesgo-filtro');
   const R = _calcularRiesgo(sel ? sel.value : 'glob');
   window.__riesgoData = R;
-  if (!R.filas.length) { cont.innerHTML = '<div style="padding:12px; color:#16A34A; font-size:12px; font-weight:700;">✅ Sin agentes en riesgo con este filtro.</div>'; return; }
-  const COL = { 'CRÍTICO': '#7F1D1D', 'RIESGO': '#DC2626', 'ALERTA': '#D97706', 'RECUPERACIÓN': '#16A34A' };
-  const BG = { 'CRÍTICO': '#FECACA', 'RIESGO': '#FEE2E2', 'ALERTA': '#FEF3C7', 'RECUPERACIÓN': '#DCFCE7' };
-  const th = t => `<th style="padding:6px 8px; background:#991B1B; color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
+  if (!R.filas.length) { cont.innerHTML = '<div style="padding:12px; color:#16A34A; font-size:12px; font-weight:700;">✅ Sin agentes fuera de curva con este filtro.</div>'; return; }
+  const COL = { 'CRÍTICO': '#7F1D1D', 'RIESGO': '#DC2626', 'OBSERVACIÓN': '#B45309', 'ALERTA': '#D97706', 'RECUPERACIÓN': '#16A34A' };
+  const BG = { 'CRÍTICO': '#FECACA', 'RIESGO': '#FEE2E2', 'OBSERVACIÓN': '#FEF9C3', 'ALERTA': '#FEF3C7', 'RECUPERACIÓN': '#DCFCE7' };
   const clasAct = window.__riesgoClas || 'TODAS';
   const pag = window.__riesgoPag || 20;
-  const chips = ['TODAS', 'CRÍTICO', 'RIESGO', 'ALERTA', 'RECUPERACIÓN'].map(c => {
+  const chips = ['TODAS', 'CRÍTICO', 'RIESGO', 'OBSERVACIÓN', 'ALERTA', 'RECUPERACIÓN'].map(c => {
     const n = c === 'TODAS' ? R.filas.length : R.filas.filter(f => f.clas === c).length;
     const activo = clasAct === c;
     return `<button onclick="window.__riesgoClas='${c}'; window.__riesgoPag=20; renderRiesgo();" style="padding:4px 10px; border-radius:14px; font-size:11px; font-weight:700; cursor:pointer; border:1.5px solid ${c === 'TODAS' ? '#334155' : COL[c]}; background:${activo ? (c === 'TODAS' ? '#334155' : COL[c]) : 'white'}; color:${activo ? 'white' : (c === 'TODAS' ? '#334155' : COL[c])};">${c} · ${n}</button>`;
   }).join(' ');
   const lista = clasAct === 'TODAS' ? R.filas : R.filas.filter(f => f.clas === clasAct);
   const visibles = lista.slice(0, pag);
+  const th = t => `<th style="padding:6px 8px; background:#991B1B; color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
   cont.innerHTML = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">${chips}</div>
-  <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Mostrando ${visibles.length} de ${lista.length} · Mes en curso: ${R.dhTrans.toFixed(1)} de ${R.dhMes.toFixed(1)} días hábiles · <strong style="color:#D97706;">ALERTA (amarillo)</strong> = su promedio de 3 meses SÍ libra el umbral, pero el mes en curso proyectado NO — algo pasó este mes: plática, no plan. El Excel siempre baja la lista completa.</div>
-  <table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${['Agente', 'Supervisor', 'Tipo', 'Antig. (días)', 'Umbral', ...R.mesesC.map(m => m.lbl), 'Prom 3m', 'Mes real', 'Mes proy.', '% vs umbral', 'Tránsito', 'Clasificación', 'Acción sugerida'].map(th).join('')}</tr></thead>
+  <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Mostrando ${visibles.length} de ${lista.length} · Cada mes se lee <strong>ventas/esperado de su etapa</strong> (6 nuevo · 8 medio · 12 maduro) · % curva = suma de ventas ÷ suma de esperados del trimestre · La escalera de decisión solo usa meses cerrados${R.mesArrancado ? '' : ' · <strong style="color:#0077A8;">Arranque de mes:</strong> el mes en curso aún no opina (entra al 3er día hábil)'} · El Excel baja la lista completa.</div>
+  <table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${['Agente', 'Supervisor', 'Tipo', 'Antig. (días)', ...R.mesesC.map(m => m.lbl + ' (v/e)'), '% curva 3m', 'Meses seg. <70%', 'Mes real', 'Mes proy.', '% mes vs su etapa', 'Tránsito', 'Clasificación', 'Acción (escalera)'].map(th).join('')}</tr></thead>
   <tbody>${visibles.map(f => `<tr style="background:${BG[f.clas]};">
     <td style="padding:5px 8px; font-weight:600; white-space:nowrap;">${f.n}</td><td style="padding:5px 8px;">${f.sup}</td>
-    <td style="padding:5px 8px;">${f.tipo}</td><td style="padding:5px 8px; text-align:right;">${f.dias}</td><td style="padding:5px 8px; text-align:right; font-weight:700;">${f.umbral}</td>
-    ${f.serie.map(x => `<td style="padding:5px 8px; text-align:right;">${x === null ? '—' : x}</td>`).join('')}
-    <td style="padding:5px 8px; text-align:right;">${f.prom3.toFixed(1)}</td><td style="padding:5px 8px; text-align:right;">${f.real}</td>
-    <td style="padding:5px 8px; text-align:right; font-weight:700;">${f.proy.toFixed(1)}</td>
-    <td style="padding:5px 8px; text-align:right; font-weight:700; color:${COL[f.clas]};">${f.pct.toFixed(0)}%</td>
+    <td style="padding:5px 8px;">${f.tipo}</td><td style="padding:5px 8px; text-align:right;">${f.dias}</td>
+    ${f.serie.map(x => `<td style="padding:5px 8px; text-align:center; ${x && x.v / x.e < 0.7 ? 'color:#DC2626; font-weight:700;' : ''}">${x ? `${x.v}/${x.e}` : '—'}</td>`).join('')}
+    <td style="padding:5px 8px; text-align:right; font-weight:800; color:${COL[f.clas]};">${(f.pctPer * 100).toFixed(0)}%</td>
+    <td style="padding:5px 8px; text-align:center; font-weight:700; ${f.consec >= 2 ? 'color:#7F1D1D;' : ''}">${f.consec || '—'}</td>
+    <td style="padding:5px 8px; text-align:right;">${R.mesArrancado ? f.real : '—'}</td>
+    <td style="padding:5px 8px; text-align:right;">${R.mesArrancado ? f.proy.toFixed(1) : '—'}</td>
+    <td style="padding:5px 8px; text-align:right; font-weight:700;">${R.mesArrancado ? (f.pctMes * 100).toFixed(0) + '%' : '—'}</td>
     <td style="padding:5px 8px; text-align:right; color:#D97706;">${f.trans}</td>
     <td style="padding:5px 8px; font-weight:800; color:${COL[f.clas]};">${f.clas}</td>
     <td style="padding:5px 8px;">${f.accion}</td></tr>`).join('')}</tbody></table>
@@ -3329,39 +3413,42 @@ function renderRiesgo() {
 
 function exportarRiesgo() {
   const R = window.__riesgoData;
-  if (!R || !R.filas.length) { alert('No hay agentes en riesgo para exportar.'); return; }
+  if (!R || !R.filas.length) { alert('No hay agentes fuera de curva para exportar.'); return; }
   const hoy = new Date();
   const CX = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
   const aoa = [
-    ['AGENTES EN RIESGO — ' + ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'][hoy.getMonth()] + ' ' + hoy.getFullYear()],
-    ['Cruce de promedio 3 meses completos con mes en curso a ritmo. Umbrales editables (fila 3): recalcula umbral, % y clasificación. Generado ' + hoy.toLocaleDateString('es-MX')],
-    ['Umbral maduro', RIESGO_UMBRAL.maduro, 'Umbral medio', RIESGO_UMBRAL.medio, 'Umbral nuevo', RIESGO_UMBRAL.nuevo, 'Días háb. mes', Number(R.dhMes.toFixed(1)), 'Transcurridos', Number(R.dhTrans.toFixed(1))],
+    ['AGENTES EN RIESGO (CURVA POR ANTIGÜEDAD) — ' + ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'][hoy.getMonth()] + ' ' + hoy.getFullYear()],
+    ['Cada mes: ventas vs esperado de su etapa EN ESE MES (nuevo 6 · medio 8 · maduro 12). % curva = Σventas ÷ Σesperado. Bandas editables (fila 3). Escalera: 1 mes <70% plan · 2 seguidos plan formal · 3 seguidos (o maduro <50% en un mes) evaluación de baja. Solo meses cerrados mueven la escalera.'],
+    ['Banda cumple ≥', 0.9, 'Observación ≥', 0.7, 'Crítico <', 0.5, 'Días háb. mes', Number(R.dhMes.toFixed(1)), 'Transcurridos', Number(R.dhTrans.toFixed(1))],
     [],
-    ['Agente', 'Supervisor', 'Coordinador', 'Centro', 'Tipo', 'Antig. (días)', 'Umbral', ...R.mesesC.map(m => m.lbl), 'Meses medidos', 'Prom 3m', 'Mes real', 'Mes proy.', '% vs umbral', 'Clasificación', 'Tránsito', 'Tendencia', 'Acción sugerida']];
+    ['Agente', 'Supervisor', 'Coordinador', 'Centro', 'Tipo', 'Antig. (días)',
+      ...R.mesesC.flatMap(m => [m.lbl + ' ventas', m.lbl + ' esperado']),
+      'Σ Ventas', 'Σ Esperado', '% curva 3m', 'Banda (fórmula)', 'Meses seg. <70%', 'Mes real', 'Mes proy.', 'Esperado etapa', '% mes', 'Tránsito', 'Clasificación', 'Acción (escalera)']];
   R.filas.forEach(f => {
     const r = aoa.length + 1;
+    // Columnas: G..L = 3 pares v/e · M ΣV · N ΣE · O %curva · P banda · Q consec · R real · S proy · T espAct · U %mes
     aoa.push([f.n, f.sup, f.coord, f.centro, f.tipo, f.dias,
-      CX(f.umbral, `IF(E${r}="maduro",$B$3,IF(E${r}="medio",$D$3,$F$3))`),
-      ...f.serie.map(x => x === null ? '' : x),
-      f.medidos,
-      CX(f.prom3, `IF(K${r}>0,SUM(H${r}:J${r})/K${r},0)`, '0.0'),
-      f.real,
-      CX(f.proy, `IF($J$3>0,M${r}/$J$3*$H$3,0)`, '0.0'),
-      CX(f.pct / 100, `IF(G${r}>0,N${r}/G${r},0)`, '0%'),
-      { t: 's', v: f.clas, f: `IF(AND(L${r}<G${r},N${r}<G${r}),IF(OR(N${r}<G${r}/2,L${r}<G${r}/2),"CRÍTICO","RIESGO"),IF(L${r}<G${r},"RECUPERACIÓN",IF(N${r}<G${r},"ALERTA","OK")))` },
-      f.trans, f.tend, f.accion]);
+      ...f.serie.flatMap(x => x ? [x.v, x.e] : ['', '']),
+      CX(f.sumV, `SUM(G${r},I${r},K${r})`), CX(f.sumE, `SUM(H${r},J${r},L${r})`),
+      CX(f.pctPer, `IF(N${r}>0,M${r}/N${r},0)`, '0%'),
+      { t: 's', v: f.pctPer >= 0.9 ? 'CUMPLE' : f.pctPer >= 0.7 ? 'OBSERVACIÓN' : f.pctPer >= 0.5 ? 'RIESGO' : 'CRÍTICO', f: `IF(O${r}>=$B$3,"CUMPLE",IF(O${r}>=$D$3,"OBSERVACIÓN",IF(O${r}>=$F$3,"RIESGO","CRÍTICO")))` },
+      f.consec, R.mesArrancado ? f.real : '', R.mesArrancado ? Number(f.proy.toFixed(1)) : '', f.espAct,
+      R.mesArrancado ? CX(f.pctMes, `IF(T${r}>0,S${r}/T${r},0)`, '0%') : '',
+      f.trans, f.clas, f.accion]);
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 32 }, { wch: 24 }, { wch: 20 }, { wch: 7 }, { wch: 8 }, { wch: 9 }, { wch: 8 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 9 }, { wch: 10 }, { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 34 }];
+  ws['!cols'] = [{ wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 7 }, { wch: 8 }, { wch: 9 },
+    ...Array(6).fill({ wch: 7 }), { wch: 8 }, { wch: 9 }, { wch: 9 }, { wch: 12 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 9 }, { wch: 7 }, { wch: 8 }, { wch: 14 }, { wch: 32 }];
   const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
   if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '991B1B' } } };
   if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
   for (let c = 0; c < 10; c++) { const x = cel(2, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } }; }
-  for (let c = 0; c < 19; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '991B1B' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-  const FILL = { 'CRÍTICO': 'F4B6B6', 'RIESGO': 'F8CBAD', 'ALERTA': 'FFE699', 'RECUPERACIÓN': 'E2EFDA' };
-  R.filas.forEach((f, i) => { for (let c = 0; c < 19; c++) { const x = cel(5 + i, c); if (x) x.s = { fill: { fgColor: { rgb: FILL[f.clas] } }, font: { name: 'Calibri', sz: 10, bold: c === 0 || c === 15 } }; } });
+  const nCols = 24;
+  for (let c = 0; c < nCols; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '991B1B' } }, font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
+  const FILL = { 'CRÍTICO': 'F4B6B6', 'RIESGO': 'F8CBAD', 'OBSERVACIÓN': 'FEF3C7', 'ALERTA': 'FFE699', 'RECUPERACIÓN': 'E2EFDA' };
+  R.filas.forEach((f, i) => { for (let c = 0; c < nCols; c++) { const x = cel(5 + i, c); if (x) x.s = { fill: { fgColor: { rgb: FILL[f.clas] } }, font: { name: 'Calibri', sz: 10, bold: c === 0 || c === 22 } }; } });
   ws['!freeze'] = { xSplit: 1, ySplit: 5 };
-  ws['!autofilter'] = { ref: `A5:S${aoa.length}` };
+  ws['!autofilter'] = { ref: `A5:X${aoa.length}` };
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Agentes en riesgo');
   XLSX.writeFile(wb, `Agentes_en_riesgo_${hoy.toISOString().substring(0, 10)}.xlsx`);
@@ -3455,11 +3542,21 @@ function renderProductividadEquipos() {
         </div>
         <div id="radiografia-tabla" style="overflow-x:auto;"></div>
       </div>
+      <div style="margin-bottom:26px; border:1px solid #BFDBFE; border-radius:10px; padding:14px; background:#F8FBFF;">
+        <div style="font-weight:700; color:#1D4ED8; font-size:14px; margin-bottom:6px;">⏱️ Rutina de cortes de programación (para coordinadores)</div>
+        <div style="font-size:12px; color:#334155; line-height:1.7;">
+          <strong>L-V (meta 73/día):</strong> corte 12:00 → <strong>20</strong> · corte <strong>14:00 → 39</strong> <span style="color:#C2410C; font-weight:700;">(el corte que manda: la tarde no rescata una mañana muerta)</span> · corte 17:00 → <strong>56</strong> (última llamada con 2 h de reacción).
+          &nbsp;<strong>Sábado (meta 39):</strong> corte <strong>11:00 → 21</strong>.
+          <br><strong>Regla de reacción:</strong> supervisor <strong>2+ programaciones abajo</strong> de su ruta al corte → acción en la hora siguiente (barrido de leads calientes con ese equipo, o el coordinador se sienta en esa isla). Nada de "échale ganas": qué-hacer concreto.
+          <br><strong>Canal:</strong> cada coordinador publica sus 3 cortes en su grupo con el mismo formato ("14:00 → 13/15 · Carlos −2 → barrido"); dirección solo mira el corte de las 14:00 de los tres.
+          <span style="color:#64748B;">Los cortes son proporcionales a la meta diaria vigente (53% a las 14:00 L-V y a las 11:00 sábado); si la plantilla o la meta cambian, se recorren igual.</span>
+        </div>
+      </div>
       <div style="margin-bottom:26px; border:1px solid #FCA5A5; border-radius:10px; padding:14px; background:#FFF8F8;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
           <div>
             <div style="font-weight:700; color:#991B1B; font-size:14px;">🚨 Agentes en riesgo</div>
-            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Umbral por tipo: maduro &lt; 12 · medio &lt; 8 · nuevo &lt; 6. Cruza promedio de 3 meses completos con el mes en curso a ritmo. Ingresos del mes no aplican.</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Cada mes se compara contra la CURVA de su antigüedad en ese momento (nuevo 6 · medio 8 · maduro 12): quien viene subiendo la escalera se mide contra su escalón, no contra el actual. Bandas sobre el % de cumplimiento del trimestre: ≥90% cumple (no sale) · 70-89% OBSERVACIÓN · &lt;70% RIESGO · &lt;50% CRÍTICO. La escalera de decisión solo avanza con meses CERRADOS: 1 mes &lt;70% plan con supervisor · 2 seguidos plan formal con fecha · 3 seguidos (o maduro &lt;50% en un mes) evaluación de baja. Ingresos del mes no aplican.</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
             <select id="riesgo-filtro" style="padding:6px 12px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer; min-width:230px;"></select>
