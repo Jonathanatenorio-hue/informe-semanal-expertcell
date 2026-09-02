@@ -3302,10 +3302,19 @@ function renderRiesgo() {
   const COL = { 'CRÍTICO': '#7F1D1D', 'RIESGO': '#DC2626', 'ALERTA': '#D97706', 'RECUPERACIÓN': '#16A34A' };
   const BG = { 'CRÍTICO': '#FECACA', 'RIESGO': '#FEE2E2', 'ALERTA': '#FEF3C7', 'RECUPERACIÓN': '#DCFCE7' };
   const th = t => `<th style="padding:6px 8px; background:#991B1B; color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
-  const resumen = ['CRÍTICO', 'RIESGO', 'ALERTA', 'RECUPERACIÓN'].map(c => { const n = R.filas.filter(f => f.clas === c).length; return n ? `<span style="color:${COL[c]}; font-weight:700;">${c}: ${n}</span>` : ''; }).filter(Boolean).join(' · ');
-  cont.innerHTML = `<div style="font-size:12px; margin-bottom:8px;">${resumen} · Mes en curso: ${R.dhTrans.toFixed(1)} de ${R.dhMes.toFixed(1)} días hábiles</div>
+  const clasAct = window.__riesgoClas || 'TODAS';
+  const pag = window.__riesgoPag || 20;
+  const chips = ['TODAS', 'CRÍTICO', 'RIESGO', 'ALERTA', 'RECUPERACIÓN'].map(c => {
+    const n = c === 'TODAS' ? R.filas.length : R.filas.filter(f => f.clas === c).length;
+    const activo = clasAct === c;
+    return `<button onclick="window.__riesgoClas='${c}'; window.__riesgoPag=20; renderRiesgo();" style="padding:4px 10px; border-radius:14px; font-size:11px; font-weight:700; cursor:pointer; border:1.5px solid ${c === 'TODAS' ? '#334155' : COL[c]}; background:${activo ? (c === 'TODAS' ? '#334155' : COL[c]) : 'white'}; color:${activo ? 'white' : (c === 'TODAS' ? '#334155' : COL[c])};">${c} · ${n}</button>`;
+  }).join(' ');
+  const lista = clasAct === 'TODAS' ? R.filas : R.filas.filter(f => f.clas === clasAct);
+  const visibles = lista.slice(0, pag);
+  cont.innerHTML = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">${chips}</div>
+  <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Mostrando ${visibles.length} de ${lista.length} · Mes en curso: ${R.dhTrans.toFixed(1)} de ${R.dhMes.toFixed(1)} días hábiles · <strong style="color:#D97706;">ALERTA (amarillo)</strong> = su promedio de 3 meses SÍ libra el umbral, pero el mes en curso proyectado NO — algo pasó este mes: plática, no plan. El Excel siempre baja la lista completa.</div>
   <table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${['Agente', 'Supervisor', 'Tipo', 'Antig. (días)', 'Umbral', ...R.mesesC.map(m => m.lbl), 'Prom 3m', 'Mes real', 'Mes proy.', '% vs umbral', 'Tránsito', 'Clasificación', 'Acción sugerida'].map(th).join('')}</tr></thead>
-  <tbody>${R.filas.map(f => `<tr style="background:${BG[f.clas]};">
+  <tbody>${visibles.map(f => `<tr style="background:${BG[f.clas]};">
     <td style="padding:5px 8px; font-weight:600; white-space:nowrap;">${f.n}</td><td style="padding:5px 8px;">${f.sup}</td>
     <td style="padding:5px 8px;">${f.tipo}</td><td style="padding:5px 8px; text-align:right;">${f.dias}</td><td style="padding:5px 8px; text-align:right; font-weight:700;">${f.umbral}</td>
     ${f.serie.map(x => `<td style="padding:5px 8px; text-align:right;">${x === null ? '—' : x}</td>`).join('')}
@@ -3314,7 +3323,8 @@ function renderRiesgo() {
     <td style="padding:5px 8px; text-align:right; font-weight:700; color:${COL[f.clas]};">${f.pct.toFixed(0)}%</td>
     <td style="padding:5px 8px; text-align:right; color:#D97706;">${f.trans}</td>
     <td style="padding:5px 8px; font-weight:800; color:${COL[f.clas]};">${f.clas}</td>
-    <td style="padding:5px 8px;">${f.accion}</td></tr>`).join('')}</tbody></table>`;
+    <td style="padding:5px 8px;">${f.accion}</td></tr>`).join('')}</tbody></table>
+  ${lista.length > pag ? `<div style="text-align:center; margin-top:10px;"><button onclick="window.__riesgoPag=(window.__riesgoPag||20)+20; renderRiesgo();" style="padding:7px 18px; border-radius:8px; border:1.5px solid #991B1B; background:white; color:#991B1B; font-weight:700; font-size:12px; cursor:pointer;">Ver 20 más (quedan ${lista.length - pag})</button></div>` : ''}`;
 }
 
 function exportarRiesgo() {
