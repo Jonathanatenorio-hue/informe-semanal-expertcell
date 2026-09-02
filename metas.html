@@ -294,7 +294,7 @@
       <div>📐</div>
       <div>
         <strong>Reglas oficiales</strong> (días cumplidos al día 1 del mes, desde fecha de ingreso en plantilla):
-        ≤ 6 días = sin meta · 7–41 días = meta <strong>6</strong> · 42–89 días = meta <strong>10</strong> ·
+        ≤ 6 días = sin meta · 7–41 días = meta <strong>6</strong> · 42–89 días = meta <strong>8</strong> ·
         90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + 1, mínimo 12, máximo 20,
         y <strong>nunca desciende</strong> respecto a la meta del mes anterior. Previsualiza antes de guardar; nada se escribe sin tu confirmación.
       </div>
@@ -320,6 +320,21 @@
         <button class="secondary" id="btn-calc-excel" type="button">📥 Descargar Excel</button>
       </div>
     </div>
+  </div>
+
+  <!-- VACACIONES -->
+  <div class="section" style="border: 2px solid #0EA5E9;">
+    <div class="section-title">🏖️ Vacaciones (prorrateo de metas)</div>
+    <div class="alert info"><div>ℹ️</div><div>Los coordinadores capturan aquí; <strong>dirección valida contra el correo con formato</strong> y solo las VALIDADAS prorratean la meta del mes en el calculador (redondeo estándar: .5 sube). El bracket de comisiones NO se prorratea. El nombre del agente debe ser <strong>idéntico</strong> al de plantilla.</div></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+      <div><label style="font-size:11px; font-weight:700;">Agente (idéntico a plantilla)</label><br><input id="vac-agente" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:270px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Inicio</label><br><input id="vac-ini" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Fin</label><br><input id="vac-fin" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Capturó</label><br><input id="vac-quien" placeholder="Coordinador" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:150px;"></div>
+      <button id="vac-btn-guardar" type="button">➕ Capturar</button>
+    </div>
+    <div id="vac-status" style="font-size:12px; margin-top:8px;"></div>
+    <div id="vac-lista" style="margin-top:10px;"></div>
   </div>
 
   <!-- PASO 1: Seleccionar periodo -->
@@ -2624,6 +2639,24 @@ async function calcularMetasAuto() {
     ]);
     calcState.existePrevio = (existentes.count || 0) > 0;
 
+    // ---- Vacaciones VALIDADAS y calendario del mes (prorrateo) ----
+    const finMesV = new Date(anio, mes, 0);
+    const finMesVStr = `${anio}-${String(mes).padStart(2, '0')}-${String(finMesV.getDate()).padStart(2, '0')}`;
+    let vacasRows = [], calMapV = null;
+    try { vacasRows = await _calcFetchTodo('vacaciones', '*', q => q.lte('fecha_inicio', finMesVStr).gte('fecha_fin', dia1Str)); } catch (eV) { vacasRows = []; }
+    try {
+      const calRows = await _calcFetchTodo('calendario_laboral', 'fecha, factor_dia', q => q.gte('fecha', dia1Str).lte('fecha', finMesVStr));
+      if (calRows.length) { calMapV = {}; calRows.forEach(r => { calMapV[String(r.fecha).substring(0, 10)] = parseFloat(r.factor_dia) || 0; }); }
+    } catch (eC) { calMapV = null; }
+    let dhMesCal = 0;
+    for (let dV = new Date(dia1); dV <= finMesV; dV.setDate(dV.getDate() + 1)) dhMesCal += _vacFactorDia(_vacIso(dV), calMapV);
+    const vacasVal = {}, vacasPend = {};
+    vacasRows.forEach(v => {
+      if (!v.agente) return;
+      if (v.validada) (vacasVal[v.agente] = vacasVal[v.agente] || []).push(v);
+      else vacasPend[v.agente] = true;
+    });
+
     // Peso vendido por agente por mes
     const pesoPorAgenteMes = {};
     ventas.forEach(v => {
@@ -2656,7 +2689,7 @@ async function calcularMetasAuto() {
       } else if (dias <= 41) {
         banda = 'Nuevo (7-41 días)'; meta = 6; tipo = 'fija_6';
       } else if (dias <= 89) {
-        banda = 'Intermedio (42-89 días)'; meta = 10; tipo = 'fija_10';
+        banda = 'Intermedio (42-89 días)'; meta = 8; tipo = 'fija_8';
       } else {
         banda = 'Maduro (90+ días)'; tipo = 'calculada';
         // Promedio de peso de los meses previos en los que ya estaba ingresado
@@ -2676,6 +2709,23 @@ async function calcularMetasAuto() {
         if (metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
         if (prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
       }
+
+      // 🏖️ Prorrateo por vacaciones VALIDADAS (redondeo estándar: .5 sube)
+      if (meta > 0 && vacasVal[p.nombre] && dhMesCal > 0) {
+        let dhVac = 0;
+        vacasVal[p.nombre].forEach(v => {
+          const vi = String(v.fecha_inicio).substring(0, 10) < dia1Str ? dia1Str : String(v.fecha_inicio).substring(0, 10);
+          const vf = String(v.fecha_fin).substring(0, 10) > finMesVStr ? finMesVStr : String(v.fecha_fin).substring(0, 10);
+          for (let dV = new Date(vi + 'T12:00:00'); _vacIso(dV) <= vf; dV.setDate(dV.getDate() + 1)) dhVac += _vacFactorDia(_vacIso(dV), calMapV);
+        });
+        if (dhVac > 0) {
+          const metaBase = meta;
+          meta = Math.round(meta * Math.max(0, dhMesCal - dhVac) / dhMesCal);
+          flags.push(`🏖️ Prorrateada por ${dhVac.toFixed(1)} días háb. de vacaciones (base ${metaBase}, mes de ${dhMesCal.toFixed(1)} días)`);
+          if (meta <= 0) { meta = 0; tipo = 'sin_meta'; flags.push('Mes completo de vacaciones: sin meta'); }
+        }
+      }
+      if (vacasPend[p.nombre]) flags.push('⚠️ Tiene vacaciones capturadas SIN VALIDAR: no se aplicaron al cálculo');
 
       if (!p.supervisor) {
         sinSupervisor.push(p.nombre);
@@ -2711,6 +2761,55 @@ async function calcularMetasAuto() {
   }
 }
 
+function _vacIso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function _vacFactorDia(fechaStr, calMap) {
+  if (calMap && fechaStr in calMap) return calMap[fechaStr];
+  const dw = new Date(fechaStr + 'T12:00:00').getDay();
+  return dw === 0 ? 0 : dw === 6 ? 0.5 : 1;
+}
+async function vacGuardar() {
+  const st = document.getElementById('vac-status');
+  const ag = document.getElementById('vac-agente').value.trim();
+  const fi = document.getElementById('vac-ini').value, ff = document.getElementById('vac-fin').value;
+  const quien = document.getElementById('vac-quien').value.trim();
+  if (!ag || !fi || !ff) { st.innerHTML = '❌ Agente, inicio y fin son obligatorios.'; return; }
+  if (ff < fi) { st.innerHTML = '❌ La fecha fin es anterior al inicio.'; return; }
+  try {
+    const { data: pl } = await db.from('plantilla').select('nombre').eq('nombre', ag).limit(1);
+    if (!pl || !pl.length) { st.innerHTML = `❌ "${ag}" no existe en plantilla con ese nombre exacto — corrígelo (mayúsculas y acentos cuentan).`; return; }
+    const { error } = await db.from('vacaciones').insert({ agente: ag, fecha_inicio: fi, fecha_fin: ff, capturado_por: quien || null, validada: false });
+    if (error) throw error;
+    st.innerHTML = '✅ Capturada. Queda PENDIENTE de validación por dirección.';
+    document.getElementById('vac-agente').value = ''; document.getElementById('vac-ini').value = ''; document.getElementById('vac-fin').value = '';
+    vacListar();
+  } catch (e) { st.innerHTML = '❌ ' + (e.message || e) + (String(e.message || '').includes('vacaciones') ? ' — ¿ya corriste el SQL de la tabla vacaciones?' : ''); }
+}
+async function vacValidar(id) {
+  try { const { error } = await db.from('vacaciones').update({ validada: true, validada_por: 'Dirección' }).eq('id', id); if (error) throw error; vacListar(); }
+  catch (e) { alert('Error: ' + (e.message || e)); }
+}
+async function vacEliminar(id) {
+  if (!confirm('¿Eliminar este registro de vacaciones?')) return;
+  try { const { error } = await db.from('vacaciones').delete().eq('id', id); if (error) throw error; vacListar(); }
+  catch (e) { alert('Error: ' + (e.message || e)); }
+}
+async function vacListar() {
+  const cont = document.getElementById('vac-lista');
+  if (!cont) return;
+  try {
+    const desde = new Date(); desde.setDate(desde.getDate() - 45);
+    const { data, error } = await db.from('vacaciones').select('*').gte('fecha_fin', _vacIso(desde)).order('fecha_inicio', { ascending: false }).limit(120);
+    if (error) throw error;
+    if (!data || !data.length) { cont.innerHTML = '<div style="font-size:12px; color:#64748B;">Sin vacaciones capturadas recientes.</div>'; return; }
+    cont.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;"><tr>
+      <th style="background:#002B5C; color:white; padding:6px;">Agente</th><th style="background:#002B5C; color:white; padding:6px;">Inicio</th><th style="background:#002B5C; color:white; padding:6px;">Fin</th><th style="background:#002B5C; color:white; padding:6px;">Capturó</th><th style="background:#002B5C; color:white; padding:6px;">Estado</th><th style="background:#002B5C; color:white; padding:6px;">Acciones</th></tr>` +
+      data.map(v => `<tr style="border-bottom:1px solid #E2E8F0; background:${v.validada ? '#F0FDF4' : '#FFFBEB'};">
+        <td style="padding:5px 8px;">${v.agente}</td><td style="padding:5px 8px;">${v.fecha_inicio}</td><td style="padding:5px 8px;">${v.fecha_fin}</td><td style="padding:5px 8px;">${v.capturado_por || '—'}</td>
+        <td style="padding:5px 8px; font-weight:800; color:${v.validada ? '#166534' : '#B45309'};">${v.validada ? '✅ VALIDADA' : '⏳ Pendiente'}</td>
+        <td style="padding:5px 8px;">${v.validada ? '' : `<button type="button" onclick="vacValidar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #16A34A; background:white; color:#16A34A; font-weight:700; cursor:pointer;">✔️ Validar</button> `}<button type="button" onclick="vacEliminar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #DC2626; background:white; color:#DC2626; font-weight:700; cursor:pointer;">🗑️</button></td></tr>`).join('') + '</table>';
+  } catch (e) { cont.innerHTML = '<div style="font-size:12px; color:#B45309;">⚠️ Tabla <code>vacaciones</code> no disponible aún — corre el SQL de creación.</div>'; }
+}
+
 function _calcRenderResultado(sinSupervisor, bajas) {
   const { filas, metasSup, anio, mes } = calcState;
   const cont = document.getElementById('calc-resultado');
@@ -2723,7 +2822,7 @@ function _calcRenderResultado(sinSupervisor, bajas) {
   document.getElementById('calc-stats').innerHTML = `
     <div class="stat-card"><div class="stat-label">Agentes evaluados</div><div class="stat-value">${filas.length}</div><div class="stat-sub">activos al día 1</div></div>
     <div class="stat-card" style="border-left-color: var(--att-orange);"><div class="stat-label">Meta total</div><div class="stat-value">${metaTotal}</div><div class="stat-sub">${MESES[mes-1]} ${anio}</div></div>
-    <div class="stat-card"><div class="stat-label">Maduros / Interm. / Nuevos / Sin meta</div><div class="stat-value" style="font-size:18px;">${porTipo['calculada']||0} / ${porTipo['fija_10']||0} / ${porTipo['fija_6']||0} / ${porTipo['sin_meta']||0}</div><div class="stat-sub">por banda</div></div>
+    <div class="stat-card"><div class="stat-label">Maduros / Interm. / Nuevos / Sin meta</div><div class="stat-value" style="font-size:18px;">${porTipo['calculada']||0} / ${porTipo['fija_8']||0} / ${porTipo['fija_6']||0} / ${porTipo['sin_meta']||0}</div><div class="stat-sub">por banda</div></div>
   `;
 
   let avisos = '';
@@ -2887,6 +2986,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   _calcInicializarSelector();
+  const bV = document.getElementById('vac-btn-guardar');
+  if (bV) bV.onclick = vacGuardar;
+  vacListar();
   const b1 = document.getElementById('btn-calc-metas');
   if (b1) b1.addEventListener('click', calcularMetasAuto);
   const b2 = document.getElementById('btn-calc-guardar');
