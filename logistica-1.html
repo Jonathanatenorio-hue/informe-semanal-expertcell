@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ExpertCell · BI Logístico Regional</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root { --navy:#002B5C; --blue:#0077A8; --orange:#FF7200; --bg:#F4F7FA; --border:#E2E8F0; --soft:#64748B; --green:#16A34A; --red:#DC2626; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:'Segoe UI', system-ui, sans-serif; background:var(--bg); color:#1A2233; }
+  header { background:linear-gradient(120deg, var(--navy), #01426A 60%, #0077A8); color:white; padding:18px 28px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  header h1 { font-size:18px; font-weight:800; } header .sub { font-size:12px; opacity:.85; margin-top:3px; }
+  main { max-width:1250px; margin:0 auto; padding:20px 24px; }
+  .card { background:white; border-radius:12px; padding:18px; margin-bottom:18px; box-shadow:0 1px 4px rgba(0,43,92,.08); }
+  .card h2 { font-size:15px; color:var(--navy); margin-bottom:4px; }
+  .hint { font-size:11.5px; color:var(--soft); margin-bottom:12px; line-height:1.5; }
+  table { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
+  th { background:var(--navy); color:white; padding:6px 9px; text-align:center; font-size:10.5px; position:sticky; top:0; }
+  td { padding:5px 9px; border-bottom:1px solid var(--border); text-align:right; }
+  td:first-child, th:first-child { text-align:left; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin-bottom:16px; }
+  .kpi { background:white; border-left:4px solid var(--blue); border-radius:8px; padding:10px 12px; }
+  .kpi .l { font-size:10px; color:var(--soft); text-transform:uppercase; font-weight:700; }
+  .kpi .v { font-size:22px; font-weight:800; color:var(--navy); }
+  select, button.b { padding:7px 12px; border:1px solid var(--border); border-radius:7px; font-size:12px; font-weight:700; background:white; cursor:pointer; }
+  button.b.g { background:var(--green); color:white; border:0; }
+  .tag { padding:2px 7px; border-radius:4px; font-size:10px; font-weight:800; }
+  .ok { background:#DCFCE7; color:#166534; } .mal { background:#FEE2E2; color:#991B1B; }
+  .scroll { overflow-x:auto; max-height:480px; overflow-y:auto; }
+  .nota { font-size:10.5px; color:#94A3B8; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🚚 BI Logístico Regional — ExpertCell</h1>
+  <div class="sub">Proyección por región · Auditor DHL (tarifario VAVTRADE 2026) · Mezcla por marca · Requerimiento semanal · Campañas de flujo</div></div>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <select id="sel-mes"></select>
+    <button class="b g" onclick="exportarTodo()">📊 Excel completo</button>
+  </div>
+</header>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="card"><h2>1 · Proyección de ventas por REGIÓN (resto del año)</h2>
+    <div class="hint">Crecimiento mensual calculado del trimestre base (editable) aplicado al último mes cerrado; el desglose usa la participación histórica de cada región (ventas sin región identificada → CDMX/MEX). Crec. mensual: <input id="crec" type="number" step="0.1" style="width:64px; padding:4px; border:1px solid var(--border); border-radius:5px;"> % <button class="b" onclick="renderTodo()">↻ Recalcular</button></div>
+    <div class="scroll" id="m1"></div>
+  </div>
+  <div class="card"><h2>2 · Auditor DHL — ¿estamos enviando desde el punto correcto?</h2>
+    <div class="hint">Cada envío con guía: costo real (HUB de origen → estado del cliente, zonas y tarifas de tu contrato DHL a 1 kg) vs el costo del HUB IDEAL. Acierto = ya sale del punto más barato. El estado del cliente se detecta por CP en la dirección; sin CP ni estado identificable, se excluye del costeo y se reporta aparte.</div>
+    <div class="scroll" id="m2"></div>
+    <div class="scroll" id="m2rutas" style="margin-top:14px;"></div>
+  </div>
+  <div class="card"><h2>3 · Requerimiento por REGIÓN × MARCA (mes proyectado)</h2>
+    <div class="hint">La proyección del punto 1 (con la demanda ya REASIGNADA al HUB ideal según el auditor) repartida con la mezcla de marcas histórica de cada región (trimestre base).</div>
+    <div class="scroll" id="m3"></div>
+  </div>
+  <div class="card"><h2>4 · Requerimiento SEMANAL vs inventario (solo resurtibles)</h2>
+    <div class="hint">Proyección mensual por región × modelo ÷ 4.33 semanas, contra el inventario disponible. Solo modelos RESURTIBLES de la lista de precios. Pedido semanal = necesidad − stock (si es positivo).</div>
+    <div class="scroll" id="m4"></div>
+  </div>
+  <div class="card"><h2>5 · Campañas bandera — a qué darle flujo</h2>
+    <div class="hint">Cruce de inventario alto × estatus resurtible × ritmo de venta: cobertura en semanas. Cobertura &gt; 6 semanas y resurtible = candidato a campaña (mover stock); cobertura &lt; 2 = no lo promociones, se agota solo.</div>
+    <div class="scroll" id="m5"></div>
+    <div class="nota">v1 por rotación de stock. La v2 con la promoción exacta por plan requiere cargar aquí la lista de precios completa — lo vemos cuando valides esta base.</div>
+  </div>
+</main>
+<script>
+const db = window.supabase.createClient('https://hfvbekuerjjigtdekllh.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4');
+const $ = id => document.getElementById(id);
+const MESL = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const fmt = n => Math.round(n).toLocaleString('es-MX');
+const pes = n => '$' + Math.round(n).toLocaleString('es-MX');
+
+// ===== TARIFARIO DHL (contrato VAVTRADE, Ratecard 01-Ene-2026, 1 kg, MXN sin IVA) =====
+const TARIFA_1KG = { A:142.83, B:150.94, C:157.89, D:175.76, E:220.25, F:224.37, G:233.01, H:240.64 };
+const MATRIZ = { // [zona origen][zona destino] → letra
+ 1:{1:'A',2:'B',3:'C',4:'C',5:'D',6:'E',7:'F',8:'F',9:'G',10:'C',11:'A',12:'B',13:'D',14:'B',15:'C',16:'E',17:'B'},
+ 2:{1:'B',2:'A',3:'E',4:'E',5:'F',6:'G',7:'G',8:'G',9:'H',10:'E',11:'C',12:'D',13:'F',14:'E',15:'E',16:'F',17:'D'},
+ 3:{1:'C',2:'E',3:'A',4:'C',5:'C',6:'E',7:'F',8:'D',9:'G',10:'D',11:'C',12:'C',13:'B',14:'D',15:'F',16:'G',17:'F'},
+ 4:{1:'C',2:'E',3:'C',4:'A',5:'C',6:'D',7:'E',8:'E',9:'G',10:'A',11:'C',12:'B',13:'D',14:'D',15:'F',16:'G',17:'E'},
+ 5:{1:'D',2:'F',3:'C',4:'C',5:'A',6:'D',7:'E',8:'C',9:'F',10:'D',11:'D',12:'C',13:'D',14:'F',15:'F',16:'G',17:'F'},
+ 6:{1:'E',2:'G',3:'E',4:'D',5:'D',6:'A',7:'C',8:'E',9:'E',10:'E',11:'F',12:'E',13:'F',14:'F',15:'G',16:'H',17:'F'},
+ 7:{1:'F',2:'G',3:'F',4:'E',5:'E',6:'C',7:'A',8:'E',9:'C',10:'F',11:'G',12:'F',13:'G',14:'G',15:'H',16:'H',17:'G'},
+ 8:{1:'F',2:'G',3:'D',4:'E',5:'C',6:'E',7:'E',8:'A',9:'E',10:'F',11:'F',12:'F',13:'E',14:'G',15:'G',16:'H',17:'G'},
+ 9:{1:'G',2:'H',3:'G',4:'G',5:'F',6:'E',7:'C',8:'E',9:'A',10:'G',11:'G',12:'G',13:'H',14:'H',15:'H',16:'H',17:'H'},
+ 10:{1:'C',2:'E',3:'D',4:'A',5:'D',6:'E',7:'F',8:'F',9:'G',10:'A',11:'D',12:'C',13:'E',14:'E',15:'F',16:'G',17:'E'},
+ 11:{1:'A',2:'C',3:'C',4:'C',5:'D',6:'F',7:'G',8:'F',9:'G',10:'D',11:'A',12:'B',13:'D',14:'C',15:'C',16:'F',17:'B'},
+ 12:{1:'B',2:'D',3:'C',4:'B',5:'C',6:'E',7:'F',8:'F',9:'G',10:'C',11:'B',12:'A',13:'D',14:'D',15:'E',16:'F',17:'E'},
+ 13:{1:'D',2:'F',3:'B',4:'D',5:'D',6:'F',7:'G',8:'E',9:'H',10:'E',11:'D',12:'D',13:'A',14:'E',15:'F',16:'G',17:'F'},
+ 14:{1:'B',2:'E',3:'D',4:'D',5:'F',6:'F',7:'G',8:'G',9:'H',10:'E',11:'C',12:'D',13:'E',14:'A',15:'C',16:'F',17:'B'},
+ 15:{1:'C',2:'E',3:'F',4:'F',5:'F',6:'G',7:'H',8:'G',9:'H',10:'F',11:'C',12:'E',13:'F',14:'C',15:'A',16:'B',17:'B'},
+ 16:{1:'E',2:'F',3:'G',4:'G',5:'G',6:'H',7:'H',8:'H',9:'H',10:'G',11:'F',12:'F',13:'G',14:'F',15:'B',16:'A',17:'C'},
+ 17:{1:'B',2:'D',3:'F',4:'E',5:'F',6:'F',7:'G',8:'G',9:'H',10:'E',11:'B',12:'E',13:'F',14:'B',15:'B',16:'C',17:'A'} };
+// Estado (por CP de 2 dígitos) → estado
+const CP_EDO = { '20':'AGS','21':'BC','22':'BC','23':'BCS','24':'CAMP','25':'COAH','26':'COAH','27':'COAH','28':'COL','29':'CHIS','30':'CHIS','31':'CHIH','32':'CHIH','33':'CHIH','34':'DGO','35':'DGO','36':'GTO','37':'GTO','38':'GTO','39':'GRO','40':'GRO','41':'GRO','42':'HGO','43':'HGO','44':'JAL','45':'JAL','46':'JAL','47':'JAL','48':'JAL','49':'JAL','50':'MEX','51':'MEX','52':'MEX','53':'MEX','54':'MEX','55':'MEX','56':'MEX','57':'MEX','58':'MICH','59':'MICH','60':'MICH','61':'MICH','62':'MOR','63':'NAY','64':'NL','65':'NL','66':'NL','67':'NL','68':'OAX','69':'OAX','70':'OAX','71':'OAX','72':'PUE','73':'PUE','74':'PUE','75':'PUE','76':'QRO','77':'QROO','78':'SLP','79':'SLP','80':'SIN','81':'SIN','82':'SIN','83':'SON','84':'SON','85':'SON','86':'TAB','87':'TAM','88':'TAM','89':'TAM','90':'TLAX','91':'VER','92':'VER','93':'VER','94':'VER','95':'VER','96':'VER','97':'YUC','98':'ZAC','99':'ZAC',
+ '00':'CDMX','01':'CDMX','02':'CDMX','03':'CDMX','04':'CDMX','05':'CDMX','06':'CDMX','07':'CDMX','08':'CDMX','09':'CDMX','10':'CDMX','11':'CDMX','12':'CDMX','13':'CDMX','14':'CDMX','15':'CDMX','16':'CDMX' };
+const EDO_ZONA = { CDMX:1, MEX:11, PUE:11, MOR:11, HGO:11, TLAX:11, NL:3, COAH:3, JAL:4, DGO:5, SIN:6, BCS:6, SON:7, CHIH:8, BC:9, NAY:10, COL:10, GTO:12, QRO:12, AGS:12, SLP:12, ZAC:12, MICH:12, TAM:14, VER:17, OAX:17, GRO:2, CHIS:15, TAB:15, CAMP:15, YUC:16, QROO:16 };
+const REG_ALIAS = [ [/MEX|CDMX|DF|CIUDAD/,'MEX',1], [/PUE|PUEBLA/,'PUE',11], [/GDL|GUADAL|JAL/,'GDL',4], [/MTY|MONTER/,'MTY',3], [/TOL|TOLUCA/,'TOL',11], [/TIJ|TIJUANA/,'TIJ',9], [/VER|VERACRUZ/,'VER',17], [/QRO|QUERE/,'QRO',12], [/MER|MERIDA|YUC/,'MER',16], [/LEO|LEON|BJX/,'LEON',12] ];
+function regNorm(r) {
+  const t = String(r || '').toUpperCase();
+  for (const [re, k] of REG_ALIAS) if (re.test(t)) return k;
+  return t.trim() ? t.trim().substring(0, 6) : 'MEX';
+}
+function regZona(k) { for (const [re, kk, z] of REG_ALIAS) if (kk === k) return z; return 1; }
+const MARCAS = ['APPLE','IPHONE','SAMSUNG','GALAXY','MOTOROLA','MOTO','XIAOMI','REDMI','POCO','HONOR','OPPO','ZTE','VIVO','GOOGLE','PIXEL','HUAWEI','TCL','REALME','NOKIA','ALCATEL','LG'];
+const MARCA_CANON = { IPHONE:'APPLE', GALAXY:'SAMSUNG', MOTO:'MOTOROLA', REDMI:'XIAOMI', POCO:'XIAOMI', PIXEL:'GOOGLE' };
+function marcaDe(eq) {
+  const t = String(eq || '').toUpperCase();
+  for (const m of MARCAS) if (t.includes(m)) return MARCA_CANON[m] || m;
+  return t.split(' ')[0] || 'OTRA';
+}
+function modeloBase(eq) {
+  const COLORES = ['NEGRO','BLANCO','AZUL','ROJO','VERDE','GRIS','DORADO','PLATA','MORADO','ROSA','AMARILLO','NARANJA','TITANIO','BLACK','WHITE','BLUE','RED','GREEN','GRAY','GREY','GOLD','SILVER','PURPLE','PINK','YELLOW','LAVANDA','MENTA','CORAL','GRAFITO','MIDNIGHT','STARLIGHT','OBSIDIANA','CREMA','LILA','TURQUESA','VIOLETA','CIAN','BEIGE','MARFIL','COBRE','BRONCE','AQUA','ICE','JADE','OCEANO','SANDSTONE','CHARCOAL','DENIM','FOREST','HAZEL','INDIGO','LIGHT','DARK','SKY','SAGE','TEAL','MINT','PEACH','OLIVE','NAVY','CAFE'];
+  return String(eq || '').toUpperCase().split(' ').filter(t => t && !COLORES.includes(t)).join(' ').replace(/\s+GB/g, 'GB');
+}
+let ventas = [], entregas = [], inventario = [], estatusCat = {}, entPorFolio = {};
+
+async function pag(tabla, sel) {
+  let out = [];
+  for (let d = 0; ; d += 1000) {
+    const { data, error } = await db.from(tabla).select(sel).range(d, d + 999);
+    if (error) throw error;
+    out = out.concat(data || []);
+    if (!data || data.length < 1000) return out;
+  }
+}
+function campoDireccion(row) {
+  const cands = ['direccion', 'domicilio', 'direccion_cliente', 'dir_cliente', 'entrega_direccion', 'destino', 'entrega_en', 'ciudad', 'municipio', 'estado', 'cp', 'codigo_postal'];
+  for (const c of cands) if (row[c] != null && String(row[c]).trim()) return String(row[c]);
+  for (const k of Object.keys(row)) {
+    const v = row[k];
+    if (typeof v === 'string' && /\b\d{5}\b/.test(v) && v.length > 8 && !/^http/.test(v)) return v;
+  }
+  return '';
+}
+function estadoDe(row) {
+  const dir = campoDireccion(row).toUpperCase();
+  const cp = dir.match(/\b(\d{5})\b/);
+  if (cp && CP_EDO[cp[1].substring(0, 2)]) return CP_EDO[cp[1].substring(0, 2)];
+  const NOM = { 'CIUDAD DE MEXICO':'CDMX','CDMX':'CDMX','ESTADO DE MEXICO':'MEX','EDO. MEX':'MEX','NUEVO LEON':'NL','MONTERREY':'NL','JALISCO':'JAL','GUADALAJARA':'JAL','PUEBLA':'PUE','VERACRUZ':'VER','YUCATAN':'YUC','QUINTANA ROO':'QROO','BAJA CALIFORNIA SUR':'BCS','BAJA CALIFORNIA':'BC','CHIHUAHUA':'CHIH','SONORA':'SON','SINALOA':'SIN','COAHUILA':'COAH','TAMAULIPAS':'TAM','GUANAJUATO':'GTO','QUERETARO':'QRO','MICHOACAN':'MICH','OAXACA':'OAX','CHIAPAS':'CHIS','TABASCO':'TAB','GUERRERO':'GRO','MORELOS':'MOR','HIDALGO':'HGO','TLAXCALA':'TLAX','AGUASCALIENTES':'AGS','ZACATECAS':'ZAC','DURANGO':'DGO','SAN LUIS POTOSI':'SLP','NAYARIT':'NAY','COLIMA':'COL','CAMPECHE':'CAMP','TOLUCA':'MEX' };
+  for (const n of Object.keys(NOM)) if (dir.includes(n)) return NOM[n];
+  return null;
+}
+function costo(zO, zD) { return TARIFA_1KG[MATRIZ[zO][zD]]; }
+
+async function cargar() {
+  $('kpis').innerHTML = '<div class="kpi"><div class="l">Cargando…</div><div class="v">⏳</div></div>';
+  ventas = await pag('ventas_detalle', 'folio, estatus, fecha_activacion, plan');
+  entregas = await pag('entregas_detalle', '*');
+  try { const e = await pag('equipos_estatus', 'modelo, estatus'); e.forEach(x => estatusCat[String(x.modelo).toUpperCase()] = x.estatus); } catch (e) {}
+  for (const t of ['inventario', 'inventario_equipos', 'inventario_hub', 'inventarios']) {
+    try { inventario = await pag(t, '*'); if (inventario.length) break; } catch (e) { inventario = []; }
+  }
+  entregas.forEach(e => { if (e.folio) entPorFolio[e.folio] = e; });
+  const hoy = new Date();
+  const ops = [];
+  for (let k = 0; k < 4; k++) { const d = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1); ops.push(`<option value="${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}">${MESL[d.getMonth()]} ${d.getFullYear()}</option>`); }
+  $('sel-mes').innerHTML = ops.join('');
+  $('sel-mes').onchange = renderTodo;
+  renderTodo();
+}
+
+function estatusModelo(mb) {
+  if (!mb) return '';
+  const MK = ['APPLE','SAMSUNG','MOTOROLA','XIAOMI','HONOR','OPPO','ZTE','VIVO','ALCATEL','NOKIA','HUAWEI','TCL','REALME','LG','GOOGLE'];
+  const k = mb.split(' ').filter(t => !MK.includes(t)).join(' ');
+  if (estatusCat[k]) return estatusCat[k];
+  if (estatusCat[mb]) return estatusCat[mb];
+  const toks = k.split(' ').filter(t => t.length > 1);
+  for (const key of Object.keys(estatusCat)) { const kt = key.split(' '); if (toks.length && (toks.every(t => kt.includes(t)) || kt.every(t => toks.includes(t)))) return estatusCat[key]; }
+  return '';
+}
+let R = {};
+function renderTodo() {
+  const hoy = new Date();
+  const anio = hoy.getFullYear();
+  const mesesCerr = [];
+  for (let m = 1; m <= 12; m++) { const k = `${anio}-${String(m).padStart(2, '0')}`; if (m < hoy.getMonth() + 1) mesesCerr.push(k); }
+  const base3 = mesesCerr.slice(-3);
+  // Ventas activadas con región (del cruce con entregas; sin región → MEX)
+  const vAct = ventas.filter(v => v.estatus === 'activada' && v.fecha_activacion);
+  const porMesReg = {}, porMesTot = {};
+  vAct.forEach(v => {
+    const k = String(v.fecha_activacion).substring(0, 7);
+    const e = entPorFolio[v.folio] || {};
+    const reg = regNorm(e.region || e.plaza || '');
+    porMesTot[k] = (porMesTot[k] || 0) + 1;
+    (porMesReg[k] = porMesReg[k] || {})[reg] = (porMesReg[k][reg] || 0) + 1;
+  });
+  // Crecimiento del trimestre base
+  const v1 = porMesTot[base3[0]] || 0, v3 = porMesTot[base3[2]] || 0;
+  let crec = (v1 > 0 && v3 > 0) ? (Math.pow(v3 / v1, 1 / 2) - 1) * 100 : 0;
+  if ($('crec').value !== '') crec = parseFloat($('crec').value);
+  else $('crec').value = crec.toFixed(1);
+  // ===== M2: AUDITOR DHL (con reasignación de demanda) =====
+  const mesSel = $('sel-mes').value || base3[2];
+  const HUBS = [...new Set(Object.values(entPorFolio).map(e => regNorm(e.region || e.plaza || '')))].filter(h => regZona(h) !== undefined);
+  const audPorMes = {}, rutasMal = {}, reasignada = {}; let sinEstado = 0;
+  const shareReasig = {}; // región IDEAL share (base 3m) para ajustar forecast
+  vAct.forEach(v => {
+    const k = String(v.fecha_activacion).substring(0, 7);
+    const e = entPorFolio[v.folio];
+    if (!e) return;
+    const esDHL = !!(e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0);
+    const regReal = regNorm(e.region || e.plaza || '');
+    let regIdeal = regReal, cReal = 0, cIdeal = 0;
+    if (esDHL) {
+      const edo = estadoDe(e);
+      if (!edo || !EDO_ZONA[edo]) { if (base3.includes(k) || k === mesSel) sinEstado++; }
+      else {
+        const zD = EDO_ZONA[edo];
+        cReal = costo(regZona(regReal), zD);
+        let best = 1e9;
+        HUBS.forEach(h => { const c = costo(regZona(h), zD); if (c < best - 0.01) { best = c; regIdeal = h; } });
+        cIdeal = best;
+        if (!audPorMes[k]) audPorMes[k] = { n: 0, ok: 0, costoReal: 0, costoIdeal: 0 };
+        const A = audPorMes[k];
+        A.n++; A.costoReal += cReal; A.costoIdeal += cIdeal;
+        if (cReal <= cIdeal + 0.01) { A.ok++; regIdeal = regReal; }
+        else if (base3.includes(k)) {
+          const rk = `${regReal} → ${edo} (ideal: ${regIdeal})`;
+          if (!rutasMal[rk]) rutasMal[rk] = { n: 0, sob: 0 };
+          rutasMal[rk].n++; rutasMal[rk].sob += cReal - cIdeal;
+        }
+      }
+    }
+    if (base3.includes(k)) shareReasig[regIdeal] = (shareReasig[regIdeal] || 0) + 1;
+  });
+  const totBase = Object.values(shareReasig).reduce((a, b) => a + b, 0) || 1;
+  // ===== M1: proyección regional (participación REASIGNADA) =====
+  const ultimo = porMesTot[base3[2]] || 0;
+  const mesesFut = [];
+  for (let m = hoy.getMonth() + 1; m <= 12; m++) mesesFut.push(m);
+  const proyMes = {};
+  mesesFut.forEach((m, i) => { proyMes[m] = Math.round(ultimo * Math.pow(1 + crec / 100, i + 1)); });
+  const regiones = Object.keys(shareReasig).sort((a, b) => shareReasig[b] - shareReasig[a]);
+  let h1 = `<table><tr><th>Región (HUB ideal)</th><th>Part. %</th>${base3.map(k => `<th>${MESL[parseInt(k.substring(5)) - 1]} real*</th>`).join('')}${mesesFut.map(m => `<th>${MESL[m - 1]} proy</th>`).join('')}<th>Total resto</th></tr>`;
+  const proyRegModulo = {};
+  regiones.forEach(rg => {
+    const sh = shareReasig[rg] / totBase;
+    let tot = 0;
+    const celFut = mesesFut.map(m => { const x = Math.round(proyMes[m] * sh); tot += x; proyRegModulo[rg] = proyRegModulo[rg] || {}; proyRegModulo[rg][m] = x; return `<td><strong>${fmt(x)}</strong></td>`; }).join('');
+    h1 += `<tr><td><strong>${rg}</strong></td><td>${(sh * 100).toFixed(1)}%</td>${base3.map(k => `<td>${fmt((porMesReg[k] || {})[rg] || 0)}</td>`).join('')}${celFut}<td><strong>${fmt(tot)}</strong></td></tr>`;
+  });
+  h1 += `<tr style="background:#EAF4FA; font-weight:800;"><td>TOTAL</td><td>100%</td>${base3.map(k => `<td>${fmt(porMesTot[k] || 0)}</td>`).join('')}${mesesFut.map(m => `<td>${fmt(proyMes[m])}</td>`).join('')}<td>${fmt(mesesFut.reduce((a, m) => a + proyMes[m], 0))}</td></tr></table>
+  <div class="nota">*Real = donde se vendió. La participación proyectada ya usa la demanda REASIGNADA al HUB ideal (punto 2): si Puebla vendió envíos que convenían desde MEX, esa demanda futura se proyecta en MEX.</div>`;
+  $('m1').innerHTML = h1;
+  // M2 tablas
+  const mesesAud = Object.keys(audPorMes).sort();
+  let h2 = `<table><tr><th>Mes</th><th>Envíos DHL costeados</th><th>Aciertos</th><th>% acierto</th><th>Costo real</th><th>Costo ideal</th><th>SOBRECOSTO</th></tr>`;
+  let sobBase = 0;
+  mesesAud.forEach(k => { const A = audPorMes[k]; const sob = A.costoReal - A.costoIdeal; if (base3.includes(k)) sobBase += sob;
+    h2 += `<tr${k === mesSel ? ' style="background:#FFF7ED;"' : ''}><td>${k}</td><td>${fmt(A.n)}</td><td>${fmt(A.ok)}</td><td><span class="tag ${A.ok / A.n >= 0.6 ? 'ok' : 'mal'}">${(A.ok / A.n * 100).toFixed(1)}%</span></td><td>${pes(A.costoReal)}</td><td>${pes(A.costoIdeal)}</td><td style="color:var(--red); font-weight:800;">${pes(sob)}</td></tr>`; });
+  h2 += '</table>';
+  $('m2').innerHTML = h2;
+  const rutas = Object.entries(rutasMal).sort((a, b) => b[1].sob - a[1].sob).slice(0, 15);
+  $('m2rutas').innerHTML = `<table><tr><th>Ruta equivocada (trimestre base) — top 15 por sobrecosto</th><th>Envíos</th><th>Sobrecosto</th><th>$/envío</th></tr>` +
+    rutas.map(([rk, d]) => `<tr><td>${rk}</td><td>${fmt(d.n)}</td><td style="color:var(--red); font-weight:700;">${pes(d.sob)}</td><td>${pes(d.sob / d.n)}</td></tr>`).join('') + '</table>' +
+    (sinEstado ? `<div class="nota">⚠️ ${sinEstado} envíos sin estado identificable (sin CP en la dirección): excluidos del costeo.</div>` : '');
+  // ===== M3: región × marca (primer mes proyectado) =====
+  const mesProy = mesesFut[0];
+  const mixReg = {};
+  vAct.forEach(v => {
+    const k = String(v.fecha_activacion).substring(0, 7);
+    if (!base3.includes(k)) return;
+    const e = entPorFolio[v.folio] || {};
+    if (!e.equipo || String(e.equipo).toUpperCase() === 'SIM') return;
+    const rg = regNorm(e.region || e.plaza || '');
+    const mc = marcaDe(e.equipo);
+    (mixReg[rg] = mixReg[rg] || {})[mc] = (mixReg[rg][mc] || 0) + 1;
+  });
+  const marcasAll = [...new Set([].concat(...Object.values(mixReg).map(o => Object.keys(o))))].sort((a, b) => { const s = m => Object.values(mixReg).reduce((x, o) => x + (o[m] || 0), 0); return s(b) - s(a); }).slice(0, 8);
+  let h3 = `<table><tr><th>Región</th><th>Proy ${MESL[mesProy - 1]} (equipos)</th>${marcasAll.map(m => `<th>${m}</th>`).join('')}</tr>`;
+  const m3datos = [];
+  regiones.forEach(rg => {
+    const mix = mixReg[rg] || {};
+    const totM = Object.values(mix).reduce((a, b) => a + b, 0) || 1;
+    const proyEq = Math.round((proyRegModulo[rg] ? proyRegModulo[rg][mesProy] : 0) * 0.93);
+    const fila = { rg, proyEq };
+    h3 += `<tr><td><strong>${rg}</strong></td><td><strong>${fmt(proyEq)}</strong></td>${marcasAll.map(m => { const u = Math.round(proyEq * (mix[m] || 0) / totM); fila[m] = u; return `<td>${u ? fmt(u) + ` <span style="color:var(--soft); font-size:10px;">(${((mix[m] || 0) / totM * 100).toFixed(0)}%)</span>` : '—'}</td>`; }).join('')}</tr>`;
+    m3datos.push(fila);
+  });
+  h3 += '</table><div class="nota">Proy en equipos ≈ 93% de las ventas (resto SIM). Mezcla = participación de la marca en la región durante el trimestre base.</div>';
+  $('m3').innerHTML = h3;
+  // ===== M4: requerimiento semanal vs inventario (resurtibles) =====
+  const invPorMod = {};
+  let colModInv = null, colCantInv = null;
+  if (inventario.length) {
+    const r0 = inventario[0];
+    colModInv = ['modelo', 'equipo', 'descripcion', 'producto'].find(c => r0[c] != null);
+    colCantInv = ['cantidad', 'stock', 'existencia', 'disponible', 'piezas', 'qty'].find(c => r0[c] != null);
+    if (colModInv && colCantInv) inventario.forEach(r => { const mb = modeloBase(r[colModInv]); invPorMod[mb] = (invPorMod[mb] || 0) + (parseFloat(r[colCantInv]) || 0); });
+  }
+  const ventaMod = {};
+  vAct.forEach(v => {
+    const k = String(v.fecha_activacion).substring(0, 7);
+    if (!base3.includes(k)) return;
+    const e = entPorFolio[v.folio] || {};
+    if (!e.equipo || String(e.equipo).toUpperCase() === 'SIM') return;
+    const mb = modeloBase(e.equipo);
+    if (!ventaMod[mb]) ventaMod[mb] = { n: 0, marca: marcaDe(e.equipo) };
+    ventaMod[mb].n++;
+  });
+  const totEq3 = Object.values(ventaMod).reduce((a, x) => a + x.n, 0) || 1;
+  const proyEqMes = Math.round(proyMes[mesProy] * 0.93);
+  const resurt = Object.entries(ventaMod).filter(([mb]) => estatusModelo(mb) === 'RESURTIBLE').sort((a, b) => b[1].n - a[1].n);
+  let h4 = `<table><tr><th>Modelo (resurtible)</th><th>Marca</th><th>Venta 3m</th><th>Proy ${MESL[mesProy - 1]}</th><th>Necesidad / semana</th><th>Stock</th><th>PEDIDO semanal</th></tr>`;
+  const m4datos = [];
+  resurt.forEach(([mb, d]) => {
+    const pMes = Math.round(d.n / totEq3 * proyEqMes);
+    const sem = pMes / 4.33;
+    const stk = invPorMod[mb] || 0;
+    const ped = Math.max(0, Math.ceil(sem - stk));
+    h4 += `<tr><td>${mb}</td><td>${d.marca}</td><td>${d.n}</td><td>${fmt(pMes)}</td><td>${sem.toFixed(1)}</td><td>${fmt(stk)}</td><td style="font-weight:800; color:${ped ? 'var(--red)' : 'var(--green)'};">${ped || '✓'}</td></tr>`;
+    m4datos.push({ mb, marca: d.marca, n3: d.n, pMes, sem: Number(sem.toFixed(1)), stk, ped });
+  });
+  h4 += '</table>' + (Object.keys(estatusCat).length ? '' : '<div class="nota">⚠️ Tabla equipos_estatus vacía: sube la lista de precios en el reporte (Logística) para filtrar resurtibles.</div>') + (inventario.length && colModInv ? '' : '<div class="nota">⚠️ No encontré tabla de inventario legible: el stock sale en 0 y el pedido = necesidad completa. Dime cómo se llama tu tabla/columnas y la conecto.</div>');
+  $('m4').innerHTML = h4;
+  // ===== M5: campañas bandera =====
+  const todosM = Object.entries(ventaMod).sort((a, b) => b[1].n - a[1].n);
+  let h5 = `<table><tr><th>Modelo</th><th>Estatus</th><th>Venta/sem (3m)</th><th>Stock</th><th>Cobertura (sem)</th><th>Recomendación</th></tr>`;
+  const m5datos = [];
+  todosM.forEach(([mb, d]) => {
+    const vSem = d.n / 13;
+    const stk = invPorMod[mb] || 0;
+    if (!stk) return;
+    const cob = vSem > 0 ? stk / vSem : 99;
+    const est = estatusModelo(mb) || 'SIN LISTA';
+    let rec, col;
+    if (cob > 6 && est === 'RESURTIBLE') { rec = '🚩 CAMPAÑA BANDERA: empuja este modelo'; col = 'var(--orange)'; }
+    else if (cob > 6) { rec = '📤 Liquidar (no resurtible con stock alto)'; col = 'var(--red)'; }
+    else if (cob < 2) { rec = 'No promocionar: se agota solo'; col = 'var(--green)'; }
+    else { rec = 'Flujo sano'; col = 'var(--soft)'; }
+    h5 += `<tr><td>${mb}</td><td>${est}</td><td>${vSem.toFixed(1)}</td><td>${fmt(stk)}</td><td style="font-weight:800;">${cob > 90 ? '∞' : cob.toFixed(1)}</td><td style="color:${col}; font-weight:700;">${rec}</td></tr>`;
+    m5datos.push({ mb, est, vSem: Number(vSem.toFixed(1)), stk, cob: Number(cob.toFixed(1)), rec });
+  });
+  h5 += '</table>';
+  $('m5').innerHTML = m5datos.length ? h5 : '<div class="nota">Sin inventario conectado no hay cobertura que calcular — mismo pendiente del punto 4.</div>';
+  // KPIs
+  const Am = audPorMes[mesSel];
+  $('kpis').innerHTML =
+    `<div class="kpi"><div class="l">Crecimiento mensual</div><div class="v">${crec.toFixed(1)}%</div></div>` +
+    `<div class="kpi" style="border-color:var(--orange);"><div class="l">Proy ${MESL[mesProy - 1]}</div><div class="v">${fmt(proyMes[mesProy])}</div></div>` +
+    `<div class="kpi" style="border-color:${Am && Am.ok / Am.n >= 0.6 ? 'var(--green)' : 'var(--red)'};"><div class="l">% acierto DHL (${mesSel})</div><div class="v">${Am ? (Am.ok / Am.n * 100).toFixed(1) + '%' : '—'}</div></div>` +
+    `<div class="kpi" style="border-color:var(--red);"><div class="l">Sobrecosto trimestre</div><div class="v">${pes(sobBase)}</div></div>` +
+    `<div class="kpi"><div class="l">Regiones activas</div><div class="v">${regiones.length}</div></div>`;
+  R = { base3, mesesFut, proyMes, regiones, shareReasig, totBase, porMesReg, porMesTot, audPorMes, rutas, m3datos, marcasAll, m4datos, m5datos, crec, mesProy, sobBase };
+}
+
+function exportarTodo() {
+  if (!R.base3) return;
+  const wb = XLSX.utils.book_new();
+  const CX = (v, f) => ({ t: 'n', v: v || 0, f });
+  // Hoja 1
+  const a1 = [['PROYECCIÓN POR REGIÓN — DEMANDA REASIGNADA AL HUB IDEAL'], ['Crecimiento mensual (editable):', R.crec / 100, '← cambia esta celda y recalculan todas las proyecciones'], [],
+    ['Región', 'Part.', ...R.base3.map(k => k + ' real'), ...R.mesesFut.map(m => MESL[m - 1] + ' proy'), 'Total resto']];
+  const ult = R.porMesTot[R.base3[2]] || 0;
+  R.regiones.forEach(rg => {
+    const r = a1.length + 1;
+    const sh = R.shareReasig[rg] / R.totBase;
+    const fila = [rg, { t: 'n', v: sh, z: '0.0%' }, ...R.base3.map(k => (R.porMesReg[k] || {})[rg] || 0)];
+    R.mesesFut.forEach((m, i) => fila.push(CX(Math.round(R.proyMes[m] * sh), `ROUND(${ult}*POWER(1+$B$2,${i + 1})*$B${r},0)`)));
+    const c0 = XLSX.utils.encode_col(2 + R.base3.length), c1 = XLSX.utils.encode_col(1 + R.base3.length + R.mesesFut.length);
+    fila.push(CX(0, `SUM(${c0}${r}:${c1}${r})`));
+    a1.push(fila);
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(a1);
+  const cB2 = ws1[XLSX.utils.encode_cell({ r: 1, c: 1 })]; if (cB2) { cB2.z = '0.0%'; cB2.s = { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { bold: true } }; }
+  XLSX.utils.book_append_sheet(wb, ws1, 'Proyeccion regional');
+  // Hoja 2
+  const a2 = [['AUDITOR DHL — ACIERTO DE PUNTO DE ORIGEN (tarifario contrato, 1 kg, MXN sin IVA)'], [],
+    ['Mes', 'Envíos', 'Aciertos', '% acierto', 'Costo real', 'Costo ideal', 'Sobrecosto']];
+  Object.keys(R.audPorMes).sort().forEach(k => { const A = R.audPorMes[k]; const r = a2.length + 1;
+    a2.push([k, A.n, A.ok, CX(A.ok / A.n, `C${r}/B${r}`), Number(A.costoReal.toFixed(0)), Number(A.costoIdeal.toFixed(0)), CX(A.costoReal - A.costoIdeal, `E${r}-F${r}`)]); });
+  a2.push([], ['RUTAS A CORREGIR (trimestre base)'], ['Ruta', 'Envíos', 'Sobrecosto', '$/envío']);
+  R.rutas.forEach(([rk, d]) => a2.push([rk, d.n, Number(d.sob.toFixed(0)), Number((d.sob / d.n).toFixed(0))]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a2), 'Auditor DHL');
+  // Hoja 3
+  const a3 = [[`REGIÓN × MARCA — ${MESL[R.mesProy - 1]} (equipos)`], [], ['Región', 'Proy equipos', ...R.marcasAll]];
+  R.m3datos.forEach(f => a3.push([f.rg, f.proyEq, ...R.marcasAll.map(m => f[m] || 0)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a3), 'Region x Marca');
+  // Hoja 4
+  const a4 = [['REQUERIMIENTO SEMANAL — SOLO RESURTIBLES'], [], ['Modelo', 'Marca', 'Venta 3m', `Proy ${MESL[R.mesProy - 1]}`, 'Necesidad/sem', 'Stock', 'PEDIDO semanal']];
+  R.m4datos.forEach(f => { const r = a4.length + 1; a4.push([f.mb, f.marca, f.n3, f.pMes, CX(f.sem, `D${r}/4.33`), f.stk, CX(f.ped, `MAX(0,CEILING(E${r}-F${r},1))`)]); });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a4), 'Req semanal');
+  // Hoja 5
+  const a5 = [['CAMPAÑAS BANDERA — FLUJO DE STOCK'], [], ['Modelo', 'Estatus', 'Venta/sem', 'Stock', 'Cobertura (sem)', 'Recomendación']];
+  R.m5datos.forEach(f => { const r = a5.length + 1; a5.push([f.mb, f.est, f.vSem, f.stk, CX(f.cob, `IF(C${r}>0,D${r}/C${r},999)`), f.rec]); });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a5), 'Campanas');
+  XLSX.writeFile(wb, `BI_Logistico_${new Date().toISOString().substring(0, 10)}.xlsx`);
+}
+cargar().catch(e => { $('kpis').innerHTML = '<div class="kpi" style="border-color:var(--red);"><div class="l">Error</div><div class="v" style="font-size:13px;">' + (e.message || e) + '</div></div>'; });
+</script>
+</body>
+</html>
