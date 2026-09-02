@@ -3454,6 +3454,40 @@ function exportarRiesgo() {
   XLSX.writeFile(wb, `Agentes_en_riesgo_${hoy.toISOString().substring(0, 10)}.xlsx`);
 }
 
+// Tarjeta de cortes: calcula con las metas del mes/filtro activos en la radiografía
+function _pintarCortes() {
+  try {
+    const D = window.__radiografiaData;
+    const dh = D && D.filasR && D.filasR.length ? (D.filasR[0].diasHabilesMes || 0) : 0;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+    if (!D || !D.filasR || !D.filasR.length || dh <= 0 || !D.filasR.some(r => (r.meta || 0) > 0)) {
+      ['corte-prog-dia', 'corte-12', 'corte-14', 'corte-17', 'corte-prog-sab', 'corte-11s'].forEach(id => set(id, '—'));
+      set('corte-fuente', ' · Sin metas cargadas para el mes visto en la radiografía: al cargarlas, estos cortes se calculan solos.');
+      return;
+    }
+    let prog = 0, progSab = 0;
+    D.filasR.forEach(r => {
+      const aD = Math.round((r.meta || 0) / dh);
+      const pD = Math.round(aD * 1.1);
+      prog += pD;
+      progSab += Math.round(pD * 0.5);
+    });
+    set('corte-prog-dia', prog);
+    set('corte-12', Math.round(prog * 0.27));
+    set('corte-14', Math.round(prog * 0.53));
+    set('corte-17', Math.round(prog * 0.77));
+    set('corte-prog-sab', progSab);
+    set('corte-11s', Math.round(progSab * 0.54));
+    set('corte-fuente', ` · Calculado con las metas del mes y filtro activos en la radiografía (${D.filtroTxt || 'vista actual'}).`);
+  } catch (e) { console.warn('[Cortes]', e); }
+}
+if (!window.__cortesListener) {
+  window.__cortesListener = true;
+  document.addEventListener('change', e => {
+    if (e.target && String(e.target.id || '').startsWith('radiografia')) setTimeout(_pintarCortes, 500);
+  });
+}
+
 function _wireRiesgo() {
   const sel = document.getElementById('riesgo-filtro');
   const src = document.getElementById('radiografia-filtro');
@@ -3463,6 +3497,7 @@ function _wireRiesgo() {
   const b = document.getElementById('riesgo-btn-excel');
   if (b) b.onclick = exportarRiesgo;
   renderRiesgo();
+  setTimeout(_pintarCortes, 400);
 }
 
 function _wireRadiografia() {
@@ -3545,8 +3580,9 @@ function renderProductividadEquipos() {
       <div style="margin-bottom:26px; border:1px solid #BFDBFE; border-radius:10px; padding:14px; background:#F8FBFF;">
         <div style="font-weight:700; color:#1D4ED8; font-size:14px; margin-bottom:6px;">⏱️ Rutina de cortes de programación (para coordinadores)</div>
         <div style="font-size:12px; color:#334155; line-height:1.7;">
-          <strong>L-V (meta 73/día):</strong> corte 12:00 → <strong>20</strong> · corte <strong>14:00 → 39</strong> <span style="color:#C2410C; font-weight:700;">(el corte que manda: la tarde no rescata una mañana muerta)</span> · corte 17:00 → <strong>56</strong> (última llamada con 2 h de reacción).
-          &nbsp;<strong>Sábado (meta 39):</strong> corte <strong>11:00 → 21</strong>.
+          <strong>L-V (progr. <span id="corte-prog-dia">—</span>/día):</strong> corte 12:00 → <strong id="corte-12">—</strong> · corte <strong>14:00 → <span id="corte-14">—</span></strong> <span style="color:#C2410C; font-weight:700;">(el corte que manda: la tarde no rescata una mañana muerta)</span> · corte 17:00 → <strong id="corte-17">—</strong> (última llamada con 2 h de reacción).
+          &nbsp;<strong>Sábado (progr. <span id="corte-prog-sab">—</span>):</strong> corte 11:00 → <strong id="corte-11s">—</strong>.
+          <span id="corte-fuente" style="color:#94A3B8; font-size:11px;"></span>
           <br><strong>Regla de reacción:</strong> supervisor <strong>2+ programaciones abajo</strong> de su ruta al corte → acción en la hora siguiente (barrido de leads calientes con ese equipo, o el coordinador se sienta en esa isla). Nada de "échale ganas": qué-hacer concreto.
           <br><strong>Canal:</strong> cada coordinador publica sus 3 cortes en su grupo con el mismo formato ("14:00 → 13/15 · Carlos −2 → barrido"); dirección solo mira el corte de las 14:00 de los tres.
           <span style="color:#64748B;">Los cortes son proporcionales a la meta diaria vigente (53% a las 14:00 L-V y a las 11:00 sábado); si la plantilla o la meta cambian, se recorren igual.</span>
@@ -17741,8 +17777,16 @@ async function exportarPivoteEquipos() {
       }
       return d;
     };
-    const mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;
-    const anioSig = mesSig === 1 ? anioAct + 1 : anioAct;
+    // Mes a proyectar: en la primera quincena, el MES EN CURSO (recién arrancado);
+    // del 16 en adelante, el mes siguiente (compra anticipada).
+    let mesSig, anioSig;
+    if (hoyF.getDate() <= 15) {
+      mesSig = hoyF.getMonth() + 1;
+      anioSig = anioAct;
+    } else {
+      mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;
+      anioSig = mesSig === 1 ? anioAct + 1 : anioAct;
+    }
     const dhSig = diasHabilesMes(anioSig, mesSig);
 
     // Agentes activos que TENÍAMOS cada mes (al último día del mes)
