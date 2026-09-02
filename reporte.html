@@ -2505,6 +2505,9 @@ async function cargarDatos() {
     (_entregasCache || []).forEach(e => {
       if (e && e.folio && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
     });
+    // Las entregas llegan DESPUÉS del primer render: recalcular el detalle
+    // por agente con el ajuste DHL ya disponible (mismo motor que Comisiones).
+    _recalcularComisionesDetalle();
   });
 
   const { data: supConfig } = await db.from('supervisores_config').select('*').order('centro').order('orden');
@@ -17122,6 +17125,28 @@ function _wireAsistencia() {
   selM.onchange = renderAsistencia; selF.onchange = renderAsistencia;
   if (b) b.onclick = exportarAsistencia;
   renderAsistencia();
+}
+
+// Recalcula comisión y bracket del detalle por agente cuando ya hay folios DHL
+function _recalcularComisionesDetalle() {
+  try {
+    const D = window.__detalleAgentesData;
+    if (!D || !D.agentesPorSup) return;
+    const ms = `${D.anio}-${String(D.mes).padStart(2, '0')}`;
+    const vm = (ventasData || []).filter(v => v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms));
+    const pMap = {};
+    (plantillaData || []).forEach(p => { if (p && p.nombre) pMap[p.nombre] = p; });
+    Object.keys(D.agentesPorSup).forEach(supK => {
+      D.agentesPorSup[supK].forEach(a => {
+        try {
+          const pC = pMap[a.ejecutivo] || {};
+          const c = _comCalcularAgenteMes(a.ejecutivo, pC.fecha_ingreso || null, pC.fecha_baja || null, D.anio, D.mes, vm);
+          a.comMes = (c.comisionPlanes || 0) + (c.bonoAcelerador || 0);
+          a.bracketLbl = c.nivelAlcanzado > 0 ? c.etiquetaNivel : '—';
+        } catch (e) { /* agente sin datos: se queda como estaba */ }
+      });
+    });
+  } catch (e) { console.warn('[ComDetalle]', e); }
 }
 
 function arrancarReporte() {
