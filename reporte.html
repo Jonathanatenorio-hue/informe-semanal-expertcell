@@ -6986,11 +6986,6 @@ function renderDetalleAgentesConMes(mesKey) {
   });
 
   window.__detalleAgentesData = { agentesPorSup, supervisoresData, mes: mesSel, anio: anioSel, diasTranscurridos, diasHabilesTotales };
-  // Si el prefetch de entregas terminó ANTES de que existiera el detalle,
-  // el ajuste DHL se aplica aquí (cubre ambos órdenes de llegada).
-  if (typeof _dhlFolios !== 'undefined' && _dhlFolios.size && typeof _recalcularComisionesDetalle === 'function') {
-    setTimeout(() => { try { _recalcularComisionesDetalle(); } catch (e) {} }, 0);
-  }
 
   const inactivosPorSup = {};
   let totalInactivos = 0;
@@ -17132,28 +17127,16 @@ function _wireAsistencia() {
   renderAsistencia();
 }
 
-// Recalcula comisión y bracket del detalle por agente cuando ya hay folios DHL
+// El motor de comisiones corre DENTRO de renderDetalleAgentesConMes, así que
+// cuando las entregas (folios DHL) llegan después del primer render, basta con
+// repintar el detalle UNA vez: el nuevo render ya calcula el neto solo.
 function _recalcularComisionesDetalle() {
   try {
     const D = window.__detalleAgentesData;
-    if (!D || !D.agentesPorSup) return;
-    const ms = `${D.anio}-${String(D.mes).padStart(2, '0')}`;
-    const vm = (ventasData || []).filter(v => v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms));
-    const pMap = {};
-    (plantillaData || []).forEach(p => { if (p && p.nombre) pMap[p.nombre] = p; });
-    Object.keys(D.agentesPorSup).forEach(supK => {
-      D.agentesPorSup[supK].forEach(a => {
-        try {
-          const pC = pMap[a.ejecutivo] || {};
-          const c = _comCalcularAgenteMes(a.ejecutivo, pC.fecha_ingreso || null, pC.fecha_baja || null, D.anio, D.mes, vm);
-          a.comMes = (c.comisionPlanes || 0) + (c.bonoAcelerador || 0);
-          a.bracketLbl = c.nivelAlcanzado > 0 ? c.etiquetaNivel : '—';
-        } catch (e) { /* agente sin datos: se queda como estaba */ }
-      });
-    });
-    // Repintar el detalle: la tabla se construye una vez y no lee cambios sola
+    if (!D || window.__dhlRepintado) return;
+    window.__dhlRepintado = true;
     if (typeof renderDetalleAgentesConMes === 'function') {
-      try { renderDetalleAgentesConMes(`${D.anio}-${String(D.mes).padStart(2, '0')}`); } catch (e2) { /* sin detalle visible aún */ }
+      renderDetalleAgentesConMes(`${D.anio}-${String(D.mes).padStart(2, '0')}`);
     }
   } catch (e) { console.warn('[ComDetalle]', e); }
 }
