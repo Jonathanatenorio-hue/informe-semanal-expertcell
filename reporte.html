@@ -3067,13 +3067,30 @@ function renderRadiografiaObjetivos() {
   else if (filtro.startsWith('coord:')) sups = sups.filter(s => (coordDe[s] || '') === filtro.slice(6));
   else if (filtro.startsWith('sup:')) sups = sups.filter(s => s === filtro.slice(4));
 
+  // Composición por tipo (bandas de metas: 7-41 N · 42-89 I · 90+ M, días al día 1)
+  const dia1R = new Date(anioR, mesHoy - 1, 1);
+  const compPorSup = {};
+  const agentesTipo = [];
+  (plantillaData || []).forEach(p => {
+    if (!p || !p.nombre || !sups.includes(p.supervisor)) return;
+    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) < mesIniStr) return;
+    const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+    if (!ing) return;
+    const diasT = Math.floor((dia1R - new Date(ing + 'T12:00:00')) / 86400000) + 1;
+    if (diasT < 7) return;   // ingresos del mes viven en "Sin meta"
+    const t = diasT <= 41 ? 'N' : diasT <= 89 ? 'I' : 'M';
+    const c = compPorSup[p.supervisor] || (compPorSup[p.supervisor] = { N: 0, I: 0, M: 0 });
+    c[t]++;
+    agentesTipo.push({ t, v: vtasMesAg[p.nombre] || 0 });
+  });
+
   const filasR = [];
   sups.forEach(sup => {
     try {
       const fs = _calcularAnalisisAnualSupervisor(sup, anioR);
       const f = (fs || []).find(x => x.mes === mesHoy);
       if (!f || (!f.meta && !f.ventas && !f.totalAgentes)) return;
-      filasR.push({ sup, centro: centroDe[sup] || '—', coord: coordDe[sup] || '—', ...f, sm: sinMetaPorSup[sup] || { n: 0, rampa: 0, vtas: 0, diasEf: 0 } });
+      filasR.push({ sup, centro: centroDe[sup] || '—', coord: coordDe[sup] || '—', ...f, comp: compPorSup[sup] || { N: 0, I: 0, M: 0 }, sm: sinMetaPorSup[sup] || { n: 0, rampa: 0, vtas: 0, diasEf: 0 } });
     } catch (e) { console.warn('[Radiografia]', sup, e); }
   });
   if (!filasR.length) { cont.innerHTML = '<div style="padding:14px; color:var(--text-soft); font-size:12px;">Sin datos para este filtro en el mes en curso.</div>'; window.__radiografiaData = null; return; }
@@ -3086,8 +3103,6 @@ function renderRadiografiaObjetivos() {
     const metaProg = Math.ceil((r.meta || 0) * 1.1);
     const objDia = dh > 0 ? r.meta / dh : 0;
     const objDiaProg = dh > 0 ? metaProg / dh : 0;
-    const metaXAg = r.totalAgentes > 0 ? r.meta / r.totalAgentes : 0;
-    const promXAg = r.totalAgentes > 0 ? r.ventas / r.totalAgentes : 0;
     const esperado = dh > 0 ? r.meta / dh * dt : 0;
     const dif = r.ventas - esperado;
     const okD = dif >= 0;
@@ -3103,17 +3118,17 @@ function renderRadiografiaObjetivos() {
       <td style="padding:6px 8px; text-align:right; font-weight:700; color:#5B3A8E;">${metaProg}</td>
       <td style="padding:6px 8px; text-align:right;">${F1(objDia)}</td>
       <td style="padding:6px 8px; text-align:right; color:#5B3A8E;">${F1(objDiaProg)}</td>
-      <td style="padding:6px 8px; text-align:right;">${F1(metaXAg)}</td>
+      <td style="padding:6px 8px; text-align:center; font-size:11px; font-weight:600;">${r.comp ? `<span style="color:#0077A8;">${r.comp.N}</span>·<span style="color:#B45309;">${r.comp.I}</span>·<span style="color:#166534;">${r.comp.M}</span>` : '—'}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700;">${r.ventas || 0}</td>
-      <td style="padding:6px 8px; text-align:right;">${F1(promXAg)}</td>
       <td style="padding:6px 8px; text-align:right;">${F1(esperado)}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700; color:${okD ? '#16A34A' : '#DC2626'};">${okD ? '+' : ''}${F1(dif)}</td>
     </tr>`;
   };
   const suma = arr => {
-    const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+    const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
     arr.forEach(r => {
       t.meta += r.meta || 0; t.ventas += r.ventas || 0; t.totalAgentes += r.totalAgentes || 0;
+      if (r.comp) { t.comp.N += r.comp.N; t.comp.I += r.comp.I; t.comp.M += r.comp.M; }
       if (r.sm) { t.sm.n += r.sm.n; t.sm.rampa += r.sm.rampa; t.sm.vtas += r.sm.vtas; t.sm.diasEf += r.sm.diasEf; }
     });
     return t;
@@ -3131,8 +3146,22 @@ function renderRadiografiaObjetivos() {
   const tot = suma(filasR); tot.sup = 'TOTAL';
   cuerpo += fila(tot, false, true);
   const th = t => `<th style="padding:7px 8px; background:var(--att-navy); color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
-  cont.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Meta programadas (110%)', 'Obj. diario act.', 'Obj. diario prog.', 'Meta × agente', 'Activadas hoy', 'Prom. × agente', 'Esperado hoy', 'Δ vs esperado'].map(th).join('')}</tr></thead>
+  const franjaHTML = (() => {
+    const dh = filasR[0].diasHabilesMes || 0, dt = filasR[0].diasTrans || 0;
+    if (dh <= 0) return '';
+    const g = { N: { v: 0, e: 0, n: 0 }, I: { v: 0, e: 0, n: 0 }, M: { v: 0, e: 0, n: 0 } };
+    const banda = { N: 6, I: 8, M: 12 };
+    agentesTipo.forEach(a => { const x = g[a.t]; x.n++; x.v += a.v; x.e += banda[a.t] * dt / dh; });
+    const seg = (lbl, k, col) => {
+      const x = g[k];
+      if (!x.n) return '';
+      const pct = x.e > 0 ? x.v / x.e * 100 : 0;
+      return `<span style="margin-right:16px;"><strong style="color:${col};">${lbl}</strong> ${x.v}/${x.e.toFixed(0)} <strong style="color:${pct >= 100 ? '#16A34A' : pct >= 80 ? '#B45309' : '#DC2626'};">(${x.e > 0 ? pct.toFixed(0) : '—'}%)</strong> · ${x.n} ag.</span>`;
+    };
+    return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado por curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
+  })();
+  cont.innerHTML = franjaHTML + `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Meta programadas (110%)', 'Obj. diario act.', 'Obj. diario prog.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado'].map(th).join('')}</tr></thead>
     <tbody>${cuerpo}</tbody></table>
     <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · Programadas = 110% de la meta de activadas · Sin meta: ventas por día hábil EFECTIVO (desde el lunes posterior a su semana de capacitación) vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día (verde = arriba) · 🎓 = aún en capacitación.</div>`;
 }
@@ -3273,7 +3302,7 @@ function exportarRadiografiaObjetivos() {
 
 // ===== AGENTES EN RIESGO v2: cumplimiento vs CURVA esperada por antigüedad =====
 const CURVA_ESPERADA = { nuevo: 6, medio: 8, maduro: 12 };
-const _espPorDias = d => d <= 0 ? 0 : d <= 42 ? 6 : d <= 89 ? 8 : 12;
+const _espPorDias = d => d <= 0 ? 0 : d <= 41 ? 6 : d <= 89 ? 8 : 12;
 
 function _calcularRiesgo(filtro) {
   const hoy = new Date();
@@ -3327,7 +3356,7 @@ function _calcularRiesgo(filtro) {
     const ingD = new Date(ing + 'T12:00:00');
     const diasHoy = Math.floor((dia1 - ingD) / 86400000) + 1;
     if (diasHoy <= 0) return;   // ingreso del mes: se mide por día efectivo, no aquí
-    const tipo = diasHoy <= 42 ? 'nuevo' : diasHoy <= 89 ? 'medio' : 'maduro';
+    const tipo = diasHoy <= 41 ? 'nuevo' : diasHoy <= 89 ? 'medio' : 'maduro';
     const v = vtas[p.nombre] || {};
     // Serie: cada mes cerrado contra la curva de SU antigüedad en ese mes
     const serie = mesesC.map(mc => {
@@ -17286,6 +17315,97 @@ function _recalcularComisionesDetalle() {
     }
   } catch (e) { console.warn('[ComDetalle]', e); }
 }
+
+// ===== MEJORADOR UNIVERSAL DE TABLAS: ordenar por columna + ocultar columnas =====
+(function () {
+  const css = document.createElement('style');
+  css.textContent = `
+    th.tbl-sortable { cursor: pointer; user-select: none; }
+    th .tbl-hide { opacity: .3; margin-left: 4px; cursor: pointer; font-weight: 900; }
+    th:hover .tbl-hide { opacity: .9; }
+    .tbl-restore { font-size: 10px; margin: 2px 0 6px; padding: 2px 8px; border-radius: 6px; border: 1px solid #94A3B8; background: white; color: #334155; cursor: pointer; display: inline-block; }`;
+  document.head.appendChild(css);
+})();
+function _tblNum(t) {
+  const s = String(t).replace(/[$,%\s,]/g, '');
+  const m = s.match(/-?\d+(?:\.\d+)?/);
+  return m ? parseFloat(m[0]) : null;
+}
+function _tblEsTotal(tr) {
+  const t = (tr.cells[0] ? tr.cells[0].textContent : '').trim().toUpperCase();
+  return t.startsWith('TOTAL') || t.startsWith('SUBTOTAL') || t.startsWith('PROMEDIO') || t.startsWith('GLOBAL');
+}
+function _tblColRaw(tabla, i, ocultar) {
+  for (const tr of tabla.rows) { const c = tr.cells[i]; if (c) c.style.display = ocultar ? 'none' : ''; }
+}
+function _tblOcultarCol(tabla, i) {
+  _tblColRaw(tabla, i, true);
+  tabla._tblHidden = tabla._tblHidden || new Set();
+  tabla._tblHidden.add(i);
+  if (!tabla._tblChip) {
+    const chip = document.createElement('button');
+    chip.className = 'tbl-restore';
+    chip.type = 'button';
+    chip.onclick = () => {
+      (tabla._tblHidden || new Set()).forEach(j => _tblColRaw(tabla, j, false));
+      tabla._tblHidden = new Set();
+      chip.remove();
+      tabla._tblChip = null;
+    };
+    tabla.parentNode.insertBefore(chip, tabla);
+    tabla._tblChip = chip;
+  }
+  tabla._tblChip.textContent = `↩︎ Restaurar ${tabla._tblHidden.size} columna(s) oculta(s)`;
+}
+function _tblOrdenar(tabla, hRow, i) {
+  const body = tabla.tBodies[0];
+  if (!body) return;
+  const filas = [...body.rows].filter(r => r !== hRow && !r.querySelector('th'));
+  const tot = filas.filter(_tblEsTotal), datos = filas.filter(r => !_tblEsTotal(r));
+  const dir = tabla.dataset['dir' + i] === 'desc' ? 'asc' : 'desc';
+  tabla.dataset['dir' + i] = dir;
+  datos.sort((a, b) => {
+    const ta = a.cells[i] ? a.cells[i].textContent.trim() : '';
+    const tb = b.cells[i] ? b.cells[i].textContent.trim() : '';
+    const na = _tblNum(ta), nb = _tblNum(tb);
+    const cmp = (na != null && nb != null) ? na - nb : ta.localeCompare(tb, 'es');
+    return dir === 'desc' ? -cmp : cmp;
+  });
+  datos.forEach(r => body.appendChild(r));
+  tot.forEach(r => body.appendChild(r));
+}
+function _tblPreparar(tabla) {
+  if (tabla.dataset.tblOk) return;
+  let hRow = null;
+  for (const tr of tabla.rows) { if (tr.querySelector('th')) { hRow = tr; break; } }
+  if (!hRow || hRow.cells.length < 2) { tabla.dataset.tblOk = '1'; return; }
+  let inseguro = false;
+  for (const tr of tabla.rows) {
+    if (tr === hRow) continue;
+    for (const c of tr.cells) { if (c.colSpan > 1 || c.rowSpan > 1) { inseguro = true; break; } }
+    if (inseguro) break;
+  }
+  tabla.dataset.tblOk = '1';
+  [...hRow.cells].forEach((th, i) => {
+    const btn = document.createElement('span');
+    btn.className = 'tbl-hide';
+    btn.textContent = '−';
+    btn.title = 'Ocultar columna';
+    btn.onclick = ev => { ev.stopPropagation(); _tblOcultarCol(tabla, i); };
+    th.appendChild(btn);
+    if (!inseguro) {
+      th.classList.add('tbl-sortable');
+      th.title = (th.title ? th.title + ' · ' : '') + 'Clic: ordenar mayor→menor';
+      th.addEventListener('click', () => _tblOrdenar(tabla, hRow, i));
+    }
+  });
+}
+(function () {
+  const correr = () => { try { document.querySelectorAll('table').forEach(_tblPreparar); } catch (e) {} };
+  const obs = new MutationObserver(() => { clearTimeout(window.__tblT); window.__tblT = setTimeout(correr, 400); });
+  obs.observe(document.body, { childList: true, subtree: true });
+  setTimeout(correr, 1500);
+})();
 
 function arrancarReporte() {
   agregarBotonSalir();
