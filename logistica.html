@@ -138,10 +138,12 @@ function campoDireccion(row) {
   return '';
 }
 function estadoDe(row) {
-  const dir = sinAcentos(campoDireccion(row));
+  const cpCol = String(row.cp || '').match(/\d{5}/);
+  if (cpCol && CP_EDO[cpCol[0].substring(0, 2)]) return CP_EDO[cpCol[0].substring(0, 2)];
+  const dir = sinAcentos((row.estado ? row.estado + ' | ' : '') + campoDireccion(row));
   const cp = dir.match(/\b(\d{5})\b/);
   if (cp && CP_EDO[cp[1].substring(0, 2)]) return CP_EDO[cp[1].substring(0, 2)];
-  const NOM = { 'CIUDAD DE MEXICO':'CDMX','CDMX':'CDMX','ESTADO DE MEXICO':'MEX','EDO. MEX':'MEX','NUEVO LEON':'NL','MONTERREY':'NL','JALISCO':'JAL','GUADALAJARA':'JAL','PUEBLA':'PUE','VERACRUZ':'VER','YUCATAN':'YUC','QUINTANA ROO':'QROO','BAJA CALIFORNIA SUR':'BCS','BAJA CALIFORNIA':'BC','CHIHUAHUA':'CHIH','SONORA':'SON','SINALOA':'SIN','COAHUILA':'COAH','TAMAULIPAS':'TAM','GUANAJUATO':'GTO','QUERETARO':'QRO','MICHOACAN':'MICH','OAXACA':'OAX','CHIAPAS':'CHIS','TABASCO':'TAB','GUERRERO':'GRO','MORELOS':'MOR','HIDALGO':'HGO','TLAXCALA':'TLAX','AGUASCALIENTES':'AGS','ZACATECAS':'ZAC','DURANGO':'DGO','SAN LUIS POTOSI':'SLP','NAYARIT':'NAY','COLIMA':'COL','CAMPECHE':'CAMP','TOLUCA':'MEX' };
+  const NOM = { 'CIUDAD DE MEXICO':'CDMX','CDMX':'CDMX','ESTADO DE MEXICO':'MEX','EDO. MEX':'MEX','NUEVO LEON':'NL','MONTERREY':'NL','JALISCO':'JAL','GUADALAJARA':'JAL','PUEBLA':'PUE','VERACRUZ':'VER','YUCATAN':'YUC','QUINTANA ROO':'QROO','BAJA CALIFORNIA SUR':'BCS','BAJA CALIFORNIA':'BC','CHIHUAHUA':'CHIH','SONORA':'SON','SINALOA':'SIN','COAHUILA':'COAH','TAMAULIPAS':'TAM','GUANAJUATO':'GTO','QUERETARO':'QRO','MICHOACAN':'MICH','OAXACA':'OAX','CHIAPAS':'CHIS','TABASCO':'TAB','GUERRERO':'GRO','MORELOS':'MOR','HIDALGO':'HGO','TLAXCALA':'TLAX','AGUASCALIENTES':'AGS','ZACATECAS':'ZAC','DURANGO':'DGO','SAN LUIS POTOSI':'SLP','NAYARIT':'NAY','COLIMA':'COL','CAMPECHE':'CAMP','TOLUCA':'MEX','MEXICO':'MEX' };
   for (const n of Object.keys(NOM)) if (dir.includes(n)) return NOM[n];
   return null;
 }
