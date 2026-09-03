@@ -3292,6 +3292,13 @@ function renderRadiografiaObjetivos() {
     <tbody>${cuerpo}</tbody></table>
     <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · <strong>Programación:</strong> factor por centro medido en ${convC.meses.join(', ')} → CC2 ${convC.CC2.factor.toFixed(3)} (conv. ${(convC.CC2.conv * 100).toFixed(1)}%${convC.CC2.estimado ? ', estimado' : ''}) · JV ${convC.JV.factor.toFixed(3)} (conv. ${(convC.JV.conv * 100).toFixed(1)}%${convC.JV.estimado ? ', estimado' : ''}) · Faltan = meta − activadas − tránsito × conversión · Progr. requeridas = faltan × factor · Último día útil de programación: <strong>${ventana.limLbl}</strong> (rezago BO→activación p90 = ${ventana.rezago.dias} días${ventana.rezago.medido ? `, medido sobre ${ventana.rezago.n} activaciones, mediana ${ventana.rezago.mediana}` : ', valor de respaldo'}) → ${F1(ventana.utilesMes)} días útiles en el mes, ${F1(ventana.utiles)} restantes · Progr./día plan = (meta − arrastre × conversión) × factor ÷ días útiles del mes (el arrastre es lo programado el mes anterior que activa en este: ya cubre meta sin programar) · Progr./día requerida = requeridas ÷ días útiles restantes · Estado: en ritmo ≤ 105% del plan · acelerar ≤ 130% · meta comprometida > 130% (decisión de dirección, no de presión al corte) · Sin meta: ventas por día hábil EFECTIVO vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día · 🎓 = aún en capacitación.</div>
     ${_matrizCumplimientoHTML(filasR, factorDia, hoyStrR, tot)}`;
+  // Ancho real de la columna Supervisor para fijar la de Obj./día justo a su derecha
+  setTimeout(() => {
+    const tb = document.getElementById('matriz-cumpl-diario');
+    if (!tb) return;
+    const c0 = tb.querySelector('thead th');
+    if (c0) tb.style.setProperty('--mcd-w', c0.getBoundingClientRect().width + 'px');
+  }, 0);
 }
 
 // ===== MATRIZ DE CUMPLIMIENTO DIARIO DE PROGRAMACIÓN (supervisor × día hábil cerrado) =====
@@ -3311,7 +3318,8 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
     dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; if (v < obj) faltaron += obj - v; tds += celda(v, obj, (r.progDiaCanc || {})[f] || 0); });
     const pct = acumObj > 0 ? acum / acumObj * 100 : 0;
     const dAc = acum - acumObj;
-    return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px;">${r.sup}</td><td style="padding:4px 6px; text-align:center; font-weight:700; color:#B45309; background:#FFFBEB; white-space:nowrap;" title="Objetivo por día hábil (sábado = la mitad)">${(r.progDiaPlan || 0).toFixed(1)}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${dAc >= 0 ? '#166534' : '#991B1B'};">${dAc >= 0 ? '+' : ''}${dAc.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:700; color:#991B1B; background:#FFF1F2;" title="Suma de lo que faltó en los días que quedó abajo del plan (los días que se pasó no compensan)">${faltaron > 0 ? faltaron.toFixed(0) : '—'}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
+    const bgFijo = esTot ? '#DDEBF7' : 'white';
+    return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px; position:sticky; left:0; background:${bgFijo}; z-index:2;">${r.sup}</td><td style="padding:4px 6px; text-align:center; font-weight:700; color:#B45309; background:${esTot ? '#DDEBF7' : '#FFFBEB'}; white-space:nowrap; position:sticky; left:var(--mcd-w, 120px); z-index:2; box-shadow:2px 0 0 #E2E8F0;" title="Objetivo por día hábil (sábado = la mitad)">${(r.progDiaPlan || 0).toFixed(1)}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${dAc >= 0 ? '#166534' : '#991B1B'};">${dAc >= 0 ? '+' : ''}${dAc.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:700; color:#991B1B; background:#FFF1F2;" title="Suma de lo que faltó en los días que quedó abajo del plan (los días que se pasó no compensan)">${faltaron > 0 ? faltaron.toFixed(0) : '—'}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
   };
   const rojosSeguidos = filasR.map(r => {
     let n = 0; for (let i = dias.length - 1; i >= 0; i--) { const f = dias[i]; const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; if (obj > 0 && v / obj < 0.8) n++; else break; }
@@ -3320,8 +3328,8 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
   return `<div style="margin-top:16px;">
     <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:4px;">📆 Cumplimiento diario de programación (cierre del día vs plan)</div>
     <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;"><strong>Obj./día</strong> es el objetivo de programaciones de cada supervisor (sábado = la mitad). Cada celda: lo que programó ese día y, si no llegó, cuánto le faltó. Cuenta toda programación con fecha de back office ese día, incluidas las que luego se cancelaron. Verde ≥ 100% · ámbar 80-99% · rojo < 80% · <strong>Δ acum.</strong> = programadas − plan del mes a la fecha · <strong>Faltaron</strong> = suma de lo que faltó en los días rojos/ámbar (un día bueno no borra uno malo) · el <sup style="color:#991B1B; font-weight:800;">−n</sup> chiquito = cuántas de esas programaciones ya se cancelaron (cuentan como actividad; el factor ya descuenta lo que se cae). ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
-    <div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:11px;">
-      <thead><tr>${th('Supervisor')}<th style="padding:5px 6px; background:#B45309; color:white; font-size:10px; white-space:nowrap; text-align:center;">Obj./día</th>${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('Δ acum.')}${th('Faltaron')}${th('%')}</tr></thead>
+    <div style="overflow-x:auto;"><table id="matriz-cumpl-diario" data-sticky-manual="1" style="border-collapse:separate; border-spacing:0; font-size:11px;">
+      <thead><tr><th style="padding:5px 6px; background:var(--att-navy); color:white; font-size:10px; white-space:nowrap; text-align:left; position:sticky; left:0; z-index:3;">Supervisor</th><th style="padding:5px 6px; background:#B45309; color:white; font-size:10px; white-space:nowrap; text-align:center; position:sticky; left:var(--mcd-w, 120px); z-index:3;">Obj./día</th>${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('Δ acum.')}${th('Faltaron')}${th('%')}</tr></thead>
       <tbody>${filasR.map(r => filaM(r, false)).join('')}${filaM(tot, true)}</tbody>
     </table></div></div>`;
 }
@@ -17982,10 +17990,37 @@ function _tblPreparar(tabla) {
     }
   });
 }
+// ===== PRIMERA COLUMNA FIJA en cualquier tabla que haga scroll horizontal =====
+// Regla universal: si la tabla es más ancha que su contenedor, la primera columna
+// (normalmente el nombre) se queda pegada a la izquierda al deslizar.
+function _tblFijarPrimeraCol(tabla) {
+  if (!tabla || !tabla.rows || tabla.rows.length < 2) return;
+  if (tabla.dataset.stickyManual === '1') return;
+  const cont = tabla.parentElement;
+  if (!cont) return;
+  const desborda = tabla.scrollWidth > cont.clientWidth + 4 || cont.scrollWidth > cont.clientWidth + 4;
+  const ya = tabla.dataset.sticky1 === '1';
+  if (!desborda) {
+    if (ya) { [...tabla.rows].forEach(tr => { const c = tr.cells[0]; if (c) { c.style.position = ''; c.style.left = ''; c.style.zIndex = ''; if (c.dataset.bgFix) { c.style.backgroundColor = ''; delete c.dataset.bgFix; } } }); delete tabla.dataset.sticky1; }
+    return;
+  }
+  if (ya) return;
+  const fondo = el => { let n = el; while (n && n !== document.body) { const bg = getComputedStyle(n).backgroundColor; if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg; n = n.parentElement; } return '#FFFFFF'; };
+  [...tabla.rows].forEach(tr => {
+    const c = tr.cells[0];
+    if (!c || c.colSpan > 1) return;
+    c.style.position = 'sticky'; c.style.left = '0'; c.style.zIndex = c.tagName === 'TH' ? '3' : '2';
+    const propio = getComputedStyle(c).backgroundColor;
+    if (!propio || propio === 'rgba(0, 0, 0, 0)' || propio === 'transparent') { c.style.backgroundColor = fondo(tr); c.dataset.bgFix = '1'; }
+    c.style.boxShadow = '2px 0 0 rgba(0,0,0,0.06)';
+  });
+  tabla.dataset.sticky1 = '1';
+}
 (function () {
-  const correr = () => { try { document.querySelectorAll('table').forEach(_tblPreparar); } catch (e) {} };
+  const correr = () => { try { document.querySelectorAll('table').forEach(t => { _tblPreparar(t); _tblFijarPrimeraCol(t); }); } catch (e) {} };
   const obs = new MutationObserver(() => { clearTimeout(window.__tblT); window.__tblT = setTimeout(correr, 400); });
   obs.observe(document.body, { childList: true, subtree: true });
+  window.addEventListener('resize', () => { clearTimeout(window.__tblT); window.__tblT = setTimeout(correr, 300); });
   setTimeout(correr, 1500);
 })();
 
