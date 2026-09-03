@@ -689,13 +689,13 @@ async function procesar() {
       }
       const folio = limpiarFolio(r.Folio);
       if (folio && folio !== 'null') {
-        canPorFolio[folio] = { fecha: fechaCanc, hora: horaCancStr };
+        canPorFolio[folio] = { fecha: fechaCanc, hora: horaCancStr, fechaBO, fila: r };
         const tel = normalizarTelefono(r['Telefono cliente']);
         if (tel) canTelPorFolio[folio] = tel;
       }
     });
     log(`${Object.keys(canPorFolio).length} canceladas con BO (post-BO)`, 'ok');
-    log(`${canceladasPreBO.length} canceladas pre-BO (se ignoran)`, 'warn');
+    log(`${canceladasPreBO.length} canceladas pre-BO (van a canceladas_pre_bo, no cuentan como programadas)`, 'info');
 
     log('Leyendo folios atípicos ignorados desde Supabase...', 'info');
     const { data: ignData } = await db
@@ -856,8 +856,83 @@ async function procesar() {
       });
     }
 
+    // ===== CANCELADAS POST-BO QUE YA NO VIENEN EN EL BACKOFFICE =====
+    // El archivo de backoffice deja de traer los folios cancelados. Si un folio se
+    // canceló después de pasar por BO, es una PROGRAMADA que se perdió y debe existir
+    // en ventas_detalle como 'cancelada' (si no, la conversión sale inflada y el
+    // seguimiento de canceladas no la ve). Se toma del archivo de canceladas.
+    let canceladasHuerfanas = 0;
+    let canceladasReactivadas = 0;
+    for (const folio of Object.keys(canPorFolio)) {
+      if (foliosVistos.has(folio)) continue;           // ya vino en el backoffice
+      if (FOLIOS_IGNORAR.has(folio)) continue;
+      const c = canPorFolio[folio];
+      if (!c.fechaBO || c.fechaBO < FECHA_MIN_BO) continue;
+      const r = c.fila;
+      const ejecutivo = r.Ejecutivo;
+      const supervisor = resolverSupervisorPorFecha(ejecutivo, c.fechaBO, asignaciones);
+      let centroDetectado = null;
+      const centroTxt = String(r.Centro || '').toUpperCase();
+      if (centroTxt.includes('C CENTER 2') || centroTxt.includes('CCENTER 2')) centroDetectado = 'CC2';
+      else if (centroTxt.includes('JUAREZ 701') || centroTxt.includes('JUAREZ701') || centroTxt.includes('CCENTER JV') || centroTxt.includes('C CENTER JV')) centroDetectado = 'JV';
+      if (!supervisor && !centroDetectado) { sinSupervisor++; if (ejecutivo) ejecutivosSinResolver.add(ejecutivo); continue; }
+      foliosVistos.add(folio);
+      // Si el folio aparece ACTIVADO después de la cancelación (reactivación con el
+      // mismo folio), manda la activación.
+      const actInfo = actPorFolio[folio] || actSupabasePorFolio[folio];
+      let reactivada = false;
+      if (actInfo && c.fecha) {
+        const tsAct = actInfo.fecha + 'T' + (actInfo.hora || '00:00:00');
+        const tsCan = c.fecha + 'T' + (c.hora || '23:59:59');
+        reactivada = tsAct > tsCan;
+      }
+      if (reactivada) canceladasReactivadas++; else canceladasHuerfanas++;
+      registros.push({
+        folio,
+        ejecutivo,
+        supervisor: supervisor || null,
+        supervisor_act: reactivada ? (resolverSupervisorPorFecha(ejecutivo, actInfo.fecha, asignaciones) || null) : null,
+        supervisor_can: reactivada ? null : (resolverSupervisorPorFecha(ejecutivo, c.fecha, asignaciones) || null),
+        fecha_bo: c.fechaBO,
+        etapa_entrega: r.Estatus ? String(r.Estatus).trim() : 'Canc Error',
+        fecha_activacion: reactivada ? actInfo.fecha : null,
+        hora_activacion: reactivada ? (actInfo.hora || null) : null,
+        fecha_cancelacion: reactivada ? null : c.fecha,
+        estatus: reactivada ? 'activada' : 'cancelada',
+        centro: centroDetectado,
+        plan: reactivada ? (actInfo.plan || null) : null,
+        precio: reactivada ? (actInfo.precio || null) : null,
+        renta_sin_impuestos: reactivada ? (actInfo.renta || null) : null,
+        telefono: canTelPorFolio[folio] || (actInfo && actInfo.telefono) || null,
+      });
+    }
+    if (canceladasHuerfanas > 0) log(`${canceladasHuerfanas} canceladas post-BO que ya no venían en el backoffice: se cargan como 'cancelada' (antes se perdían)`, 'ok');
+    if (canceladasReactivadas > 0) log(`${canceladasReactivadas} canceladas con reactivación posterior (mismo folio): se cargan como 'activada'`, 'info');
+
+    // ===== CANCELADAS PRE-BO → tabla aparte (negociación caída antes de back office) =====
+    state.registrosPreBO = [];
+    canceladasPreBO.forEach(r => {
+      const folio = limpiarFolio(r.Folio);
+      const fechaCanc = normalizarFecha(r['Fecha cancelacion']);
+      if (!folio || folio === 'null' || !fechaCanc || fechaCanc < FECHA_MIN_BO) return;
+      const ejecutivo = r.Ejecutivo || null;
+      const centroTxt = String(r.Centro || '').toUpperCase();
+      let centroDetectado = null;
+      if (centroTxt.includes('C CENTER 2') || centroTxt.includes('CCENTER 2')) centroDetectado = 'CC2';
+      else if (centroTxt.includes('JUAREZ 701') || centroTxt.includes('JUAREZ701') || centroTxt.includes('CCENTER JV') || centroTxt.includes('C CENTER JV')) centroDetectado = 'JV';
+      state.registrosPreBO.push({
+        folio,
+        ejecutivo,
+        supervisor: resolverSupervisorPorFecha(ejecutivo, fechaCanc, asignaciones) || null,
+        jefe_directo: r['Jefe directo'] ? String(r['Jefe directo']).trim() : null,
+        centro: centroDetectado,
+        fecha_cancelacion: fechaCanc,
+        telefono: normalizarTelefono(r['Telefono cliente']) || null,
+      });
+    });
+
     state.registros = registros;
-    state.foliosBO = foliosVistos; // todos los folios presentes en el backoffice de hoy
+    state.foliosBO = foliosVistos; // todos los folios presentes en el backoffice de hoy (+ canceladas post-BO)
     log(`${registros.length} registros válidos generados (del 2026)`, 'ok');
     if (ignoradosPorFecha > 0) log(`${ignoradosPorFecha} registros ignorados (BO anterior a 2026-01-01)`, 'info');
     if (ignoradosAtipicos > 0) log(`${ignoradosAtipicos} folios atípicos ignorados (casos especiales)`, 'info');
@@ -970,7 +1045,7 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
       <em>Estos registros NO se cargarán. Si necesitas incluirlos, agrega estos ejecutivos a la tabla de asignaciones primero.</em></div></div>`;
   }
   if (canPreBO > 0) {
-    alertas += `<div class="alert warn"><div>ℹ️</div><div>${canPreBO} canceladas pre-BO (sin llegar a backoffice) se ignoraron. No afectan programadas.</div></div>`;
+    alertas += `<div class="alert warn"><div>ℹ️</div><div>${canPreBO} canceladas pre-BO (sin llegar a backoffice) se guardan aparte en <code>canceladas_pre_bo</code>. No cuentan como programadas.</div></div>`;
   }
   if (!alertas) {
     alertas = `<div class="alert success"><div>✅</div><div>Todos los registros se resolvieron correctamente.</div></div>`;
@@ -1094,6 +1169,21 @@ async function cargarASupabase() {
       .from('ventas_detalle')
       .select('*', { count: 'exact', head: true });
     log(`Total acumulado en Supabase: ${verifyCount} registros`, 'ok');
+
+    // ===== Canceladas pre-BO (tabla aparte, upsert por folio) =====
+    if (state.registrosPreBO && state.registrosPreBO.length > 0) {
+      try {
+        log(`Acumulando ${state.registrosPreBO.length} canceladas pre-BO en canceladas_pre_bo...`, 'info');
+        for (let i = 0; i < state.registrosPreBO.length; i += batchSize) {
+          const lote = state.registrosPreBO.slice(i, i + batchSize);
+          const { error: ePre } = await db.from('canceladas_pre_bo').upsert(lote, { onConflict: 'folio' });
+          if (ePre) { log('⚠️ No se pudieron guardar las pre-BO (¿existe la tabla canceladas_pre_bo?): ' + ePre.message, 'warn'); break; }
+        }
+        log('Canceladas pre-BO guardadas', 'ok');
+      } catch (ePre2) {
+        log('Aviso: canceladas pre-BO no guardadas: ' + ePre2.message, 'warn');
+      }
+    }
 
     // ===== Cargar entregas (si hay datos del 4to Excel) =====
     if (state.registrosEntregas && state.registrosEntregas.length > 0) {
