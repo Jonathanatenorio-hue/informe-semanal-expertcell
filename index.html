@@ -396,8 +396,7 @@ function procesarEntregas(rows) {
 
   for (const r of rows) {
     if (!r) continue;
-    const ventaCodigo = r['Venta'];
-    if (!ventaCodigo || String(ventaCodigo).trim() === '') continue;
+    const ventaCodigo = r['Venta'];   // vacío en programadas/en ruta: se acepta igual (el folio manda)
     const folio = limpiarFolio(r['Folio']);
     if (!folio || folio === 'null') continue;
 
