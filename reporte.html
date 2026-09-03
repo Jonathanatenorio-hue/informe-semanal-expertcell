@@ -3072,7 +3072,7 @@ function renderRadiografiaObjetivos() {
   const compPorSup = {};
   const agentesTipo = [];
   const metaAgMesR = {};
-  (metasAgeData || []).forEach(m => { if (m.anio === anioR && m.mes === mesHoy && m.ejecutivo) metaAgMesR[m.ejecutivo] = parseFloat(m.meta) || 0; });
+  (metasAgeData || []).forEach(m => { if (m.anio === anioR && m.mes === mesHoy && m.ejecutivo) metaAgMesR[m.ejecutivo] = parseFloat(m.meta_activadas) || 0; });
   (plantillaData || []).forEach(p => {
     if (!p || !p.nombre || !sups.includes(p.supervisor)) return;
     if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) < mesIniStr) return;
@@ -3159,9 +3159,9 @@ function renderRadiografiaObjetivos() {
       const x = g[k];
       if (!x.n) return '';
       const pct = x.e > 0 ? x.v / x.e * 100 : 0;
-      return `<span style="margin-right:16px;"><strong style="color:${col};">${lbl}</strong> ${x.n} ag · meta ${Math.round(x.m || 0)} (prom ${x.n ? ((x.m || 0) / x.n).toFixed(1) : '0'}) · avance ${x.v}/${x.e.toFixed(0)} <strong style="color:${pct >= 100 ? '#16A34A' : pct >= 80 ? '#B45309' : '#DC2626'};">(${x.e > 0 ? pct.toFixed(0) : '—'}%)</strong></span>`;
+      return `<span style="margin-right:16px;"><strong style="color:${col};">${lbl}</strong> ${x.n} ag · avance ${x.v}/${x.e.toFixed(0)} <strong style="color:${pct >= 100 ? '#16A34A' : pct >= 80 ? '#B45309' : '#DC2626'};">(${x.e > 0 ? pct.toFixed(0) : '—'}%)</strong></span>`;
     };
-    return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado por curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
+    return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado al ritmo del mes; con meta cargada usa la meta real, si no la curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
   })();
   cont.innerHTML = franjaHTML + `<table style="width:100%; border-collapse:collapse; font-size:12px;">
     <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Meta programadas (110%)', 'Obj. diario act.', 'Obj. diario prog.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado'].map(th).join('')}</tr></thead>
@@ -3818,6 +3818,15 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       else tipoPorAgente[m.ejecutivo] = 'maduro';
     });
 
+    // Meta por tipo (suma de meta_activadas de metas_agente según el tipo del agente ese mes)
+    let metaNuevos = 0, metaMedios = 0, metaMaduros = 0;
+    metasMesSup.forEach(m => {
+      const mv = m.meta_activadas || 0;
+      if (tipoPorAgente[m.ejecutivo] === 'nuevo') metaNuevos += mv;
+      else if (tipoPorAgente[m.ejecutivo] === 'medio') metaMedios += mv;
+      else metaMaduros += mv;
+    });
+
     // Contar agentes (incluye los que estuvieron aunque sea parte del mes)
     let totalAgentes = 0, agentesNuevos = 0, agentesMedios = 0, agentesMaduros = 0, agentesCumplidos = 0, agentesSinMeta = 0;
     metasMesSup.forEach(m => {
@@ -3899,6 +3908,9 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     });
 
     const pctLogro = metaSupTotal > 0 ? (ventas / metaSupTotal * 100) : 0;
+    const pctLogroNuevos = metaNuevos > 0 ? (ventasNuevos / metaNuevos * 100) : 0;
+    const pctLogroMedios = metaMedios > 0 ? (ventasMedios / metaMedios * 100) : 0;
+    const pctLogroMaduros = metaMaduros > 0 ? (ventasMaduros / metaMaduros * 100) : 0;
     const diasHabilesMes = diasHabilesPorMes[mes] || 0;
     // Sin meta: ingresos del mes, rampa de 7 días (entran en lunes), días hábiles EFECTIVOS
     const _sm = { n: 0, rampa: 0, vtas: 0, diasEf: 0 };
@@ -3938,12 +3950,18 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       mes,
       esMesEnCurso,
       meta: metaSupTotal,
+      metaNuevos,
+      metaMedios,
+      metaMaduros,
       ventas,
       ventasNuevos,
       ventasMedios,
       ventasMaduros,
       ventasSinMeta,
       pctLogro,
+      pctLogroNuevos,
+      pctLogroMedios,
+      pctLogroMaduros,
       totalAgentes,
       agentesNuevos,
       agentesMedios,
@@ -4032,7 +4050,21 @@ function _aasFormulas(ws, filas, rk) {
       cell.f = fB(L);
     });
   };
-  if (R('meta') && R('ventas')) put('pctLogro', L => `IF(${L}${R('meta')}>0,${L}${R('ventas')}/${L}${R('meta')}*100,0)`);
+  // Totales como suma de sus componentes
+  if (R('agentesNuevos') && R('agentesMedios') && R('agentesMaduros'))
+    put('totalAgentes', L => `${L}${R('agentesNuevos')}+${L}${R('agentesMedios')}+${L}${R('agentesMaduros')}`);
+  if (R('metaNuevos') && R('metaMedios') && R('metaMaduros'))
+    put('meta', L => `${L}${R('metaNuevos')}+${L}${R('metaMedios')}+${L}${R('metaMaduros')}`);
+  if (R('ventasNuevos') && R('ventasMedios') && R('ventasMaduros') && R('ventasSinMeta'))
+    put('ventas', L => `${L}${R('ventasNuevos')}+${L}${R('ventasMedios')}+${L}${R('ventasMaduros')}+${L}${R('ventasSinMeta')}`);
+  // % logro por tipo y general
+  const pct = (k, vk, mk) => {
+    if (R(vk) && R(mk)) put(k, L => `IF(${L}${R(mk)}>0,${L}${R(vk)}/${L}${R(mk)}*100,0)`);
+  };
+  pct('pctLogroNuevos', 'ventasNuevos', 'metaNuevos');
+  pct('pctLogroMedios', 'ventasMedios', 'metaMedios');
+  pct('pctLogroMaduros', 'ventasMaduros', 'metaMaduros');
+  pct('pctLogro', 'ventas', 'meta');
   const prod = (k, vk, ak) => {
     if (R(vk) && R(ak) && R('diasTrans') && R('diasHabilesMes'))
       put(k, L => `IF(AND(${L}${R(ak)}>0,${L}${R('diasTrans')}>0),${L}${R(vk)}/${L}${R(ak)}/${L}${R('diasTrans')}*${L}${R('diasHabilesMes')},0)`);
@@ -4061,49 +4093,55 @@ function renderAnalisisAnualSupervisor(sup, anio) {
   // Estructura de la tabla: grupos de filas
   const grupos = [
     {
-      titulo: '🎯 META Y LOGRO',
-      color: '#DBEAFE',
-      colorBorde: '#3B82F6',
-      colorTexto: '#1E3A8A',
-      filas: [
-        { label: 'Meta', key: 'meta', fmt: v => v > 0 ? v : '—' },
-        { label: 'Ventas', key: 'ventas', fmt: v => _fmtNum(v) },
-        { label: '% Logro', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
-      ]
-    },
-    {
-      titulo: '💰 VENTAS POR TIPO',
-      color: '#BAE6FD',
-      colorBorde: '#0EA5E9',
-      colorTexto: '#075985',
-      filas: [
-        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
-      ]
-    },
-    {
       titulo: '👥 EQUIPO',
-      color: '#CFFAFE',
-      colorBorde: '#06B6D4',
-      colorTexto: '#0E7490',
+      color: '#CFFAFE', colorBorde: '#06B6D4', colorTexto: '#0E7490',
       filas: [
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes medios (42-89d)', key: 'agentesMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
       ]
     },
     {
+      titulo: '🎯 META',
+      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
+      filas: [
+        { label: 'Meta nuevos', key: 'metaNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta medios', key: 'metaMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta maduros', key: 'metaMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta total', key: 'meta', fmt: v => v > 0 ? v : '—' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS',
+      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
+      filas: [
+        { label: 'Ventas nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
+        { label: 'Ventas medios', key: 'ventasMedios', fmt: v => _fmtNum(v) },
+        { label: 'Ventas maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) },
+        { label: 'Ventas total', key: 'ventas', fmt: v => _fmtNum(v) }
+      ]
+    },
+    {
+      titulo: '📊 LOGRO',
+      color: '#FEF3C7', colorBorde: '#F59E0B', colorTexto: '#92400E',
+      filas: [
+        { label: '% Logro nuevos', key: 'pctLogroNuevos', fmt: (v, f) => f.metaNuevos > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaNuevos > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro medios', key: 'pctLogroMedios', fmt: (v, f) => f.metaMedios > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMedios > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro maduros', key: 'pctLogroMaduros', fmt: (v, f) => f.metaMaduros > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMaduros > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro general', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
+      ]
+    },
+    {
       titulo: '⚡ PRODUCTIVIDAD',
-      color: '#BBF7D0',
-      colorBorde: '#22C55E',
-      colorTexto: '#166534',
+      color: '#BBF7D0', colorBorde: '#22C55E', colorTexto: '#166534',
       filas: [
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
-        { label: 'Productividad medios (42-89d)', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
+        { label: 'Productividad medios', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
         { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
@@ -4184,46 +4222,45 @@ function exportarAnalisisAnualExcel(sup, anio) {
   aoa.push(headerMeses);
 
   const grupos = [
-    {
-      titulo: '🎯 META Y LOGRO',
-      filas: [
-        { label: 'Meta', key: 'meta', tipo: 'num' },
-        { label: 'Ventas', key: 'ventas', tipo: 'num' },
-        { label: '% Logro', key: 'pctLogro', tipo: 'pct' }
-      ]
-    },
-    {
-      titulo: '💰 VENTAS POR TIPO',
-      filas: [
-        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
-      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
-      ]
-    },
-    {
-      titulo: '👥 EQUIPO',
-      filas: [
-        { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
-        { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
-        { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+    { titulo: '👥 EQUIPO', filas: [
+      { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
+      { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', tipo: 'num' },
+      { label: 'Agentes medios (42-89d)', key: 'agentesMedios', tipo: 'num' },
+      { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', tipo: 'num' },
       { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
-        { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
-      ]
-    },
-    {
-      titulo: '⚡ PRODUCTIVIDAD',
-      filas: [
-        { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
-        { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
-        { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
+      { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
+    ]},
+    { titulo: '🎯 META', filas: [
+      { label: 'Meta nuevos', key: 'metaNuevos', tipo: 'num' },
+      { label: 'Meta medios', key: 'metaMedios', tipo: 'num' },
+      { label: 'Meta maduros', key: 'metaMaduros', tipo: 'num' },
+      { label: 'Meta total', key: 'meta', tipo: 'num' }
+    ]},
+    { titulo: '💰 VENTAS', filas: [
+      { label: 'Ventas nuevos', key: 'ventasNuevos', tipo: 'num' },
+      { label: 'Ventas medios', key: 'ventasMedios', tipo: 'num' },
+      { label: 'Ventas maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas sin meta', key: 'ventasSinMeta', tipo: 'num' },
+      { label: 'Ventas total', key: 'ventas', tipo: 'num' }
+    ]},
+    { titulo: '📊 LOGRO', filas: [
+      { label: '% Logro nuevos', key: 'pctLogroNuevos', tipo: 'pct' },
+      { label: '% Logro medios', key: 'pctLogroMedios', tipo: 'pct' },
+      { label: '% Logro maduros', key: 'pctLogroMaduros', tipo: 'pct' },
+      { label: '% Logro general', key: 'pctLogro', tipo: 'pct' }
+    ]},
+    { titulo: '⚡ PRODUCTIVIDAD', filas: [
+      { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
+      { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
+      { label: 'Productividad medios', key: 'prodMedios', tipo: 'dec' },
+      { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
       { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
       { label: 'Dias efectivos sin meta', key: 'smDiasEf', tipo: 'dec' },
-        { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
-        { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' },
-        { label: 'Días transcurridos', key: 'diasTrans', tipo: 'dec' }
-      ]
-    }
+      { label: 'Prom / día', key: 'promDia', tipo: 'dec' },
+      { label: 'Días hábiles del mes', key: 'diasHabilesMes', tipo: 'dec' },
+      { label: 'Días transcurridos', key: 'diasTrans', tipo: 'dec' }
+    ]}
   ];
 
   const rowDeKey = {};
@@ -4286,9 +4323,10 @@ function exportarAnalisisAnualExcel(sup, anio) {
   // Estilos para filas de grupos y datos
   let rIdx = 4;
   const colorGrupos = [
+    { bg: 'CFFAFE', fg: '0E7490' },
     { bg: 'DBEAFE', fg: '1E3A8A' },
     { bg: 'BAE6FD', fg: '075985' },
-    { bg: 'CFFAFE', fg: '0E7490' },
+    { bg: 'FEF3C7', fg: '92400E' },
     { bg: 'BBF7D0', fg: '166534' }
   ];
   grupos.forEach((g, gi) => {
@@ -4394,10 +4432,15 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
     const meta = filasReales.reduce((s, f) => s + (f.meta || 0), 0);
     const ventas = filasReales.reduce((s, f) => s + (f.ventas || 0), 0);
     const ventasNuevos = filasReales.reduce((s, f) => s + (f.ventasNuevos || 0), 0);
+    const ventasMedios = filasReales.reduce((s, f) => s + (f.ventasMedios || 0), 0);
     const ventasMaduros = filasReales.reduce((s, f) => s + (f.ventasMaduros || 0), 0);
+    const metaNuevos = filasReales.reduce((s, f) => s + (f.metaNuevos || 0), 0);
+    const metaMedios = filasReales.reduce((s, f) => s + (f.metaMedios || 0), 0);
+    const metaMaduros = filasReales.reduce((s, f) => s + (f.metaMaduros || 0), 0);
     const ventasSinMeta = filasReales.reduce((s, f) => s + (f.ventasSinMeta || 0), 0);
     const totalAgentes = filasReales.reduce((s, f) => s + (f.totalAgentes || 0), 0);
     const agentesNuevos = filasReales.reduce((s, f) => s + (f.agentesNuevos || 0), 0);
+    const agentesMedios = filasReales.reduce((s, f) => s + (f.agentesMedios || 0), 0);
     const agentesMaduros = filasReales.reduce((s, f) => s + (f.agentesMaduros || 0), 0);
     const agentesSinMeta = filasReales.reduce((s, f) => s + (f.agentesSinMeta || 0), 0);
     const agentesCumplidos = filasReales.reduce((s, f) => s + (f.agentesCumplidos || 0), 0);
@@ -4410,17 +4453,23 @@ function _calcularAnalisisAnualCoordinador(coordNombre, anio) {
     const _smD = filasReales.reduce((a, f) => a + (f.smDiasEf || 0), 0);
     const prodSinMeta = _smD > 0 ? _smV / _smD * diasHabilesMes : 0;
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
+    const pctLogroNuevos = metaNuevos > 0 ? (ventasNuevos / metaNuevos * 100) : 0;
+    const pctLogroMedios = metaMedios > 0 ? (ventasMedios / metaMedios * 100) : 0;
+    const pctLogroMaduros = metaMaduros > 0 ? (ventasMaduros / metaMaduros * 100) : 0;
     const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
     const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
     const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos * _fRitmo : 0;
+    const prodMedios = agentesMedios > 0 ? ventasMedios / agentesMedios * _fRitmo : 0;
     const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros * _fRitmo : 0;
     const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
 
     filas.push({
       mes, esMesEnCurso,
-      meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
-      totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
-      prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
+      meta, metaNuevos, metaMedios, metaMaduros,
+      ventas, ventasNuevos, ventasMedios, ventasMaduros, ventasSinMeta,
+      pctLogro, pctLogroNuevos, pctLogroMedios, pctLogroMaduros,
+      totalAgentes, agentesNuevos, agentesMedios, agentesMaduros, agentesSinMeta, agentesCumplidos,
+      prodGeneral, prodNuevos, prodMedios, prodMaduros, promDia, prodSinMeta,
       smVtas: _smV, smDiasEf: _smD,
       diasHabilesMes, diasTrans
     });
@@ -4438,32 +4487,46 @@ function renderAnalisisAnualCoordinador(coordNombre, anio) {
   // Reutilizar la misma estructura visual (grupos)
   const grupos = [
     {
-      titulo: '🎯 META Y LOGRO',
-      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
-      filas: [
-        { label: 'Meta', key: 'meta', fmt: v => v > 0 ? v : '—' },
-        { label: 'Ventas', key: 'ventas', fmt: v => _fmtNum(v) },
-        { label: '% Logro', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
-      ]
-    },
-    {
-      titulo: '💰 VENTAS POR TIPO',
-      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
-      filas: [
-        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
-      ]
-    },
-    {
       titulo: '👥 EQUIPO',
       color: '#CFFAFE', colorBorde: '#06B6D4', colorTexto: '#0E7490',
       filas: [
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes medios (42-89d)', key: 'agentesMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '🎯 META',
+      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
+      filas: [
+        { label: 'Meta nuevos', key: 'metaNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta medios', key: 'metaMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta maduros', key: 'metaMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta total', key: 'meta', fmt: v => v > 0 ? v : '—' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS',
+      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
+      filas: [
+        { label: 'Ventas nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
+        { label: 'Ventas medios', key: 'ventasMedios', fmt: v => _fmtNum(v) },
+        { label: 'Ventas maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) },
+        { label: 'Ventas total', key: 'ventas', fmt: v => _fmtNum(v) }
+      ]
+    },
+    {
+      titulo: '📊 LOGRO',
+      color: '#FEF3C7', colorBorde: '#F59E0B', colorTexto: '#92400E',
+      filas: [
+        { label: '% Logro nuevos', key: 'pctLogroNuevos', fmt: (v, f) => f.metaNuevos > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaNuevos > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro medios', key: 'pctLogroMedios', fmt: (v, f) => f.metaMedios > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMedios > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro maduros', key: 'pctLogroMaduros', fmt: (v, f) => f.metaMaduros > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMaduros > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro general', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
       ]
     },
     {
@@ -4472,7 +4535,7 @@ function renderAnalisisAnualCoordinador(coordNombre, anio) {
       filas: [
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
-        { label: 'Productividad medios (42-89d)', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
+        { label: 'Productividad medios', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
         { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
@@ -4547,26 +4610,37 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
   aoa.push(headerMeses);
 
   const grupos = [
-    { titulo: '🎯 META Y LOGRO', filas: [
-      { label: 'Meta', key: 'meta', tipo: 'num' },
-      { label: 'Ventas', key: 'ventas', tipo: 'num' },
-      { label: '% Logro', key: 'pctLogro', tipo: 'pct' }
-    ]},
-    { titulo: '💰 VENTAS POR TIPO', filas: [
-      { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
-      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
-    ]},
     { titulo: '👥 EQUIPO', filas: [
       { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
-      { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
-      { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', tipo: 'num' },
+      { label: 'Agentes medios (42-89d)', key: 'agentesMedios', tipo: 'num' },
+      { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', tipo: 'num' },
       { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
       { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
+    ]},
+    { titulo: '🎯 META', filas: [
+      { label: 'Meta nuevos', key: 'metaNuevos', tipo: 'num' },
+      { label: 'Meta medios', key: 'metaMedios', tipo: 'num' },
+      { label: 'Meta maduros', key: 'metaMaduros', tipo: 'num' },
+      { label: 'Meta total', key: 'meta', tipo: 'num' }
+    ]},
+    { titulo: '💰 VENTAS', filas: [
+      { label: 'Ventas nuevos', key: 'ventasNuevos', tipo: 'num' },
+      { label: 'Ventas medios', key: 'ventasMedios', tipo: 'num' },
+      { label: 'Ventas maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas sin meta', key: 'ventasSinMeta', tipo: 'num' },
+      { label: 'Ventas total', key: 'ventas', tipo: 'num' }
+    ]},
+    { titulo: '📊 LOGRO', filas: [
+      { label: '% Logro nuevos', key: 'pctLogroNuevos', tipo: 'pct' },
+      { label: '% Logro medios', key: 'pctLogroMedios', tipo: 'pct' },
+      { label: '% Logro maduros', key: 'pctLogroMaduros', tipo: 'pct' },
+      { label: '% Logro general', key: 'pctLogro', tipo: 'pct' }
     ]},
     { titulo: '⚡ PRODUCTIVIDAD', filas: [
       { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
+      { label: 'Productividad medios', key: 'prodMedios', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
       { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
@@ -4629,9 +4703,10 @@ function exportarAnalisisAnualCoordinadorExcel(coordNombre, anio) {
 
   let rIdx = 4;
   const colorGrupos = [
+    { bg: 'CFFAFE', fg: '0E7490' },
     { bg: 'DBEAFE', fg: '1E3A8A' },
     { bg: 'BAE6FD', fg: '075985' },
-    { bg: 'CFFAFE', fg: '0E7490' },
+    { bg: 'FEF3C7', fg: '92400E' },
     { bg: 'BBF7D0', fg: '166534' }
   ];
   grupos.forEach((g, gi) => {
@@ -4691,10 +4766,15 @@ function _calcularAnalisisAnualGlobal(anio) {
     const meta = filasReales.reduce((s, f) => s + (f.meta || 0), 0);
     const ventas = filasReales.reduce((s, f) => s + (f.ventas || 0), 0);
     const ventasNuevos = filasReales.reduce((s, f) => s + (f.ventasNuevos || 0), 0);
+    const ventasMedios = filasReales.reduce((s, f) => s + (f.ventasMedios || 0), 0);
     const ventasMaduros = filasReales.reduce((s, f) => s + (f.ventasMaduros || 0), 0);
+    const metaNuevos = filasReales.reduce((s, f) => s + (f.metaNuevos || 0), 0);
+    const metaMedios = filasReales.reduce((s, f) => s + (f.metaMedios || 0), 0);
+    const metaMaduros = filasReales.reduce((s, f) => s + (f.metaMaduros || 0), 0);
     const ventasSinMeta = filasReales.reduce((s, f) => s + (f.ventasSinMeta || 0), 0);
     const totalAgentes = filasReales.reduce((s, f) => s + (f.totalAgentes || 0), 0);
     const agentesNuevos = filasReales.reduce((s, f) => s + (f.agentesNuevos || 0), 0);
+    const agentesMedios = filasReales.reduce((s, f) => s + (f.agentesMedios || 0), 0);
     const agentesMaduros = filasReales.reduce((s, f) => s + (f.agentesMaduros || 0), 0);
     const agentesSinMeta = filasReales.reduce((s, f) => s + (f.agentesSinMeta || 0), 0);
     const agentesCumplidos = filasReales.reduce((s, f) => s + (f.agentesCumplidos || 0), 0);
@@ -4707,17 +4787,23 @@ function _calcularAnalisisAnualGlobal(anio) {
     const _smD = filasReales.reduce((a, f) => a + (f.smDiasEf || 0), 0);
     const prodSinMeta = _smD > 0 ? _smV / _smD * diasHabilesMes : 0;
     const pctLogro = meta > 0 ? (ventas / meta * 100) : 0;
+    const pctLogroNuevos = metaNuevos > 0 ? (ventasNuevos / metaNuevos * 100) : 0;
+    const pctLogroMedios = metaMedios > 0 ? (ventasMedios / metaMedios * 100) : 0;
+    const pctLogroMaduros = metaMaduros > 0 ? (ventasMaduros / metaMaduros * 100) : 0;
     const _fRitmo = (esMesEnCurso && diasTrans > 0 && diasHabilesMes > diasTrans) ? diasHabilesMes / diasTrans : 1;
     const prodGeneral = totalAgentes > 0 ? ventas / totalAgentes * _fRitmo : 0;
     const prodNuevos = agentesNuevos > 0 ? ventasNuevos / agentesNuevos * _fRitmo : 0;
+    const prodMedios = agentesMedios > 0 ? ventasMedios / agentesMedios * _fRitmo : 0;
     const prodMaduros = agentesMaduros > 0 ? ventasMaduros / agentesMaduros * _fRitmo : 0;
     const promDia = diasTrans > 0 ? ventas / diasTrans : 0;
 
     filas.push({
       mes, esMesEnCurso,
-      meta, ventas, ventasNuevos, ventasMaduros, ventasSinMeta, pctLogro,
-      totalAgentes, agentesNuevos, agentesMaduros, agentesSinMeta, agentesCumplidos,
-      prodGeneral, prodNuevos, prodMaduros, promDia, prodSinMeta,
+      meta, metaNuevos, metaMedios, metaMaduros,
+      ventas, ventasNuevos, ventasMedios, ventasMaduros, ventasSinMeta,
+      pctLogro, pctLogroNuevos, pctLogroMedios, pctLogroMaduros,
+      totalAgentes, agentesNuevos, agentesMedios, agentesMaduros, agentesSinMeta, agentesCumplidos,
+      prodGeneral, prodNuevos, prodMedios, prodMaduros, promDia, prodSinMeta,
       smVtas: _smV, smDiasEf: _smD,
       diasHabilesMes, diasTrans
     });
@@ -4733,32 +4819,46 @@ function renderAnalisisAnualGlobal(anio) {
   // Misma estructura visual que supervisor/coordinador
   const grupos = [
     {
-      titulo: '🎯 META Y LOGRO',
-      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
-      filas: [
-        { label: 'Meta', key: 'meta', fmt: v => v > 0 ? v : '—' },
-        { label: 'Ventas', key: 'ventas', fmt: v => _fmtNum(v) },
-        { label: '% Logro', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
-      ]
-    },
-    {
-      titulo: '💰 VENTAS POR TIPO',
-      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
-      filas: [
-        { label: 'Ventas agentes nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
-        { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) }
-      ]
-    },
-    {
       titulo: '👥 EQUIPO',
       color: '#CFFAFE', colorBorde: '#06B6D4', colorTexto: '#0E7490',
       filas: [
         { label: 'Total agentes', key: 'totalAgentes', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes nuevos', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
-        { label: 'Agentes maduros', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes medios (42-89d)', key: 'agentesMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', fmt: v => v > 0 ? v : '—' },
         { label: 'Agentes cumplidos', key: 'agentesCumplidos', fmt: (v, f) => f.totalAgentes > 0 ? `${v}/${f.totalAgentes}` : '—', color: (v, f) => f.totalAgentes > 0 ? (v / f.totalAgentes >= 0.7 ? 'var(--green)' : v / f.totalAgentes >= 0.4 ? 'var(--amber)' : 'var(--text)') : 'var(--text-soft)' }
+      ]
+    },
+    {
+      titulo: '🎯 META',
+      color: '#DBEAFE', colorBorde: '#3B82F6', colorTexto: '#1E3A8A',
+      filas: [
+        { label: 'Meta nuevos', key: 'metaNuevos', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta medios', key: 'metaMedios', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta maduros', key: 'metaMaduros', fmt: v => v > 0 ? v : '—' },
+        { label: 'Meta total', key: 'meta', fmt: v => v > 0 ? v : '—' }
+      ]
+    },
+    {
+      titulo: '💰 VENTAS',
+      color: '#BAE6FD', colorBorde: '#0EA5E9', colorTexto: '#075985',
+      filas: [
+        { label: 'Ventas nuevos', key: 'ventasNuevos', fmt: v => _fmtNum(v) },
+        { label: 'Ventas medios', key: 'ventasMedios', fmt: v => _fmtNum(v) },
+        { label: 'Ventas maduros', key: 'ventasMaduros', fmt: v => _fmtNum(v) },
+        { label: 'Ventas sin meta', key: 'ventasSinMeta', fmt: v => _fmtNum(v) },
+        { label: 'Ventas total', key: 'ventas', fmt: v => _fmtNum(v) }
+      ]
+    },
+    {
+      titulo: '📊 LOGRO',
+      color: '#FEF3C7', colorBorde: '#F59E0B', colorTexto: '#92400E',
+      filas: [
+        { label: '% Logro nuevos', key: 'pctLogroNuevos', fmt: (v, f) => f.metaNuevos > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaNuevos > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro medios', key: 'pctLogroMedios', fmt: (v, f) => f.metaMedios > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMedios > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro maduros', key: 'pctLogroMaduros', fmt: (v, f) => f.metaMaduros > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.metaMaduros > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' },
+        { label: '% Logro general', key: 'pctLogro', fmt: (v, f) => f.meta > 0 ? v.toFixed(1) + '%' : '—', color: (v, f) => f.meta > 0 ? (v >= 100 ? 'var(--green)' : v >= 85 ? 'var(--amber)' : 'var(--red)') : 'var(--text-soft)' }
       ]
     },
     {
@@ -4767,7 +4867,7 @@ function renderAnalisisAnualGlobal(anio) {
       filas: [
         { label: 'Productividad general', key: 'prodGeneral', fmt: v => _fmtNum(v, 1) },
         { label: 'Productividad nuevos', key: 'prodNuevos', fmt: (v, f) => f.agentesNuevos > 0 ? v.toFixed(1) : '—' },
-        { label: 'Productividad medios (42-89d)', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
+        { label: 'Productividad medios', key: 'prodMedios', fmt: (v, f) => f.agentesMedios > 0 ? v.toFixed(1) : '—' },
         { label: 'Productividad maduros', key: 'prodMaduros', fmt: (v, f) => f.agentesMaduros > 0 ? v.toFixed(1) : '—' },
         { label: 'Prod. sin meta (día efectivo, escala mes)', key: 'prodSinMeta', fmt: (v, f) => (f.smDiasEf || v) > 0 ? v.toFixed(1) : '—' },
         { label: 'Prom / día', key: 'promDia', fmt: (v, f) => f.diasTrans > 0 ? v.toFixed(1) : '—' },
@@ -4840,26 +4940,37 @@ function exportarAnalisisAnualGlobalExcel(anio) {
   aoa.push(headerMeses);
 
   const grupos = [
-    { titulo: '🎯 META Y LOGRO', filas: [
-      { label: 'Meta', key: 'meta', tipo: 'num' },
-      { label: 'Ventas', key: 'ventas', tipo: 'num' },
-      { label: '% Logro', key: 'pctLogro', tipo: 'pct' }
-    ]},
-    { titulo: '💰 VENTAS POR TIPO', filas: [
-      { label: 'Ventas agentes nuevos', key: 'ventasNuevos', tipo: 'num' },
-      { label: 'Ventas agentes maduros', key: 'ventasMaduros', tipo: 'num' },
-      { label: 'Ventas agentes sin meta', key: 'ventasSinMeta', tipo: 'num' }
-    ]},
     { titulo: '👥 EQUIPO', filas: [
       { label: 'Total agentes', key: 'totalAgentes', tipo: 'num' },
-      { label: 'Agentes nuevos', key: 'agentesNuevos', tipo: 'num' },
-      { label: 'Agentes maduros', key: 'agentesMaduros', tipo: 'num' },
+      { label: 'Agentes nuevos (≤41d)', key: 'agentesNuevos', tipo: 'num' },
+      { label: 'Agentes medios (42-89d)', key: 'agentesMedios', tipo: 'num' },
+      { label: 'Agentes maduros (90+d)', key: 'agentesMaduros', tipo: 'num' },
       { label: 'Agentes sin meta (recién ingreso)', key: 'agentesSinMeta', tipo: 'num' },
       { label: 'Agentes cumplidos', key: 'agentesCumplidos', tipo: 'num' }
+    ]},
+    { titulo: '🎯 META', filas: [
+      { label: 'Meta nuevos', key: 'metaNuevos', tipo: 'num' },
+      { label: 'Meta medios', key: 'metaMedios', tipo: 'num' },
+      { label: 'Meta maduros', key: 'metaMaduros', tipo: 'num' },
+      { label: 'Meta total', key: 'meta', tipo: 'num' }
+    ]},
+    { titulo: '💰 VENTAS', filas: [
+      { label: 'Ventas nuevos', key: 'ventasNuevos', tipo: 'num' },
+      { label: 'Ventas medios', key: 'ventasMedios', tipo: 'num' },
+      { label: 'Ventas maduros', key: 'ventasMaduros', tipo: 'num' },
+      { label: 'Ventas sin meta', key: 'ventasSinMeta', tipo: 'num' },
+      { label: 'Ventas total', key: 'ventas', tipo: 'num' }
+    ]},
+    { titulo: '📊 LOGRO', filas: [
+      { label: '% Logro nuevos', key: 'pctLogroNuevos', tipo: 'pct' },
+      { label: '% Logro medios', key: 'pctLogroMedios', tipo: 'pct' },
+      { label: '% Logro maduros', key: 'pctLogroMaduros', tipo: 'pct' },
+      { label: '% Logro general', key: 'pctLogro', tipo: 'pct' }
     ]},
     { titulo: '⚡ PRODUCTIVIDAD', filas: [
       { label: 'Productividad general', key: 'prodGeneral', tipo: 'dec' },
       { label: 'Productividad nuevos', key: 'prodNuevos', tipo: 'dec' },
+      { label: 'Productividad medios', key: 'prodMedios', tipo: 'dec' },
       { label: 'Productividad maduros', key: 'prodMaduros', tipo: 'dec' },
       { label: 'Prod. sin meta (dia efectivo)', key: 'prodSinMeta', tipo: 'dec' },
       { label: 'Ventas sin meta post-rampa', key: 'smVtas', tipo: 'dec' },
@@ -4922,9 +5033,10 @@ function exportarAnalisisAnualGlobalExcel(anio) {
 
   let rIdx = 4;
   const colorGrupos = [
+    { bg: 'CFFAFE', fg: '0E7490' },
     { bg: 'DBEAFE', fg: '1E3A8A' },
     { bg: 'BAE6FD', fg: '075985' },
-    { bg: 'CFFAFE', fg: '0E7490' },
+    { bg: 'FEF3C7', fg: '92400E' },
     { bg: 'BBF7D0', fg: '166534' }
   ];
   grupos.forEach((g, gi) => {
