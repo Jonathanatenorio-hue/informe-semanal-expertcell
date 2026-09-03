@@ -2371,7 +2371,7 @@ async function cargarDatos() {
   while (true) {
     const { data, error } = await db
       .from('ventas_detalle')
-      .select('folio, ejecutivo, supervisor, supervisor_act, supervisor_can, fecha_bo, fecha_activacion, hora_activacion, fecha_cancelacion, estatus, telefono, precio, centro, renta_sin_impuestos, plan, etapa_entrega, cliente')
+      .select('folio, ejecutivo, supervisor, supervisor_act, supervisor_can, fecha_bo, fecha_activacion, hora_activacion, fecha_cancelacion, estatus, telefono, precio, centro, renta_sin_impuestos, plan, etapa_entrega')
       .order('fecha_bo')
       .range(from, from + pageSize - 1);
 
@@ -5577,8 +5577,9 @@ function _transitoDatos() {
     let etapa = r.etapa_entrega || 'Back Office';
     if (!_TR_ETAPAS.includes(etapa)) etapa = 'Back Office';
     const det = entMapT[String(r.folio)];
+    const _cli = det ? (det.cliente || det.nombre_cliente || det.cliente_nombre || det.nombre || det.destinatario || '') : '';
     filas.push({
-      folio: r.folio, cliente: r.cliente || '', telefono: r.telefono || '',
+      folio: r.folio, cliente: _cli, telefono: r.telefono || '',
       ejecutivo: r.ejecutivo || '', sup: r.supervisor,
       coord: coordDe[r.supervisor] || '—', centro: centroDe[r.supervisor] || '',
       fbo, dias, etapa, plaza: det ? (det.region || det.plaza || '') : ''
