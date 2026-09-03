@@ -37,6 +37,7 @@
   <div><h1>🚚 BI Logístico Regional — ExpertCell</h1>
   <div class="sub">Proyección por región · Auditor DHL (tarifario VAVTRADE 2026) · Mezcla por marca · Requerimiento semanal · Campañas de flujo</div></div>
   <div style="display:flex; gap:8px; align-items:center;">
+    <select id="sel-coord" onchange="renderTodo()"></select>
     <select id="sel-mes"></select>
     <button class="b g" onclick="exportarTodo()">📊 Excel completo</button>
   </div>
@@ -98,8 +99,9 @@ const CP_EDO = { '20':'AGS','21':'BC','22':'BC','23':'BCS','24':'CAMP','25':'COA
  '00':'CDMX','01':'CDMX','02':'CDMX','03':'CDMX','04':'CDMX','05':'CDMX','06':'CDMX','07':'CDMX','08':'CDMX','09':'CDMX','10':'CDMX','11':'CDMX','12':'CDMX','13':'CDMX','14':'CDMX','15':'CDMX','16':'CDMX' };
 const EDO_ZONA = { CDMX:1, MEX:11, PUE:11, MOR:11, HGO:11, TLAX:11, NL:3, COAH:3, JAL:4, DGO:5, SIN:6, BCS:6, SON:7, CHIH:8, BC:9, NAY:10, COL:10, GTO:12, QRO:12, AGS:12, SLP:12, ZAC:12, MICH:12, TAM:14, VER:17, OAX:17, GRO:2, CHIS:15, TAB:15, CAMP:15, YUC:16, QROO:16 };
 const REG_ALIAS = [ [/MEX|CDMX|DF|CIUDAD/,'MEX',1], [/PUE|PUEBLA/,'PUE',11], [/GDL|GUADAL|JAL/,'GDL',4], [/MTY|MONTER/,'MTY',3], [/TOL|TOLUCA/,'TOL',11], [/TIJ|TIJUANA/,'TIJ',9], [/VER|VERACRUZ/,'VER',17], [/QRO|QUERE/,'QRO',12], [/MER|MERIDA|YUC/,'MER',16], [/LEO|LEON|BJX/,'LEON',12] ];
+function sinAcentos(s) { return String(s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 function regNorm(r) {
-  const t = String(r || '').toUpperCase();
+  const t = sinAcentos(r);
   for (const [re, k] of REG_ALIAS) if (re.test(t)) return k;
   return t.trim() ? t.trim().substring(0, 6) : 'MEX';
 }
@@ -115,7 +117,7 @@ function modeloBase(eq) {
   const COLORES = ['NEGRO','BLANCO','AZUL','ROJO','VERDE','GRIS','DORADO','PLATA','MORADO','ROSA','AMARILLO','NARANJA','TITANIO','BLACK','WHITE','BLUE','RED','GREEN','GRAY','GREY','GOLD','SILVER','PURPLE','PINK','YELLOW','LAVANDA','MENTA','CORAL','GRAFITO','MIDNIGHT','STARLIGHT','OBSIDIANA','CREMA','LILA','TURQUESA','VIOLETA','CIAN','BEIGE','MARFIL','COBRE','BRONCE','AQUA','ICE','JADE','OCEANO','SANDSTONE','CHARCOAL','DENIM','FOREST','HAZEL','INDIGO','LIGHT','DARK','SKY','SAGE','TEAL','MINT','PEACH','OLIVE','NAVY','CAFE'];
   return String(eq || '').toUpperCase().split(' ').filter(t => t && !COLORES.includes(t)).join(' ').replace(/\s+GB/g, 'GB');
 }
-let ventas = [], entregas = [], inventario = [], estatusCat = {}, entPorFolio = {};
+let ventas = [], entregas = [], inventario = [], estatusCat = {}, entPorFolio = {}, supCoord = {};
 
 async function pag(tabla, sel) {
   let out = [];
@@ -136,7 +138,7 @@ function campoDireccion(row) {
   return '';
 }
 function estadoDe(row) {
-  const dir = campoDireccion(row).toUpperCase();
+  const dir = sinAcentos(campoDireccion(row));
   const cp = dir.match(/\b(\d{5})\b/);
   if (cp && CP_EDO[cp[1].substring(0, 2)]) return CP_EDO[cp[1].substring(0, 2)];
   const NOM = { 'CIUDAD DE MEXICO':'CDMX','CDMX':'CDMX','ESTADO DE MEXICO':'MEX','EDO. MEX':'MEX','NUEVO LEON':'NL','MONTERREY':'NL','JALISCO':'JAL','GUADALAJARA':'JAL','PUEBLA':'PUE','VERACRUZ':'VER','YUCATAN':'YUC','QUINTANA ROO':'QROO','BAJA CALIFORNIA SUR':'BCS','BAJA CALIFORNIA':'BC','CHIHUAHUA':'CHIH','SONORA':'SON','SINALOA':'SIN','COAHUILA':'COAH','TAMAULIPAS':'TAM','GUANAJUATO':'GTO','QUERETARO':'QRO','MICHOACAN':'MICH','OAXACA':'OAX','CHIAPAS':'CHIS','TABASCO':'TAB','GUERRERO':'GRO','MORELOS':'MOR','HIDALGO':'HGO','TLAXCALA':'TLAX','AGUASCALIENTES':'AGS','ZACATECAS':'ZAC','DURANGO':'DGO','SAN LUIS POTOSI':'SLP','NAYARIT':'NAY','COLIMA':'COL','CAMPECHE':'CAMP','TOLUCA':'MEX' };
@@ -161,7 +163,18 @@ function esDHLf(e) {
 
 async function cargar() {
   $('kpis').innerHTML = '<div class="kpi"><div class="l">Cargando…</div><div class="v">⏳</div></div>';
-  ventas = await pag('ventas_detalle', 'folio, estatus, fecha_activacion, plan');
+  ventas = await pag('ventas_detalle', 'folio, estatus, fecha_activacion, plan, supervisor');
+  try {
+    const [cs, co] = await Promise.all([pag('coordinador_supervisor', '*'), pag('coordinadores', '*')]);
+    const hoyI = new Date().toISOString().substring(0, 10);
+    const nomCoord = {};
+    co.forEach(c => { nomCoord[c.id] = c.nombre || c.nombre_corto; });
+    cs.forEach(x => {
+      if (x.fecha_inicio <= hoyI && (!x.fecha_fin || x.fecha_fin >= hoyI) && nomCoord[x.coordinador_id]) supCoord[x.supervisor] = nomCoord[x.coordinador_id];
+    });
+    const lista = [...new Set(Object.values(supCoord))].filter(n => n && !/CC2|JV|CENTRO/i.test(n)).sort();
+    $('sel-coord').innerHTML = '<option value="">🌎 Global</option>' + lista.map(n => `<option>${n}</option>`).join('');
+  } catch (eC) { $('sel-coord').style.display = 'none'; }
   entregas = await pag('entregas_detalle', '*');
   try { const e = await pag('equipos_estatus', 'modelo, estatus'); e.forEach(x => estatusCat[String(x.modelo).toUpperCase()] = x.estatus); } catch (e) {}
   for (const t of ['inventario', 'inventario_equipos', 'inventario_hub', 'inventarios']) {
@@ -194,7 +207,8 @@ function renderTodo() {
   for (let m = 1; m <= 12; m++) { const k = `${anio}-${String(m).padStart(2, '0')}`; if (m < hoy.getMonth() + 1) mesesCerr.push(k); }
   const base3 = mesesCerr.slice(-3);
   // Ventas activadas con región (del cruce con entregas; sin región → MEX)
-  const vAct = ventas.filter(v => v.estatus === 'activada' && v.fecha_activacion);
+  const coordSel = $('sel-coord') ? $('sel-coord').value : '';
+  const vAct = ventas.filter(v => v.estatus === 'activada' && v.fecha_activacion && (!coordSel || supCoord[v.supervisor] === coordSel));
   const porMesReg = {}, porMesTot = {};
   vAct.forEach(v => {
     const k = String(v.fecha_activacion).substring(0, 7);
