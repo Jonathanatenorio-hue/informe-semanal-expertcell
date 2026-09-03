@@ -3175,12 +3175,13 @@ function renderRadiografiaObjetivos() {
   // ===== PROGRAMACIÓN: conversión medida, tránsito, faltante y ritmo requerido =====
   const convC = _conversionPorCentro(anioR, mesHoy);
   const ventana = _ventanaProgramacion(anioR, mesHoy, hoyStrR);
-  const progDiaPorSup = {}, transPorSup = {};
+  const progDiaPorSup = {}, progDiaCancPorSup = {}, transPorSup = {};
   (ventasData || []).forEach(r => {
     if (!r.supervisor) return;
     if (r.fecha_bo && r.fecha_bo >= mesIniStr && r.fecha_bo <= finMesStr) {
       const m = progDiaPorSup[r.supervisor] || (progDiaPorSup[r.supervisor] = {});
       m[r.fecha_bo] = (m[r.fecha_bo] || 0) + 1;
+      if (r.estatus === 'cancelada') { const mc = progDiaCancPorSup[r.supervisor] || (progDiaCancPorSup[r.supervisor] = {}); mc[r.fecha_bo] = (mc[r.fecha_bo] || 0) + 1; }
     }
     if (['en_transito', 'por_activar', 'pendiente'].includes(r.estatus)) transPorSup[r.supervisor] = (transPorSup[r.supervisor] || 0) + 1;
   });
@@ -3188,6 +3189,7 @@ function renderRadiografiaObjetivos() {
     const cc = convC[r.centro] || convC.TOTAL;
     r.conv = cc.conv; r.factor = cc.factor;
     r.progDia = progDiaPorSup[r.sup] || {};
+    r.progDiaCanc = progDiaCancPorSup[r.sup] || {};
     r.progMes = Object.values(r.progDia).reduce((a, b) => a + b, 0);
     r.transito = transPorSup[r.sup] || 0;
     r.faltan = Math.max(0, (r.meta || 0) - (r.ventas || 0) - r.transito * r.conv);
@@ -3233,13 +3235,14 @@ function renderRadiografiaObjetivos() {
   };
   const suma = arr => {
     const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 },
-      progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, diasUtiles: arr[0].diasUtiles, progDia: {} };
+      progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, diasUtiles: arr[0].diasUtiles, progDia: {}, progDiaCanc: {} };
     let algunFuera = false;
     arr.forEach(r => {
       t.meta += r.meta || 0; t.ventas += r.ventas || 0; t.totalAgentes += r.totalAgentes || 0;
       t.progMes += r.progMes || 0; t.transito += r.transito || 0; t.faltan += r.faltan || 0; t.progReq += r.progReq || 0; t.progDiaPlan += r.progDiaPlan || 0;
       if (r.progDiaReq === null) algunFuera = true; else t.progDiaReq += r.progDiaReq || 0;
       Object.entries(r.progDia || {}).forEach(([f, v]) => { t.progDia[f] = (t.progDia[f] || 0) + v; });
+      Object.entries(r.progDiaCanc || {}).forEach(([f, v]) => { t.progDiaCanc[f] = (t.progDiaCanc[f] || 0) + v; });
       if (r.comp) { t.comp.N += r.comp.N; t.comp.I += r.comp.I; t.comp.M += r.comp.M; }
       if (r.sm) { t.sm.n += r.sm.n; t.sm.rampa += r.sm.rampa; t.sm.vtas += r.sm.vtas; t.sm.diasEf += r.sm.diasEf; }
     });
@@ -3286,15 +3289,15 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
   const dias = Object.keys(factorDia).filter(f => factorDia[f] > 0 && f < hoyStr).sort();
   if (!dias.length) return '<div style="font-size:11px; color:var(--text-soft); margin-top:10px;">Cumplimiento diario de programación: aún no hay días hábiles cerrados en el mes.</div>';
   const th = t => `<th style="padding:5px 6px; background:var(--att-navy); color:white; font-size:10px; white-space:nowrap; text-align:center;">${t}</th>`;
-  const celda = (v, obj) => {
+  const celda = (v, obj, canc) => {
     const pct = obj > 0 ? v / obj : (v > 0 ? 1 : 0);
     const col = pct >= 1 ? '#166534' : pct >= 0.8 ? '#92400E' : '#991B1B';
     const bg = pct >= 1 ? '#DCFCE7' : pct >= 0.8 ? '#FEF3C7' : '#FEE2E2';
-    return `<td style="padding:4px 5px; text-align:center; font-weight:700; color:${col}; background:${bg}; font-size:11px;" title="objetivo ${obj.toFixed(1)}">${v}</td>`;
+    return `<td style="padding:4px 5px; text-align:center; font-weight:700; color:${col}; background:${bg}; font-size:11px; white-space:nowrap;" title="objetivo ${obj.toFixed(1)}${canc ? ` · ${canc} de estas ${v} ya se cancelaron` : ''}">${v}${canc ? `<sup style="font-size:8.5px; color:#991B1B; font-weight:800; margin-left:1px;">−${canc}</sup>` : ''}</td>`;
   };
   const filaM = (r, esTot) => {
     let acum = 0, acumObj = 0, tds = '';
-    dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; tds += celda(v, obj); });
+    dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; tds += celda(v, obj, (r.progDiaCanc || {})[f] || 0); });
     const pct = acumObj > 0 ? acum / acumObj * 100 : 0;
     return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px;">${r.sup}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
   };
@@ -3304,7 +3307,7 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
   }).filter(x => x.n >= 3).sort((a, b) => b.n - a.n);
   return `<div style="margin-top:16px;">
     <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:4px;">📆 Cumplimiento diario de programación (cierre del día vs plan)</div>
-    <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Programaciones con fecha de back office ese día (incluye las que luego se cancelaron) contra el plan diario del supervisor (progr./día plan × factor del día; sábado = 0.5). Verde ≥ 100% · ámbar 80-99% · rojo < 80%. ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
+    <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Programaciones con fecha de back office ese día (incluye las que luego se cancelaron) contra el plan diario del supervisor (progr./día plan × factor del día; sábado = 0.5). Verde ≥ 100% · ámbar 80-99% · rojo < 80% · el <sup style="color:#991B1B; font-weight:800;">−n</sup> chiquito = cuántas de esas programaciones ya se cancelaron (cuentan como actividad; el factor ya descuenta lo que se cae). ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
     <div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:11px;">
       <thead><tr>${th('Supervisor')}${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('%')}</tr></thead>
       <tbody>${filasR.map(r => filaM(r, false)).join('')}${filaM(tot, true)}</tbody>
