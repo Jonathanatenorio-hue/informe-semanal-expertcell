@@ -420,7 +420,7 @@
       <div><label style="font-size:11px; font-weight:700;">Tipo</label><br><select id="vac-tipo" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"><option value="vacaciones">🏖️ Vacaciones</option><option value="incapacidad">🏥 Incapacidad</option></select></div>
       <div><label style="font-size:11px; font-weight:700;">Inicio</label><br><input id="vac-ini" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
       <div><label style="font-size:11px; font-weight:700;">Fin</label><br><input id="vac-fin" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
-      <div><label style="font-size:11px; font-weight:700;">Capturó</label><br><input id="vac-quien" placeholder="Coordinador" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:150px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Capturó</label><br><select id="vac-quien" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:170px;"><option value="">Selecciona…</option></select></div>
       <button id="vac-btn-guardar" type="button">➕ Capturar</button>
     </div>
     <div id="vac-status" style="font-size:12px; margin-top:8px;"></div>
@@ -2806,6 +2806,14 @@ async function vacListar() {
     const desde = new Date(); desde.setDate(desde.getDate() - 45);
     const { data, error } = await db.from('vacaciones').select('*').gte('fecha_fin', _vacIso(desde)).order('fecha_inicio', { ascending: false }).limit(120);
     if (error) throw error;
+    try {
+      const selQ = document.getElementById('vac-quien');
+      if (selQ && selQ.options.length <= 1) {
+        const { data: co } = await db.from('coordinadores').select('nombre').range(0, 99);
+        const noms = [...new Set((co || []).map(c => c.nombre).filter(n => n && !/CC2|JV|CENTRO/i.test(n)))].sort();
+        selQ.innerHTML = '<option value="">Selecciona…</option>' + noms.map(n => `<option>${n}</option>`).join('') + '<option>Dirección</option>';
+      }
+    } catch (eQ) {}
     try {
       const dl = document.getElementById('vac-datalist');
       if (dl && !dl.children.length) {
