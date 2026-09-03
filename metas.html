@@ -277,6 +277,7 @@
 
   <div class="tabs">
     <button class="tab-btn active" data-tab="metas">📊 Metas mensuales</button>
+    <button class="tab-btn" data-tab="vacaciones">🏖️ Vacaciones e incapacidades</button>
     <button class="tab-btn" data-tab="plantilla">👥 Plantilla</button>
     <button class="tab-btn" data-tab="calendario">📅 Calendario</button>
     <button class="tab-btn" data-tab="asignaciones">🔀 Asignaciones</button>
@@ -320,21 +321,6 @@
         <button class="secondary" id="btn-calc-excel" type="button">📥 Descargar Excel</button>
       </div>
     </div>
-  </div>
-
-  <!-- VACACIONES -->
-  <div class="section" style="border: 2px solid #0EA5E9;">
-    <div class="section-title">🏖️ Vacaciones (prorrateo de metas)</div>
-    <div class="alert info"><div>ℹ️</div><div>Los coordinadores capturan aquí; <strong>dirección valida contra el correo con formato</strong> y solo las VALIDADAS prorratean la meta del mes en el calculador (redondeo estándar: .5 sube). El bracket de comisiones NO se prorratea. El nombre del agente debe ser <strong>idéntico</strong> al de plantilla.</div></div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
-      <div><label style="font-size:11px; font-weight:700;">Agente (idéntico a plantilla)</label><br><input id="vac-agente" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:270px;"></div>
-      <div><label style="font-size:11px; font-weight:700;">Inicio</label><br><input id="vac-ini" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
-      <div><label style="font-size:11px; font-weight:700;">Fin</label><br><input id="vac-fin" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
-      <div><label style="font-size:11px; font-weight:700;">Capturó</label><br><input id="vac-quien" placeholder="Coordinador" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:150px;"></div>
-      <button id="vac-btn-guardar" type="button">➕ Capturar</button>
-    </div>
-    <div id="vac-status" style="font-size:12px; margin-top:8px;"></div>
-    <div id="vac-lista" style="margin-top:10px;"></div>
   </div>
 
   <!-- PASO 1: Seleccionar periodo -->
@@ -424,6 +410,24 @@
   <!-- FIN TAB METAS -->
 
   <!-- TAB PLANTILLA -->
+  <!-- TAB VACACIONES E INCAPACIDADES -->
+  <div class="tab-content" id="tab-vacaciones">
+  <div class="section" style="border: 2px solid #0EA5E9;">
+    <div class="section-title">🏖️ Vacaciones e incapacidades (prorrateo de metas)</div>
+    <div class="alert info"><div>ℹ️</div><div>Los coordinadores capturan aquí; <strong>dirección valida</strong> (vacaciones contra el correo con formato, incapacidades contra el documento del IMSS) y solo las VALIDADAS prorratean la meta del mes en el calculador (redondeo estándar: .5 sube). El bracket de comisiones NO se prorratea.</div></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:end;">
+      <div><label style="font-size:11px; font-weight:700;">Agente</label><br><input id="vac-agente" list="vac-datalist" placeholder="Escribe y selecciona…" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:270px;"><datalist id="vac-datalist"></datalist></div>
+      <div><label style="font-size:11px; font-weight:700;">Tipo</label><br><select id="vac-tipo" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"><option value="vacaciones">🏖️ Vacaciones</option><option value="incapacidad">🏥 Incapacidad</option></select></div>
+      <div><label style="font-size:11px; font-weight:700;">Inicio</label><br><input id="vac-ini" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Fin</label><br><input id="vac-fin" type="date" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px;"></div>
+      <div><label style="font-size:11px; font-weight:700;">Capturó</label><br><input id="vac-quien" placeholder="Coordinador" style="padding:7px; border:1px solid #CBD5E1; border-radius:6px; width:150px;"></div>
+      <button id="vac-btn-guardar" type="button">➕ Capturar</button>
+    </div>
+    <div id="vac-status" style="font-size:12px; margin-top:8px;"></div>
+    <div id="vac-lista" style="margin-top:10px;"></div>
+  </div>
+  </div>
+
   <div class="tab-content" id="tab-plantilla">
 
     <div class="section">
@@ -2721,7 +2725,8 @@ async function calcularMetasAuto() {
         if (dhVac > 0) {
           const metaBase = meta;
           meta = Math.round(meta * Math.max(0, dhMesCal - dhVac) / dhMesCal);
-          flags.push(`🏖️ Prorrateada por ${dhVac.toFixed(1)} días háb. de vacaciones (base ${metaBase}, mes de ${dhMesCal.toFixed(1)} días)`);
+          const tiposV = [...new Set(vacasVal[p.nombre].map(v => v.tipo === 'incapacidad' ? 'incapacidad' : 'vacaciones'))].join(' + ');
+          flags.push(`🏖️ Prorrateada por ${dhVac.toFixed(1)} días háb. de ${tiposV} (base ${metaBase}, mes de ${dhMesCal.toFixed(1)} días)`);
           if (meta <= 0) { meta = 0; tipo = 'sin_meta'; flags.push('Mes completo de vacaciones: sin meta'); }
         }
       }
@@ -2777,7 +2782,8 @@ async function vacGuardar() {
   try {
     const { data: pl } = await db.from('plantilla').select('nombre').eq('nombre', ag).limit(1);
     if (!pl || !pl.length) { st.innerHTML = `❌ "${ag}" no existe en plantilla con ese nombre exacto — corrígelo (mayúsculas y acentos cuentan).`; return; }
-    const { error } = await db.from('vacaciones').insert({ agente: ag, fecha_inicio: fi, fecha_fin: ff, capturado_por: quien || null, validada: false });
+    const tipoA = document.getElementById('vac-tipo').value || 'vacaciones';
+    const { error } = await db.from('vacaciones').insert({ agente: ag, fecha_inicio: fi, fecha_fin: ff, tipo: tipoA, capturado_por: quien || null, validada: false });
     if (error) throw error;
     st.innerHTML = '✅ Capturada. Queda PENDIENTE de validación por dirección.';
     document.getElementById('vac-agente').value = ''; document.getElementById('vac-ini').value = ''; document.getElementById('vac-fin').value = '';
@@ -2800,13 +2806,23 @@ async function vacListar() {
     const desde = new Date(); desde.setDate(desde.getDate() - 45);
     const { data, error } = await db.from('vacaciones').select('*').gte('fecha_fin', _vacIso(desde)).order('fecha_inicio', { ascending: false }).limit(120);
     if (error) throw error;
-    if (!data || !data.length) { cont.innerHTML = '<div style="font-size:12px; color:#64748B;">Sin vacaciones capturadas recientes.</div>'; return; }
+    try {
+      const dl = document.getElementById('vac-datalist');
+      if (dl && !dl.children.length) {
+        const { data: pl } = await db.from('plantilla').select('nombre, fecha_baja').range(0, 1999);
+        const hoyI = _vacIso(new Date());
+        dl.innerHTML = (pl || []).filter(p => p.nombre && (!p.fecha_baja || String(p.fecha_baja).substring(0, 10) >= hoyI))
+          .map(p => p.nombre).sort().map(n => `<option value="${String(n).replace(/"/g, '&quot;')}"></option>`).join('');
+      }
+    } catch (eD) {}
+    if (!data || !data.length) { cont.innerHTML = '<div style="font-size:12px; color:#64748B;">Sin vacaciones ni incapacidades capturadas recientes.</div>'; return; }
+    const esDir = !!window.__esDirector;
     cont.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;"><tr>
-      <th style="background:#002B5C; color:white; padding:6px;">Agente</th><th style="background:#002B5C; color:white; padding:6px;">Inicio</th><th style="background:#002B5C; color:white; padding:6px;">Fin</th><th style="background:#002B5C; color:white; padding:6px;">Capturó</th><th style="background:#002B5C; color:white; padding:6px;">Estado</th><th style="background:#002B5C; color:white; padding:6px;">Acciones</th></tr>` +
+      <th style="background:#002B5C; color:white; padding:6px;">Agente</th><th style="background:#002B5C; color:white; padding:6px;">Tipo</th><th style="background:#002B5C; color:white; padding:6px;">Inicio</th><th style="background:#002B5C; color:white; padding:6px;">Fin</th><th style="background:#002B5C; color:white; padding:6px;">Capturó</th><th style="background:#002B5C; color:white; padding:6px;">Estado</th><th style="background:#002B5C; color:white; padding:6px;">Acciones</th></tr>` +
       data.map(v => `<tr style="border-bottom:1px solid #E2E8F0; background:${v.validada ? '#F0FDF4' : '#FFFBEB'};">
-        <td style="padding:5px 8px;">${v.agente}</td><td style="padding:5px 8px;">${v.fecha_inicio}</td><td style="padding:5px 8px;">${v.fecha_fin}</td><td style="padding:5px 8px;">${v.capturado_por || '—'}</td>
+        <td style="padding:5px 8px;">${v.agente}</td><td style="padding:5px 8px;">${v.tipo === 'incapacidad' ? '🏥 Incapacidad' : '🏖️ Vacaciones'}</td><td style="padding:5px 8px;">${v.fecha_inicio}</td><td style="padding:5px 8px;">${v.fecha_fin}</td><td style="padding:5px 8px;">${v.capturado_por || '—'}</td>
         <td style="padding:5px 8px; font-weight:800; color:${v.validada ? '#166534' : '#B45309'};">${v.validada ? '✅ VALIDADA' : '⏳ Pendiente'}</td>
-        <td style="padding:5px 8px;">${v.validada ? '' : `<button type="button" onclick="vacValidar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #16A34A; background:white; color:#16A34A; font-weight:700; cursor:pointer;">✔️ Validar</button> `}<button type="button" onclick="vacEliminar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #DC2626; background:white; color:#DC2626; font-weight:700; cursor:pointer;">🗑️</button></td></tr>`).join('') + '</table>';
+        <td style="padding:5px 8px;">${esDir ? `${v.validada ? '' : `<button type="button" onclick="vacValidar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #16A34A; background:white; color:#16A34A; font-weight:700; cursor:pointer;">✔️ Validar</button> `}<button type="button" onclick="vacEliminar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #DC2626; background:white; color:#DC2626; font-weight:700; cursor:pointer;">🗑️</button>` : '—'}</td></tr>`).join('') + '</table>';
   } catch (e) { cont.innerHTML = '<div style="font-size:12px; color:#B45309;">⚠️ Tabla <code>vacaciones</code> no disponible aún — corre el SQL de creación.</div>'; }
 }
 
@@ -2986,6 +3002,29 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   _calcInicializarSelector();
+  // ---- Acceso: director todo · coordinadores solo Vacaciones/Incapacidades + Plantilla ----
+  const CLAVE_DIR_M = 'EC26-DIR!84Kz';
+  const CLAVE_COORD_M = 'EC26-COORD-CAPTURA';
+  let claveM = new URLSearchParams(location.search).get('clave') || localStorage.getItem('metas_clave') || '';
+  if (claveM !== CLAVE_DIR_M && claveM !== CLAVE_COORD_M) claveM = prompt('🔒 Clave de acceso a administración de metas:') || '';
+  window.__esDirector = claveM === CLAVE_DIR_M;
+  if (!window.__esDirector && claveM !== CLAVE_COORD_M) {
+    document.body.innerHTML = '<div style="padding:70px 20px; text-align:center; font-family:system-ui;"><h2>🔒 Acceso restringido</h2><p style="color:#64748B;">Clave inválida. Recarga la página para reintentar.</p></div>';
+    throw new Error('acceso denegado');
+  }
+  localStorage.setItem('metas_clave', claveM);
+  if (!window.__esDirector) {
+    ['metas', 'calendario', 'asignaciones', 'config', 'rechazos'].forEach(t => {
+      const b = document.querySelector(`.tab-btn[data-tab="${t}"]`);
+      if (b) b.style.display = 'none';
+      const c = document.getElementById('tab-' + t);
+      if (c) { c.classList.remove('active'); c.style.display = 'none'; }
+    });
+    const bTab = document.querySelector('.tab-btn[data-tab="vacaciones"]');
+    const cTab = document.getElementById('tab-vacaciones');
+    if (bTab) bTab.classList.add('active');
+    if (cTab) cTab.classList.add('active');
+  }
   const bV = document.getElementById('vac-btn-guardar');
   if (bV) bV.onclick = vacGuardar;
   vacListar();
