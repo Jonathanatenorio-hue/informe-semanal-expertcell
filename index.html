@@ -492,10 +492,15 @@ function normalizarFecha(val) {
   // contienen fecha sin hora). SheetJS las construye como UTC midnight, así que
   // getUTCDate() es lo correcto para preservar la fecha escrita.
   if (val instanceof Date) {
-    const y = val.getUTCFullYear();
+    // Celda SOLO fecha → SheetJS la deja en UTC medianoche exacta: usar getUTC*.
+    // Celda fecha+HORA (p. ej. 'Fecha cancelacion' 2026-09-02 19:25) → la hora vive en
+    // LOCAL; leerla con getUTC* corría al día siguiente todo lo capturado después de las
+    // 18:00 (México = UTC-6). Si trae cualquier componente de hora, usar getters locales.
+    const esSoloFecha = val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0 && val.getUTCMilliseconds() === 0;
+    const y = esSoloFecha ? val.getUTCFullYear() : val.getFullYear();
     if (y === 1900) return null;
-    const m = String(val.getUTCMonth() + 1).padStart(2, '0');
-    const d = String(val.getUTCDate()).padStart(2, '0');
+    const m = String((esSoloFecha ? val.getUTCMonth() : val.getMonth()) + 1).padStart(2, '0');
+    const d = String(esSoloFecha ? val.getUTCDate() : val.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
   // Caso 2: viene como string (típicamente la columna 'Back Office' que trae timestamp
