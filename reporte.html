@@ -4047,19 +4047,22 @@ function _aasFormulas(ws, filas, rk) {
       const cell = ws[ref];
       if (!cell || typeof cell.v !== 'number') return;
       const L = XLSX.utils.encode_col(i + 1);
-      cell.f = fB(L);
+      // Toda referencia va envuelta en N(): las celdas vacías de la hoja se
+      // crean como texto vacío para poder pintarlas, y en Excel "" + número = #VALUE!.
+      const C = k => `N(${L}${R(k)})`;
+      cell.f = fB(C);
     });
   };
   // Totales como suma de sus componentes
   if (R('agentesNuevos') && R('agentesMedios') && R('agentesMaduros'))
-    put('totalAgentes', L => `${L}${R('agentesNuevos')}+${L}${R('agentesMedios')}+${L}${R('agentesMaduros')}`);
+    put('totalAgentes', C => `${C('agentesNuevos')}+${C('agentesMedios')}+${C('agentesMaduros')}`);
   if (R('metaNuevos') && R('metaMedios') && R('metaMaduros'))
-    put('meta', L => `${L}${R('metaNuevos')}+${L}${R('metaMedios')}+${L}${R('metaMaduros')}`);
+    put('meta', C => `${C('metaNuevos')}+${C('metaMedios')}+${C('metaMaduros')}`);
   if (R('ventasNuevos') && R('ventasMedios') && R('ventasMaduros') && R('ventasSinMeta'))
-    put('ventas', L => `${L}${R('ventasNuevos')}+${L}${R('ventasMedios')}+${L}${R('ventasMaduros')}+${L}${R('ventasSinMeta')}`);
+    put('ventas', C => `${C('ventasNuevos')}+${C('ventasMedios')}+${C('ventasMaduros')}+${C('ventasSinMeta')}`);
   // % logro por tipo y general
   const pct = (k, vk, mk) => {
-    if (R(vk) && R(mk)) put(k, L => `IF(${L}${R(mk)}>0,${L}${R(vk)}/${L}${R(mk)}*100,0)`);
+    if (R(vk) && R(mk)) put(k, C => `IF(${C(mk)}>0,${C(vk)}/${C(mk)}*100,0)`);
   };
   pct('pctLogroNuevos', 'ventasNuevos', 'metaNuevos');
   pct('pctLogroMedios', 'ventasMedios', 'metaMedios');
@@ -4067,15 +4070,15 @@ function _aasFormulas(ws, filas, rk) {
   pct('pctLogro', 'ventas', 'meta');
   const prod = (k, vk, ak) => {
     if (R(vk) && R(ak) && R('diasTrans') && R('diasHabilesMes'))
-      put(k, L => `IF(AND(${L}${R(ak)}>0,${L}${R('diasTrans')}>0),${L}${R(vk)}/${L}${R(ak)}/${L}${R('diasTrans')}*${L}${R('diasHabilesMes')},0)`);
+      put(k, C => `IF(AND(${C(ak)}>0,${C('diasTrans')}>0),${C(vk)}/${C(ak)}/${C('diasTrans')}*${C('diasHabilesMes')},0)`);
   };
   prod('prodGeneral', 'ventas', 'totalAgentes');
   prod('prodNuevos', 'ventasNuevos', 'agentesNuevos');
   prod('prodMedios', 'ventasMedios', 'agentesMedios');
   prod('prodMaduros', 'ventasMaduros', 'agentesMaduros');
-  if (R('ventas') && R('diasTrans')) put('promDia', L => `IF(${L}${R('diasTrans')}>0,${L}${R('ventas')}/${L}${R('diasTrans')},0)`);
+  if (R('ventas') && R('diasTrans')) put('promDia', C => `IF(${C('diasTrans')}>0,${C('ventas')}/${C('diasTrans')},0)`);
   if (R('smVtas') && R('smDiasEf') && R('diasHabilesMes'))
-    put('prodSinMeta', L => `IF(${L}${R('smDiasEf')}>0,${L}${R('smVtas')}/${L}${R('smDiasEf')}*${L}${R('diasHabilesMes')},0)`);
+    put('prodSinMeta', C => `IF(${C('smDiasEf')}>0,${C('smVtas')}/${C('smDiasEf')}*${C('diasHabilesMes')},0)`);
 }
 
 function _fmtNum(n, dec) {
