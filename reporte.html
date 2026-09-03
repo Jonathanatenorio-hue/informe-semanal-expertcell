@@ -2503,7 +2503,9 @@ async function cargarDatos() {
   Promise.resolve().then(() => _cargarEntregasData()).catch(() => null).then(() => {
     _dhlFolios = new Set();
     (_entregasCache || []).forEach(e => {
-      if (e && e.folio && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+      const _estE = String((e && e.estatus_entrega) || '').toUpperCase();
+      // Solo entregas CONCLUIDAS descuentan DHL: programadas/en ruta esperan a entregarse.
+      if (e && e.folio && (e.fecha_entregado || _estE.includes('ENTREG') || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
     });
     // Las entregas llegan DESPUÉS del primer render: recalcular el detalle
     // por agente con el ajuste DHL ya disponible (mismo motor que Comisiones).
@@ -20569,7 +20571,9 @@ function renderComisiones() {
     .then(() => {
       _dhlFolios = new Set();
       (_entregasCache || []).forEach(e => {
-        if (e && e.folio && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+        const _estE = String((e && e.estatus_entrega) || '').toUpperCase();
+      // Solo entregas CONCLUIDAS descuentan DHL: programadas/en ruta esperan a entregarse.
+      if (e && e.folio && (e.fecha_entregado || _estE.includes('ENTREG') || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
       });
       setTimeout(() => {
         try {
