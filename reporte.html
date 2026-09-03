@@ -5955,6 +5955,7 @@ function exportarCampaniaLeads() {
       const p = plantMapL[a.ejecutivo] || {};
       const sup = p.supervisor || '—';
       return { n: a.ejecutivo, sup, coord: coordDeL[sup] || '—', centro: centroDeSupL[sup] || p.centro || '—',
+        tipo: (typeof TIPO_LBL !== 'undefined' && TIPO_LBL[a.tipo]) || a.tipo || '', desde: (window.__leadsFechas || {})[a.ejecutivo] || '',
         meta: a.meta || 0, av: a.activadas != null ? a.activadas : (a.avance || 0), trans: transPorAg[a.ejecutivo] || 0, camp: set.has(a.ejecutivo) };
     });
     const enCamp = todos.filter(x => x.camp);
@@ -6061,6 +6062,81 @@ function exportarCampaniaLeads() {
     const nota3 = c3(rng3.e.r, 0); if (nota3) nota3.s = { font: { name: 'Calibri', sz: 9, italic: true, color: { rgb: '595959' } } };
     ws3['!freeze'] = { xSplit: 2, ySplit: 7 };
     XLSX.utils.book_append_sheet(wbL, ws3, 'Analitica campana');
+
+    // ---- Hoja 4: POR AGENTE con filtro de Excel + VISTA DINÁMICA (nivel/valor en celdas amarillas) ----
+    const a4 = [
+      ['CAMPAÑA DE LEADS · POR AGENTE · vista dinámica y filtros'],
+      ['Vista dinámica: escribe en B3 el nivel (Global · Centro · Coordinador · Supervisor · Agente) y en D3 el nombre exacto tal como aparece en la tabla; la fila 6 se recalcula sola. La tabla de abajo trae filtros de Excel en el encabezado (flechas): filtra por supervisor, coordinador, centro, tipo o estado.'],
+      ['Nivel →', 'Global', 'Valor →', ''],
+      ['Días hábiles del mes', Number(dhL.toFixed(1)), 'Transcurridos', Number(dtL.toFixed(1)), 'Restantes', { t: 'n', v: dhL - dtL, f: 'B4-D4', z: '0.0' }, 'Factor CC2', Number(factorDe('CC2').toFixed(4)), 'Factor JV', Number(factorDe('JV').toFixed(4)), 'Factor total', Number(convL.TOTAL.factor.toFixed(4)), 'Días útiles rest. progr.', Number((venL.utiles || 0).toFixed(1))],
+      ['VISTA', 'Agentes', 'Meta', 'Activadas', 'Esperado hoy', 'Δ vs esperado', '% vs esperado', 'Act. por agente', 'En tránsito', 'Faltan (act.)', 'Obj. diario (act.)', 'Ritmo requerido', 'Proyección cierre', '% proy. vs meta', 'Progr. requeridas', 'Progr./día requerida', 'Estado'],
+      [], // fila 6: resultados de la vista (se llena abajo cuando se conoce el rango)
+      [],
+      ['Agente', 'Supervisor', 'Coordinador', 'Centro', 'Tipo', 'En campaña desde', 'Meta', 'Activadas', 'Esperado hoy', 'Δ vs esperado', '% vs esperado', 'En tránsito', 'Factor', 'Faltan (act.)', 'Obj. diario (act.)', 'Ritmo requerido', 'Proyección cierre', '% proy. vs meta', 'Progr. requeridas', 'Estado', 'En vista']];
+    const filasAg = [...enCamp].sort((x, y) => (x.centro + x.coord + x.sup + x.n).localeCompare(y.centro + y.coord + y.sup + y.n));
+    const r0 = a4.length + 1; // primera fila de datos (1-based)
+    filasAg.forEach(x => {
+      const rE = a4.length + 1;
+      const f = factorDe(x.centro);
+      const esp = dhL > 0 ? x.meta / dhL * dtL : 0;
+      const faltan = Math.max(0, x.meta - x.av - x.trans / f);
+      a4.push([x.n, x.sup, x.coord, x.centro, x.tipo, x.desde, x.meta, x.av,
+        CX3(esp, `IF($B$4>0,G${rE}/$B$4*$D$4,0)`, '0.0'),
+        CX3(x.av - esp, `H${rE}-I${rE}`, '0.0'),
+        CX3(esp > 0 ? x.av / esp : 0, `IF(I${rE}>0,H${rE}/I${rE},0)`, '0%'),
+        x.trans,
+        CX3(f, `IF(D${rE}="CC2",$H$4,IF(D${rE}="JV",$J$4,$L$4))`, '0.000'),
+        CX3(faltan, `MAX(0,G${rE}-H${rE}-L${rE}/M${rE})`, '0.0'),
+        CX3(dhL > 0 ? x.meta / dhL : 0, `IF($B$4>0,G${rE}/$B$4,0)`, '0.00'),
+        CX3(dhL - dtL > 0 ? faltan / (dhL - dtL) : 0, `IF($F$4>0,N${rE}/$F$4,0)`, '0.00'),
+        CX3(dtL > 0 ? x.av / dtL * dhL : 0, `IF($D$4>0,H${rE}/$D$4*$B$4,0)`, '0.0'),
+        CX3(x.meta > 0 && dtL > 0 ? (x.av / dtL * dhL) / x.meta : 0, `IF(G${rE}>0,Q${rE}/G${rE},0)`, '0%'),
+        CX3(Math.ceil(faltan * f), `ROUNDUP(N${rE}*M${rE},0)`),
+        { t: 's', v: '', f: `IF(G${rE}=0,"",IF(N${rE}<=0,"meta cubierta",IF(O${rE}=0,"",IF(P${rE}/O${rE}<=1.05,"en ritmo",IF(P${rE}/O${rE}<=1.3,"acelerar","meta comprometida")))))` },
+        CX3(1, `IF($B$3="Global",1,IF($B$3="Centro",IF(D${rE}=$D$3,1,0),IF($B$3="Coordinador",IF(C${rE}=$D$3,1,0),IF($B$3="Supervisor",IF(B${rE}=$D$3,1,0),IF($B$3="Agente",IF(A${rE}=$D$3,1,0),0)))))`)]);
+    });
+    const r1 = a4.length; // última fila de datos (1-based)
+    const R = col => `${col}${r0}:${col}${r1}`;
+    const SV = col => `SUMIF(${R('U')},1,${R(col)})`;
+    a4[5] = [
+      { t: 's', v: '', f: `IF($B$3="Global","Global",$B$3&": "&$D$3)` },
+      CX3(filasAg.length, `COUNTIF(${R('U')},1)`),
+      CX3(0, SV('G')), CX3(0, SV('H')),
+      CX3(0, `IF($B$4>0,C6/$B$4*$D$4,0)`, '0.0'),
+      CX3(0, `D6-E6`, '0.0'),
+      CX3(0, `IF(E6>0,D6/E6,0)`, '0%'),
+      CX3(0, `IF(B6>0,D6/B6,0)`, '0.00'),
+      CX3(0, SV('L')),
+      CX3(0, SV('N'), '0.0'),
+      CX3(0, SV('O'), '0.00'),
+      CX3(0, SV('P'), '0.00'),
+      CX3(0, SV('Q'), '0.0'),
+      CX3(0, `IF(C6>0,M6/C6,0)`, '0%'),
+      CX3(0, SV('S')),
+      CX3(0, `IF($N$4>0,O6/$N$4,0)`, '0.0'),
+      { t: 's', v: '', f: `IF(C6=0,"",IF(J6<=0,"meta cubierta",IF(K6=0,"",IF(L6/K6<=1.05,"en ritmo",IF(L6/K6<=1.3,"acelerar","meta comprometida")))))` }];
+    const ws4 = XLSX.utils.aoa_to_sheet(a4);
+    ws4['!cols'] = [{ wch: 34 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 9 }, { wch: 12 }, { wch: 7 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 8 }];
+    ws4['!autofilter'] = { ref: `A8:U${r1}` };
+    ws4['!freeze'] = { xSplit: 1, ySplit: 8 };
+    const c4 = (r, c) => ws4[XLSX.utils.encode_cell({ r, c })];
+    if (c4(0, 0)) c4(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY2 } } };
+    if (c4(1, 0)) c4(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+    [[2, 0], [2, 2]].forEach(([r, c]) => { const x = c4(r, c); if (x) x.s = { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY2 } } }; });
+    [[2, 1], [2, 3]].forEach(([r, c]) => { const x = c4(r, c) || (ws4[XLSX.utils.encode_cell({ r, c })] = { t: 's', v: '' }); x.s = { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 }, border: { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } } }; });
+    for (let c = 0; c < 14; c++) { const x = c4(3, c); if (x) x.s = (x.t === 'n') ? { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY2 } } }; }
+    for (let c = 0; c < 17; c++) { const h = c4(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1D4ED8' } }, font: { name: 'Calibri', bold: true, sz: 9.5, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; const v = c4(5, c); if (v) v.s = { fill: { fgColor: { rgb: 'DBEAFE' } }, font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: '1E3A8A' } }, alignment: { horizontal: c === 0 ? 'left' : 'center' } }; }
+    for (let c = 0; c < 21; c++) { const h = c4(7, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY2 } }, font: { name: 'Calibri', bold: true, sz: 9.5, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
+    for (let r = r0 - 1; r < r1; r++) {
+      for (let c = 0; c < 21; c++) {
+        const x = c4(r, c); if (!x) continue;
+        const s = { font: { name: 'Calibri', sz: 10, bold: c === 0, color: { rgb: c === 20 ? 'A0A0A0' : '000000' } } };
+        if (c === 9 && typeof x.v === 'number') s.font.color = { rgb: x.v >= 0 ? '16A34A' : 'C00000' };
+        if (c === 19) s.alignment = { horizontal: 'center' };
+        x.s = s;
+      }
+    }
+    XLSX.utils.book_append_sheet(wbL, ws4, 'Por agente (filtros)');
   } catch (eA) { console.warn('[Analitica leads]', eA); }
 
   XLSX.writeFile(wbL, `campania_leads_${hoyStr}.xlsx`);
