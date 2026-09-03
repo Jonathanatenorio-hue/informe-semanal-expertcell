@@ -3175,9 +3175,14 @@ function renderRadiografiaObjetivos() {
   // ===== PROGRAMACIÓN: conversión medida, tránsito, faltante y ritmo requerido =====
   const convC = _conversionPorCentro(anioR, mesHoy);
   const ventana = _ventanaProgramacion(anioR, mesHoy, hoyStrR);
-  const progDiaPorSup = {}, progDiaCancPorSup = {}, transPorSup = {};
+  const progDiaPorSup = {}, progDiaCancPorSup = {}, transPorSup = {}, arrastrePorSup = {};
   (ventasData || []).forEach(r => {
     if (!r.supervisor) return;
+    if (r.fecha_bo && r.fecha_bo < mesIniStr) {
+      const abierto = ['en_transito', 'por_activar', 'pendiente'].includes(r.estatus);
+      const actEnMes = r.estatus === 'activada' && r.fecha_activacion && r.fecha_activacion >= mesIniStr && r.fecha_activacion <= finMesStr;
+      if (abierto || actEnMes) arrastrePorSup[r.supervisor] = (arrastrePorSup[r.supervisor] || 0) + 1;
+    }
     if (r.fecha_bo && r.fecha_bo >= mesIniStr && r.fecha_bo <= finMesStr) {
       const m = progDiaPorSup[r.supervisor] || (progDiaPorSup[r.supervisor] = {});
       m[r.fecha_bo] = (m[r.fecha_bo] || 0) + 1;
@@ -3197,7 +3202,11 @@ function renderRadiografiaObjetivos() {
     r.diasUtiles = ventana.utiles;
     // Plan lineal sobre los días ÚTILES del mes (1 → fecha límite), no sobre los 22 hábiles:
     // lo programado después de la fecha límite ya no activa este mes, así que no reparte meta.
-    r.progDiaPlan = ventana.utilesMes > 0 ? (r.meta || 0) * r.factor / ventana.utilesMes : 0;
+    // Y NETO del arrastre: lo programado el mes anterior que activa este mes (o sigue en
+    // tránsito) ya cubre parte de la meta sin programar nada; el plan reparte solo el resto.
+    r.arrastre = arrastrePorSup[r.sup] || 0;
+    r.metaNeta = Math.max(0, (r.meta || 0) - r.arrastre * r.conv);
+    r.progDiaPlan = ventana.utilesMes > 0 ? r.metaNeta * r.factor / ventana.utilesMes : 0;
     r.progDiaReq = ventana.utiles > 0 ? r.progReq / ventana.utiles : (r.progReq > 0 ? null : 0);
   });
   window.__radiografiaData = { filasR, filtroTxt: sel ? sel.options[sel.selectedIndex].text : 'Global', conv: convC, ventana, factorDia, mesIniStr, hoyStr: hoyStrR };
@@ -3226,10 +3235,11 @@ function renderRadiografiaObjetivos() {
       <td style="padding:6px 8px; text-align:right; font-weight:700; color:${okD ? '#16A34A' : '#DC2626'};">${okD ? '+' : ''}${F1(dif)}</td>
       <td style="padding:6px 8px; text-align:right; color:#5B3A8E;">${r.progMes || 0}</td>
       <td style="padding:6px 8px; text-align:right; color:#B45309;">${r.transito || 0}</td>
+      <td style="padding:6px 8px; text-align:right; color:#64748B;" title="Programado el mes anterior que activó este mes o sigue en tránsito">${r.arrastre || 0}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700;">${F1(r.faltan)}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700; color:#5B3A8E;">${r.progReq || 0}</td>
       <td style="padding:6px 8px; text-align:right; color:#64748B;">${F1(r.progDiaPlan)}</td>
-      <td style="padding:6px 8px; text-align:right; font-weight:800; color:${est.col};">${r.progDiaReq === null ? '—' : F1(r.progDiaReq)}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:800; font-size:13px; color:${est.col}; background:#FEF3C7; border-left:2px solid #F59E0B; border-right:2px solid #F59E0B;">${r.progDiaReq === null ? '—' : F1(r.progDiaReq)}</td>
       <td style="padding:4px 8px; text-align:center;"><span style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10.5px; font-weight:700; color:${est.col}; background:${est.bg};">${est.txt}</span></td>
     </tr>`;
   };
@@ -3239,7 +3249,7 @@ function renderRadiografiaObjetivos() {
     let algunFuera = false;
     arr.forEach(r => {
       t.meta += r.meta || 0; t.ventas += r.ventas || 0; t.totalAgentes += r.totalAgentes || 0;
-      t.progMes += r.progMes || 0; t.transito += r.transito || 0; t.faltan += r.faltan || 0; t.progReq += r.progReq || 0; t.progDiaPlan += r.progDiaPlan || 0;
+      t.progMes += r.progMes || 0; t.transito += r.transito || 0; t.faltan += r.faltan || 0; t.progReq += r.progReq || 0; t.progDiaPlan += r.progDiaPlan || 0; t.arrastre = (t.arrastre || 0) + (r.arrastre || 0);
       if (r.progDiaReq === null) algunFuera = true; else t.progDiaReq += r.progDiaReq || 0;
       Object.entries(r.progDia || {}).forEach(([f, v]) => { t.progDia[f] = (t.progDia[f] || 0) + v; });
       Object.entries(r.progDiaCanc || {}).forEach(([f, v]) => { t.progDiaCanc[f] = (t.progDiaCanc[f] || 0) + v; });
@@ -3278,9 +3288,9 @@ function renderRadiografiaObjetivos() {
     return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado al ritmo del mes; con meta cargada usa la meta real, si no la curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
   })();
   cont.innerHTML = franjaHTML + `<table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Obj. diario act.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Faltan (act.)', 'Progr. requeridas', 'Progr./día plan', 'Progr./día requerida', 'Estado'].map(th).join('')}</tr></thead>
+    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Obj. diario act.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Arrastre mes ant.', 'Faltan (act.)', 'Progr. requeridas', 'Progr./día plan'].map(th).join('')}<th style="padding:7px 8px; background:#B45309; color:white; font-size:10.5px; white-space:nowrap; border-left:2px solid #F59E0B; border-right:2px solid #F59E0B;">★ Progr./día requerida (HOY)</th>${['Estado'].map(th).join('')}</tr></thead>
     <tbody>${cuerpo}</tbody></table>
-    <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · <strong>Programación:</strong> factor por centro medido en ${convC.meses.join(', ')} → CC2 ${convC.CC2.factor.toFixed(3)} (conv. ${(convC.CC2.conv * 100).toFixed(1)}%${convC.CC2.estimado ? ', estimado' : ''}) · JV ${convC.JV.factor.toFixed(3)} (conv. ${(convC.JV.conv * 100).toFixed(1)}%${convC.JV.estimado ? ', estimado' : ''}) · Faltan = meta − activadas − tránsito × conversión · Progr. requeridas = faltan × factor · Último día útil de programación: <strong>${ventana.limLbl}</strong> (rezago BO→activación p90 = ${ventana.rezago.dias} días${ventana.rezago.medido ? `, medido sobre ${ventana.rezago.n} activaciones, mediana ${ventana.rezago.mediana}` : ', valor de respaldo'}) → ${F1(ventana.utilesMes)} días útiles en el mes, ${F1(ventana.utiles)} restantes · Progr./día plan = meta × factor ÷ días útiles del mes · Progr./día requerida = requeridas ÷ días útiles restantes · Estado: en ritmo ≤ 105% del plan · acelerar ≤ 130% · meta comprometida > 130% (decisión de dirección, no de presión al corte) · Sin meta: ventas por día hábil EFECTIVO vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día · 🎓 = aún en capacitación.</div>
+    <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · <strong>Programación:</strong> factor por centro medido en ${convC.meses.join(', ')} → CC2 ${convC.CC2.factor.toFixed(3)} (conv. ${(convC.CC2.conv * 100).toFixed(1)}%${convC.CC2.estimado ? ', estimado' : ''}) · JV ${convC.JV.factor.toFixed(3)} (conv. ${(convC.JV.conv * 100).toFixed(1)}%${convC.JV.estimado ? ', estimado' : ''}) · Faltan = meta − activadas − tránsito × conversión · Progr. requeridas = faltan × factor · Último día útil de programación: <strong>${ventana.limLbl}</strong> (rezago BO→activación p90 = ${ventana.rezago.dias} días${ventana.rezago.medido ? `, medido sobre ${ventana.rezago.n} activaciones, mediana ${ventana.rezago.mediana}` : ', valor de respaldo'}) → ${F1(ventana.utilesMes)} días útiles en el mes, ${F1(ventana.utiles)} restantes · Progr./día plan = (meta − arrastre × conversión) × factor ÷ días útiles del mes (el arrastre es lo programado el mes anterior que activa en este: ya cubre meta sin programar) · Progr./día requerida = requeridas ÷ días útiles restantes · Estado: en ritmo ≤ 105% del plan · acelerar ≤ 130% · meta comprometida > 130% (decisión de dirección, no de presión al corte) · Sin meta: ventas por día hábil EFECTIVO vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día · 🎓 = aún en capacitación.</div>
     ${_matrizCumplimientoHTML(filasR, factorDia, hoyStrR, tot)}`;
 }
 
@@ -3293,13 +3303,15 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
     const pct = obj > 0 ? v / obj : (v > 0 ? 1 : 0);
     const col = pct >= 1 ? '#166534' : pct >= 0.8 ? '#92400E' : '#991B1B';
     const bg = pct >= 1 ? '#DCFCE7' : pct >= 0.8 ? '#FEF3C7' : '#FEE2E2';
-    return `<td style="padding:4px 5px; text-align:center; font-weight:700; color:${col}; background:${bg}; font-size:11px; white-space:nowrap;" title="objetivo ${obj.toFixed(1)}${canc ? ` · ${canc} de estas ${v} ya se cancelaron` : ''}">${v}${canc ? `<sup style="font-size:8.5px; color:#991B1B; font-weight:800; margin-left:1px;">−${canc}</sup>` : ''}</td>`;
+    const dif = v - obj;
+    return `<td style="padding:3px 5px; text-align:center; background:${bg}; font-size:11px; white-space:nowrap; line-height:1.15;" title="hizo ${v} de ${obj.toFixed(1)}${canc ? ` · ${canc} de estas ya se cancelaron` : ''}"><div style="font-weight:800; color:${col};">${v}${canc ? `<sup style="font-size:8.5px; color:#991B1B; font-weight:800; margin-left:1px;">−${canc}</sup>` : ''}<span style="font-weight:500; color:#94A3B8;"> / ${obj.toFixed(0)}</span></div><div style="font-size:10px; font-weight:700; color:${dif >= 0 ? '#166534' : '#991B1B'};">${dif >= 0 ? '+' : ''}${dif.toFixed(0)}</div></td>`;
   };
   const filaM = (r, esTot) => {
-    let acum = 0, acumObj = 0, tds = '';
-    dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; tds += celda(v, obj, (r.progDiaCanc || {})[f] || 0); });
+    let acum = 0, acumObj = 0, faltaron = 0, tds = '';
+    dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; if (v < obj) faltaron += obj - v; tds += celda(v, obj, (r.progDiaCanc || {})[f] || 0); });
     const pct = acumObj > 0 ? acum / acumObj * 100 : 0;
-    return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px;">${r.sup}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
+    const dAc = acum - acumObj;
+    return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px;">${r.sup}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${dAc >= 0 ? '#166534' : '#991B1B'};">${dAc >= 0 ? '+' : ''}${dAc.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:700; color:#991B1B; background:#FFF1F2;" title="Suma de lo que faltó en los días que quedó abajo del plan (los días que se pasó no compensan)">${faltaron > 0 ? faltaron.toFixed(0) : '—'}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
   };
   const rojosSeguidos = filasR.map(r => {
     let n = 0; for (let i = dias.length - 1; i >= 0; i--) { const f = dias[i]; const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; if (obj > 0 && v / obj < 0.8) n++; else break; }
@@ -3307,9 +3319,9 @@ function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
   }).filter(x => x.n >= 3).sort((a, b) => b.n - a.n);
   return `<div style="margin-top:16px;">
     <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:4px;">📆 Cumplimiento diario de programación (cierre del día vs plan)</div>
-    <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Programaciones con fecha de back office ese día (incluye las que luego se cancelaron) contra el plan diario del supervisor (progr./día plan × factor del día; sábado = 0.5). Verde ≥ 100% · ámbar 80-99% · rojo < 80% · el <sup style="color:#991B1B; font-weight:800;">−n</sup> chiquito = cuántas de esas programaciones ya se cancelaron (cuentan como actividad; el factor ya descuenta lo que se cae). ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
+    <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Cada celda: <strong>hizo / objetivo del día</strong> y abajo la diferencia. Objetivo = progr./día plan × factor del día (sábado = 0.5); cuenta toda programación con fecha de back office ese día, incluidas las que luego se cancelaron. Verde ≥ 100% · ámbar 80-99% · rojo < 80% · <strong>Δ acum.</strong> = programadas − plan del mes a la fecha · <strong>Faltaron</strong> = suma de lo que faltó en los días rojos/ámbar (un día bueno no borra uno malo) · el <sup style="color:#991B1B; font-weight:800;">−n</sup> chiquito = cuántas de esas programaciones ya se cancelaron (cuentan como actividad; el factor ya descuenta lo que se cae). ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
     <div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:11px;">
-      <thead><tr>${th('Supervisor')}${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('%')}</tr></thead>
+      <thead><tr>${th('Supervisor')}${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('Δ acum.')}${th('Faltaron')}${th('%')}</tr></thead>
       <tbody>${filasR.map(r => filaM(r, false)).join('')}${filaM(tot, true)}</tbody>
     </table></div></div>`;
 }
@@ -3323,14 +3335,14 @@ function exportarRadiografiaObjetivos() {
   const NAVY = '1F3864';
   const cv = D.conv || { CC2: { factor: 1.05, conv: 0.95 }, JV: { factor: 1.05, conv: 0.95 }, TOTAL: { factor: 1.05, conv: 0.95 }, meses: [] };
   const vn = D.ventana || { utiles: 0, limLbl: '—', limStr: '' };
-  const NC = 20; // columnas de la hoja
+  const NC = 21; // columnas de la hoja
   const aoa = [
     [`RADIOGRAFÍA DE OBJETIVOS — ${MESES_N[hoyE.getMonth()].toUpperCase()} ${hoyE.getFullYear()}`],
-    [`ExpertCell · ${D.filtroTxt} · Generado ${hoyE.getDate()}/${hoyE.getMonth() + 1}/${hoyE.getFullYear()} · Factores de programación = 1 ÷ conversión medida (cohortes por fecha BO de ${cv.meses.join(', ') || 'los 3 meses anteriores'}) · Último día útil de programación: ${vn.limLbl} (rezago BO→activación p90 = ${vn.rezago ? vn.rezago.dias : REZAGO_PROG_ACT_DIAS} días) · Plan diario = meta × factor ÷ días útiles del mes`],
+    [`ExpertCell · ${D.filtroTxt} · Generado ${hoyE.getDate()}/${hoyE.getMonth() + 1}/${hoyE.getFullYear()} · Factores de programación = 1 ÷ conversión medida (cohortes por fecha BO de ${cv.meses.join(', ') || 'los 3 meses anteriores'}) · Último día útil de programación: ${vn.limLbl} (rezago BO→activación p90 = ${vn.rezago ? vn.rezago.dias : REZAGO_PROG_ACT_DIAS} días) · Plan diario = (meta − arrastre del mes anterior × conversión) × factor ÷ días útiles del mes`],
     ['Parámetros (sábado = 0.5 día) — celdas amarillas editables:'],
     ['Días hábiles del mes', dh, 'Días transcurridos', dt, 'Factor CC2', Number(cv.CC2.factor.toFixed(4)), 'Factor JV', Number(cv.JV.factor.toFixed(4)), 'Factor total', Number(cv.TOTAL.factor.toFixed(4)), 'Días útiles restantes', Number((vn.utiles || 0).toFixed(1)), 'Días útiles del mes', Number((vn.utilesMes || dh).toFixed(1))],
     [],
-    ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Obj. Diario Activadas', 'Equipo (N·I·M)', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Factor', 'Faltan (activadas)', 'Progr. requeridas', 'Progr./día plan', 'Progr./día requerida', 'Estado']];
+    ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Obj. Diario Activadas', 'Equipo (N·I·M)', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Factor', 'Faltan (activadas)', 'Progr. requeridas', 'Progr./día plan', 'Progr./día requerida', 'Estado', 'Arrastre mes ant.']];
   // Con FÓRMULAS vivas: parámetros en fila 4 (B días háb., D transcurridos, F/H/J factores, L días útiles)
   const CX = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
   const SX = (v, f) => ({ t: 's', v: v == null ? '' : String(v), f });
@@ -3355,9 +3367,10 @@ function exportarRadiografiaObjetivos() {
       CX(r.factor || cv.TOTAL.factor, `IF(B${rE}="CC2",$F$4,IF(B${rE}="JV",$H$4,$J$4))`, '0.000'),
       CX(r.faltan || 0, `MAX(0,G${rE}-J${rE}-N${rE}/O${rE})`, '0.0'),
       CX(r.progReq || 0, `ROUNDUP(P${rE}*O${rE},0)`),
-      CX(r.progDiaPlan || 0, `IF($N$4>0,G${rE}*O${rE}/$N$4,0)`, '0.0'),
+      CX(r.progDiaPlan || 0, `IF($N$4>0,MAX(0,G${rE}-U${rE}/O${rE})*O${rE}/$N$4,0)`, '0.0'),
       CX(r.progDiaReq === null ? 0 : (r.progDiaReq || 0), `IF($L$4>0,Q${rE}/$L$4,0)`, '0.0'),
-      SX(est.txt, `IF(AND($L$4=0,Q${rE}>0),"fuera de ventana",IF(R${rE}=0,"",IF(P${rE}<=0,"meta cubierta",IF(S${rE}/R${rE}<=1.05,"en ritmo",IF(S${rE}/R${rE}<=1.3,"acelerar","meta comprometida")))))`)];
+      SX(est.txt, `IF(AND($L$4=0,Q${rE}>0),"fuera de ventana",IF(R${rE}=0,"",IF(P${rE}<=0,"meta cubierta",IF(S${rE}/R${rE}<=1.05,"en ritmo",IF(S${rE}/R${rE}<=1.3,"acelerar","meta comprometida")))))`),
+      sum('U', r.arrastre || 0)];
   };
   const marcas = [];
   const centrosE = [...new Set(D.filasR.map(r => r.centro))];
@@ -3367,16 +3380,16 @@ function exportarRadiografiaObjetivos() {
     const idxGrupo = [];
     grupo.forEach(r => { idxGrupo.push(aoa.length + 1); filasIdx.push(aoa.length + 1); aoa.push(filaCalc(r, aoa.length + 1, null)); });
     if (centrosE.length > 1 && grupo.length > 1) {
-      const st = { sup: `Subtotal ${ce}`, centro: ce, coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: (cv[ce] || cv.TOTAL).factor };
-      grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; st.progMes += r.progMes || 0; st.transito += r.transito || 0; st.faltan += r.faltan || 0; st.progReq += r.progReq || 0; st.progDiaPlan += r.progDiaPlan || 0; st.progDiaReq += r.progDiaReq || 0; if (r.comp) { st.comp.N += r.comp.N; st.comp.I += r.comp.I; st.comp.M += r.comp.M; } if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
+      const st = { sup: `Subtotal ${ce}`, centro: ce, coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, arrastre: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: (cv[ce] || cv.TOTAL).factor };
+      grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; st.progMes += r.progMes || 0; st.transito += r.transito || 0; st.arrastre += r.arrastre || 0; st.faltan += r.faltan || 0; st.progReq += r.progReq || 0; st.progDiaPlan += r.progDiaPlan || 0; st.progDiaReq += r.progDiaReq || 0; if (r.comp) { st.comp.N += r.comp.N; st.comp.I += r.comp.I; st.comp.M += r.comp.M; } if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
       marcas.push({ r: aoa.length, tipo: 'sub' });
       subIdx.push(aoa.length + 1);
       aoa.push(filaCalc(st, aoa.length + 1, idxGrupo));
     }
   });
-  const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: cv.TOTAL.factor };
+  const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, arrastre: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: cv.TOTAL.factor };
   D.filasR.forEach(r => { if (r.comp) { tot.comp.N += r.comp.N; tot.comp.I += r.comp.I; tot.comp.M += r.comp.M; } });
-  D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; tot.progMes += r.progMes || 0; tot.transito += r.transito || 0; tot.faltan += r.faltan || 0; tot.progReq += r.progReq || 0; tot.progDiaPlan += r.progDiaPlan || 0; tot.progDiaReq += r.progDiaReq || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
+  D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; tot.progMes += r.progMes || 0; tot.transito += r.transito || 0; tot.arrastre += r.arrastre || 0; tot.faltan += r.faltan || 0; tot.progReq += r.progReq || 0; tot.progDiaPlan += r.progDiaPlan || 0; tot.progDiaReq += r.progDiaReq || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
   marcas.push({ r: aoa.length, tipo: 'tot' });
   const filaTot = aoa.length + 1;
   aoa.push(filaCalc(tot, filaTot, filasIdx));
@@ -3387,14 +3400,16 @@ function exportarRadiografiaObjetivos() {
   fTotRow[17] = CX(tot.progDiaPlan, filasIdx.map(i => `R${i}`).join('+'), '0.0');
   fTotRow[18] = CX(tot.progDiaReq, filasIdx.map(i => `S${i}`).join('+'), '0.0');
   fTotRow[19] = '';
+  fTotRow[20] = CX(tot.arrastre || 0, filasIdx.map(i => `U${i}`).join('+'));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }];
+  ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }, { wch: 11 }];
   const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
   if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
   if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
   if (cel(2, 0)) cel(2, 0).s = { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
   for (let c = 0; c < 14; c++) { const x = cel(3, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } }; }
-  for (let c = 0; c < NC; c++) { const h = cel(5, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
+  for (let c = 0; c < NC; c++) { const h = cel(5, c); if (h) h.s = { fill: { fgColor: { rgb: c === 18 ? 'B45309' : NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
+  if (cel(5, 18)) cel(5, 18).v = '★ Progr./día requerida (HOY)';
   const rango = XLSX.utils.decode_range(ws['!ref']);
   for (let r = 6; r <= rango.e.r; r++) {
     const marca = marcas.find(m => m.r === r);
@@ -3405,7 +3420,8 @@ function exportarRadiografiaObjetivos() {
       if (marca) s.fill = { fgColor: { rgb: marca.tipo === 'tot' ? 'DDEBF7' : 'F1F5F9' } };
       if (c === 11 && typeof x.v === 'number') s.font.color = { rgb: x.v >= 0 ? '16A34A' : 'C00000' };
       if (c === 5 && typeof x.v === 'number' && dh > 0) s.font.color = { rgb: x.v >= 6 / dh ? '16A34A' : 'C00000' };
-      if (c === 12 || c === 16 || c === 18) s.font.color = s.font.color || { rgb: '5B3A8E' };
+      if (c === 12 || c === 16) s.font.color = s.font.color || { rgb: '5B3A8E' };
+      if (c === 18) { s.fill = { fgColor: { rgb: marca ? 'FDE68A' : 'FEF3C7' } }; s.font.bold = true; s.font.sz = 11; s.border = { left: { style: 'medium', color: { rgb: 'F59E0B' } }, right: { style: 'medium', color: { rgb: 'F59E0B' } } }; }
       if (c === 19 && typeof x.v === 'string') {
         const m = { 'en ritmo': 'DCFCE7', 'meta cubierta': 'DCFCE7', 'acelerar': 'FEF3C7', 'meta comprometida': 'FEE2E2', 'fuera de ventana': 'F3F4F6' };
         if (m[x.v]) s.fill = { fgColor: { rgb: m[x.v] } };
