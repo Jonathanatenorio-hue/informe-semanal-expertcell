@@ -3322,7 +3322,8 @@ function _calcularRiesgo(filtro) {
     dhMes += f;
     if (d.fecha < hoyStr) dhTrans += f;
   });
-  const mesArrancado = dhTrans >= 3;
+  const mesArrancado = dhTrans >= 3;       // el mes en curso empieza a opinar (ALERTA)
+  const mesConEvidencia = dhTrans >= 8;    // suspender una acción (RECUPERACIÓN) exige más días
   const mesesC = [];
   for (let k = 3; k >= 1; k--) {
     let m = mesAct - k, a = anio;
@@ -3386,14 +3387,17 @@ function _calcularRiesgo(filtro) {
     const proy = dhTrans > 0 ? real / dhTrans * dhMes : 0;
     const pctMes = espAct > 0 ? proy / espAct : 0;
     let clas = pctPer < 0.5 ? 'CRÍTICO' : pctPer < 0.7 ? 'RIESGO' : pctPer < 0.9 ? 'OBSERVACIÓN' : 'OK';
-    if (mesArrancado) {
-      if (clas === 'OK' && pctMes < 0.7) clas = 'ALERTA';
-      else if ((clas === 'RIESGO' || clas === 'CRÍTICO') && pctMes >= 0.9) clas = 'RECUPERACIÓN';
-    }
+    // Escalera con meses cerrados: se decide ANTES de mirar el mes en curso
+    const enEvalBaja = (clas === 'CRÍTICO' || clas === 'RIESGO') && (consec >= 3 || (clas === 'CRÍTICO' && tipo === 'maduro' && mesBajo50));
+    // Mes en curso: ALERTA desde el 3er día hábil (avisar es barato);
+    // RECUPERACIÓN desde el 8vo (suspender una acción exige evidencia) y NUNCA
+    // sobre una evaluación de baja: ahí el buen mes se anota como dato, no cancela la decisión.
+    if (mesArrancado && clas === 'OK' && pctMes < 0.7) clas = 'ALERTA';
+    else if (mesConEvidencia && (clas === 'RIESGO' || clas === 'CRÍTICO') && pctMes >= 0.9 && !enEvalBaja) clas = 'RECUPERACIÓN';
     if (clas === 'OK') return;
     let accion;
     if (clas === 'CRÍTICO' || clas === 'RIESGO') {
-      if (consec >= 3 || (clas === 'CRÍTICO' && tipo === 'maduro' && mesBajo50)) accion = 'Evaluación de baja con coordinador';
+      if (enEvalBaja) accion = 'Evaluación de baja con coordinador' + (mesConEvidencia && pctMes >= 0.9 ? ` (mes actual en ritmo: ${Math.round(pctMes * 100)}% — decidir con este dato)` : '');
       else if (consec === 2) accion = 'Plan formal con fecha compromiso';
       else accion = 'Plan con el supervisor';
     } else if (clas === 'OBSERVACIÓN') accion = 'Seguimiento del supervisor';
@@ -3405,7 +3409,7 @@ function _calcularRiesgo(filtro) {
   });
   const orden = { 'CRÍTICO': 0, 'RIESGO': 1, 'OBSERVACIÓN': 2, 'ALERTA': 3, 'RECUPERACIÓN': 4 };
   filas.sort((a, b) => orden[a.clas] - orden[b.clas] || a.pctPer - b.pctPer);
-  return { filas, mesesC, dhMes, dhTrans, mesArrancado };
+  return { filas, mesesC, dhMes, dhTrans, mesArrancado, mesConEvidencia };
 }
 
 function renderRiesgo() {
@@ -3428,7 +3432,7 @@ function renderRiesgo() {
   const visibles = lista.slice(0, pag);
   const th = t => `<th style="padding:6px 8px; background:#991B1B; color:white; font-size:10.5px; white-space:nowrap;">${t}</th>`;
   cont.innerHTML = `<div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">${chips}</div>
-  <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Mostrando ${visibles.length} de ${lista.length} · Cada mes se lee <strong>ventas/esperado de su etapa</strong> (6 nuevo · 8 medio · 12 maduro) · % curva = suma de ventas ÷ suma de esperados del trimestre · La escalera de decisión solo usa meses cerrados${R.mesArrancado ? '' : ' · <strong style="color:#0077A8;">Arranque de mes:</strong> el mes en curso aún no opina (entra al 3er día hábil)'} · El Excel baja la lista completa.</div>
+  <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Mostrando ${visibles.length} de ${lista.length} · Cada mes se lee <strong>ventas/esperado de su etapa</strong> (6 nuevo · 8 medio · 12 maduro) · % curva = suma de ventas ÷ suma de esperados del trimestre · La escalera de decisión solo usa meses cerrados${R.mesArrancado ? '' : ' · <strong style="color:#0077A8;">Arranque de mes:</strong> el mes en curso aún no opina (ALERTA desde el 3er día hábil)'}${R.mesArrancado && !R.mesConEvidencia ? ' · <strong style="color:#0077A8;">RECUPERACIÓN</strong> se activa al 8vo día hábil (' + R.dhTrans.toFixed(1) + ' de ' + R.dhMes.toFixed(1) + ')' : ''} · Una evaluación de baja nunca se suspende por el mes en curso: el buen ritmo se anota en la acción · El Excel baja la lista completa.</div>
   <table style="width:100%; border-collapse:collapse; font-size:12px;"><thead><tr>${['Agente', 'Supervisor', 'Tipo', 'Antig. (días)', ...R.mesesC.map(m => m.lbl + ' (v/e)'), '% curva 3m', 'Meses seg. <70%', 'Mes real', 'Mes proy.', '% mes vs su etapa', 'Tránsito', 'Clasificación', 'Acción (escalera)'].map(th).join('')}</tr></thead>
   <tbody>${visibles.map(f => `<tr style="background:${BG[f.clas]};">
     <td style="padding:5px 8px; font-weight:600; white-space:nowrap;">${f.n}</td><td style="padding:5px 8px;">${f.sup}</td>
