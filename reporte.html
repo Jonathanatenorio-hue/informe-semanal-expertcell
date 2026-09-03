@@ -18888,10 +18888,15 @@ function _renderLogisticaTabContent(data) {
 }
 
 // === Helpers de agregación ===
+function _logNormKey(v) {
+  const t = String(v == null ? '' : v).trim();
+  if (!t) return '(sin dato)';
+  return t.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
 function _logCountBy(data, campo, topN = 0) {
   const m = {};
   data.forEach(d => {
-    const k = d[campo] || '(sin dato)';
+    const k = _logNormKey(d[campo]);
     m[k] = (m[k] || 0) + 1;
   });
   let arr = Object.entries(m).map(([k, v]) => ({ k, v })).sort((a, b) => b.v - a.v);
@@ -18901,7 +18906,7 @@ function _logCountBy(data, campo, topN = 0) {
 function _logSumBy(data, campoGroup, campoSum) {
   const m = {};
   data.forEach(d => {
-    const k = d[campoGroup] || '(sin dato)';
+    const k = _logNormKey(d[campoGroup]);
     if (!m[k]) m[k] = { count: 0, sum: 0 };
     m[k].count++;
     m[k].sum += parseFloat(d[campoSum]) || 0;
