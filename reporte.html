@@ -3013,6 +3013,59 @@ function renderEmbudo(actual, anterior) {
 // nunca tumbe el render principal del reporte.
 // =====================================================================
 // ===== RADIOGRAFÍA DE OBJETIVOS DEL MES (por supervisor, con filtros) =====
+// ===== CONVERSIÓN MEDIDA POR CENTRO =====
+// Cohortes por fecha_bo de los 3 meses cerrados anteriores; solo folios cerrados
+// (activada / cancelada). Factor de programación = 1 / conversión. Requiere que el
+// index cargue las canceladas post-BO (index-171+); antes de eso la conversión sale ~100%.
+function _conversionPorCentro(anio, mes) {
+  const meses = [];
+  for (let k = 1; k <= 3; k++) { let m = mes - k, a = anio; if (m <= 0) { m += 12; a -= 1; } meses.push(`${a}-${String(m).padStart(2, '0')}`); }
+  const acc = { CC2: { a: 0, c: 0 }, JV: { a: 0, c: 0 }, TOTAL: { a: 0, c: 0 } };
+  (ventasData || []).forEach(r => {
+    if (!r.fecha_bo || !meses.includes(String(r.fecha_bo).substring(0, 7))) return;
+    if (r.estatus !== 'activada' && r.estatus !== 'cancelada') return;
+    const k = r.estatus === 'activada' ? 'a' : 'c';
+    if (acc[r.centro]) acc[r.centro][k]++;
+    acc.TOTAL[k]++;
+  });
+  const out = { meses };
+  const nT = acc.TOTAL.a + acc.TOTAL.c;
+  const convT = nT >= 50 ? acc.TOTAL.a / nT : 0.95;
+  ['CC2', 'JV', 'TOTAL'].forEach(ce => {
+    const x = acc[ce]; const n = x.a + x.c;
+    const conv = n >= 50 ? x.a / n : convT;
+    out[ce] = { conv, factor: conv > 0 ? 1 / conv : 1.05, n, a: x.a, c: x.c, estimado: n < 50 };
+  });
+  return out;
+}
+
+// Rezago programación → activación: p90 medido jun-ago 2026 = 6 días naturales.
+// Lo programado después de (fin de mes − 6) se activa en el mes siguiente.
+const REZAGO_PROG_ACT_DIAS = 6;
+function _ventanaProgramacion(anio, mes, hoyStr) {
+  const ultDia = new Date(anio, mes, 0).getDate();
+  const lim = new Date(anio, mes - 1, ultDia - REZAGO_PROG_ACT_DIAS);
+  const limStr = `${lim.getFullYear()}-${String(lim.getMonth() + 1).padStart(2, '0')}-${String(lim.getDate()).padStart(2, '0')}`;
+  const mesKey = `${anio}-${String(mes).padStart(2, '0')}`;
+  let utiles = 0;
+  (calendarioData || []).forEach(d => {
+    if (!d.fecha || d.fecha.substring(0, 7) !== mesKey) return;
+    if (d.fecha >= hoyStr && d.fecha <= limStr) utiles += parseFloat(d.factor_dia || 0);
+  });
+  return { limStr, utiles, limLbl: `${lim.getDate()}-${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][lim.getMonth()]}` };
+}
+
+// Estado del ritmo de programación de un supervisor (requerido vs plan)
+function _estadoRitmo(r) {
+  if (r.progDiaReq === null) return { k: 'fuera', txt: 'fuera de ventana', col: '#6B7280', bg: '#F3F4F6' };
+  if (!(r.progDiaPlan > 0)) return { k: 'na', txt: '—', col: '#6B7280', bg: 'transparent' };
+  if (r.faltan <= 0) return { k: 'ok', txt: 'meta cubierta', col: '#166534', bg: '#DCFCE7' };
+  const ratio = r.progDiaReq / r.progDiaPlan;
+  if (ratio <= 1.05) return { k: 'ok', txt: 'en ritmo', col: '#166534', bg: '#DCFCE7' };
+  if (ratio <= 1.3) return { k: 'amb', txt: 'acelerar', col: '#92400E', bg: '#FEF3C7' };
+  return { k: 'rojo', txt: 'meta comprometida', col: '#991B1B', bg: '#FEE2E2' };
+}
+
 function renderRadiografiaObjetivos() {
   const cont = document.getElementById('radiografia-tabla');
   if (!cont) return;
@@ -3097,17 +3150,41 @@ function renderRadiografiaObjetivos() {
   });
   if (!filasR.length) { cont.innerHTML = '<div style="padding:14px; color:var(--text-soft); font-size:12px;">Sin datos para este filtro en el mes en curso.</div>'; window.__radiografiaData = null; return; }
   filasR.sort((a, b) => (a.centro + '').localeCompare(b.centro + '') || b.meta - a.meta);
-  window.__radiografiaData = { filasR, filtroTxt: sel ? sel.options[sel.selectedIndex].text : 'Global' };
+  // ===== PROGRAMACIÓN: conversión medida, tránsito, faltante y ritmo requerido =====
+  const convC = _conversionPorCentro(anioR, mesHoy);
+  const ventana = _ventanaProgramacion(anioR, mesHoy, hoyStrR);
+  const progDiaPorSup = {}, transPorSup = {};
+  (ventasData || []).forEach(r => {
+    if (!r.supervisor) return;
+    if (r.fecha_bo && r.fecha_bo >= mesIniStr && r.fecha_bo <= finMesStr) {
+      const m = progDiaPorSup[r.supervisor] || (progDiaPorSup[r.supervisor] = {});
+      m[r.fecha_bo] = (m[r.fecha_bo] || 0) + 1;
+    }
+    if (['en_transito', 'por_activar', 'pendiente'].includes(r.estatus)) transPorSup[r.supervisor] = (transPorSup[r.supervisor] || 0) + 1;
+  });
+  filasR.forEach(r => {
+    const cc = convC[r.centro] || convC.TOTAL;
+    r.conv = cc.conv; r.factor = cc.factor;
+    r.progDia = progDiaPorSup[r.sup] || {};
+    r.progMes = Object.values(r.progDia).reduce((a, b) => a + b, 0);
+    r.transito = transPorSup[r.sup] || 0;
+    r.faltan = Math.max(0, (r.meta || 0) - (r.ventas || 0) - r.transito * r.conv);
+    r.progReq = Math.ceil(r.faltan * r.factor);
+    r.diasUtiles = ventana.utiles;
+    const dhR = r.diasHabilesMes || 0;
+    r.progDiaPlan = dhR > 0 ? (r.meta || 0) * r.factor / dhR : 0;
+    r.progDiaReq = ventana.utiles > 0 ? r.progReq / ventana.utiles : (r.progReq > 0 ? null : 0);
+  });
+  window.__radiografiaData = { filasR, filtroTxt: sel ? sel.options[sel.selectedIndex].text : 'Global', conv: convC, ventana, factorDia, mesIniStr, hoyStr: hoyStrR };
 
   const F1 = n => Number(n || 0).toFixed(1);
   const fila = (r, esSub, esTot) => {
     const dh = r.diasHabilesMes || 0, dt = r.diasTrans || 0;
-    const metaProg = Math.ceil((r.meta || 0) * 1.1);
     const objDia = dh > 0 ? r.meta / dh : 0;
-    const objDiaProg = dh > 0 ? metaProg / dh : 0;
     const esperado = dh > 0 ? r.meta / dh * dt : 0;
     const dif = r.ventas - esperado;
     const okD = dif >= 0;
+    const est = _estadoRitmo(r);
     const bg = esTot ? 'background:#DDEBF7; font-weight:700;' : (esSub ? 'background:#F1F5F9; font-weight:700;' : '');
     return `<tr style="${bg}">
       <td style="padding:6px 8px; font-weight:600; white-space:nowrap;">${r.sup}</td>
@@ -3117,22 +3194,33 @@ function renderRadiografiaObjetivos() {
       <td style="padding:6px 8px; text-align:right;">${(r.sm && r.sm.n) ? `${r.sm.n}${r.sm.rampa ? ` <span title="en capacitación">(${r.sm.rampa}🎓)</span>` : ''}` : '—'}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700; ${(() => { if (!r.sm || r.sm.diasEf <= 0) return ''; const est = (r.diasHabilesMes > 0 ? 6 / r.diasHabilesMes : 0.26); return 'color:' + (r.sm.vtas / r.sm.diasEf >= est ? '#16A34A' : '#DC2626') + ';'; })()}">${(r.sm && r.sm.diasEf > 0) ? (r.sm.vtas / r.sm.diasEf).toFixed(2) : ((r.sm && r.sm.n) ? '🎓' : '—')}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700;">${r.meta || 0}</td>
-      <td style="padding:6px 8px; text-align:right; font-weight:700; color:#5B3A8E;">${metaProg}</td>
       <td style="padding:6px 8px; text-align:right;">${F1(objDia)}</td>
-      <td style="padding:6px 8px; text-align:right; color:#5B3A8E;">${F1(objDiaProg)}</td>
       <td style="padding:6px 8px; text-align:center; font-size:11px; font-weight:600;">${r.comp ? `<span style="color:#0077A8;">${r.comp.N}</span>·<span style="color:#B45309;">${r.comp.I}</span>·<span style="color:#166534;">${r.comp.M}</span>` : '—'}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700;">${r.ventas || 0}</td>
       <td style="padding:6px 8px; text-align:right;">${F1(esperado)}</td>
       <td style="padding:6px 8px; text-align:right; font-weight:700; color:${okD ? '#16A34A' : '#DC2626'};">${okD ? '+' : ''}${F1(dif)}</td>
+      <td style="padding:6px 8px; text-align:right; color:#5B3A8E;">${r.progMes || 0}</td>
+      <td style="padding:6px 8px; text-align:right; color:#B45309;">${r.transito || 0}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700;">${F1(r.faltan)}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:700; color:#5B3A8E;">${r.progReq || 0}</td>
+      <td style="padding:6px 8px; text-align:right; color:#64748B;">${F1(r.progDiaPlan)}</td>
+      <td style="padding:6px 8px; text-align:right; font-weight:800; color:${est.col};">${r.progDiaReq === null ? '—' : F1(r.progDiaReq)}</td>
+      <td style="padding:4px 8px; text-align:center;"><span style="display:inline-block; padding:2px 8px; border-radius:10px; font-size:10.5px; font-weight:700; color:${est.col}; background:${est.bg};">${est.txt}</span></td>
     </tr>`;
   };
   const suma = arr => {
-    const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+    const t = { sup: '', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, diasHabilesMes: arr[0].diasHabilesMes, diasTrans: arr[0].diasTrans, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 },
+      progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, diasUtiles: arr[0].diasUtiles, progDia: {} };
+    let algunFuera = false;
     arr.forEach(r => {
       t.meta += r.meta || 0; t.ventas += r.ventas || 0; t.totalAgentes += r.totalAgentes || 0;
+      t.progMes += r.progMes || 0; t.transito += r.transito || 0; t.faltan += r.faltan || 0; t.progReq += r.progReq || 0; t.progDiaPlan += r.progDiaPlan || 0;
+      if (r.progDiaReq === null) algunFuera = true; else t.progDiaReq += r.progDiaReq || 0;
+      Object.entries(r.progDia || {}).forEach(([f, v]) => { t.progDia[f] = (t.progDia[f] || 0) + v; });
       if (r.comp) { t.comp.N += r.comp.N; t.comp.I += r.comp.I; t.comp.M += r.comp.M; }
       if (r.sm) { t.sm.n += r.sm.n; t.sm.rampa += r.sm.rampa; t.sm.vtas += r.sm.vtas; t.sm.diasEf += r.sm.diasEf; }
     });
+    if (algunFuera && t.faltan > 0) t.progDiaReq = null;
     return t;
   };
   let cuerpo = '';
@@ -3164,9 +3252,40 @@ function renderRadiografiaObjetivos() {
     return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado al ritmo del mes; con meta cargada usa la meta real, si no la curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
   })();
   cont.innerHTML = franjaHTML + `<table style="width:100%; border-collapse:collapse; font-size:12px;">
-    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Meta programadas (110%)', 'Obj. diario act.', 'Obj. diario prog.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado'].map(th).join('')}</tr></thead>
+    <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Obj. diario act.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Faltan (act.)', 'Progr. requeridas', 'Progr./día plan', 'Progr./día requerida', 'Estado'].map(th).join('')}</tr></thead>
     <tbody>${cuerpo}</tbody></table>
-    <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · Programadas = 110% de la meta de activadas · Sin meta: ventas por día hábil EFECTIVO (desde el lunes posterior a su semana de capacitación) vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día (verde = arriba) · 🎓 = aún en capacitación.</div>`;
+    <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · <strong>Programación:</strong> factor por centro medido en ${convC.meses.join(', ')} → CC2 ${convC.CC2.factor.toFixed(3)} (conv. ${(convC.CC2.conv * 100).toFixed(1)}%${convC.CC2.estimado ? ', estimado' : ''}) · JV ${convC.JV.factor.toFixed(3)} (conv. ${(convC.JV.conv * 100).toFixed(1)}%${convC.JV.estimado ? ', estimado' : ''}) · Faltan = meta − activadas − tránsito × conversión · Progr. requeridas = faltan × factor · Último día útil de programación: <strong>${ventana.limLbl}</strong> (rezago BO→activación p90 = ${REZAGO_PROG_ACT_DIAS} días) → ${F1(ventana.utiles)} días útiles restantes · Estado: en ritmo ≤ 105% del plan · acelerar ≤ 130% · meta comprometida > 130% (decisión de dirección, no de presión al corte) · Sin meta: ventas por día hábil EFECTIVO vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día · 🎓 = aún en capacitación.</div>
+    ${_matrizCumplimientoHTML(filasR, factorDia, hoyStrR, tot)}`;
+}
+
+// ===== MATRIZ DE CUMPLIMIENTO DIARIO DE PROGRAMACIÓN (supervisor × día hábil cerrado) =====
+function _matrizCumplimientoHTML(filasR, factorDia, hoyStr, tot) {
+  const dias = Object.keys(factorDia).filter(f => factorDia[f] > 0 && f < hoyStr).sort();
+  if (!dias.length) return '<div style="font-size:11px; color:var(--text-soft); margin-top:10px;">Cumplimiento diario de programación: aún no hay días hábiles cerrados en el mes.</div>';
+  const th = t => `<th style="padding:5px 6px; background:var(--att-navy); color:white; font-size:10px; white-space:nowrap; text-align:center;">${t}</th>`;
+  const celda = (v, obj) => {
+    const pct = obj > 0 ? v / obj : (v > 0 ? 1 : 0);
+    const col = pct >= 1 ? '#166534' : pct >= 0.8 ? '#92400E' : '#991B1B';
+    const bg = pct >= 1 ? '#DCFCE7' : pct >= 0.8 ? '#FEF3C7' : '#FEE2E2';
+    return `<td style="padding:4px 5px; text-align:center; font-weight:700; color:${col}; background:${bg}; font-size:11px;" title="objetivo ${obj.toFixed(1)}">${v}</td>`;
+  };
+  const filaM = (r, esTot) => {
+    let acum = 0, acumObj = 0, tds = '';
+    dias.forEach(f => { const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; acum += v; acumObj += obj; tds += celda(v, obj); });
+    const pct = acumObj > 0 ? acum / acumObj * 100 : 0;
+    return `<tr style="${esTot ? 'background:#DDEBF7; font-weight:700;' : ''}"><td style="padding:4px 8px; font-weight:600; white-space:nowrap; font-size:11px;">${r.sup}</td>${tds}<td style="padding:4px 6px; text-align:right; font-weight:700;">${acum}</td><td style="padding:4px 6px; text-align:right; color:#64748B;">${acumObj.toFixed(0)}</td><td style="padding:4px 6px; text-align:right; font-weight:800; color:${pct >= 100 ? '#166534' : pct >= 80 ? '#92400E' : '#991B1B'};">${pct.toFixed(0)}%</td></tr>`;
+  };
+  const rojosSeguidos = filasR.map(r => {
+    let n = 0; for (let i = dias.length - 1; i >= 0; i--) { const f = dias[i]; const v = (r.progDia || {})[f] || 0; const obj = (r.progDiaPlan || 0) * factorDia[f]; if (obj > 0 && v / obj < 0.8) n++; else break; }
+    return { sup: r.sup, n };
+  }).filter(x => x.n >= 3).sort((a, b) => b.n - a.n);
+  return `<div style="margin-top:16px;">
+    <div style="font-weight:700; color:var(--att-navy); font-size:13px; margin-bottom:4px;">📆 Cumplimiento diario de programación (cierre del día vs plan)</div>
+    <div style="font-size:11px; color:var(--text-soft); margin-bottom:8px;">Programaciones con fecha de back office ese día (incluye las que luego se cancelaron) contra el plan diario del supervisor (progr./día plan × factor del día; sábado = 0.5). Verde ≥ 100% · ámbar 80-99% · rojo < 80%. ${rojosSeguidos.length ? `<strong style="color:#991B1B;">Con 3+ días rojos seguidos: ${rojosSeguidos.map(x => `${x.sup} (${x.n})`).join(' · ')}</strong> — eso no lo resuelve el corte de las 14:00, lo resuelve el coordinador sentado en esa isla.` : 'Nadie trae 3 o más días rojos seguidos.'}</div>
+    <div style="overflow-x:auto;"><table style="border-collapse:collapse; font-size:11px;">
+      <thead><tr>${th('Supervisor')}${dias.map(f => th(String(Number(f.substring(8, 10))) + (factorDia[f] < 1 ? 's' : ''))).join('')}${th('Progr.')}${th('Plan')}${th('%')}</tr></thead>
+      <tbody>${filasR.map(r => filaM(r, false)).join('')}${filaM(tot, true)}</tbody>
+    </table></div></div>`;
 }
 
 function exportarRadiografiaObjetivos() {
@@ -3176,68 +3295,96 @@ function exportarRadiografiaObjetivos() {
   const hoyE = new Date();
   const dh = D.filasR[0].diasHabilesMes || 0, dt = D.filasR[0].diasTrans || 0;
   const NAVY = '1F3864';
+  const cv = D.conv || { CC2: { factor: 1.05, conv: 0.95 }, JV: { factor: 1.05, conv: 0.95 }, TOTAL: { factor: 1.05, conv: 0.95 }, meses: [] };
+  const vn = D.ventana || { utiles: 0, limLbl: '—', limStr: '' };
+  const NC = 20; // columnas de la hoja
   const aoa = [
     [`RADIOGRAFÍA DE OBJETIVOS — ${MESES_N[hoyE.getMonth()].toUpperCase()} ${hoyE.getFullYear()}`],
-    [`ExpertCell · ${D.filtroTxt} · Generado ${hoyE.getDate()}/${hoyE.getMonth() + 1}/${hoyE.getFullYear()}`],
-    ['Parámetros (sábado = 0.5 día):'],
-    ['Días hábiles del mes', dh, 'Días transcurridos', dt, 'Factor programadas', 1.1],
+    [`ExpertCell · ${D.filtroTxt} · Generado ${hoyE.getDate()}/${hoyE.getMonth() + 1}/${hoyE.getFullYear()} · Factores de programación = 1 ÷ conversión medida (cohortes por fecha BO de ${cv.meses.join(', ') || 'los 3 meses anteriores'}) · Último día útil de programación: ${vn.limLbl} (rezago BO→activación p90 = ${REZAGO_PROG_ACT_DIAS} días)`],
+    ['Parámetros (sábado = 0.5 día) — celdas amarillas editables:'],
+    ['Días hábiles del mes', dh, 'Días transcurridos', dt, 'Factor CC2', Number(cv.CC2.factor.toFixed(4)), 'Factor JV', Number(cv.JV.factor.toFixed(4)), 'Factor total', Number(cv.TOTAL.factor.toFixed(4)), 'Días útiles restantes', Number((vn.utiles || 0).toFixed(1))],
     [],
-    ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Meta Programadas (110%)', 'Obj. Diario Activadas', 'Obj. Diario Programadas', 'Equipo (N·I·M)', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado']];
-  // Con FÓRMULAS vivas: referencias a los parámetros (B4 días háb., D4 transcurridos, F4 factor)
+    ['Supervisor', 'Centro', 'Coordinador', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día efectivo', 'Meta Activadas (mes)', 'Obj. Diario Activadas', 'Equipo (N·I·M)', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Factor', 'Faltan (activadas)', 'Progr. requeridas', 'Progr./día plan', 'Progr./día requerida', 'Estado']];
+  // Con FÓRMULAS vivas: parámetros en fila 4 (B días háb., D transcurridos, F/H/J factores, L días útiles)
   const CX = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
-  const filaCalc = (r, rE) => {
-    const metaProg = Math.ceil((r.meta || 0) * 1.1);
+  const SX = (v, f) => ({ t: 's', v: v == null ? '' : String(v), f });
+  const filasIdx = []; // filas individuales (para sumas)
+  const filaCalc = (r, rE, rangoSum) => {
     const objDia = dh > 0 ? r.meta / dh : 0;
     const esperado = dh > 0 ? r.meta / dh * dt : 0;
     const sm = r.sm || { n: 0, rampa: 0, vtas: 0, diasEf: 0 };
-    return [r.sup, r.centro || '', r.coord || '', r.totalAgentes || 0,
+    const sum = (col, val) => rangoSum ? CX(val, rangoSum.map(i => `${col}${i}`).join('+')) : (val || 0);
+    const est = _estadoRitmo(r);
+    return [r.sup, r.centro || '', r.coord || '', sum('D', r.totalAgentes || 0),
       sm.n ? `${sm.n}${sm.rampa ? ` (${sm.rampa} rampa)` : ''}` : 0,
       sm.diasEf > 0 ? Number((sm.vtas / sm.diasEf).toFixed(2)) : (sm.n ? 'rampa' : 0),
-      r.meta || 0,
-      CX(metaProg, `ROUNDUP(G${rE}*$F$4,0)`),
+      sum('G', r.meta || 0),
       CX(objDia, `IF($B$4>0,G${rE}/$B$4,0)`, '0.00'),
-      CX(dh > 0 ? metaProg / dh : 0, `IF($B$4>0,H${rE}/$B$4,0)`, '0.00'),
       r.comp ? `${r.comp.N}·${r.comp.I}·${r.comp.M}` : '',
-      r.ventas || 0,
+      sum('J', r.ventas || 0),
       CX(esperado, `IF($B$4>0,G${rE}/$B$4*$D$4,0)`, '0.0'),
-      CX((r.ventas || 0) - esperado, `L${rE}-M${rE}`, '0.0')];
+      CX((r.ventas || 0) - esperado, `J${rE}-K${rE}`, '0.0'),
+      sum('M', r.progMes || 0),
+      sum('N', r.transito || 0),
+      CX(r.factor || cv.TOTAL.factor, `IF(B${rE}="CC2",$F$4,IF(B${rE}="JV",$H$4,$J$4))`, '0.000'),
+      CX(r.faltan || 0, `MAX(0,G${rE}-J${rE}-N${rE}/O${rE})`, '0.0'),
+      CX(r.progReq || 0, `ROUNDUP(P${rE}*O${rE},0)`),
+      CX(r.progDiaPlan || 0, `IF($B$4>0,G${rE}*O${rE}/$B$4,0)`, '0.0'),
+      CX(r.progDiaReq === null ? 0 : (r.progDiaReq || 0), `IF($L$4>0,Q${rE}/$L$4,0)`, '0.0'),
+      SX(est.txt, `IF(AND($L$4=0,Q${rE}>0),"fuera de ventana",IF(R${rE}=0,"",IF(P${rE}<=0,"meta cubierta",IF(S${rE}/R${rE}<=1.05,"en ritmo",IF(S${rE}/R${rE}<=1.3,"acelerar","meta comprometida")))))`)];
   };
   const marcas = [];
   const centrosE = [...new Set(D.filasR.map(r => r.centro))];
+  const subIdx = [];
   centrosE.forEach(ce => {
     const grupo = D.filasR.filter(r => r.centro === ce);
-    grupo.forEach(r => aoa.push(filaCalc(r, aoa.length + 1)));
+    const idxGrupo = [];
+    grupo.forEach(r => { idxGrupo.push(aoa.length + 1); filasIdx.push(aoa.length + 1); aoa.push(filaCalc(r, aoa.length + 1, null)); });
     if (centrosE.length > 1 && grupo.length > 1) {
-      const st = { sup: `Subtotal ${ce}`, centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
-      grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; if (r.comp) { st.comp.N += r.comp.N; st.comp.I += r.comp.I; st.comp.M += r.comp.M; } if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
+      const st = { sup: `Subtotal ${ce}`, centro: ce, coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: (cv[ce] || cv.TOTAL).factor };
+      grupo.forEach(r => { st.meta += r.meta || 0; st.ventas += r.ventas || 0; st.totalAgentes += r.totalAgentes || 0; st.progMes += r.progMes || 0; st.transito += r.transito || 0; st.faltan += r.faltan || 0; st.progReq += r.progReq || 0; st.progDiaPlan += r.progDiaPlan || 0; st.progDiaReq += r.progDiaReq || 0; if (r.comp) { st.comp.N += r.comp.N; st.comp.I += r.comp.I; st.comp.M += r.comp.M; } if (r.sm) { st.sm.n += r.sm.n; st.sm.rampa += r.sm.rampa; st.sm.vtas += r.sm.vtas; st.sm.diasEf += r.sm.diasEf; } });
       marcas.push({ r: aoa.length, tipo: 'sub' });
-      aoa.push(filaCalc(st, aoa.length + 1));
+      subIdx.push(aoa.length + 1);
+      aoa.push(filaCalc(st, aoa.length + 1, idxGrupo));
     }
   });
-  const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 } };
+  const tot = { sup: 'TOTAL', centro: '', coord: '', meta: 0, ventas: 0, totalAgentes: 0, comp: { N: 0, I: 0, M: 0 }, sm: { n: 0, rampa: 0, vtas: 0, diasEf: 0 }, progMes: 0, transito: 0, faltan: 0, progReq: 0, progDiaPlan: 0, progDiaReq: 0, factor: cv.TOTAL.factor };
   D.filasR.forEach(r => { if (r.comp) { tot.comp.N += r.comp.N; tot.comp.I += r.comp.I; tot.comp.M += r.comp.M; } });
-  D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
+  D.filasR.forEach(r => { tot.meta += r.meta || 0; tot.ventas += r.ventas || 0; tot.totalAgentes += r.totalAgentes || 0; tot.progMes += r.progMes || 0; tot.transito += r.transito || 0; tot.faltan += r.faltan || 0; tot.progReq += r.progReq || 0; tot.progDiaPlan += r.progDiaPlan || 0; tot.progDiaReq += r.progDiaReq || 0; if (r.sm) { tot.sm.n += r.sm.n; tot.sm.rampa += r.sm.rampa; tot.sm.vtas += r.sm.vtas; tot.sm.diasEf += r.sm.diasEf; } });
   marcas.push({ r: aoa.length, tipo: 'tot' });
-  aoa.push(filaCalc(tot, aoa.length + 1));
+  const filaTot = aoa.length + 1;
+  aoa.push(filaCalc(tot, filaTot, filasIdx));
+  // En el TOTAL, faltan/requeridas/ritmo son la SUMA de los supervisores (el factor mezcla centros), no el recálculo
+  const fTotRow = aoa[aoa.length - 1];
+  fTotRow[15] = CX(tot.faltan, filasIdx.map(i => `P${i}`).join('+'), '0.0');
+  fTotRow[16] = CX(tot.progReq, filasIdx.map(i => `Q${i}`).join('+'));
+  fTotRow[17] = CX(tot.progDiaPlan, filasIdx.map(i => `R${i}`).join('+'), '0.0');
+  fTotRow[18] = CX(tot.progDiaReq, filasIdx.map(i => `S${i}`).join('+'), '0.0');
+  fTotRow[19] = '';
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 13 }, { wch: 11 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 11 }];
+  ws['!cols'] = [{ wch: 28 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 11 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 18 }];
   const cel = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
   if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
   if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
   if (cel(2, 0)) cel(2, 0).s = { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
-  for (let c = 0; c < 6; c++) { const x = cel(3, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } }; }
-  for (let c = 0; c < 15; c++) { const h = cel(5, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
+  for (let c = 0; c < 12; c++) { const x = cel(3, c); if (x) x.s = (typeof x.v === 'number') ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } } : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } }; }
+  for (let c = 0; c < NC; c++) { const h = cel(5, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; }
   const rango = XLSX.utils.decode_range(ws['!ref']);
   for (let r = 6; r <= rango.e.r; r++) {
     const marca = marcas.find(m => m.r === r);
-    for (let c = 0; c < 15; c++) {
+    for (let c = 0; c < NC; c++) {
       const x = cel(r, c);
       if (!x) continue;
       const s = { font: { name: 'Calibri', sz: 10, bold: !!marca || c === 0 } };
       if (marca) s.fill = { fgColor: { rgb: marca.tipo === 'tot' ? 'DDEBF7' : 'F1F5F9' } };
-      if (c === 14 && typeof x.v === 'number') s.font.color = { rgb: x.v >= 0 ? '16A34A' : 'C00000' };
+      if (c === 11 && typeof x.v === 'number') s.font.color = { rgb: x.v >= 0 ? '16A34A' : 'C00000' };
       if (c === 5 && typeof x.v === 'number' && dh > 0) s.font.color = { rgb: x.v >= 6 / dh ? '16A34A' : 'C00000' };
-      if (c === 7 || c === 9) s.font.color = s.font.color || { rgb: '5B3A8E' };
+      if (c === 12 || c === 16 || c === 18) s.font.color = s.font.color || { rgb: '5B3A8E' };
+      if (c === 19 && typeof x.v === 'string') {
+        const m = { 'en ritmo': 'DCFCE7', 'meta cubierta': 'DCFCE7', 'acelerar': 'FEF3C7', 'meta comprometida': 'FEE2E2', 'fuera de ventana': 'F3F4F6' };
+        if (m[x.v]) s.fill = { fgColor: { rgb: m[x.v] } };
+        s.alignment = { horizontal: 'center' };
+      }
       x.s = s;
     }
   }
@@ -3252,19 +3399,18 @@ function exportarRadiografiaObjetivos() {
     const hSab = ['9-10', '10-11', '11-12', '12-13', '13-14'];
     const aoaC = [
       ['CORTES HORARIOS DE PROGRAMACIÓN — POR SUPERVISOR'],
-      ['El corte que manda: 14:00 L-V (53%) y 11:00 sábado (54%). Regla: supervisor 2+ programaciones abajo de su ruta al corte → acción en la hora siguiente. % acumulados editables (fila 4).'],
-      ['Días háb. mes', dh, 'Factor progr.', 1.1, 'Sábado = 50% del día L-V'],
+      ['El corte que manda: 14:00 L-V (53%) y 11:00 sábado (54%). Los cortes salen del ritmo REQUERIDO (columna D: lo que falta ÷ días útiles restantes, con la conversión de su centro), no del plan lineal (columna C). % acumulados editables (fila 4).'],
+      ['Días háb. mes', dh, 'Días útiles rest.', Number((vn.utiles || 0).toFixed(1)), `Último día útil: ${vn.limLbl}`],
       ['% acumulado →', '', '', '', ...pctLV, '', ...pctSab],
-      ['Supervisor', 'Meta mes', 'Activ./día', 'Progr./día', ...hLV, 'Progr. SÁB', ...hSab]];
+      ['Supervisor', 'Meta mes', 'Progr./día PLAN', 'Progr./día REQUERIDA', ...hLV, 'Progr. SÁB', ...hSab]];
     const colL = i => XLSX.utils.encode_col(i);
     D.filasR.forEach(r => {
       const rE = aoaC.length + 1;
-      const aD = dh > 0 ? Math.round(r.meta / dh) : 0;
-      const pD = Math.round(aD * 1.1);
-      const pS = Math.round(pD * 0.5);
-      const fila = [r.sup, r.meta || 0,
-        CX(aD, `ROUND(B${rE}/$B$3,0)`), CX(pD, `ROUND(C${rE}*$D$3,0)`)];
-      pctLV.forEach((p, i) => fila.push(CX(Math.round(pD * p), `ROUND($D${rE}*${colL(4 + i)}$4,0)`)));
+      const pPlan = Math.round(r.progDiaPlan || 0);
+      const pReq = r.progDiaReq === null ? pPlan : Math.round(r.progDiaReq || 0);
+      const pS = Math.round(pReq * 0.5);
+      const fila = [r.sup, r.meta || 0, pPlan, pReq];
+      pctLV.forEach((p, i) => fila.push(CX(Math.round(pReq * p), `ROUND($D${rE}*${colL(4 + i)}$4,0)`)));
       fila.push(CX(pS, `ROUND($D${rE}*0.5,0)`));
       pctSab.forEach((p, i) => fila.push(CX(Math.round(pS * p), `ROUND($N${rE}*${colL(14 + i)}$4,0)`)));
       aoaC.push(fila);
@@ -3300,6 +3446,62 @@ function exportarRadiografiaObjetivos() {
     wsC['!freeze'] = { xSplit: 1, ySplit: 5 };
     XLSX.utils.book_append_sheet(wbR, wsC, 'Cortes horarios');
   } catch (eC) { console.warn('[Cortes]', eC); }
+  // ---- Hoja 3: CUMPLIMIENTO DIARIO de programación (supervisor × día hábil cerrado) ----
+  try {
+    const fd = D.factorDia || {};
+    const dias = Object.keys(fd).filter(f => fd[f] > 0 && f < (D.hoyStr || '')).sort();
+    if (dias.length) {
+      const colL = i => XLSX.utils.encode_col(i);
+      const nD = dias.length;
+      const cAcum = 2 + nD, cPlan = 3 + nD, cPct = 4 + nD; // índices de columna (0-based)
+      const aoaD = [
+        ['CUMPLIMIENTO DIARIO DE PROGRAMACIÓN — cierre del día vs plan'],
+        ['Programaciones con fecha de back office ese día (incluye canceladas después) vs plan diario = progr./día plan × factor del día (sábado 0.5). Verde ≥100% · ámbar 80-99% · rojo <80%.'],
+        ['Factor del día →', '', ...dias.map(f => fd[f])],
+        ['Supervisor', 'Progr./día plan', ...dias.map(f => `${Number(f.substring(8, 10))}${fd[f] < 1 ? 's' : ''}`), 'Progr. acum.', 'Plan acum.', '% cumpl.']];
+      const filasD = [];
+      D.filasR.forEach(r => {
+        const rE = aoaD.length + 1;
+        const fila = [r.sup, Number((r.progDiaPlan || 0).toFixed(2))];
+        dias.forEach(f => fila.push((r.progDia || {})[f] || 0));
+        const c1 = colL(2), cN = colL(1 + nD);
+        fila.push(CX(0, `SUM(${c1}${rE}:${cN}${rE})`));
+        fila.push(CX(0, `B${rE}*SUM($${c1}$3:$${cN}$3)`, '0.0'));
+        fila.push(CX(0, `IF(${colL(cPlan)}${rE}>0,${colL(cAcum)}${rE}/${colL(cPlan)}${rE},0)`, '0%'));
+        filasD.push(rE);
+        aoaD.push(fila);
+      });
+      const rT = aoaD.length + 1;
+      const tot = ['TOTAL', CX(0, `SUM(B5:B${rT - 1})`, '0.00')];
+      for (let c = 2; c <= cPlan; c++) tot.push(CX(0, `SUM(${colL(c)}5:${colL(c)}${rT - 1})`));
+      tot.push(CX(0, `IF(${colL(cPlan)}${rT}>0,${colL(cAcum)}${rT}/${colL(cPlan)}${rT},0)`, '0%'));
+      aoaD.push(tot);
+      const wsD = XLSX.utils.aoa_to_sheet(aoaD);
+      wsD['!cols'] = [{ wch: 26 }, { wch: 10 }, ...Array(nD).fill({ wch: 5 }), { wch: 10 }, { wch: 10 }, { wch: 9 }];
+      const celD = (r, c) => wsD[XLSX.utils.encode_cell({ r, c })];
+      if (celD(0, 0)) celD(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } };
+      if (celD(1, 0)) celD(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
+      for (let c = 0; c <= cPct; c++) {
+        const x2 = celD(2, c); if (x2) x2.s = { font: { name: 'Calibri', sz: 9, italic: true, color: { rgb: '595959' } }, alignment: { horizontal: 'center' } };
+        const h3 = celD(3, c); if (h3) h3.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } };
+      }
+      // Semáforo por celda (valores del día vs plan × factor)
+      D.filasR.forEach((r, i) => {
+        const rr = 4 + i;
+        dias.forEach((f, j) => {
+          const x = celD(rr, 2 + j); if (!x) return;
+          const obj = (r.progDiaPlan || 0) * fd[f]; const v = (r.progDia || {})[f] || 0;
+          const pct = obj > 0 ? v / obj : (v > 0 ? 1 : 0);
+          x.s = { font: { name: 'Calibri', sz: 9.5, bold: true, color: { rgb: pct >= 1 ? '166534' : pct >= 0.8 ? '92400E' : '991B1B' } }, fill: { fgColor: { rgb: pct >= 1 ? 'DCFCE7' : pct >= 0.8 ? 'FEF3C7' : 'FEE2E2' } }, alignment: { horizontal: 'center' } };
+        });
+        const a = celD(rr, 0); if (a) a.s = { font: { name: 'Calibri', sz: 9.5, bold: true } };
+        for (const c of [1, cAcum, cPlan, cPct]) { const x = celD(rr, c); if (x) x.s = { font: { name: 'Calibri', sz: 9.5, bold: c === cAcum || c === cPct } }; }
+      });
+      for (let c = 0; c <= cPct; c++) { const x = celD(rT - 1, c); if (x) x.s = { font: { name: 'Calibri', sz: 9.5, bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } } }; }
+      wsD['!freeze'] = { xSplit: 2, ySplit: 4 };
+      XLSX.utils.book_append_sheet(wbR, wsD, 'Cumplimiento diario');
+    }
+  } catch (eD) { console.warn('[Cumplimiento diario]', eD); }
   XLSX.writeFile(wbR, `Radiografia_Objetivos_${MESES_N[hoyE.getMonth()]}_${hoyE.getFullYear()}.xlsx`);
 }
 
@@ -3503,12 +3705,14 @@ function _pintarCortes() {
       set('corte-fuente', ' · Sin metas cargadas para el mes visto en la radiografía: al cargarlas, estos cortes se calculan solos.');
       return;
     }
-    let prog = 0, progSab = 0;
+    // Ritmo REQUERIDO (lo que falta ÷ días útiles restantes), no plan lineal.
+    let prog = 0, progPlan = 0, progSab = 0, fuera = 0, comprometidos = [];
     D.filasR.forEach(r => {
-      const aD = Math.round((r.meta || 0) / dh);
-      const pD = Math.round(aD * 1.1);
-      prog += pD;
-      progSab += Math.round(pD * 0.5);
+      const pPlan = Math.round(r.progDiaPlan || 0);
+      let pReq;
+      if (r.progDiaReq === null) { pReq = pPlan; fuera++; } else pReq = Math.round(r.progDiaReq || 0);
+      progPlan += pPlan; prog += pReq; progSab += Math.round(pReq * 0.5);
+      const e = _estadoRitmo(r); if (e.k === 'rojo') comprometidos.push(r.sup);
     });
     set('corte-prog-dia', prog);
     set('corte-12', Math.round(prog * 0.27));
@@ -3516,7 +3720,11 @@ function _pintarCortes() {
     set('corte-17', Math.round(prog * 0.77));
     set('corte-prog-sab', progSab);
     set('corte-11s', Math.round(progSab * 0.54));
-    set('corte-fuente', ` · Calculado con las metas del mes y filtro activos en la radiografía (${D.filtroTxt || 'vista actual'}).`);
+    const cv = D.conv || {}, vn = D.ventana || {};
+    let nota = ` · Ritmo requerido hoy (plan lineal: ${progPlan}/día) · filtro ${D.filtroTxt || 'vista actual'} · factor CC2 ${cv.CC2 ? cv.CC2.factor.toFixed(2) : '—'} / JV ${cv.JV ? cv.JV.factor.toFixed(2) : '—'} medido en ${cv.meses ? cv.meses.join(', ') : '—'} · último día útil de programación ${vn.limLbl || '—'}.`;
+    if (fuera > 0) nota += ` <strong style="color:#C2410C;">Ya pasó la fecha límite útil: lo que se programe hoy se activa el mes siguiente; se muestra el ritmo plan.</strong>`;
+    if (comprometidos.length) nota += ` <strong style="color:#991B1B;">Meta comprometida: ${comprometidos.join(', ')} — decisión de dirección (reasignar leads / gente), no de corte.</strong>`;
+    set('corte-fuente', nota);
   } catch (e) { console.warn('[Cortes]', e); }
 }
 if (!window.__cortesListener) {
@@ -3605,7 +3813,7 @@ function renderProductividadEquipos() {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:10px;">
           <div>
             <div style="font-weight:700; color:var(--att-navy); font-size:14px;">🎯 Radiografía de objetivos del mes</div>
-            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Arranque de mes por supervisor: metas de activadas y programadas (110%), objetivos diarios, agentes y promedios — con avance y esperado a hoy.</div>
+            <div style="font-size:11px; color:var(--text-soft); margin-top:2px;">Por supervisor: meta, avance y esperado a hoy, y la programación que falta con la conversión real de su centro, el tránsito y la fecha límite útil del mes — más el cumplimiento diario de programación.</div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
             <select id="radiografia-mes" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-weight:600; background:white; cursor:pointer;"></select>
@@ -3623,7 +3831,7 @@ function renderProductividadEquipos() {
           <span id="corte-fuente" style="color:#94A3B8; font-size:11px;"></span>
           <br><strong>Regla de reacción:</strong> supervisor <strong>2+ programaciones abajo</strong> de su ruta al corte → acción en la hora siguiente (barrido de leads calientes con ese equipo, o el coordinador se sienta en esa isla). Nada de "échale ganas": qué-hacer concreto.
           <br><strong>Canal:</strong> cada coordinador publica sus 3 cortes en su grupo con el mismo formato ("14:00 → 13/15 · Carlos −2 → barrido"); dirección solo mira el corte de las 14:00 de los tres.
-          <span style="color:#64748B;">Los cortes son proporcionales a la meta diaria vigente (53% a las 14:00 L-V y a las 11:00 sábado); si la plantilla o la meta cambian, se recorren igual.</span>
+          <span style="color:#64748B;">Los cortes salen del ritmo <strong>requerido</strong> de cada supervisor (lo que le falta ÷ días útiles que quedan, con la conversión real de su centro), no de la meta ÷ días del mes: si un equipo trae gap, su corte sube; si va adelantado, baja. 53% a las 14:00 L-V y a las 11:00 sábado.</span>
         </div>
       </div>
       <div style="margin-bottom:26px; border:1px solid #FCA5A5; border-radius:10px; padding:14px; background:#FFF8F8;">
