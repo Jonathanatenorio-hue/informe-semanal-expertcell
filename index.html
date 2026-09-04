@@ -178,6 +178,21 @@
   .alert.error { background: var(--red-bg); color: #B91C1C; border-left: 4px solid var(--red); }
 
   .hidden { display: none !important; }
+  .nav-links {
+    display: flex;
+    gap: 14px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .nav-links a {
+    color: var(--att-blue-dark);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    background: var(--card);
+  }
+  .nav-links a:hover { background: #E8F4FC; }
+
 </style>
 </head>
 <body>
@@ -193,6 +208,11 @@
       <div id="acceso-ventana" style="font-size:11.5px; color:#64748B; margin-top:14px; border-top:1px solid #E2E8F0; padding-top:10px;"></div>
     </div>
   </div>
+  <div class="nav-links">
+    <a href="metas.html">← Metas, HC y vacaciones</a>
+    <a href="reporte.html">→ Ver reporte</a>
+  </div>
+
   <div class="header">
     <h1>Cargador de Informe Semanal</h1>
     <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Actualización semanal del reporte</div>
@@ -315,15 +335,41 @@ const ACCESOS_HASH = {
   '4f07679980346c72fe4e0cb4054089d3c6a7d5d8652a6e1c468e50d644538e13': 'coord:Guillermina',
   '6f93a940498a1a0604e77ce4796dccc6b5223d04aa928adb528f7c08005de389': 'coord:Eduardo'
 };
-// Ventana de carga: la operación cierra ~19:00 pero mesa de control activa hasta ~21:00
-// y empieza a mover folios a las 09:00. Cargar fuera de la ventana mueve los datos del día.
-const VENTANA_CARGA = { desde: 21, hasta: 9 }; // permitido si hora >= 21 o hora < 9
+// Lo que importa es a qué hora se GENERARON los archivos, no a qué hora se suben.
+// Se infiere con el último movimiento que traen (último BO, última activación, última
+// cancelación): si cae dentro de la operación, los archivos se generaron a medias.
+// L-V: mesa mueve folios 09:00-21:00 · Sábado: 09:00-19:00 · Domingo: sin operación.
+const OPERACION = { 1: [9, 21], 2: [9, 21], 3: [9, 21], 4: [9, 21], 5: [9, 21], 6: [9, 19], 0: null };
+const VENTANA_CARGA = { desde: 21, hasta: 9 }; // solo informativo en la pantalla de acceso
 async function _hashClave(txt) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
   return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
-function _enVentanaCarga(d) { const h = (d || new Date()).getHours(); return h >= VENTANA_CARGA.desde || h < VENTANA_CARGA.hasta; }
-function _ventanaTxt() { return `${String(VENTANA_CARGA.desde).padStart(2, '0')}:00 a ${String(VENTANA_CARGA.hasta).padStart(2, '0')}:00`; }
+function _enVentanaCarga(d) { const dt = d || new Date(); const op = OPERACION[dt.getDay()]; if (!op) return true; const h = dt.getHours() + dt.getMinutes() / 60; return h < op[0] || h >= op[1]; }
+function _ventanaTxt() { return 'L-V después de 21:00 o antes de 09:00 · sábado después de 19:00 · domingo libre'; }
+// Último movimiento en los archivos → hora de generación aproximada
+function _fechaHoraDe(fechaVal, horaVal) {
+  const f = normalizarFecha(fechaVal); if (!f) return null;
+  let hh = 0, mm = 0;
+  if (horaVal instanceof Date) { hh = horaVal.getHours(); mm = horaVal.getMinutes(); }
+  else if (typeof horaVal === 'number') { const s = Math.round(horaVal * 86400); hh = Math.floor(s / 3600) % 24; mm = Math.floor((s % 3600) / 60); }
+  else if (typeof horaVal === 'string' && /^\d{1,2}(:\d{2})?/.test(horaVal.trim())) { const p = horaVal.trim().split(':'); hh = parseInt(p[0], 10) || 0; mm = parseInt(p[1] || '0', 10) || 0; }
+  return new Date(f + 'T' + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + ':00');
+}
+function _ultimoMovimiento() {
+  let mx = null; const upd = d => { if (d && !isNaN(d) && (!mx || d > mx)) mx = d; };
+  (state.bo_data || []).forEach(r => upd(_fechaHoraDe(r['Fecha Back Office'], r['Hora Back Office'])));
+  (state.act_data || []).forEach(r => upd(_fechaHoraDe(r['Fecha'], r['Hora'])));
+  (state.can_data || []).forEach(r => { const v = r['Fecha cancelacion']; if (v instanceof Date) upd(v); else upd(_fechaHoraDe(v, null)); });
+  return mx;
+}
+function _archivosGeneradosAMedias() {
+  const um = _ultimoMovimiento(); if (!um) return { um: null, aMedias: false };
+  const op = OPERACION[um.getDay()]; if (!op) return { um, aMedias: false };
+  const h = um.getHours() + um.getMinutes() / 60;
+  // Movimientos hasta 2 h antes del cierre se consideran normales (un día flojo termina temprano)
+  return { um, aMedias: h >= op[0] && h < op[1] - 2 };
+}
 window.__acceso = null; // { rol, nombre, esDirector }
 async function _accesoIntentar() {
   const inp = document.getElementById('acceso-clave'); const msg = document.getElementById('acceso-msg');
@@ -334,10 +380,12 @@ async function _accesoIntentar() {
   window.__acceso = { rol, nombre, esDirector: rol === 'director' };
   document.getElementById('acceso-overlay').style.display = 'none';
   const enV = _enVentanaCarga();
-  document.getElementById('sesion-info').innerHTML = `Sesión: ${nombre} (${rol === 'director' ? 'director' : 'coordinador'}) · ${enV ? '🟢 dentro de la ventana de carga' : '🔴 FUERA de la ventana de carga'} (${_ventanaTxt()})`;
+  document.getElementById('sesion-info').innerHTML = rol === 'director'
+    ? `Sesión: ${nombre} (director)`
+    : `Sesión: ${nombre} (coordinador) · ${enV ? '🟢 dentro del horario de carga' : '🔴 FUERA del horario de carga'} · ${_ventanaTxt()}`;
 }
 document.addEventListener('DOMContentLoaded', () => {
-  const v = document.getElementById('acceso-ventana'); if (v) v.textContent = `Ventana de carga: ${_ventanaTxt()} (después de que mesa de control termina y antes de que empiece). Ahora mismo: ${_enVentanaCarga() ? 'dentro ✅' : 'fuera ⚠️'}.`;
+  const v = document.getElementById('acceso-ventana'); if (v) v.textContent = `Horario de carga para coordinadores: ${_ventanaTxt()}. Los cuatro archivos se descargan juntos, con la operación cerrada. Ahora mismo: ${_enVentanaCarga() ? 'dentro ✅' : 'fuera ⚠️'}.`;
   document.getElementById('acceso-btn').addEventListener('click', _accesoIntentar);
   document.getElementById('acceso-clave').addEventListener('keydown', e => { if (e.key === 'Enter') _accesoIntentar(); });
 });
@@ -1189,14 +1237,18 @@ async function cargarASupabase() {
   if (!window.__acceso) { alert('Sin sesión. Recarga la página y entra con tu clave.'); return; }
   const forzado = !!(state.sinRastro && state.sinRastro.length);
   if (forzado && !window.__acceso.esDirector) { alert('Carga bloqueada: los archivos no cuadran. Escálalo a dirección.'); return; }
-  const fueraHorario = !_enVentanaCarga();
+  // Ventana por hora de CARGA, solo para coordinadores. Dirección carga cuando quiera
+  // (genera los archivos con la operación cerrada y los sube cuando puede).
+  const um = _ultimoMovimiento();
+  const fueraHorario = !window.__acceso.esDirector && !_enVentanaCarga();
   if (fueraHorario) {
-    const ok = confirm(`⚠️ ESTÁS FUERA DE LA VENTANA DE CARGA (${_ventanaTxt()}).\n\nSi cargas mientras la operación o mesa de control están activas, los datos del día quedan a medias (ventas en back office que aún no se activan, folios que cambian de estatus). Esta carga quedará registrada como FUERA DE HORARIO.\n\n¿Cargar de todos modos?`);
+    const ok = confirm(`⚠️ ESTÁS FUERA DEL HORARIO DE CARGA (${_ventanaTxt()}).\n\nLos archivos deben descargarse y cargarse con la operación cerrada; si no, el día queda a medias. Esta carga quedará registrada como FUERA DE HORARIO.\n\n¿Cargar de todos modos?`);
     if (!ok) return;
   }
   if (!confirm(`Confirmar carga${forzado ? ' FORZADA' : ''} como ${window.__acceso.nombre}. Acumula por folio: actualiza lo que ya existe y agrega lo nuevo; no borra historia.`)) return;
   const _bitacora = {
     usuario: window.__acceso.nombre, rol: window.__acceso.rol, fuera_horario: fueraHorario, forzado,
+    ultimo_movimiento: um ? um.toISOString() : null,
     archivos: {
       backoffice: { nombre: state.bo && state.bo.name, filas: (state.bo_data || []).length, rango: _rangoFechas(state.bo_data, 'Fecha Back Office') },
       activadas: { nombre: state.act && state.act.name, filas: (state.act_data || []).length, rango: _rangoFechas(state.act_data, 'Fecha') },
