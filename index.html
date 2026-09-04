@@ -1073,6 +1073,10 @@ async function procesar() {
       // por teléfono del cliente + fecha de back office. El folio viejo se renombra al
       // nuevo al cargar, conservando su historia; no cuenta como "sin rastro".
       state.reemplazos = [];
+      // El detalle de programación se lee aquí (antes se leía más abajo y la detección corría sin él)
+      if (state.sinRastro.length && state.ent && !state.ent_data) {
+        try { state.ent_data = await leerExcel(state.ent); log(`${state.ent_data.length} filas en detalle programación (leído para cruzar folios reemplazados)`, 'info'); } catch (eL) { log('No se pudo leer el detalle para cruzar folios: ' + (eL.message || eL), 'warn'); }
+      }
       if (state.sinRastro.length && state.ent_data && state.ent_data.length) {
         const porTelBO = {}, porPT = {};
         state.ent_data.forEach(r => {
@@ -1125,8 +1129,7 @@ async function procesar() {
     // ===== Procesar Excel de detalle de programación (opcional) =====
     if (state.ent) {
       try {
-        log('Leyendo Excel de detalle de programación...', 'info');
-        state.ent_data = await leerExcel(state.ent);
+        if (!state.ent_data) { log('Leyendo Excel de detalle de programación...', 'info'); state.ent_data = await leerExcel(state.ent); }
         log(`${state.ent_data.length} filas en detalle programación`, 'ok');
 
         // Filtrar SOLO entregadas con folio de Venta (como pidió Jonathan)
