@@ -1390,9 +1390,12 @@ async function cargarASupabase() {
     // ===== Canceladas pre-BO (tabla aparte, upsert por folio) =====
     if (state.registrosPreBO && state.registrosPreBO.length > 0) {
       try {
-        log(`Acumulando ${state.registrosPreBO.length} canceladas pre-BO en canceladas_pre_bo...`, 'info');
-        for (let i = 0; i < state.registrosPreBO.length; i += batchSize) {
-          const lote = state.registrosPreBO.slice(i, i + batchSize);
+        // Un renglón por folio (el mismo folio puede cancelarse varias veces): gana el último
+        const preBOPorFolio = {}; state.registrosPreBO.forEach(r => { preBOPorFolio[r.folio] = r; });
+        const preBOUnicos = Object.values(preBOPorFolio);
+        log(`Acumulando ${preBOUnicos.length} canceladas pre-BO en canceladas_pre_bo...`, 'info');
+        for (let i = 0; i < preBOUnicos.length; i += batchSize) {
+          const lote = preBOUnicos.slice(i, i + batchSize);
           const { error: ePre } = await db.from('canceladas_pre_bo').upsert(lote, { onConflict: 'folio' });
           if (ePre) { log('⚠️ No se pudieron guardar las pre-BO (¿existe la tabla canceladas_pre_bo?): ' + ePre.message, 'warn'); break; }
         }
