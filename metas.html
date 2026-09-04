@@ -2780,8 +2780,9 @@ async function vacGuardar() {
   if (!ag || !fi || !ff) { st.innerHTML = '❌ Agente, inicio y fin son obligatorios.'; return; }
   if (ff < fi) { st.innerHTML = '❌ La fecha fin es anterior al inicio.'; return; }
   try {
-    const { data: pl } = await db.from('plantilla').select('nombre').eq('nombre', ag).limit(1);
+    const { data: pl } = await db.from('plantilla').select('nombre, supervisor').eq('nombre', ag).limit(1);
     if (!pl || !pl.length) { st.innerHTML = `❌ "${ag}" no existe en plantilla con ese nombre exacto — corrígelo (mayúsculas y acentos cuentan).`; return; }
+    if (!window.__esDirector && window.__alcanceSups && !window.__alcanceSups.has(pl[0].supervisor)) { st.innerHTML = `❌ "${ag}" no pertenece a tus supervisores (está con ${pl[0].supervisor || 'sin supervisor'}).`; return; }
     const tipoA = document.getElementById('vac-tipo').value || 'vacaciones';
     const { error } = await db.from('vacaciones').insert({ agente: ag, fecha_inicio: fi, fecha_fin: ff, tipo: tipoA, capturado_por: quien || null, validada: false });
     if (error) throw error;
@@ -2812,22 +2813,29 @@ async function vacListar() {
         const { data: co } = await db.from('coordinadores').select('nombre').range(0, 99);
         const noms = [...new Set((co || []).map(c => c.nombre).filter(n => n && !/CC2|JV|CENTRO/i.test(n)))].sort();
         selQ.innerHTML = '<option value="">Selecciona…</option>' + noms.map(n => `<option>${n}</option>`).join('') + '<option>Dirección</option>';
+        if (!window.__esDirector && window.__accesoNombre) {
+          if (![...selQ.options].some(o => o.value === window.__accesoNombre)) selQ.add(new Option(window.__accesoNombre, window.__accesoNombre));
+          selQ.value = window.__accesoNombre; selQ.disabled = true;
+        }
       }
     } catch (eQ) {}
     try {
       const dl = document.getElementById('vac-datalist');
       if (dl && !dl.children.length) {
-        const { data: pl } = await db.from('plantilla').select('nombre, fecha_baja').range(0, 1999);
+        const { data: pl } = await db.from('plantilla').select('nombre, fecha_baja, supervisor').range(0, 1999);
         const hoyI = _vacIso(new Date());
-        dl.innerHTML = (pl || []).filter(p => p.nombre && (!p.fecha_baja || String(p.fecha_baja).substring(0, 10) >= hoyI))
+        const alc = window.__alcanceSups; // null = director (todos)
+        window.__agentesAlcance = new Set((pl || []).filter(p => p.nombre && (!alc || alc.has(p.supervisor))).map(p => p.nombre));
+        dl.innerHTML = (pl || []).filter(p => p.nombre && (!p.fecha_baja || String(p.fecha_baja).substring(0, 10) >= hoyI) && (!alc || alc.has(p.supervisor)))
           .map(p => p.nombre).sort().map(n => `<option value="${String(n).replace(/"/g, '&quot;')}"></option>`).join('');
       }
     } catch (eD) {}
-    if (!data || !data.length) { cont.innerHTML = '<div style="font-size:12px; color:#64748B;">Sin vacaciones ni incapacidades capturadas recientes.</div>'; return; }
+    const dataAlc = (!window.__esDirector && window.__agentesAlcance) ? (data || []).filter(v => window.__agentesAlcance.has(v.agente)) : (data || []);
+    if (!dataAlc.length) { cont.innerHTML = '<div style="font-size:12px; color:#64748B;">Sin vacaciones ni incapacidades capturadas recientes.</div>'; return; }
     const esDir = !!window.__esDirector;
     cont.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;"><tr>
       <th style="background:#002B5C; color:white; padding:6px;">Agente</th><th style="background:#002B5C; color:white; padding:6px;">Tipo</th><th style="background:#002B5C; color:white; padding:6px;">Inicio</th><th style="background:#002B5C; color:white; padding:6px;">Fin</th><th style="background:#002B5C; color:white; padding:6px;">Capturó</th><th style="background:#002B5C; color:white; padding:6px;">Estado</th><th style="background:#002B5C; color:white; padding:6px;">Acciones</th></tr>` +
-      data.map(v => `<tr style="border-bottom:1px solid #E2E8F0; background:${v.validada ? '#F0FDF4' : '#FFFBEB'};">
+      dataAlc.map(v => `<tr style="border-bottom:1px solid #E2E8F0; background:${v.validada ? '#F0FDF4' : '#FFFBEB'};">
         <td style="padding:5px 8px;">${v.agente}</td><td style="padding:5px 8px;">${v.tipo === 'incapacidad' ? '🏥 Incapacidad' : '🏖️ Vacaciones'}</td><td style="padding:5px 8px;">${v.fecha_inicio}</td><td style="padding:5px 8px;">${v.fecha_fin}</td><td style="padding:5px 8px;">${v.capturado_por || '—'}</td>
         <td style="padding:5px 8px; font-weight:800; color:${v.validada ? '#166534' : '#B45309'};">${v.validada ? '✅ VALIDADA' : '⏳ Pendiente'}</td>
         <td style="padding:5px 8px;">${esDir ? `${v.validada ? '' : `<button type="button" onclick="vacValidar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #16A34A; background:white; color:#16A34A; font-weight:700; cursor:pointer;">✔️ Validar</button> `}<button type="button" onclick="vacEliminar(${v.id})" style="padding:3px 10px; border-radius:6px; border:1px solid #DC2626; background:white; color:#DC2626; font-weight:700; cursor:pointer;">🗑️</button>` : '—'}</td></tr>`).join('') + '</table>';
@@ -3010,17 +3018,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   _calcInicializarSelector();
-  // ---- Acceso: director todo · coordinadores solo Vacaciones/Incapacidades + Plantilla ----
-  const CLAVE_DIR_M = 'EC26-DIR!84Kz';
-  const CLAVE_COORD_M = 'EC26-COORD-CAPTURA';
-  let claveM = new URLSearchParams(location.search).get('clave') || localStorage.getItem('metas_clave') || '';
-  if (claveM !== CLAVE_DIR_M && claveM !== CLAVE_COORD_M) claveM = prompt('🔒 Clave de acceso a administración de metas:') || '';
-  window.__esDirector = claveM === CLAVE_DIR_M;
-  if (!window.__esDirector && claveM !== CLAVE_COORD_M) {
-    document.body.innerHTML = '<div style="padding:70px 20px; text-align:center; font-family:system-ui;"><h2>🔒 Acceso restringido</h2><p style="color:#64748B;">Clave inválida. Recarga la página para reintentar.</p></div>';
-    throw new Error('acceso denegado');
+  // ---- Acceso: MISMAS claves que el reporte maestro (hash SHA-256) ----
+  // director → todo · coordinador (coord:Nombre) o clave de centro (CC2/JV) → solo
+  // Vacaciones/Incapacidades + Plantilla (HC), acotado a sus supervisores.
+  _accesoMetas();
+});
+
+const ACCESOS_HASH_M = {
+  'f482a943c8125ddf3e2f98be67523a97ea08474e7507e623dbf124ce62f812e3': 'director',
+  'e2673b641a1f27bd6302b8c042b7df77840819b84586f35d97fa4cd8a5f3990e': 'CC2',
+  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV',
+  '4f07679980346c72fe4e0cb4054089d3c6a7d5d8652a6e1c468e50d644538e13': 'coord:Guillermina',
+  '6f93a940498a1a0604e77ce4796dccc6b5223d04aa928adb528f7c08005de389': 'coord:Eduardo'
+};
+async function _hashClaveM(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+// Supervisores (nombre corto) que alcanza el acceso: por coordinador (vigencia hoy) o por centro
+async function _alcanceSupervisores(rol) {
+  try {
+    if (rol === 'CC2' || rol === 'JV') {
+      const { data } = await db.from('supervisores_config').select('supervisor, centro').eq('centro', rol);
+      return new Set((data || []).map(s => s.supervisor));
+    }
+    if (rol.startsWith('coord:')) {
+      const nom = rol.slice(6);
+      const { data: co } = await db.from('coordinadores').select('id, nombre, nombre_corto');
+      const c = (co || []).find(x => (x.nombre_corto || '').toLowerCase() === nom.toLowerCase() || (x.nombre || '').toLowerCase().startsWith(nom.toLowerCase()));
+      if (!c) return new Set();
+      const hoy = new Date().toISOString().substring(0, 10);
+      const { data: cs } = await db.from('coordinador_supervisor').select('supervisor, fecha_inicio, fecha_fin').eq('coordinador_id', c.id);
+      return new Set((cs || []).filter(r => (!r.fecha_inicio || r.fecha_inicio <= hoy) && (!r.fecha_fin || r.fecha_fin >= hoy)).map(r => r.supervisor));
+    }
+  } catch (e) { console.warn('[alcance]', e); }
+  return new Set();
+}
+async function _accesoMetas() {
+  let rol = null;
+  const guardado = sessionStorage.getItem('metas_rol_hash');
+  if (guardado && ACCESOS_HASH_M[guardado]) rol = ACCESOS_HASH_M[guardado];
+  while (!rol) {
+    const clave = prompt('🔒 Administración de metas — usa la misma clave de tu reporte maestro:');
+    if (clave === null) { document.body.innerHTML = '<div style="padding:70px 20px; text-align:center; font-family:system-ui;"><h2>🔒 Acceso restringido</h2><p style="color:#64748B;">Recarga la página para reintentar.</p></div>'; throw new Error('acceso denegado'); }
+    const h = await _hashClaveM(clave.trim());
+    if (ACCESOS_HASH_M[h]) { rol = ACCESOS_HASH_M[h]; sessionStorage.setItem('metas_rol_hash', h); }
+    else alert('Clave inválida o sin permiso (solo dirección y coordinadores).');
   }
-  localStorage.setItem('metas_clave', claveM);
+  window.__esDirector = rol === 'director';
+  window.__accesoRol = rol;
+  window.__accesoNombre = rol === 'director' ? 'Dirección' : rol.startsWith('coord:') ? rol.slice(6) : `Centro ${rol}`;
+  window.__alcanceSups = window.__esDirector ? null : await _alcanceSupervisores(rol);
+  const sub = document.querySelector('.subtitle');
+  if (sub) sub.insertAdjacentHTML('afterend', `<div style="margin-top:6px; font-size:12px; font-weight:700; color:#0077A8;">Sesión: ${window.__accesoNombre}${window.__esDirector ? ' (director)' : ' (coordinador · solo HC y vacaciones/incapacidades de sus supervisores' + (window.__alcanceSups && window.__alcanceSups.size ? ': ' + [...window.__alcanceSups].join(', ') : '') + ')'}</div>`);
+  _accesoAplicarMetas();
+}
+function _accesoAplicarMetas() {
   if (!window.__esDirector) {
     ['metas', 'calendario', 'asignaciones', 'config', 'rechazos'].forEach(t => {
       const b = document.querySelector(`.tab-btn[data-tab="${t}"]`);
@@ -3042,7 +3095,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (b2) b2.addEventListener('click', guardarMetasCalculadas);
   const b3 = document.getElementById('btn-calc-excel');
   if (b3) b3.addEventListener('click', exportarMetasExcel);
-});
+}
 
 const RECH_MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
