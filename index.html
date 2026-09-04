@@ -1192,15 +1192,21 @@ async function cargarASupabase() {
 
     // ===== Cargar entregas (si hay datos del 4to Excel) =====
     if (state.registrosEntregas && state.registrosEntregas.length > 0) {
-      log('Borrando registros anteriores de entregas_detalle...', 'info');
-      const { error: delEntErr } = await db
-        .from('entregas_detalle')
-        .delete()
-        .neq('folio', '___imposible___');
+      // MODO ACUMULAR (igual que ventas_detalle): ya NO se borra toda la tabla. Solo se
+      // reemplazan los folios que vienen en este archivo; los de meses anteriores se
+      // conservan. Antes, subir un detalle con rango corto borraba las entregas viejas y
+      // el descuento DHL de comisiones de meses pasados desaparecía (se sobrepagaba).
+      log('Reemplazando en entregas_detalle solo los folios que trae este archivo...', 'info');
+      const foliosEnt = [...new Set(state.registrosEntregas.map(r => r.folio).filter(Boolean))];
+      let delEntErr = null;
+      for (let i = 0; i < foliosEnt.length; i += 200) {
+        const { error: eDel } = await db.from('entregas_detalle').delete().in('folio', foliosEnt.slice(i, i + 200));
+        if (eDel) { delEntErr = eDel; break; }
+      }
       if (delEntErr) {
-        log('⚠️ Error borrando entregas (la tabla puede no existir aún): ' + delEntErr.message, 'warn');
+        log('⚠️ Error actualizando entregas (la tabla puede no existir aún): ' + delEntErr.message, 'warn');
       } else {
-        log('Entregas anteriores borradas', 'ok');
+        log(`${foliosEnt.length} folios de entregas actualizados (los de otros meses se conservan)`, 'ok');
 
         log(`Insertando ${state.registrosEntregas.length} entregas...`, 'info');
         const totalEnt = state.registrosEntregas.length;
