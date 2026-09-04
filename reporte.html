@@ -13,6 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
+  html, body { overflow-x: hidden; }
   :root {
     --att-blue: #00A8E0;
     --att-blue-dark: #0077A8;
@@ -3287,9 +3288,9 @@ function renderRadiografiaObjetivos() {
     };
     return `<div style="font-size:12px; padding:8px 10px; background:#F8FAFC; border:1px solid var(--border); border-radius:8px; margin-bottom:8px;"><strong>Avance por tipo a hoy</strong> (real / esperado al ritmo del mes; con meta cargada usa la meta real, si no la curva 6·8·12): ${seg('Nuevos', 'N', '#0077A8')}${seg('Intermedios', 'I', '#B45309')}${seg('Maduros', 'M', '#166534')}</div>`;
   })();
-  cont.innerHTML = franjaHTML + `<table style="width:100%; border-collapse:collapse; font-size:12px;">
+  cont.innerHTML = franjaHTML + `<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px;">
     <thead><tr>${['Supervisor', 'Centro', 'Coord.', 'Agentes', 'Sin meta (mes)', 'Prod. s/meta × día ef.', 'Meta activadas', 'Obj. diario act.', 'Equipo N·I·M', 'Activadas hoy', 'Esperado hoy', 'Δ vs esperado', 'Programadas mes', 'En tránsito', 'Arrastre mes ant.', 'Faltan (act.)', 'Progr. requeridas', 'Progr./día plan'].map(th).join('')}<th style="padding:7px 8px; background:#B45309; color:white; font-size:10.5px; white-space:nowrap; border-left:2px solid #F59E0B; border-right:2px solid #F59E0B;">★ Progr./día requerida (HOY)</th>${['Estado'].map(th).join('')}</tr></thead>
-    <tbody>${cuerpo}</tbody></table>
+    <tbody>${cuerpo}</tbody></table></div>
     <div style="font-size:10.5px; color:var(--text-soft); margin-top:6px;">Días hábiles del calendario (sábado = 0.5): ${F1(filasR[0].diasHabilesMes)} en el mes · ${F1(filasR[0].diasTrans)} transcurridos · <strong>Programación:</strong> factor por centro medido en ${convC.meses.join(', ')} → CC2 ${convC.CC2.factor.toFixed(3)} (conv. ${(convC.CC2.conv * 100).toFixed(1)}%${convC.CC2.estimado ? ', estimado' : ''}) · JV ${convC.JV.factor.toFixed(3)} (conv. ${(convC.JV.conv * 100).toFixed(1)}%${convC.JV.estimado ? ', estimado' : ''}) · Faltan = meta − activadas − tránsito × conversión · Progr. requeridas = faltan × factor · Último día útil de programación: <strong>${ventana.limLbl}</strong> (rezago BO→activación p90 = ${ventana.rezago.dias} días${ventana.rezago.medido ? `, medido sobre ${ventana.rezago.n} activaciones, mediana ${ventana.rezago.mediana}` : ', valor de respaldo'}) → ${F1(ventana.utilesMes)} días útiles en el mes, ${F1(ventana.utiles)} restantes · Progr./día plan = (meta − arrastre × conversión) × factor ÷ días útiles del mes (el arrastre es lo programado el mes anterior que activa en este: ya cubre meta sin programar) · Progr./día requerida = requeridas ÷ días útiles restantes · Estado: en ritmo ≤ 105% del plan · acelerar ≤ 130% · meta comprometida > 130% (decisión de dirección, no de presión al corte) · Sin meta: ventas por día hábil EFECTIVO vs estándar ${(filasR[0].diasHabilesMes > 0 ? (6 / filasR[0].diasHabilesMes).toFixed(2) : '0.26')}/día · 🎓 = aún en capacitación.</div>
     ${_matrizCumplimientoHTML(filasR, factorDia, hoyStrR, tot)}`;
   // Ancho real de la columna Supervisor para fijar la de Obj./día justo a su derecha
@@ -3871,7 +3872,7 @@ function renderProductividadEquipos() {
             <button id="radiografia-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel</button>
           </div>
         </div>
-        <div id="radiografia-tabla" style="overflow-x:auto;"></div>
+        <div id="radiografia-tabla"></div>
       </div>
       <div style="margin-bottom:26px; border:1px solid #BFDBFE; border-radius:10px; padding:14px; background:#F8FBFF;">
         <div style="font-weight:700; color:#1D4ED8; font-size:14px; margin-bottom:6px;">⏱️ Rutina de cortes de programación (para coordinadores)</div>
@@ -17998,6 +17999,10 @@ function _tblFijarPrimeraCol(tabla) {
   if (tabla.dataset.stickyManual === '1') return;
   const cont = tabla.parentElement;
   if (!cont) return;
+  // Solo dentro de un contenedor que hace scroll horizontal de verdad; una tabla suelta
+  // (sin overflow-x) no se toca, porque ahí lo que se movería sería la página.
+  const ov = getComputedStyle(cont).overflowX;
+  if (ov !== 'auto' && ov !== 'scroll') return;
   const desborda = tabla.scrollWidth > cont.clientWidth + 4 || cont.scrollWidth > cont.clientWidth + 4;
   const ya = tabla.dataset.sticky1 === '1';
   if (!desborda) {
