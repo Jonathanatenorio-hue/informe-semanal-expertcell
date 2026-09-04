@@ -831,6 +831,20 @@ async function procesar() {
     // El supervisor histórico NO se conserva: se recalcula con la fecha (que sí se
     // conserva) y las asignaciones, igual que siempre.
     const actSupabasePorFolio = {};
+    // fecha_bo ya guardada por folio: la PRIMERA fecha de back office es la que cuenta como
+    // actividad de programación; una reprogramación con el mismo folio no debe mover el
+    // folio a otro día (hacía que la matriz de cumplimiento cambiara hacia atrás).
+    const boPrevioPorFolio = {};
+    try {
+      let dB = 0;
+      while (true) {
+        const { data: pb, error: pbErr } = await db.from('ventas_detalle').select('folio, fecha_bo').not('fecha_bo', 'is', null).range(dB, dB + 999);
+        if (pbErr) { log('Aviso: no se pudo leer fecha_bo previa: ' + pbErr.message, 'warn'); break; }
+        if (!pb || !pb.length) break;
+        pb.forEach(r => { boPrevioPorFolio[String(r.folio)] = r.fecha_bo; });
+        if (pb.length < 1000) break; dB += 1000;
+      }
+    } catch (eB) {}
     try {
       log('Leyendo activaciones ya guardadas en Supabase (para conservarlas)...', 'info');
       let desde = 0;
@@ -952,7 +966,8 @@ async function procesar() {
         supervisor: supervisor || null,
         supervisor_act: supervisorAct || null,
         supervisor_can: supervisorCan || null,
-        fecha_bo: fechaBO,
+        fecha_bo: (boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < fechaBO) ? boPrevioPorFolio[folio] : fechaBO,
+        fecha_bo_ultima: fechaBO,
         etapa_entrega: estatusBO ? String(estatusBO).trim() : null,
         fecha_activacion: actInfo ? actInfo.fecha : null,
         hora_activacion: actInfo ? actInfo.hora : null,
@@ -1004,7 +1019,8 @@ async function procesar() {
         supervisor: supervisor || null,
         supervisor_act: reactivada ? (resolverSupervisorPorFecha(ejecutivo, actInfo.fecha, asignaciones) || null) : null,
         supervisor_can: reactivada ? null : (resolverSupervisorPorFecha(ejecutivo, c.fecha, asignaciones) || null),
-        fecha_bo: c.fechaBO,
+        fecha_bo: (boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < c.fechaBO) ? boPrevioPorFolio[folio] : c.fechaBO,
+        fecha_bo_ultima: c.fechaBO,
         etapa_entrega: r.Estatus ? String(r.Estatus).trim() : 'Canc Error',
         fecha_activacion: reactivada ? actInfo.fecha : null,
         hora_activacion: reactivada ? (actInfo.hora || null) : null,
@@ -1017,6 +1033,8 @@ async function procesar() {
         telefono: canTelPorFolio[folio] || (actInfo && actInfo.telefono) || null,
       });
     }
+    const reprogramadas = registros.filter(r => r.fecha_bo_ultima && r.fecha_bo && r.fecha_bo_ultima > r.fecha_bo).length;
+    if (reprogramadas > 0) log(`🔄 ${reprogramadas} folios reprogramados (mismo folio, nueva fecha de BO): conservan su primera fecha de programación; la nueva queda en fecha_bo_ultima`, 'info');
     if (canceladasHuerfanas > 0) log(`${canceladasHuerfanas} canceladas post-BO que ya no venían en el backoffice: se cargan como 'cancelada' (antes se perdían)`, 'ok');
     if (canceladasReactivadas > 0) log(`${canceladasReactivadas} canceladas con reactivación posterior (mismo folio): se cargan como 'activada'`, 'info');
 
@@ -1330,10 +1348,13 @@ async function cargarASupabase() {
       } catch (eR) { log(`Aviso: no se pudo renombrar ${rz.viejo} → ${rz.nuevo}: ${eR.message || eR}`, 'warn'); }
     }
     for (let i = 0; i < total; i += batchSize) {
-      const batch = state.registros.slice(i, i + batchSize);
-      const { error: insErr } = await db
-        .from('ventas_detalle')
-        .upsert(batch, { onConflict: 'folio' });
+      let batch = state.registros.slice(i, i + batchSize);
+      let { error: insErr } = await db.from('ventas_detalle').upsert(batch, { onConflict: 'folio' });
+      if (insErr && /fecha_bo_ultima/i.test(insErr.message || '')) {
+        if (!window.__avisoBOU) { log('⚠️ ventas_detalle no tiene la columna "fecha_bo_ultima". Créala con el SQL indicado; mientras, se carga sin ella.', 'warn'); window.__avisoBOU = true; }
+        batch = batch.map(r => { const c = { ...r }; delete c.fecha_bo_ultima; return c; });
+        ({ error: insErr } = await db.from('ventas_detalle').upsert(batch, { onConflict: 'folio' }));
+      }
       if (insErr) throw insErr;
       insertados += batch.length;
       const pct = 15 + (insertados / total) * 80;
