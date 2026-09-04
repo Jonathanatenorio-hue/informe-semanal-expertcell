@@ -4090,6 +4090,18 @@ async function cargarDesdeSupabase() {
     // 5. Cargar ASIGNACIONES_SUPERVISOR vigentes a la fecha de corte
     //    (para Revelación, queremos saber el sup ACTUAL del agente)
     // ============================================================
+    // Coordinadores vigentes a la fecha de referencia (para el resumen por equipo)
+    const mapaCoordSup = {};   // supervisor -> nombre corto del coordinador
+    const coordinadores = [];  // [{nombre, centro}]
+    try {
+      const { data: co } = await db.from('coordinadores').select('id, nombre, nombre_corto, centro');
+      const { data: cs } = await db.from('coordinador_supervisor').select('coordinador_id, supervisor, fecha_inicio, fecha_fin');
+      const porId = {}; (co || []).forEach(c => { porId[c.id] = c; coordinadores.push({ nombre: c.nombre_corto || c.nombre, centro: c.centro }); });
+      (cs || []).forEach(r => {
+        const ini = r.fecha_inicio || '1900-01-01', fin = r.fecha_fin || '9999-12-31';
+        if (ini <= refSupStr && fin >= refSupStr && porId[r.coordinador_id]) mapaCoordSup[r.supervisor] = porId[r.coordinador_id].nombre_corto || porId[r.coordinador_id].nombre;
+      });
+    } catch (eCo) { console.warn('[coordinadores]', eCo); }
     const { data: asignaciones } = await db.from('asignaciones_supervisor').select('*');
     const mapaSupAgente = {};
     (asignaciones || []).forEach(a => {
@@ -4177,6 +4189,8 @@ async function cargarDesdeSupabase() {
       metas: metas || [],
       metasSup: metasSup || [],
       mesesPeriodo,
+      mapaCoordSup,
+      coordinadores,
       calendario,
       fechaIni,
       fechaFin
@@ -4318,8 +4332,10 @@ function procesarDatos() {
   // ============================================================
   if (state.topId === 'resumenc') {
     const centroFiltro = state.centro || 'CC2'; // default CC2 si no se especifica
-    // Filtrar supervisores del centro
-    const supsDelCentro = supsVigentes.filter(sup => mapaCentroSup[sup] === centroFiltro);
+    // Filtrar supervisores del centro; si viene coordinador (en state.supervisor), solo los suyos
+    const mapaCoordSupR = state.rawData.mapaCoordSup || {};
+    const coordFiltro = state.supervisor || '';
+    const supsDelCentro = supsVigentes.filter(sup => mapaCentroSup[sup] === centroFiltro && (!coordFiltro || (mapaCoordSupR[sup] || '').toLowerCase() === coordFiltro.toLowerCase()));
 
     // Acumuladores
     const ventasPorAgente = {}; // {ejecutivo: {ventas, supervisor}}
@@ -4375,6 +4391,7 @@ function procesarDatos() {
     return [{
       _resumen: true,
       centro: centroFiltro,
+      coordinador: coordFiltro,
       equipos
     }];
   }
@@ -4482,7 +4499,7 @@ function procesarDatos() {
       acumArpu[v.ejecutivo].count++;
     });
     const arr = Object.entries(acumArpu)
-      .filter(([_, a]) => a.count >= 3) // mínimo 3 ventas para tener ARPU representativo
+      .filter(([_, a]) => a.count >= 6) // mínimo 6 ventas (piso de comisión): sin piso no hay ticket
       .map(([nombre, a]) => {
         const supActual = mapaSupAgente[nombre] || '';
         return {
@@ -4955,8 +4972,8 @@ function render() {
     kickerText = 'CC2 ANTEQUERA vs JUÁREZ TORRE JV';
   } else if (state.topId === 'resumenc') {
     const cf = state.centro || 'CC2';
-    titleText = `RESUMEN ${cf === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ TORRE JV'}`;
-    kickerText = 'EXPERTCELL · TOP POR EQUIPO';
+    if (state.supervisor) { titleText = `EQUIPO DE ${state.supervisor.toUpperCase()}`; kickerText = `EXPERTCELL · ${cf === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ TORRE JV'} · TOP POR SUPERVISOR`; }
+    else { titleText = `RESUMEN ${cf === 'CC2' ? 'CC2 ANTEQUERA' : 'JUÁREZ TORRE JV'}`; kickerText = 'EXPERTCELL · TOP POR EQUIPO'; }
   } else if (state.topId === 'supVtas') {
     titleText = `TOP SUPERVISORES${state.centro ? ' · ' + state.centro : ''}`;
     kickerText = 'EXPERTCELL · POR VENTAS TOTALES';
@@ -5223,7 +5240,7 @@ function render() {
             <span style="font-size:12px; color:#888;">${
               state.topId === 'rev' ? 'No hay agentes nuevos (≤60 días) con ventas en el periodo' :
               state.topId === 'crec' ? 'No hay agentes con crecimiento vs mes anterior' :
-              state.topId === 'ticket' ? 'No hay agentes con suficientes ventas (mín 3) y ARPU > 0' :
+              state.topId === 'ticket' ? 'No hay agentes con el piso de 6 ventas y ARPU > 0' :
               state.topId === 'meta' ? 'Ningún agente ha cumplido su meta del mes aún' :
               state.topId === 'logro' ? 'No hay agentes con meta ≥ 6 en el periodo' : 'Sin datos'
             }</span>
@@ -6084,11 +6101,13 @@ function getPantallasDisponibles() {
     { id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales',          variantable: true, largo: true },
     // Centros y supervisores
     { id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores',    variantable: true, largo: true },
-    { id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por supervisor CC2',      grupo: 'Centros y Supervisores',    variantable: true, largo: true },
-    { id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por supervisor JV',       grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    // Resumen por EQUIPO DE COORDINADOR (una pantalla por coordinador: cabe completa).
+    // El nombre va en el slot de supervisor; se cruza contra coordinador_supervisor vigente.
+    { id: 'resumenc::CC2::Eduardo',     topId: 'resumenc', centro: 'CC2', supervisor: 'Eduardo',     icon: '📋', label: 'Equipo de Eduardo · CC2',      desc: 'Top 3 por supervisor',          grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'resumenc::CC2::Guillermina', topId: 'resumenc', centro: 'CC2', supervisor: 'Guillermina', icon: '📋', label: 'Equipo de Guillermina · CC2',  desc: 'Top 3 por supervisor',          grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'resumenc::JV::Luisa',        topId: 'resumenc', centro: 'JV',  supervisor: 'Luisa',       icon: '📋', label: 'Equipo de Luisa · JV',         desc: 'Top 3 por supervisor',          grupo: 'Centros y Supervisores',    variantable: true, largo: true },
     { id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores',    variantable: true, largo: true },
     { id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores',    variantable: true, largo: true },
-    { id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes',              grupo: 'Centros y Supervisores',    variantable: true, largo: true },
     // Revelación
     { id: 'rev::',            topId: 'rev',      centro: '',    supervisor: '', icon: '🚀', label: 'Revelación del mes',            desc: 'Mejor agente nuevo',            grupo: 'Revelación',                variantable: true },
     { id: 'revTop::CC2::',    topId: 'revTop',   centro: 'CC2', supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · CC2',      desc: 'Mejores nuevos CC2',            grupo: 'Revelación',                variantable: true },
@@ -6177,7 +6196,7 @@ function cargarConfigPresentar() {
 
 // Lista oficial de defaults EN EL ORDEN exacto que pidió el usuario
 function getPantallasDefault() {
-  const base = ['global::', 'global::CC2::', 'global::JV::', 'top10::', 'centro::', 'resumenc::CC2::', 'resumenc::JV::', 'supVtas::', 'supMeta::', 'promAgente::',
+  const base = ['global::', 'global::CC2::', 'global::JV::', 'top10::', 'centro::', 'resumenc::CC2::Eduardo', 'resumenc::CC2::Guillermina', 'resumenc::JV::Luisa', 'supVtas::', 'supMeta::',
     'logro::', 'logroTop::CC2::', 'logroTop::JV::', 'rev::', 'revTop::CC2::', 'revTop::JV::', 'crec::', 'crecTop::CC2::', 'crecTop::JV::',
     'ticket::', 'ticketTop::CC2::', 'ticketTop::JV::', 'meta::', 'metaCarr::CC2::', 'metaCarr::JV::'];
   const largos = ['global::', 'top10::', 'centro::', 'supMeta::', 'logro::', 'logroTop::CC2::', 'logroTop::JV::'];
@@ -7009,8 +7028,14 @@ function mostrarPantallaPresentarRender(parsed, idx, bannerTxt) {
 
   if (esCustom) {
     renderCustomPantalla(parsed.topId);
+  } else if (!state.rawData) {
+    // Sin datos en memoria (p. ej. pantalla sin periodo al arrancar): cargar el mes en curso
+    aplicarPeriodoAlState('actual');
+    mostrarLoadingStage();
+    cargarDesdeSupabase().then(() => { presentarState.cacheRawData = presentarState.cacheRawData || {}; presentarState.cacheRawData[`actual_${state.fechaInicio}_${state.fechaFin}`] = state.rawData; mostrarPantallaPresentarRender(parsed, idx, bannerTxt); });
+    return;
   } else {
-    if (state.rawData) state.agentes = procesarDatos();
+    state.agentes = procesarDatos();
     render();
   }
 
