@@ -183,9 +183,20 @@
 <body>
 <div class="container">
 
+  <div id="acceso-overlay" style="position:fixed; inset:0; background:#002B5C; z-index:9999; display:flex; align-items:center; justify-content:center; font-family:system-ui, -apple-system, sans-serif;">
+    <div style="background:white; border-radius:14px; padding:34px 38px; width:380px; box-shadow:0 20px 60px rgba(0,0,0,.35);">
+      <div style="font-size:22px; font-weight:800; color:#002B5C;">🔒 Cargador ExpertCell</div>
+      <div style="font-size:12px; color:#64748B; margin:6px 0 18px;">Usa la misma clave con la que abres tu reporte maestro. Solo dirección y coordinadores pueden cargar.</div>
+      <input id="acceso-clave" type="password" placeholder="Clave" style="width:100%; box-sizing:border-box; padding:11px 12px; border:1.5px solid #CBD5E1; border-radius:8px; font-size:15px;" autofocus>
+      <button id="acceso-btn" style="width:100%; margin-top:12px; padding:11px; background:#00A8E0; color:white; border:none; border-radius:8px; font-weight:800; font-size:14px; cursor:pointer;">Entrar</button>
+      <div id="acceso-msg" style="font-size:12px; color:#DC2626; margin-top:10px; min-height:16px;"></div>
+      <div id="acceso-ventana" style="font-size:11.5px; color:#64748B; margin-top:14px; border-top:1px solid #E2E8F0; padding-top:10px;"></div>
+    </div>
+  </div>
   <div class="header">
     <h1>Cargador de Informe Semanal</h1>
     <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Actualización semanal del reporte</div>
+    <div id="sesion-info" style="margin-top:8px; font-size:12px; font-weight:700; color:#0077A8;"></div>
   </div>
 
   <!-- PASO 1: Cargar Excels -->
@@ -294,6 +305,52 @@ const REASIGNACIONES = {
   'MARIA FERNANDA MARTINEZ BISTRAIN': 'MARIA LUISA MEZA GOEL',
   'TOMAS ROSAS ROJAS': 'MARIA LUISA MEZA GOEL',
 };
+
+// ===== ACCESO (mismas claves que el reporte maestro) =====
+// Hash SHA-256 → rol. Solo dirección y coordinadores cargan; los supervisores no.
+const ACCESOS_HASH = {
+  'f482a943c8125ddf3e2f98be67523a97ea08474e7507e623dbf124ce62f812e3': 'director',
+  'e2673b641a1f27bd6302b8c042b7df77840819b84586f35d97fa4cd8a5f3990e': 'CC2',
+  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV',
+  '4f07679980346c72fe4e0cb4054089d3c6a7d5d8652a6e1c468e50d644538e13': 'coord:Guillermina',
+  '6f93a940498a1a0604e77ce4796dccc6b5223d04aa928adb528f7c08005de389': 'coord:Eduardo'
+};
+// Ventana de carga: la operación cierra ~19:00 pero mesa de control activa hasta ~21:00
+// y empieza a mover folios a las 09:00. Cargar fuera de la ventana mueve los datos del día.
+const VENTANA_CARGA = { desde: 21, hasta: 9 }; // permitido si hora >= 21 o hora < 9
+async function _hashClave(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function _enVentanaCarga(d) { const h = (d || new Date()).getHours(); return h >= VENTANA_CARGA.desde || h < VENTANA_CARGA.hasta; }
+function _ventanaTxt() { return `${String(VENTANA_CARGA.desde).padStart(2, '0')}:00 a ${String(VENTANA_CARGA.hasta).padStart(2, '0')}:00`; }
+window.__acceso = null; // { rol, nombre, esDirector }
+async function _accesoIntentar() {
+  const inp = document.getElementById('acceso-clave'); const msg = document.getElementById('acceso-msg');
+  const clave = (inp.value || '').trim(); if (!clave) return;
+  const h = await _hashClave(clave); const rol = ACCESOS_HASH[h];
+  if (!rol) { msg.textContent = 'Clave inválida o sin permiso de carga.'; inp.value = ''; return; }
+  const nombre = rol === 'director' ? 'Dirección' : rol.startsWith('coord:') ? rol.slice(6) : `Centro ${rol}`;
+  window.__acceso = { rol, nombre, esDirector: rol === 'director' };
+  document.getElementById('acceso-overlay').style.display = 'none';
+  const enV = _enVentanaCarga();
+  document.getElementById('sesion-info').innerHTML = `Sesión: ${nombre} (${rol === 'director' ? 'director' : 'coordinador'}) · ${enV ? '🟢 dentro de la ventana de carga' : '🔴 FUERA de la ventana de carga'} (${_ventanaTxt()})`;
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const v = document.getElementById('acceso-ventana'); if (v) v.textContent = `Ventana de carga: ${_ventanaTxt()} (después de que mesa de control termina y antes de que empiece). Ahora mismo: ${_enVentanaCarga() ? 'dentro ✅' : 'fuera ⚠️'}.`;
+  document.getElementById('acceso-btn').addEventListener('click', _accesoIntentar);
+  document.getElementById('acceso-clave').addEventListener('keydown', e => { if (e.key === 'Enter') _accesoIntentar(); });
+});
+// Bitácora de cargas (tabla cargas_log). Si la tabla no existe, solo avisa.
+async function _bitacoraGuardar(reg) {
+  try { const { error } = await db.from('cargas_log').insert(reg); if (error) log('Bitácora: ' + error.message + ' (¿existe la tabla cargas_log?)', 'warn'); else log('Bitácora registrada', 'ok'); }
+  catch (e) { log('Bitácora: ' + (e.message || e), 'warn'); }
+}
+function _rangoFechas(rows, campo) {
+  let mn = null, mx = null;
+  (rows || []).forEach(r => { const f = normalizarFecha(r[campo]); if (!f) return; if (!mn || f < mn) mn = f; if (!mx || f > mx) mx = f; });
+  return mn ? `${mn} → ${mx}` : '—';
+}
 
 const state = {
   bo: null,
@@ -938,6 +995,31 @@ async function procesar() {
 
     state.registros = registros;
     state.foliosBO = foliosVistos; // todos los folios presentes en el backoffice de hoy (+ canceladas post-BO)
+
+    // ===== CANDADO: folios abiertos que DESAPARECEN sin rastro =====
+    // Un folio abierto (en tránsito / por activar / pendiente) solo puede dejar de
+    // venir en el backoffice porque se activó (viene en Activadas) o se canceló
+    // (viene en Canceladas). Si no está en ninguno, los archivos no cuadran entre sí
+    // (descargados a distinta hora, rango corto, archivo viejo): se bloquea la carga.
+    state.sinRastro = [];
+    state.abiertosPrevios = 0;
+    try {
+      const abiertos = [];
+      let desdeAb = 0; const pagAb = 1000;
+      while (true) {
+        const { data: ab, error: abErr } = await db.from('ventas_detalle').select('folio, ejecutivo, supervisor, fecha_bo, estatus, etapa_entrega')
+          .in('estatus', ['en_transito', 'por_activar', 'pendiente']).range(desdeAb, desdeAb + pagAb - 1);
+        if (abErr) { log('Aviso: no se pudieron leer folios abiertos: ' + abErr.message, 'warn'); break; }
+        if (!ab || ab.length === 0) break;
+        abiertos.push(...ab);
+        if (ab.length < pagAb) break;
+        desdeAb += pagAb;
+      }
+      state.abiertosPrevios = abiertos.length;
+      state.sinRastro = abiertos.filter(a => { const f = String(a.folio); return !foliosVistos.has(f) && !actPorFolio[f] && !canPorFolio[f]; });
+      if (state.sinRastro.length) log(`🛑 ${state.sinRastro.length} folios abiertos desaparecieron del backoffice sin activación ni cancelación`, 'err');
+      else log(`Consistencia OK: los ${abiertos.length} folios abiertos vienen en el backoffice o cerraron en Activadas/Canceladas`, 'ok');
+    } catch (eSR) { log('Aviso: no se pudo verificar consistencia de abiertos: ' + (eSR.message || eSR), 'warn'); }
     log(`${registros.length} registros válidos generados (del 2026)`, 'ok');
     if (ignoradosPorFecha > 0) log(`${ignoradosPorFecha} registros ignorados (BO anterior a 2026-01-01)`, 'info');
     if (ignoradosAtipicos > 0) log(`${ignoradosAtipicos} folios atípicos ignorados (casos especiales)`, 'info');
@@ -1052,6 +1134,21 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
   if (canPreBO > 0) {
     alertas += `<div class="alert warn"><div>ℹ️</div><div>${canPreBO} canceladas pre-BO (sin llegar a backoffice) se guardan aparte en <code>canceladas_pre_bo</code>. No cuentan como programadas.</div></div>`;
   }
+  const sr = state.sinRastro || [];
+  const btnC = document.getElementById('btn-cargar');
+  if (sr.length) {
+    const minBO = sr.map(x => x.fecha_bo).filter(Boolean).sort()[0];
+    const lista = sr.slice(0, 40).map(x => `<tr><td style="padding:2px 8px; font-family:monospace;">${x.folio}</td><td style="padding:2px 8px;">${x.ejecutivo || '—'}</td><td style="padding:2px 8px;">${x.supervisor || '—'}</td><td style="padding:2px 8px;">${x.fecha_bo || '—'}</td><td style="padding:2px 8px;">${x.etapa_entrega || x.estatus}</td></tr>`).join('');
+    alertas = `<div class="alert" style="background:#FEE2E2; border-left:5px solid #DC2626;"><div>🛑</div><div>
+      <strong style="color:#991B1B; font-size:14px;">CARGA BLOQUEADA — ${sr.length} folio(s) abiertos desaparecieron del backoffice sin activación ni cancelación</strong><br>
+      Un folio en tránsito solo puede dejar de venir porque se activó o se canceló. Estos no están en ninguno de los dos archivos, así que <strong>los cuatro archivos no cuadran entre sí</strong>: descargados a distinta hora, un rango recortado${minBO ? ` (el más antiguo tiene back office del <strong>${minBO}</strong>: el backoffice debe descargarse al menos desde esa fecha)` : ''}, o un archivo viejo.<br>
+      <em>Vuelve a descargar los cuatro archivos juntos, con el rango completo, y procesa de nuevo. Si persiste, escálalo a dirección con esta lista.</em>
+      <table style="margin-top:8px; font-size:11.5px; border-collapse:collapse; background:white;"><tr style="background:#F1F5F9;"><th style="padding:3px 8px; text-align:left;">Folio</th><th style="padding:3px 8px; text-align:left;">Ejecutivo</th><th style="padding:3px 8px; text-align:left;">Sup.</th><th style="padding:3px 8px; text-align:left;">Fecha BO</th><th style="padding:3px 8px; text-align:left;">Etapa</th></tr>${lista}</table>${sr.length > 40 ? `<div style="font-size:11px; margin-top:4px;">… y ${sr.length - 40} más.</div>` : ''}
+      ${window.__acceso && window.__acceso.esDirector ? `<label style="display:block; margin-top:10px; font-weight:700; color:#991B1B;"><input type="checkbox" id="chk-forzar"> Soy dirección: forzar la carga de todos modos (los folios de la lista se conservan marcados "SIN RASTRO EN BO", no se borran)</label>` : ''}
+    </div></div>` + alertas;
+    if (btnC) { btnC.disabled = true; btnC.textContent = '🛑 Carga bloqueada: los archivos no cuadran'; }
+    setTimeout(() => { const ck = document.getElementById('chk-forzar'); if (ck) ck.addEventListener('change', () => { btnC.disabled = !ck.checked; btnC.textContent = ck.checked ? '⚠️ Cargar FORZADO (dirección)' : '🛑 Carga bloqueada: los archivos no cuadran'; }); }, 0);
+  } else if (btnC) { btnC.disabled = false; btnC.textContent = 'Cargar a Supabase (acumula por folio)'; }
   if (!alertas) {
     alertas = `<div class="alert success"><div>✅</div><div>Todos los registros se resolvieron correctamente.</div></div>`;
   }
@@ -1089,7 +1186,26 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
 
 async function cargarASupabase() {
   if (!state.registros) return;
-  if (!confirm('¿Seguro que quieres BORRAR los datos actuales y cargar los nuevos? Esta acción no se puede deshacer.')) return;
+  if (!window.__acceso) { alert('Sin sesión. Recarga la página y entra con tu clave.'); return; }
+  const forzado = !!(state.sinRastro && state.sinRastro.length);
+  if (forzado && !window.__acceso.esDirector) { alert('Carga bloqueada: los archivos no cuadran. Escálalo a dirección.'); return; }
+  const fueraHorario = !_enVentanaCarga();
+  if (fueraHorario) {
+    const ok = confirm(`⚠️ ESTÁS FUERA DE LA VENTANA DE CARGA (${_ventanaTxt()}).\n\nSi cargas mientras la operación o mesa de control están activas, los datos del día quedan a medias (ventas en back office que aún no se activan, folios que cambian de estatus). Esta carga quedará registrada como FUERA DE HORARIO.\n\n¿Cargar de todos modos?`);
+    if (!ok) return;
+  }
+  if (!confirm(`Confirmar carga${forzado ? ' FORZADA' : ''} como ${window.__acceso.nombre}. Acumula por folio: actualiza lo que ya existe y agrega lo nuevo; no borra historia.`)) return;
+  const _bitacora = {
+    usuario: window.__acceso.nombre, rol: window.__acceso.rol, fuera_horario: fueraHorario, forzado,
+    archivos: {
+      backoffice: { nombre: state.bo && state.bo.name, filas: (state.bo_data || []).length, rango: _rangoFechas(state.bo_data, 'Fecha Back Office') },
+      activadas: { nombre: state.act && state.act.name, filas: (state.act_data || []).length, rango: _rangoFechas(state.act_data, 'Fecha') },
+      canceladas: { nombre: state.can && state.can.name, filas: (state.can_data || []).length, rango: _rangoFechas(state.can_data, 'Fecha cancelacion') },
+      detalle: { nombre: state.ent && state.ent.name, filas: (state.ent_data || []).length }
+    },
+    registros: (state.registros || []).length, abiertos_previos: state.abiertosPrevios || 0,
+    sin_rastro: (state.sinRastro || []).map(x => x.folio), resultado: 'iniciada'
+  };
 
   const btn = document.getElementById('btn-cargar');
   btn.disabled = true;
@@ -1126,49 +1242,22 @@ async function cargarASupabase() {
     progressBar.style.width = '100%';
     log(`Carga completa: ${insertados} registros procesados (upsert por folio)`, 'ok');
 
-    // ===== LIMPIEZA DE REZAGADOS =====
-    // Los folios "abiertos" (en tránsito / por activar / pendiente) siempre vienen
-    // completos en el backoffice de hoy. Si alguno quedó guardado en Supabase con
-    // ese estatus pero YA NO está en el backoffice de hoy, es un rezagado (se
-    // resolvió o se quitó en origen) y se elimina. Las activadas y canceladas
-    // (cerradas) NO se tocan: esas se siguen conservando.
+    // ===== FOLIOS SIN RASTRO (solo llega aquí si dirección forzó la carga) =====
+    // Ya NO se borra nada. Los folios abiertos que desaparecieron del backoffice sin
+    // activación ni cancelación se conservan con su estatus y se marcan para revisión.
+    // La marca se quita sola cuando vuelven a aparecer (el upsert reescribe etapa_entrega).
     try {
-      log('Buscando folios abiertos rezagados (ya no están en el backoffice)...', 'info');
-      const foliosBO = state.foliosBO || new Set();
-      const abiertos = [];
-      let desdeAb = 0;
-      const pagAb = 1000;
-      while (true) {
-        const { data: ab, error: abErr } = await db
-          .from('ventas_detalle')
-          .select('folio')
-          .in('estatus', ['en_transito', 'por_activar', 'pendiente'])
-          .range(desdeAb, desdeAb + pagAb - 1);
-        if (abErr) { log('Aviso: no se pudieron leer folios abiertos: ' + abErr.message, 'warn'); break; }
-        if (!ab || ab.length === 0) break;
-        ab.forEach(r => abiertos.push(r.folio));
-        if (ab.length < pagAb) break;
-        desdeAb += pagAb;
-      }
-      const rezagados = abiertos.filter(f => !foliosBO.has(String(f)));
-      if (rezagados.length > 0) {
-        let borrados = 0;
-        for (let i = 0; i < rezagados.length; i += 200) {
-          const lote = rezagados.slice(i, i + 200);
-          const { error: delRezErr } = await db
-            .from('ventas_detalle')
-            .delete()
-            .in('folio', lote);
-          if (delRezErr) { log('Aviso al borrar rezagados: ' + delRezErr.message, 'warn'); break; }
-          borrados += lote.length;
+      const sr = state.sinRastro || [];
+      if (sr.length) {
+        const hoyM = new Date().toISOString().substring(0, 10);
+        for (let i = 0; i < sr.length; i += 200) {
+          const lote = sr.slice(i, i + 200).map(x => x.folio);
+          const { error: eM } = await db.from('ventas_detalle').update({ etapa_entrega: `SIN RASTRO EN BO (${hoyM})` }).in('folio', lote);
+          if (eM) { log('Aviso al marcar sin rastro: ' + eM.message, 'warn'); break; }
         }
-        log(`${borrados} folios abiertos rezagados eliminados (ya no estaban en el backoffice)`, 'ok');
-      } else {
-        log('No hay folios abiertos rezagados', 'ok');
+        log(`${sr.length} folios marcados "SIN RASTRO EN BO" para revisión (no se borraron)`, 'warn');
       }
-    } catch (e) {
-      log('Aviso: no se pudo limpiar rezagados: ' + e.message, 'warn');
-    }
+    } catch (e) { log('Aviso: no se pudieron marcar los sin rastro: ' + e.message, 'warn'); }
 
     const { count: verifyCount } = await db
       .from('ventas_detalle')
@@ -1264,6 +1353,10 @@ async function cargarASupabase() {
     btn.classList.remove('success');
     btn.style.background = '#15803D';
 
+    _bitacora.resultado = 'ok'; _bitacora.registros = insertados;
+    _bitacora.avisos = [...document.querySelectorAll('#log .log-line.warn, #log .log-line.err')].map(l => l.textContent).slice(0, 30);
+    await _bitacoraGuardar(_bitacora);
+
     setTimeout(() => {
       alert(`Carga exitosa. ${insertados} registros cargados en Supabase.`);
     }, 300);
@@ -1272,6 +1365,8 @@ async function cargarASupabase() {
     log('Error en carga: ' + e.message, 'err');
     btn.disabled = false;
     btn.textContent = 'Reintentar carga';
+    _bitacora.resultado = 'error: ' + (e.message || e);
+    await _bitacoraGuardar(_bitacora);
   }
 }
 
