@@ -3623,6 +3623,8 @@
         <label>Modo</label>
         <select id="sel-modo">
           <option value="mes">Mes completo</option>
+          <option value="trim">Trimestre en curso</option>
+          <option value="anual">Año en curso</option>
           <option value="dia">Día específico</option>
           <option value="rango">Rango de días</option>
         </select>
@@ -3720,6 +3722,8 @@ const TOPS = [
   { id:'racha',     icon:'🔥', label:'Racha Activa',      desc:'Más días consecutivos vendiendo' },
   { id:'ticket',    icon:'💎', label:'Rey del Ticket',    desc:'Mayor ARPU del mes' },
   { id:'ticketTop', icon:'💰', label:'Top del Ticket',    desc:'Ranking por ARPU' },
+  { id:'logro',     icon:'🏅', label:'Campeón de Logro',  desc:'Mayor % de meta cumplida' },
+  { id:'logroTop',  icon:'📈', label:'Top % de Logro',    desc:'Ranking por % de meta' },
   { id:'meta',      icon:'🎯', label:'Primero en Meta',   desc:'Quién cumplió meta primero' },
   { id:'metaCarr',  icon:'🏁', label:'Carrera a Meta',    desc:'Tabla de cumplimientos' },
 ];
@@ -3745,6 +3749,49 @@ function getMesAnioDefault() {
 }
 
 const _defMes = getMesAnioDefault();
+
+// ====================================================================
+// PERIODOS DINÁMICOS (sin meses fijos en el código)
+//   actual   → mes en curso (en vivo)        anterior → mes anterior (cierre)
+//   trim     → trimestre natural en curso    anual    → año en curso
+// Todo se resuelve con la fecha de hoy; el modo presentación y el slideshow
+// usan estos códigos como prefijo de pantalla: 'actual__global::', etc.
+// ====================================================================
+const PERIODOS = ['actual', 'anterior', 'trim', 'anual'];
+function _ultDia(a, m) { return new Date(a, m, 0).getDate(); }
+function _fmtF(a, m, d) { return `${a}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
+function resolverPeriodo(codigo) {
+  const hoy = new Date();
+  const A = hoy.getFullYear(), M = hoy.getMonth() + 1;
+  const MC = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  if (codigo === 'anterior') {
+    const m = M === 1 ? 12 : M - 1, a = M === 1 ? A - 1 : A;
+    return { codigo, modo: 'mes', mes: m, anio: a, fechaInicio: _fmtF(a, m, 1), fechaFin: _fmtF(a, m, _ultDia(a, m)),
+      meses: [{ anio: a, mes: m }], etiqueta: `${MESES_LARGOS[m - 1]} ${a}`, banner: `🥈 CIERRE ${MESES_LARGOS[m - 1].toUpperCase()}`, grupo: `🥈 CIERRE DE ${MESES_LARGOS[m - 1].toUpperCase()} ${a}`, icon: '🥈', pref: 'CIERRE ' + MESES_LARGOS[m - 1].toUpperCase() + ' · ' };
+  }
+  if (codigo === 'trim') {
+    const q = Math.floor((M - 1) / 3); const m1 = q * 3 + 1, m3 = m1 + 2;
+    const meses = []; for (let m = m1; m <= Math.min(m3, M); m++) meses.push({ anio: A, mes: m });
+    return { codigo, modo: 'rango', mes: M, anio: A, fechaInicio: _fmtF(A, m1, 1), fechaFin: _fmtF(A, m3, _ultDia(A, m3)),
+      meses, etiqueta: `Trimestre ${MC[m1 - 1]}–${MC[m3 - 1]} ${A}`, banner: `📆 TRIMESTRE ${MC[m1 - 1].toUpperCase()}–${MC[m3 - 1].toUpperCase()}`, grupo: `📆 TRIMESTRE ${MC[m1 - 1].toUpperCase()}–${MC[m3 - 1].toUpperCase()} ${A}`, icon: '📆', pref: 'TRIMESTRE · ' };
+  }
+  if (codigo === 'anual') {
+    const meses = []; for (let m = 1; m <= M; m++) meses.push({ anio: A, mes: m });
+    return { codigo, modo: 'rango', mes: M, anio: A, fechaInicio: _fmtF(A, 1, 1), fechaFin: _fmtF(A, 12, 31),
+      meses, etiqueta: `Anual ${A}`, banner: `🏆 ANUAL ${A}`, grupo: `🏆 ANUAL ${A}`, icon: '🏆', pref: 'ANUAL · ' };
+  }
+  // actual (default)
+  return { codigo: 'actual', modo: 'mes', mes: M, anio: A, fechaInicio: _fmtF(A, M, 1), fechaFin: _fmtF(A, M, _ultDia(A, M)),
+    meses: [{ anio: A, mes: M }], etiqueta: `${MESES_LARGOS[M - 1]} ${A}`, banner: `🟢 EN VIVO ${MESES_LARGOS[M - 1].toUpperCase()}`, grupo: `🟢 EN VIVO ${MESES_LARGOS[M - 1].toUpperCase()} ${A}`, icon: '🟢', pref: 'EN VIVO · ' };
+}
+// Aplica un periodo al state (para presentación / slideshow). Devuelve la clave de caché.
+function aplicarPeriodoAlState(codigo) {
+  const p = resolverPeriodo(codigo);
+  state.modo = p.modo; state.mes = p.mes; state.anio = p.anio;
+  state.fechaInicio = p.fechaInicio; state.fechaFin = p.fechaFin;
+  state.periodoCodigo = p.codigo; state.periodoEtiqueta = p.etiqueta;
+  return `${p.codigo}_${p.fechaInicio}_${p.fechaFin}`;
+}
 
 let state = {
   topId: 'global',
@@ -3784,7 +3831,7 @@ function initUI() {
       grid.querySelectorAll('.top-opt').forEach(x => x.classList.remove('active'));
       el.classList.add('active');
       // Ocultar selector de cantidad si el top es de 1 solo agente o centro
-      const soloTops = ['rev','crec','ticket','meta'];
+      const soloTops = ['rev','crec','ticket','meta','logro'];
       const sinCantidad = soloTops.includes(state.topId) || ['centro','resumenc','supVtas','supMeta','metaCarr'].includes(state.topId);
       document.getElementById('section-cantidad').style.display = sinCantidad ? 'none' : 'block';
       actualizarYRender();
@@ -3865,7 +3912,9 @@ function initUI() {
 
   // Modo
   document.getElementById('sel-modo').onchange = (e) => {
-    state.modo = e.target.value;
+    const v = e.target.value;
+    if (v === 'trim' || v === 'anual') { aplicarPeriodoAlState(v); }
+    else { state.modo = v; state.periodoCodigo = ''; state.periodoEtiqueta = ''; }
     renderModoExtra();
   };
   renderModoExtra();
@@ -3897,8 +3946,13 @@ function renderModoExtra() {
         <div><label>Desde</label><input type="date" id="inp-ini"></div>
         <div><label>Hasta</label><input type="date" id="inp-fin"></div>
       </div>`;
-    document.getElementById('inp-ini').onchange = (e) => { state.fechaInicio = e.target.value; };
-    document.getElementById('inp-fin').onchange = (e) => { state.fechaFin = e.target.value; };
+    document.getElementById('inp-ini').onchange = (e) => { state.fechaInicio = e.target.value; state.periodoEtiqueta = ''; };
+    document.getElementById('inp-fin').onchange = (e) => { state.fechaFin = e.target.value; state.periodoEtiqueta = ''; };
+    if (state.periodoEtiqueta) {
+      const p = resolverPeriodo(state.periodoCodigo);
+      document.getElementById('inp-ini').value = p.fechaInicio; document.getElementById('inp-fin').value = p.fechaFin;
+      cont.insertAdjacentHTML('beforeend', `<div style="font-size:11px; color:#999; margin-top:4px;">${p.etiqueta} · metas sumadas de ${p.meses.length} mes(es)</div>`);
+    }
   } else {
     cont.innerHTML = '';
   }
@@ -4049,16 +4103,40 @@ async function cargarDesdeSupabase() {
     // ============================================================
     // 6. Cargar METAS si vamos a usar "Primero en Meta"
     // ============================================================
-    const { data: metas } = await db.from('metas_agente')
-      .select('ejecutivo, supervisor, anio, mes, meta_activadas, tipo_meta')
-      .eq('anio', state.anio).eq('mes', state.mes);
+    // Meses que cubre el periodo (uno para modo mes; varios para trimestre/anual/rango)
+    const mesesPeriodo = [];
+    { let [ya, ma] = fechaIni.split('-').map(Number); const [yb, mb] = fechaFin.split('-').map(Number);
+      while (ya < yb || (ya === yb && ma <= mb)) { mesesPeriodo.push({ anio: ya, mes: ma }); ma++; if (ma > 12) { ma = 1; ya++; } if (mesesPeriodo.length > 24) break; } }
+    let metasRaw = [];
+    for (const y of [...new Set(mesesPeriodo.map(x => x.anio))]) {
+      const { data: mr } = await db.from('metas_agente')
+        .select('ejecutivo, supervisor, anio, mes, meta_activadas, tipo_meta')
+        .eq('anio', y).in('mes', mesesPeriodo.filter(x => x.anio === y).map(x => x.mes));
+      metasRaw = metasRaw.concat(mr || []);
+    }
+    // Un renglón por agente: meta = suma de los meses del periodo; supervisor/tipo del mes más reciente
+    const metasAcc = {};
+    metasRaw.sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes)).forEach(m => {
+      if (!m.ejecutivo) return;
+      const k = metasAcc[m.ejecutivo] || (metasAcc[m.ejecutivo] = { ejecutivo: m.ejecutivo, supervisor: m.supervisor, anio: m.anio, mes: m.mes, meta_activadas: 0, tipo_meta: m.tipo_meta, mesesConMeta: 0 });
+      k.meta_activadas += Number(m.meta_activadas) || 0; k.supervisor = m.supervisor; k.tipo_meta = m.tipo_meta; k.anio = m.anio; k.mes = m.mes;
+      if ((Number(m.meta_activadas) || 0) > 0) k.mesesConMeta++;
+    });
+    const metas = Object.values(metasAcc);
 
     // ============================================================
     // 7. Cargar METAS_SUPERVISOR para ranking de supervisores por %
     // ============================================================
-    const { data: metasSup } = await db.from('metas_supervisor')
-      .select('supervisor, anio, mes, meta_activadas')
-      .eq('anio', state.anio).eq('mes', state.mes);
+    let metasSupRaw = [];
+    for (const y of [...new Set(mesesPeriodo.map(x => x.anio))]) {
+      const { data: ms } = await db.from('metas_supervisor')
+        .select('supervisor, anio, mes, meta_activadas')
+        .eq('anio', y).in('mes', mesesPeriodo.filter(x => x.anio === y).map(x => x.mes));
+      metasSupRaw = metasSupRaw.concat(ms || []);
+    }
+    const metasSupAcc = {};
+    metasSupRaw.forEach(m => { if (!m.supervisor) return; const k = metasSupAcc[m.supervisor] || (metasSupAcc[m.supervisor] = { supervisor: m.supervisor, meta_activadas: 0 }); k.meta_activadas += Number(m.meta_activadas) || 0; });
+    const metasSup = Object.values(metasSupAcc);
 
     // ============================================================
     // 8. Cargar CALENDARIO_DIAS (días hábiles, festivos) para racha activa
@@ -4098,6 +4176,7 @@ async function cargarDesdeSupabase() {
       mapaSupAgente,
       metas: metas || [],
       metasSup: metasSup || [],
+      mesesPeriodo,
       calendario,
       fechaIni,
       fechaFin
@@ -4430,6 +4509,39 @@ function procesarDatos() {
     arrTicket.sort((a, b) => parseFloat(b.metric.replace(/[^0-9.]/g, '')) - parseFloat(a.metric.replace(/[^0-9.]/g, '')));
     asignarRangos(arrTicket, a => parseFloat(String(a.metric).replace(/[^0-9.]/g, '')) || 0);
     return arrTicket;
+  }
+
+  // ============================================================
+  // CASO ESPECIAL: % DE LOGRO vs META (agente) — misma fórmula que el reporte:
+  // activadas del periodo ÷ meta del periodo (suma de metas de los meses).
+  // Elegibles: meta ≥ 6 en el periodo (evita ganar con 2 ventas y 100%).
+  // ============================================================
+  if (state.topId === 'logro' || state.topId === 'logroTop') {
+    const mapaMetas = {};
+    metas.forEach(m => { mapaMetas[m.ejecutivo] = m; });
+    const vtas = {};
+    ventas.forEach(v => {
+      if (!v.ejecutivo || !v.fecha_activacion) return;
+      if (!supsVigentes.includes(v.supervisor)) return;
+      if (supsVigentes.includes(v.ejecutivo)) return;
+      if (v.fecha_activacion < fechaIni || v.fecha_activacion > fechaFin) return;
+      vtas[v.ejecutivo] = (vtas[v.ejecutivo] || 0) + 1;
+    });
+    const arr = [];
+    Object.entries(mapaMetas).forEach(([nombre, m]) => {
+      const meta = Number(m.meta_activadas) || 0;
+      if (meta < 6) return;
+      const v = vtas[nombre] || 0;
+      const pct = v / meta * 100;
+      const supActual = mapaSupAgente[nombre] || m.supervisor || '';
+      arr.push({ nombre, ventas: v, meta, supervisor: supActual, centro: centroAgente(nombre, supActual), pctLogro: pct, metric: `${pct.toFixed(0)}%`, mesesConMeta: m.mesesConMeta || 1 });
+    });
+    let f = arr;
+    if (state.centro) f = f.filter(a => a.centro === state.centro || mapaCentroSup[a.supervisor] === state.centro);
+    if (state.supervisor) f = f.filter(a => a.supervisor === state.supervisor);
+    f.sort((a, b) => (b.pctLogro - a.pctLogro) || (b.ventas - a.ventas));
+    asignarRangos(f, a => Math.round(a.pctLogro * 10));
+    return f;
   }
 
   // ============================================================
@@ -4828,7 +4940,7 @@ function render() {
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   let subtitle = `${meses[state.mes - 1]} ${state.anio}`;
   if (state.modo === 'dia') subtitle = `Día ${state.fecha}`;
-  else if (state.modo === 'rango') subtitle = `${state.fechaInicio} → ${state.fechaFin}`;
+  else if (state.modo === 'rango') subtitle = state.periodoEtiqueta || `${state.fechaInicio} → ${state.fechaFin}`;
   if (state.centro) subtitle += ` · ${state.centro}`;
   if (state.supervisor) subtitle += ` · ${state.supervisor}`;
 
@@ -4914,7 +5026,7 @@ function render() {
   `;
 
   // Determinar estructura: solo 1 agente / podio 3 / lista N / centro
-  const soloTops = ['rev','crec','ticket','meta'];
+  const soloTops = ['rev','crec','ticket','meta','logro'];
   // Lista vertical OBLIGATORIA solo para supervisores (no caben en formato "podio")
   const listaTops = ['supVtas', 'supMeta'];
   // Variantes "Top" de agentes (revTop, crecTop, ticketTop): cuando cantidad=3 usan layout visual,
@@ -5112,7 +5224,8 @@ function render() {
               state.topId === 'rev' ? 'No hay agentes nuevos (≤60 días) con ventas en el periodo' :
               state.topId === 'crec' ? 'No hay agentes con crecimiento vs mes anterior' :
               state.topId === 'ticket' ? 'No hay agentes con suficientes ventas (mín 3) y ARPU > 0' :
-              state.topId === 'meta' ? 'Ningún agente ha cumplido su meta del mes aún' : 'Sin datos'
+              state.topId === 'meta' ? 'Ningún agente ha cumplido su meta del mes aún' :
+              state.topId === 'logro' ? 'No hay agentes con meta ≥ 6 en el periodo' : 'Sin datos'
             }</span>
           </div>
         </div>
@@ -5122,6 +5235,7 @@ function render() {
     }
     const a = state.agentes[0];
     const metricLabel = state.topId === 'ticket' ? 'ARPU PROMEDIO' :
+                        state.topId === 'logro' ? '% DE META' :
                         state.topId === 'crec' ? 'CRECIMIENTO' :
                         state.topId === 'meta' ? 'META CUMPLIDA EL' :
                         state.topId === 'rev' ? 'VENTAS' : 'VENTAS';
@@ -5147,11 +5261,13 @@ function render() {
       const labelKicker = state.topId === 'rev' ? 'REVELACIÓN DEL MES' :
                           state.topId === 'crec' ? 'MAYOR CRECIMIENTO' :
                           state.topId === 'ticket' ? 'REY DEL TICKET' :
-                          state.topId === 'meta' ? 'PRIMERO EN META' : 'CAMPEÓN DEL MES';
+                          state.topId === 'logro' ? 'CAMPEÓN DE LOGRO' :
+                          state.topId === 'meta' ? 'PRIMERO EN META' : (state.modo === 'rango' ? 'CAMPEÓN DEL PERIODO' : 'CAMPEÓN DEL MES');
       // Texto extra contextual por tipo
       let extraTxt = '';
       if (state.topId === 'crec') extraTxt = `${a.anterior} → ${a.ventas} ventas · +${a.crecPct || 0}%`;
       else if (state.topId === 'ticket') extraTxt = `${a.ventas} ventas en el mes`;
+      else if (state.topId === 'logro') extraTxt = `${a.ventas} de ${a.meta} · meta cumplida al ${a.metric}`;
       else if (state.topId === 'meta') extraTxt = `${a.ventas} ventas · meta ${a.meta}`;
       else if (state.topId === 'rev' && a.diasEnEmpresa !== undefined) extraTxt = `${a.diasEnEmpresa} días en empresa · ${a.ventas} ventas`;
 
@@ -5224,7 +5340,7 @@ function render() {
       `;
     } else {
       const usaRacha = state.topId === 'racha';
-      const usaMetric = ['racha','supMeta','ticketTop','crecTop'].includes(state.topId);
+      const usaMetric = ['racha','supMeta','ticketTop','crecTop','logroTop'].includes(state.topId);
 
       // Helper: subtítulo enriquecido por tipo de top
       const getSub = (a) => {
@@ -5282,7 +5398,7 @@ function render() {
         // Calcular valor numérico para proporciones
         const getNum = (a) => {
           if (state.topId === 'racha') return a._rachaNum || 0;
-          if (state.topId === 'supMeta') return parseFloat(String(a.metric || '0').replace('%', '')) || 0;
+          if (state.topId === 'supMeta' || state.topId === 'logroTop') return parseFloat(String(a.metric || '0').replace('%', '')) || 0;
           if (state.topId === 'ticketTop') return parseFloat(String(a.metric || '0').replace(/[^0-9.]/g, '')) || 0;
           if (state.topId === 'crecTop') return a.crecAbs || 0;
           return a.ventas || 0;
@@ -5422,7 +5538,7 @@ function render() {
     const getValor = (a) => {
       if (usaRacha) return a._rachaNum || 0;
       if (state.topId === 'crecTop') return `+${a.crecAbs || 0}`;
-      if (state.topId === 'ticketTop') return a.metric || a.ventas;
+      if (state.topId === 'ticketTop' || state.topId === 'logroTop') return a.metric || a.ventas;
       // revTop, global, etc → ventas
       return a.ventas;
     };
@@ -5432,6 +5548,7 @@ function render() {
       if (usaRacha) return 'DÍAS';
       if (state.topId === 'crecTop') return 'VS MES ANT';
       if (state.topId === 'ticketTop') return 'ARPU';
+      if (state.topId === 'logroTop') return '% META';
       return 'VENTAS';
     };
 
@@ -5439,6 +5556,7 @@ function render() {
     const getExtraDato = (a) => {
       if (state.topId === 'crecTop') return `${a.anterior || 0} → ${a.ventas || 0} vtas (+${a.crecPct || 0}%)`;
       if (state.topId === 'ticketTop') return `${a.ventas || 0} vtas`;
+      if (state.topId === 'logroTop') return `${a.ventas || 0} de ${a.meta || 0}`;
       if (state.topId === 'revTop' && a.diasEnEmpresa !== undefined) return `${a.diasEnEmpresa}d en empresa`;
       return '';
     };
@@ -5449,8 +5567,8 @@ function render() {
     const getNum = (a) => {
       if (usaRacha) return a._rachaNum || 0;
       if (state.topId === 'crecTop') return a.crecAbs || 0;
-      if (state.topId === 'ticketTop') {
-        // ticketTop guarda el ARPU en a.metric como string ("$1,234"), extraer número
+      if (state.topId === 'ticketTop' || state.topId === 'logroTop') {
+        // metric como string ("$1,234" / "125%"), extraer número
         return parseFloat(String(a.metric || '0').replace(/[^0-9.]/g, '')) || a.ventas || 0;
       }
       return a.ventas || 0;
@@ -5921,7 +6039,7 @@ setTimeout(() => {
 // ========================================================================
 // MODO PRESENTACIÓN (TV / Proyector)
 // ========================================================================
-const PRESENTAR_KEY = 'expertcell_presentar_config_v5';
+const PRESENTAR_KEY = 'expertcell_presentar_config_v6';
 let presentarSkipLoad = false;
 let presentarConfig = {
   duracion: 60,
@@ -5951,16 +6069,7 @@ function getComboDelDia() {
   return COMBO_DEL_DIA[new Date().getDay()];
 }
 
-// Generar pantallas según especificación del usuario
-// Fecha desde la cual se muestra Junio en vivo además de Mayo (cierre)
-const JUNIO_LIVE_DESDE = '2026-06-01';
-
-// Define si hoy es el día de mostrar también las pantallas en vivo de junio
-function debeMostrarJunioLive() {
-  const hoy = new Date();
-  const hoyStr = hoy.toISOString().slice(0, 10);
-  return hoyStr >= JUNIO_LIVE_DESDE;
-}
+// Pantallas por periodo dinámico: mes en curso, mes anterior, trimestre y anual.
 
 function getPantallasDisponibles() {
   const result = [];
@@ -5969,17 +6078,17 @@ function getPantallasDisponibles() {
   // Estos son los tops "base" que también pueden tener variantes Mayo/Junio
   const TOPS_BASE = [
     // grupo: Top 3 y Globales
-    { id: 'global::',         topId: 'global',   centro: '',    supervisor: '', icon: '🏆', label: 'Top 3 Global',                  desc: 'Los 3 mejores del mes',         grupo: 'Top 3 y Globales',          variantable: true },
-    { id: 'global::CC2::',    topId: 'global',   centro: 'CC2', supervisor: '', icon: '🏆', label: 'Top 3 · CC2 Antequera',         desc: 'Los 3 mejores de CC2',          grupo: 'Top 3 y Globales',          variantable: true },
-    { id: 'global::JV::',     topId: 'global',   centro: 'JV',  supervisor: '', icon: '🏆', label: 'Top 3 · Juárez Torre JV',       desc: 'Los 3 mejores de JV',           grupo: 'Top 3 y Globales',          variantable: true },
-    { id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales',          variantable: true },
+    { id: 'global::',         topId: 'global',   centro: '',    supervisor: '', icon: '🏆', label: 'Top 3 Global',                  desc: 'Los 3 mejores del mes',         grupo: 'Top 3 y Globales',          variantable: true, largo: true },
+    { id: 'global::CC2::',    topId: 'global',   centro: 'CC2', supervisor: '', icon: '🏆', label: 'Top 3 · CC2 Antequera',         desc: 'Los 3 mejores de CC2',          grupo: 'Top 3 y Globales',          variantable: true, largo: true },
+    { id: 'global::JV::',     topId: 'global',   centro: 'JV',  supervisor: '', icon: '🏆', label: 'Top 3 · Juárez Torre JV',       desc: 'Los 3 mejores de JV',           grupo: 'Top 3 y Globales',          variantable: true, largo: true },
+    { id: 'top10::',          topId: 'top10',    centro: '',    supervisor: '', icon: '🔟', label: 'Top 10 Global',                 desc: 'Los 10 mejores agentes',        grupo: 'Top 3 y Globales',          variantable: true, largo: true },
     // Centros y supervisores
-    { id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores',    variantable: true },
-    { id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por supervisor CC2',      grupo: 'Centros y Supervisores',    variantable: true },
-    { id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por supervisor JV',       grupo: 'Centros y Supervisores',    variantable: true },
-    { id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores',    variantable: true },
-    { id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores',    variantable: true },
-    { id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes',              grupo: 'Centros y Supervisores',    variantable: true },
+    { id: 'centro::',         topId: 'centro',   centro: '',    supervisor: '', icon: '🥇', label: 'Mejor Centro',                  desc: 'CC2 vs JV',                     grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'resumenc::CC2::',  topId: 'resumenc', centro: 'CC2', supervisor: '', icon: '📋', label: 'Resumen · CC2 Antequera',       desc: 'Top 3 por supervisor CC2',      grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'resumenc::JV::',   topId: 'resumenc', centro: 'JV',  supervisor: '', icon: '📋', label: 'Resumen · Juárez Torre JV',     desc: 'Top 3 por supervisor JV',       grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'supVtas::',        topId: 'supVtas',  centro: '',    supervisor: '', icon: '🎖️', label: 'Top Supervisores',             desc: 'Por ventas totales',            grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'supMeta::',        topId: 'supMeta',  centro: '',    supervisor: '', icon: '📊', label: 'Sup. por % Meta',               desc: 'Cumplimiento de meta',          grupo: 'Centros y Supervisores',    variantable: true, largo: true },
+    { id: 'promAgente::',     topId: 'promAgente', centro: '',  supervisor: '', icon: '📐', label: 'Promedio Venta por Agente',     desc: 'Ventas ÷ agentes',              grupo: 'Centros y Supervisores',    variantable: true, largo: true },
     // Revelación
     { id: 'rev::',            topId: 'rev',      centro: '',    supervisor: '', icon: '🚀', label: 'Revelación del mes',            desc: 'Mejor agente nuevo',            grupo: 'Revelación',                variantable: true },
     { id: 'revTop::CC2::',    topId: 'revTop',   centro: 'CC2', supervisor: '', icon: '🚀', label: 'Top 3 Revelaciones · CC2',      desc: 'Mejores nuevos CC2',            grupo: 'Revelación',                variantable: true },
@@ -5992,65 +6101,40 @@ function getPantallasDisponibles() {
     { id: 'ticket::',         topId: 'ticket',   centro: '',    supervisor: '', icon: '💎', label: 'Rey del Ticket',                desc: 'Mejor ARPU global',             grupo: 'Ticket',                    variantable: true },
     { id: 'ticketTop::CC2::', topId: 'ticketTop', centro: 'CC2', supervisor: '', icon: '💎', label: 'Top del Ticket · CC2',         desc: 'Top ARPU CC2',                  grupo: 'Ticket',                    variantable: true },
     { id: 'ticketTop::JV::',  topId: 'ticketTop', centro: 'JV',  supervisor: '', icon: '💎', label: 'Top del Ticket · JV',          desc: 'Top ARPU JV',                   grupo: 'Ticket',                    variantable: true },
+    // Logro (% de meta cumplida, misma fórmula que el reporte)
+    { id: 'logro::',          topId: 'logro',    centro: '',    supervisor: '', icon: '🏅', label: 'Campeón de Logro',              desc: 'Mayor % de meta cumplida',      grupo: 'Logro',                     variantable: true, largo: true },
+    { id: 'logroTop::',       topId: 'logroTop', centro: '',    supervisor: '', icon: '📈', label: 'Top % de Logro',                desc: 'Ranking por % de meta',         grupo: 'Logro',                     variantable: true, largo: true },
+    { id: 'logroTop::CC2::',  topId: 'logroTop', centro: 'CC2', supervisor: '', icon: '📈', label: 'Top % de Logro · CC2',          desc: 'Ranking por % de meta CC2',     grupo: 'Logro',                     variantable: true, largo: true },
+    { id: 'logroTop::JV::',   topId: 'logroTop', centro: 'JV',  supervisor: '', icon: '📈', label: 'Top % de Logro · JV',           desc: 'Ranking por % de meta JV',      grupo: 'Logro',                     variantable: true, largo: true },
     // Meta
     { id: 'meta::',           topId: 'meta',     centro: '',    supervisor: '', icon: '🎯', label: 'Primero en Meta',               desc: 'Quien llegó primero',           grupo: 'Meta',                      variantable: true },
     { id: 'metaCarr::CC2::',  topId: 'metaCarr', centro: 'CC2', supervisor: '', icon: '🏁', label: 'Carrera a Meta · CC2',          desc: 'Tabla CC2',                     grupo: 'Meta',                      variantable: true },
     { id: 'metaCarr::JV::',   topId: 'metaCarr', centro: 'JV',  supervisor: '', icon: '🏁', label: 'Carrera a Meta · JV',           desc: 'Tabla JV',                      grupo: 'Meta',                      variantable: true },
   ];
 
-  const mostrarJunioLive = debeMostrarJunioLive();
-
-  // Generar variantes de cierre Mayo + variantes de junio en vivo
-  TOPS_BASE.forEach(base => {
-    if (!base.variantable) return;
-    // Mayo (cierre)
-    result.push({
-      id: 'mayo__' + base.id,
-      topId: base.topId,
-      centro: base.centro,
-      supervisor: base.supervisor,
-      periodo: 'mayo',
-      icon: '🥈',
-      label: 'CIERRE MAYO · ' + base.label,
-      desc: base.desc,
-      grupo: '🏆 CIERRE DE MAYO 2026'
+  // Cuatro periodos, siempre calculados con la fecha de hoy
+  PERIODOS.forEach(cod => {
+    const p = resolverPeriodo(cod);
+    const esLargo = cod === 'trim' || cod === 'anual';
+    TOPS_BASE.forEach(base => {
+      if (!base.variantable) return;
+      // En trimestre/anual solo los marcadores que tienen sentido acumulados
+      if (esLargo && !base.largo) return;
+      // Crecimiento vs mes anterior y Primero en Meta no aplican a periodos largos
+      result.push({
+        id: `${cod}__` + base.id,
+        topId: base.topId, centro: base.centro, supervisor: base.supervisor,
+        periodo: cod, icon: p.icon,
+        label: p.pref + base.label,
+        desc: base.desc + (cod === 'actual' ? ' (en curso)' : ''),
+        grupo: p.grupo
+      });
     });
   });
 
-  // Cómo funciona Racha (explicación) — independiente del período
-  result.push({ id: 'com_racha_exp::',  topId: 'com_racha_exp', centro: '', supervisor: '', icon: '🔥', label: 'Cómo funciona Racha Activa', desc: 'Explicación de la dinámica',    grupo: 'Racha Activa' });
-  // Racha activa con datos en vivo (solo aplica a junio)
-  result.push({ id: 'racha::',          topId: 'racha',    centro: '',    supervisor: '', periodo: 'junio', icon: '🔥', label: 'Racha Activa (ganadores)',      desc: 'Programa de premios',           grupo: 'Racha Activa' });
-
-  // Gráfica avance mensual
-  result.push({ id: 'graf_avance::',    topId: 'graf_avance',    centro: '', supervisor: '', icon: '🎉', label: 'Cierre Mayo · ¡Meta Superada!', desc: '1,007 / 1,000 ventas',         grupo: '🏆 CIERRE DE MAYO 2026' });
-
-  // === DINÁMICAS MUNDIAL JUNIO 2026 ===
-  result.push({ id: 'com_din_jun::',    topId: 'com_din_jun',    centro: '', supervisor: '', icon: '⚽', label: 'Dinámicas Junio 2026',     desc: 'Anuncio principal',             grupo: 'Mundial 2026' });
-  result.push({ id: 'com_tiendita::',   topId: 'com_tiendita',   centro: '', supervisor: '', icon: '🛒', label: 'Tiendita del Mundial',     desc: '15-20 jun · Artículos + rifa',  grupo: 'Mundial 2026' });
-  result.push({ id: 'com_dia_tem::',    topId: 'com_dia_tem',    centro: '', supervisor: '', icon: '👕', label: 'Día Temático Mundial',     desc: 'Playera de tu selección',       grupo: 'Mundial 2026' });
-  result.push({ id: 'com_quiniela::',   topId: 'com_quiniela',   centro: '', supervisor: '', icon: '🎫', label: 'Quiniela del Mundial',     desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
-  result.push({ id: 'com_cine::',       topId: 'com_cine',       centro: '', supervisor: '', icon: '🎬', label: 'México te lleva al Cine',  desc: 'Rifa para staff que llegue a meta', grupo: 'Mundial 2026' });
-  result.push({ id: 'com_fifa::',       topId: 'com_fifa',       centro: '', supervisor: '', icon: '🎮', label: 'Torneo de FIFA',           desc: 'Inscripción $50 · 48 lugares',  grupo: 'Mundial 2026' });
-  result.push({ id: 'com_comis::',      topId: 'com_comis',      centro: '', supervisor: '', icon: '💰', label: 'Nuevo Esquema Comisiones', desc: 'Aceleradores extra junio',      grupo: 'Mundial 2026' });
-
-  // === EN VIVO JUNIO (solo si ya estamos del 5 jun en adelante) ===
-  if (mostrarJunioLive) {
-    TOPS_BASE.forEach(base => {
-      if (!base.variantable) return;
-      result.push({
-        id: 'junio__' + base.id,
-        topId: base.topId,
-        centro: base.centro,
-        supervisor: base.supervisor,
-        periodo: 'junio',
-        icon: '🟢',
-        label: 'EN VIVO · ' + base.label,
-        desc: base.desc + ' (junio en curso)',
-        grupo: '🟢 EN VIVO JUNIO 2026'
-      });
-    });
-  }
+  // Racha activa: explicación + ganadores del mes en curso
+  result.push({ id: 'com_racha_exp::',  topId: 'com_racha_exp', centro: '', supervisor: '', icon: '🔥', label: 'Cómo funciona Racha Activa', desc: 'Explicación de la dinámica', grupo: 'Racha Activa' });
+  result.push({ id: 'actual__racha::',  topId: 'racha',         centro: '', supervisor: '', periodo: 'actual', icon: '🔥', label: 'Racha Activa (ganadores)', desc: 'Programa de premios · mes en curso', grupo: 'Racha Activa' });
 
   return result;
 }
@@ -6080,20 +6164,12 @@ function cargarConfigPresentar() {
       });
       ordenarPantallasSegunLista();
 
-      // Migración única: la config guardada se creó antes de que existieran las
-      // pantallas EN VIVO de junio. Al activarse junio, las sembramos en la config
-      // guardada (sin tocar las selecciones de mayo). Se hace una sola vez para
-      // respetar futuros ajustes manuales del usuario.
-      if (debeMostrarJunioLive() && !localStorage.getItem('presentar_junio_seed_v1')) {
-        const idsValidos2 = new Set(getPantallasDisponibles().map(p => p.id));
-        getPantallasDefault().forEach(id => {
-          if (id.startsWith('junio__') && idsValidos2.has(id) && !presentarConfig.pantallas.includes(id)) {
-            presentarConfig.pantallas.push(id);
-          }
-        });
-        ordenarPantallasSegunLista();
-        guardarConfigPresentar();
-        localStorage.setItem('presentar_junio_seed_v1', '1');
+      // Cierre del mes anterior: cuando el mes cambia, si la config guardada trae
+      // pantallas de 'anterior__' y ya pasó el día 10, se quitan solas de la rotación.
+      if (new Date().getDate() > 10) {
+        const antes = presentarConfig.pantallas.length;
+        presentarConfig.pantallas = presentarConfig.pantallas.filter(id => !id.startsWith('anterior__'));
+        if (presentarConfig.pantallas.length !== antes) guardarConfigPresentar();
       }
     }
   } catch(e) { console.warn(e); }
@@ -6101,72 +6177,19 @@ function cargarConfigPresentar() {
 
 // Lista oficial de defaults EN EL ORDEN exacto que pidió el usuario
 function getPantallasDefault() {
-  const defaults = [
-    // === CIERRE DE MAYO 2026 (con celebración al inicio) ===
-    'graf_avance::',
-    'mayo__global::',
-    'mayo__global::CC2::',
-    'mayo__global::JV::',
-    'mayo__top10::',
-    'mayo__centro::',
-    'mayo__resumenc::CC2::',
-    'mayo__resumenc::JV::',
-    'mayo__supVtas::',
-    'mayo__supMeta::',
-    'mayo__promAgente::',
-    'mayo__rev::',
-    'mayo__revTop::CC2::',
-    'mayo__revTop::JV::',
-    'mayo__crec::',
-    'mayo__crecTop::CC2::',
-    'mayo__crecTop::JV::',
-    'mayo__ticket::',
-    'mayo__ticketTop::CC2::',
-    'mayo__ticketTop::JV::',
-    'mayo__meta::',
-    'mayo__metaCarr::CC2::',
-    'mayo__metaCarr::JV::',
-    // === MUNDIAL 2026 / DINÁMICAS JUNIO ===
-    'com_din_jun::',
-    'com_racha_exp::',
-    'racha::',
-    'com_tiendita::',
-    'com_dia_tem::',
-    'com_quiniela::',
-    'com_cine::',
-    'com_fifa::',
-    'com_comis::',
-  ];
-
-  // Si ya estamos en o después del 5 de junio, agregar pantallas EN VIVO de junio
-  if (debeMostrarJunioLive()) {
-    defaults.push(
-      'junio__global::',
-      'junio__global::CC2::',
-      'junio__global::JV::',
-      'junio__top10::',
-      'junio__centro::',
-      'junio__resumenc::CC2::',
-      'junio__resumenc::JV::',
-      'junio__supVtas::',
-      'junio__supMeta::',
-      'junio__promAgente::',
-      'junio__rev::',
-      'junio__revTop::CC2::',
-      'junio__revTop::JV::',
-      'junio__crec::',
-      'junio__crecTop::CC2::',
-      'junio__crecTop::JV::',
-      'junio__ticket::',
-      'junio__ticketTop::CC2::',
-      'junio__ticketTop::JV::',
-      'junio__meta::',
-      'junio__metaCarr::CC2::',
-      'junio__metaCarr::JV::',
-    );
-  }
-
-  return defaults;
+  const base = ['global::', 'global::CC2::', 'global::JV::', 'top10::', 'centro::', 'resumenc::CC2::', 'resumenc::JV::', 'supVtas::', 'supMeta::', 'promAgente::',
+    'logro::', 'logroTop::CC2::', 'logroTop::JV::', 'rev::', 'revTop::CC2::', 'revTop::JV::', 'crec::', 'crecTop::CC2::', 'crecTop::JV::',
+    'ticket::', 'ticketTop::CC2::', 'ticketTop::JV::', 'meta::', 'metaCarr::CC2::', 'metaCarr::JV::'];
+  const largos = ['global::', 'top10::', 'centro::', 'supMeta::', 'logro::', 'logroTop::CC2::', 'logroTop::JV::'];
+  const hoyD = new Date().getDate();
+  const out = [];
+  // Cierre del mes anterior: solo los primeros 10 días del mes (después ya no es noticia)
+  if (hoyD <= 10) base.forEach(id => out.push('anterior__' + id));
+  base.forEach(id => out.push('actual__' + id));
+  out.push('com_racha_exp::', 'actual__racha::');
+  largos.forEach(id => out.push('trim__' + id));
+  largos.forEach(id => out.push('anual__' + id));
+  return out;
 }
 
 function restaurarPantallasDefault() {
@@ -6442,13 +6465,13 @@ function salirPresentacion() {
 }
 
 function parsearIdPantalla(id) {
-  // Formato: 'topId::centro::supervisor' o con prefijo de período:
-  //   'mayo__topId::centro::supervisor'   (mayo cierre)
-  //   'junio__topId::centro::supervisor'  (junio en vivo)
+  // Formato: 'topId::centro::supervisor' o con prefijo de período dinámico:
+  //   'actual__' (mes en curso) · 'anterior__' (mes anterior) · 'trim__' · 'anual__'
   let periodo = '';
   let rest = id;
-  if (id.startsWith('mayo__')) { periodo = 'mayo'; rest = id.substring(6); }
-  else if (id.startsWith('junio__')) { periodo = 'junio'; rest = id.substring(7); }
+  const m = /^(actual|anterior|trim|anual)__/.exec(id);
+  if (m) { periodo = m[1]; rest = id.substring(m[0].length); }
+  else if (id.startsWith('mayo__') || id.startsWith('junio__')) { periodo = 'anterior'; rest = id.replace(/^(mayo|junio)__/, ''); } // configs viejas
   const parts = rest.split('::');
   return {
     topId: parts[0] || '',
@@ -6923,44 +6946,30 @@ function mostrarPantallaPresentar() {
   const idPantalla = presentarConfig.pantallas[idx];
   const parsed = parsearIdPantalla(idPantalla);
 
-  // ===== PERÍODO MAYO O JUNIO - hardcodear el mes =====
-  const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
-  const targetAnio = (parsed.periodo === 'mayo' || parsed.periodo === 'junio') ? 2026 : null;
-  const necesitaCambioMes = targetMes !== null && (state.mes !== targetMes || state.anio !== targetAnio);
-
-  if (necesitaCambioMes) {
-    state.mes = targetMes;
-    state.anio = targetAnio;
-    // Verificar cache por mes
+  // ===== PERÍODO DINÁMICO =====
+  if (parsed.periodo) {
+    const p = resolverPeriodo(parsed.periodo);
+    const cacheKey = `${p.codigo}_${p.fechaInicio}_${p.fechaFin}`;
     presentarState.cacheRawData = presentarState.cacheRawData || {};
-    const cacheKey = `${targetAnio}_${targetMes}`;
-    if (presentarState.cacheRawData[cacheKey]) {
-      // Usar cache
-      state.rawData = presentarState.cacheRawData[cacheKey];
-      const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
-      mostrarPantallaPresentarRender(parsed, idx, banner);
-    } else {
-      // Recargar
-      mostrarLoadingStage();
-      cargarDesdeSupabase().then(() => {
-        // Cachear
-        presentarState.cacheRawData[cacheKey] = state.rawData;
-        const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
-        mostrarPantallaPresentarRender(parsed, idx, banner);
-      }).catch((e) => {
-        console.warn('Error recargando datos', e);
-        const banner = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO' : '🟢 EN VIVO JUNIO';
-        mostrarPantallaPresentarRender(parsed, idx, banner);
-      });
+    const cambia = state.periodoCodigo !== p.codigo || !state.rawData;
+    if (cambia) {
+      aplicarPeriodoAlState(p.codigo);
+      if (presentarState.cacheRawData[cacheKey]) {
+        state.rawData = presentarState.cacheRawData[cacheKey];
+        mostrarPantallaPresentarRender(parsed, idx, p.banner);
+      } else {
+        mostrarLoadingStage();
+        cargarDesdeSupabase().then(() => {
+          presentarState.cacheRawData[cacheKey] = state.rawData;
+          mostrarPantallaPresentarRender(parsed, idx, p.banner);
+        }).catch((e) => { console.warn('Error recargando datos', e); mostrarPantallaPresentarRender(parsed, idx, p.banner); });
+      }
+      return;
     }
+    mostrarPantallaPresentarRender(parsed, idx, p.banner);
     return;
   }
-
-  // Si no hay período o ya estamos en el período correcto
-  const bannerTxt = parsed.periodo === 'mayo' ? '🥈 CIERRE MAYO'
-                  : parsed.periodo === 'junio' ? '🟢 EN VIVO JUNIO'
-                  : '';
-  mostrarPantallaPresentarRender(parsed, idx, bannerTxt);
+  mostrarPantallaPresentarRender(parsed, idx, '');
 }
 
 function mostrarLoadingStage() {
@@ -6991,7 +7000,7 @@ function mostrarPantallaPresentarRender(parsed, idx, bannerTxt) {
     state.topId = 'global';
     state.cantidad = 10;
   } else {
-    const soloTops = ['rev','crec','ticket','meta'];
+    const soloTops = ['rev','crec','ticket','meta','logro'];
     if (soloTops.includes(parsed.topId)) state.cantidad = 1;
     else state.cantidad = 3;
   }
@@ -7141,13 +7150,9 @@ async function exportarSlideshow() {
       document.getElementById('export-counter').textContent = `${i + 1} / ${presentarConfig.pantallas.length}`;
       document.getElementById('export-bar').style.width = `${((i) / presentarConfig.pantallas.length * 100)}%`;
 
-      // === Cambiar período si aplica ===
-      const targetMes = parsed.periodo === 'mayo' ? 5 : parsed.periodo === 'junio' ? 6 : null;
-      const targetAnio = (parsed.periodo === 'mayo' || parsed.periodo === 'junio') ? 2026 : null;
-      if (targetMes && (state.mes !== targetMes || state.anio !== targetAnio)) {
-        state.mes = targetMes;
-        state.anio = targetAnio;
-        const cacheKey = `${targetAnio}_${targetMes}`;
+      // === Cambiar período si aplica (dinámico) ===
+      if (parsed.periodo && (state.periodoCodigo !== parsed.periodo || !state.rawData)) {
+        const cacheKey = aplicarPeriodoAlState(parsed.periodo);
         if (cacheRawData[cacheKey]) {
           state.rawData = cacheRawData[cacheKey];
         } else {
@@ -7165,7 +7170,7 @@ async function exportarSlideshow() {
         state.topId = 'global';
         state.cantidad = 10;
       } else {
-        const soloTops = ['rev','crec','ticket','meta'];
+        const soloTops = ['rev','crec','ticket','meta','logro'];
         if (soloTops.includes(parsed.topId)) state.cantidad = 1;
         else state.cantidad = 3;
       }
