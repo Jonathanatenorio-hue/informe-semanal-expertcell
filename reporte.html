@@ -18559,6 +18559,14 @@ async function exportarPivoteEquipos() {
     }
     const dhSig = diasHabilesMes(anioSig, mesSig);
 
+    // ===== META por mes (suma de metas_agente): la proyección parte de la META, no del ritmo =====
+    const metaMesTotal = {};
+    (metasAgeData || []).forEach(m => { if (m.anio === anioAct) metaMesTotal[m.mes] = (metaMesTotal[m.mes] || 0) + (Number(m.meta_activadas) || 0); });
+    let ultimaMeta = 0; for (let m = 1; m <= 12; m++) if (metaMesTotal[m] > 0) ultimaMeta = metaMesTotal[m];
+    const metaSig = (anioSig === anioAct && metaMesTotal[mesSig] > 0) ? metaMesTotal[mesSig] : ultimaMeta;
+    const metaSigEsReal = anioSig === anioAct && metaMesTotal[mesSig] > 0;
+    const mesesRestS1 = []; // (la demanda de meses restantes vive en la hoja "Proy resto")
+
     // Agentes activos que TENÍAMOS cada mes (al último día del mes)
     const agentesDelMes = [];
     for (let m = 1; m <= mesMax; m++) {
@@ -18619,10 +18627,12 @@ async function exportarPivoteEquipos() {
     let ci = iMesIni + nMes;
     const cTot = ci; ci++;
     const iPctIni = ci; ci += nMes;                          // % por mes (una col por mes)
-    const cRitmo = ci++, cProy = ci++, cPedProy = ci++;
+    const cRitmo = ci++, cShare = ci++, cProy = ci++, cPedProy = ci++;
     const cInv = ci++, cInvCC = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
       cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++;
+    const iRestIni = ci; ci += mesesRestS1.length;
     const nCols = ci;
+    const letraRest = k => col(iRestIni + k);
     const letraPct = mIdx => col(iPctIni + mIdx);
     const L3i = letra(c3ini - 1), L3f = letra(mesComp - 1);
     const L6i = letra(c6ini - 1);
@@ -18637,17 +18647,19 @@ async function exportarPivoteEquipos() {
     const cParamLbl1 = letraPct(0), cParamVal1 = letraPct(1);   // Días háb. mes proyectado
     const cParamLbl2 = letraPct(2), cParamVal2 = letraPct(3);   // Agentes proyectados
     const PV_DIAS = `$${cParamVal1}$${FILA_DIAS}`;
-    const PV_AGEN = `$${cParamVal2}$${FILA_DIAS}`;
+    const PV_META = `$${cParamVal2}$${FILA_DIAS}`;   // Meta del mes proyectado (editable)
     const PV_CC = `$${letraPct(5)}$${FILA_DIAS}`;
     const PCT_CC = 0.15;
+    const MEZ_TOT = `SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal})`;
 
     const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
       ...MESES_L.slice(0, nMes).map(m => `% ${m}`),
-      'Ritmo 3m (unid / agente·día)', `Proy. ${MESES_L[mesSig - 1]} (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
+      'Ritmo 3m (unid / agente·día)', `Mezcla 3m (% del total ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, `Proy. ${MESES_L[mesSig - 1]} = mezcla × meta (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
       'Inventario HUB', 'Inv. CC efectivo (× % CC)', 'Cobertura CC (meses)', 'Días cobertura CC',
       `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, 'Prom 6m', 'Media (meses completos)',
       'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
-      'Pedido sugerido (1.3×prom3 − inv CC)', 'Pedido promo ((prom3 × mult × 1.2) − inv CC)'];
+      'Pedido sugerido (1.3×prom3 − inv CC)', 'Pedido promo ((prom3 × mult × 1.2) − inv CC)',
+      ...mesesRestS1.map(x => '')];
 
     // Fila 3: días hábiles por mes + parámetros · Fila 4: agentes de cada mes
     const filaDias = ['Días hábiles', ''];
@@ -18655,8 +18667,9 @@ async function exportarPivoteEquipos() {
     filaDias[cTot] = '';
     filaDias[iPctIni] = `Días háb. ${MESES_L[mesSig - 1]}:`;
     filaDias[iPctIni + 1] = dhSig;
-    filaDias[iPctIni + 2] = 'Agentes proy.:';
-    filaDias[iPctIni + 3] = 145;
+    filaDias[iPctIni + 2] = `Meta ${MESES_L[mesSig - 1]} (activadas)${metaSigEsReal ? '' : ' ESTIMADA'}:`;
+    filaDias[iPctIni + 3] = metaSig;
+    mesesRestS1.forEach((x, k) => { filaDias[iRestIni + k] = x.meta; });
     filaDias[iPctIni + 4] = '% inv. asignado a CC:';
     filaDias[iPctIni + 5] = { t: 'n', v: 0.15, z: '0%' };
     const filaAge = ['Agentes del mes', ''];
@@ -18665,7 +18678,7 @@ async function exportarPivoteEquipos() {
 
     const aoa = [
       ['EQUIPOS E INVENTARIO — DEMANDA, STOCK Y PROYECCIÓN'],
-      [`Ventas activadas ${anioAct} por modelo`],
+      [`Ventas activadas ${anioAct} por modelo · Proyección = mezcla de modelos de los últimos 3 meses completos × META de activadas del mes (fila 3, amarillo, editable) · La columna de ritmo queda solo como referencia · Los meses restantes del año están en la hoja "Proy resto"`],
       filaDias,
       filaAge,
       H];
@@ -18693,7 +18706,9 @@ async function exportarPivoteEquipos() {
         ritmos.push(`${letra(m - 1)}${r}/${letra(m - 1)}$${FILA_DIAS}/${letra(m - 1)}$${FILA_AGE}`);
       }
       fila[cRitmo] = F(0, `AVERAGE(${ritmos.join(',')})`, '0.0000');
-      fila[cProy] = F(0, `ROUND(${col(cRitmo)}${r}*${PV_AGEN}*${PV_DIAS},0)`);
+      fila[cShare] = F(0, `IF(${MEZ_TOT}>0,SUM(${L3i}${r}:${L3f}${r})/${MEZ_TOT},0)`, '0.00%');
+      fila[cProy] = F(0, `ROUND(${col(cShare)}${r}*${PV_META},0)`);
+      mesesRestS1.forEach((x, k) => { fila[iRestIni + k] = F(0, `ROUND(${col(cShare)}${r}*${letraRest(k)}$${FILA_DIAS},0)`); });
       fila[cPedProy] = inv2 == null
         ? F(0, `${col(cProy)}${r}`)
         : F(0, `MAX(0,${col(cProy)}${r}-${col(cInvCC)}${r})`);
@@ -18720,6 +18735,8 @@ async function exportarPivoteEquipos() {
     for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}${filaIni}:${letra(m)}${filaTotal - 1})`);
     tRow[cTot] = F(0, `SUM(${col(cTot)}${filaIni}:${col(cTot)}${filaTotal - 1})`);
     tRow[cProy] = F(0, `SUM(${col(cProy)}${filaIni}:${col(cProy)}${filaTotal - 1})`);
+    tRow[cShare] = F(0, `SUM(${col(cShare)}${filaIni}:${col(cShare)}${filaTotal - 1})`, '0.00%');
+    mesesRestS1.forEach((x, k) => { tRow[iRestIni + k] = F(0, `SUM(${letraRest(k)}${filaIni}:${letraRest(k)}${filaTotal - 1})`); });
     tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}${filaIni}:${col(cPedProy)}${filaTotal - 1})`);
     tRow[cInv] = F(0, `SUM(${col(cInv)}${filaIni}:${col(cInv)}${filaTotal - 1})`);
     tRow[cInvCC] = F(0, `SUM(${col(cInvCC)}${filaIni}:${col(cInvCC)}${filaTotal - 1})`);
@@ -18729,7 +18746,7 @@ async function exportarPivoteEquipos() {
     const ws1 = XLSX.utils.aoa_to_sheet(aoa);
     ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 },
       ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 },
-      { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }];
+      { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }, ...mesesRestS1.map(() => ({ wch: 14 }))];
 
     (() => {
       const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA', PARAM = 'FFF2CC', PROY = 'E8E0F5';
@@ -18750,7 +18767,7 @@ async function exportarPivoteEquipos() {
         const h = celda(FILA_HDR - 1, c);
         if (!h) continue;
         const hFill = (c >= iPctIni && c < iPctIni + nMes) ? '0077A8'
-          : (c === cRitmo || c === cProy || c === cPedProy) ? '5B3A8E' : NAVY;
+          : (c === cRitmo || c === cShare || c === cProy || c === cPedProy || c >= iRestIni) ? '5B3A8E' : NAVY;
         h.s = { fill: { fgColor: { rgb: hFill } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
       }
       for (let r = FILA_HDR; r <= rango.e.r; r++) {
@@ -19117,18 +19134,21 @@ async function exportarPivoteEquipos() {
     agProm = nAg ? Math.round(agProm / nAg) : 1;
     let dh3F = 0;
     for (let m = c3ini; m <= mesComp; m++) dh3F += diasHabilesMes(anioAct, m);
-    const proyEqTotal = (totEq3 > 0 && dh3F > 0 && agProm > 0) ? Math.round(totEq3 / dh3F / agProm * 145 * dhSig) : 0;
+    // PROY. TOTAL de equipos = META de activadas del mes × (equipos ÷ activadas de los 3 meses):
+    // parte de la meta, no del ritmo; descuenta las ventas solo-SIM que no llevan equipo.
     const critMes = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
+    const totAct3 = regsDet.filter(x => x.mes >= c3ini && x.mes <= mesComp).length;
+    const proyEqTotal = (totAct3 > 0) ? Math.round(metaSig * totEq3 / totAct3) : 0;
     const marcasF = Object.entries(eq3.reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
       .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
     const regionesF = [...new Set(eq3.map(x => x.region))].sort();
     const aoaF = [
       [`FORECAST ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS POR REGION Y MARCA`],
-      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la proyección total. Parámetros editables (fila 3): todo recalcula.`],
+      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la proyección total. PROY. TOTAL = Meta de activadas del mes (P3, editable${metaSigEsReal ? ', tomada de metas_agente' : ', ESTIMADA con la última meta conocida'}) × equipos ÷ activadas del trimestre (descuenta ventas solo SIM). Ritmo y agentes quedan solo como referencia.`],
       ['Equipos 3m:', CF(totEq3, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
-        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Agentes proy.:', 145,
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)'),
-        'Factor ajuste:', 1.1],
+        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'IF(R3>0,ROUND(P3*B3/R3,0),0)'),
+        'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
       [],
       ['Region', ...marcasF, 'Otras', 'TOTAL']];
     const firstF = 6;
@@ -19223,11 +19243,11 @@ async function exportarPivoteEquipos() {
     const colTotE = XLSX.utils.encode_col(2 + nR);
     const aoaE = [
       [`ESTRATEGIA ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS A SOLICITAR POR REGIÓN Y MODELO (SOLO RESURTIBLES)`],
-      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
+      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (= Meta de activadas del mes, P3 editable, × equipos ÷ activadas del trimestre) × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
       ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
-        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Agentes proy.:', 145,
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'ROUND(B3/D3/F3*H3*J3,0)'),
-        'Factor ajuste:', 1.1],
+        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'IF(R3>0,ROUND(P3*B3/R3,0),0)'),
+        'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
       [],
       ['Marca', 'Modelo (resurtible)', ...regionesF, 'TOTAL']];
     const firstE = aoaE.length + 1;
@@ -19319,27 +19339,27 @@ async function exportarPivoteEquipos() {
     })();
     XLSX.utils.book_append_sheet(wb, wsE, `Estrategia ${MESES_L[mesSig - 1]}`);
 
-    // ===== PROYECCIÓN RESTO DEL AÑO por modelo (mismo ritmo por agente·día) =====
+    // ===== PROYECCIÓN RESTO DEL AÑO por modelo = MEZCLA de modelos (3 meses) × META de cada mes =====
     const mesesRest = [];
     for (let m = mesSig; m <= 12; m++) mesesRest.push(m);
     if (mesesRest.length) {
       const colMR = i => XLSX.utils.encode_col(3 + i);
       const colTotR = XLSX.utils.encode_col(3 + mesesRest.length);
+      const metaDe = m => (anioSig === anioAct || m !== mesSig) ? (metaMesTotal[m] > 0 ? metaMesTotal[m] : ultimaMeta) : metaSig;
       const aoaR = [
         ['PROYECCIÓN RESTO DEL AÑO POR MODELO'],
-        [`Mismo ritmo por agente·día hábil del trimestre ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × agentes proyectados × días hábiles de cada mes. Parámetros y días editables — todo recalcula.`],
-        ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
-          'Días háb. 3m:', dh3F, 'Agentes prom 3m:', agProm, 'Agentes proy.:', 145],
-        ['Días hábiles →', '', '', ...mesesRest.map(m => diasHabilesMes(m === 12 && mesSig === 1 ? anioAct : anioAct, m)), ''],
+        [`Demanda de cada mes = META de activadas del mes (fila 4, amarillo, editable) × mezcla del modelo en el trimestre ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (participación sobre el total de equipos vendidos). Metas tomadas de metas_agente; "estimada" = mes sin meta cargada, usa la última conocida.`],
+        ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`), '', ...mesesRest.map(m => metaMesTotal[m] > 0 ? 'meta cargada' : 'meta estimada'), ''],
+        ['Meta activadas →', '', '', ...mesesRest.map(m => metaDe(m)), ''],
         ['Marca', 'Modelo', 'Estatus', ...mesesRest.map(m => MESES_L[m - 1]), 'TOTAL resto']];
       const firstR = aoaR.length + 1;
       modelosF2.forEach(([mk, d]) => {
         const rE = aoaR.length + 1;
-        const ritmo = (dh3F > 0 && agProm > 0) ? d.n / dh3F / agProm : 0;
+        const share = eq3m > 0 ? d.n / eq3m : 0;
         const fila = [d.marca, mk, _estatusDe(mk) || 'SIN LISTA'];
         mesesRest.forEach((m, i) => {
-          fila.push(CF(Math.round(ritmo * 145 * diasHabilesMes(anioAct, m)),
-            `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$D$3/$F$3*$H$3*${colMR(i)}$4,0)`));
+          fila.push(CF(Math.round(share * metaDe(m)),
+            `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$B$3*${colMR(i)}$4,0)`));
         });
         fila.push(CF(0, `SUM(${colMR(0)}${rE}:${colMR(mesesRest.length - 1)}${rE})`));
         aoaR.push(fila);
