@@ -4084,13 +4084,22 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
         dias = Math.floor((iniMesDate - ingDate) / (1000 * 60 * 60 * 24)) + 1;
         if (dias < 0) dias = 0; // por si fecha_ingreso es posterior al inicio del mes
       } else {
-        // Fallback: usar el campo de metas si no hay fecha_ingreso en plantilla
-        dias = m.dias_activo_al_1ro || 0;
+        // Sin fecha de ingreso en plantilla (ya no está: baja, ascenso a supervisor, nombre
+        // distinto): clasificar por el tipo/valor de la meta que traía ese mes, no como nuevo.
+        if ((m.meta_activadas || 0) <= 0) return;
+        const tm = String(m.tipo_meta || '').toLowerCase();
+        const mv0 = m.meta_activadas || 0;
+        tipoPorAgente[m.ejecutivo] = (tm.includes('calc') || mv0 >= 12) ? 'maduro' : (mv0 >= 8 ? 'medio' : 'nuevo');
+        return;
       }
+      // Renglón con meta 0 (tipo_meta 'sin_meta': en rampa al arrancar el mes) → NO es
+      // un agente "con meta": se cuenta y se mide como SIN META, no como nuevo.
+      if ((m.meta_activadas || 0) <= 0) return;
       if (dias <= 41) tipoPorAgente[m.ejecutivo] = 'nuevo';
       else if (dias <= 89) tipoPorAgente[m.ejecutivo] = 'medio';
       else tipoPorAgente[m.ejecutivo] = 'maduro';
     });
+    const ceroMeta = new Set(metasMesSup.filter(m => (m.meta_activadas || 0) <= 0).map(m => m.ejecutivo));
 
     // Meta por tipo (suma de meta_activadas de metas_agente según el tipo del agente ese mes)
     let metaNuevos = 0, metaMedios = 0, metaMaduros = 0;
@@ -4107,6 +4116,7 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
       const plant = plantMap[m.ejecutivo];
       // Excluir si fecha_baja es ANTES del inicio del mes
       if (plant && plant.fecha_baja && plant.fecha_baja < iniMesStr) return;
+      if (ceroMeta.has(m.ejecutivo)) { agentesSinMeta++; return; }
       totalAgentes++;
       if (tipoPorAgente[m.ejecutivo] === 'nuevo') agentesNuevos++;
       else if (tipoPorAgente[m.ejecutivo] === 'medio') agentesMedios++;
@@ -4189,13 +4199,17 @@ function _calcularAnalisisAnualSupervisor(sup, anio) {
     // Sin meta: ingresos del mes, rampa de 7 días (entran en lunes), días hábiles EFECTIVOS
     const _sm = { n: 0, rampa: 0, vtas: 0, diasEf: 0 };
     (plantillaData || []).forEach(p => {
-      if (!p || !p.nombre || p.supervisor !== sup) return;
+      if (!p || !p.nombre) return;
       const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
-      if (!ing || ing <= iniMesStr || ing > cortePara) return;
+      if (!ing || ing > cortePara) return;
+      // Entra si ingresó dentro del mes (con este supervisor) o si trae renglón de meta 0 con este supervisor
+      const ingresoEnMes = p.supervisor === sup && ing > iniMesStr;
+      if (!ingresoEnMes && !ceroMeta.has(p.nombre)) return;
       if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) <= cortePara) return;
       const dI = new Date(ing + 'T12:00:00');
       dI.setDate(dI.getDate() + 7);
-      const iniEf = `${dI.getFullYear()}-${String(dI.getMonth() + 1).padStart(2, '0')}-${String(dI.getDate()).padStart(2, '0')}`;
+      let iniEf = `${dI.getFullYear()}-${String(dI.getMonth() + 1).padStart(2, '0')}-${String(dI.getDate()).padStart(2, '0')}`;
+      if (iniEf < iniMesStr) iniEf = iniMesStr;
       _sm.n++;
       if (iniEf > cortePara) { _sm.rampa++; return; }
       let dEf = 0;
