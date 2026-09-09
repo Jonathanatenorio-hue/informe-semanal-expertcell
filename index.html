@@ -604,7 +604,7 @@ function normalizarFecha(val) {
     // 18:00 (México = UTC-6). Si trae cualquier componente de hora, usar getters locales.
     const esSoloFecha = val.getUTCHours() === 0 && val.getUTCMinutes() === 0 && val.getUTCSeconds() === 0 && val.getUTCMilliseconds() === 0;
     const y = esSoloFecha ? val.getUTCFullYear() : val.getFullYear();
-    if (y === 1900) return null;
+    if (y < 2000) return null; // 1900-01-01 / 1899-12-30 (celda vacía o solo hora) = sin fecha
     const m = String((esSoloFecha ? val.getUTCMonth() : val.getMonth()) + 1).padStart(2, '0');
     const d = String(esSoloFecha ? val.getUTCDate() : val.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
