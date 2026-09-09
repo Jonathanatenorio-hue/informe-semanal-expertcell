@@ -19635,12 +19635,89 @@ async function exportarForecastCC() {
     ws1['!freeze'] = { xSplit: 1, ySplit: 5 };
     XLSX.utils.book_append_sheet(wb, ws1, 'Meta por region');
 
+    // ===== Hoja PROYECCIÓN: tendencia vs meta, por región y total =====
+    // Ritmo = activaciones por día hábil (promedio de los 3 meses cerrados). Mes en curso = lo
+    // que va + ritmo real del mes × días que faltan. Meses restantes = ritmo 3m × días hábiles.
+    const dhDe = m => { const key = `${anio}-${String(m).padStart(2, '0')}`; let d = 0, n = 0; (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === key) { d += parseFloat(x.factor_dia || 0); n++; } }); if (n) return d; const fin = new Date(anio, m, 0).getDate(); for (let i = 1; i <= fin; i++) { const w = new Date(anio, m - 1, i).getDay(); d += (w === 0 || w === 6) ? 0 : 1; } return d; };
+    let dh3 = 0; for (let m = c3ini; m <= mesComp; m++) dh3 += dhDe(m);
+    const dhAct = dhDe(mesAct);
+    let dtAct = 0; (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === `${anio}-${String(mesAct).padStart(2, '0')}` && x.fecha < hoyStr) dtAct += parseFloat(x.factor_dia || 0); });
+    const rAct = regs.filter(x => x.m === mesAct);
+    const aP = [
+      [`PROYECCIÓN · tendencia vs meta · semana ${semana} · corte ${hoyStr}`],
+      [`Ritmo 3m = activaciones por día hábil en ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (${dh3.toFixed(1)} días). ${MESES_L[mesAct - 1]} = activadas a la fecha + ritmo real del mes × días hábiles que faltan (${dtAct.toFixed(1)} de ${dhAct.toFixed(1)} transcurridos). Meses restantes = ritmo 3m × días hábiles del mes. Meta = hoja "Meta por region". Δ = proyección − meta (verde cubre, rojo falta). Celdas amarillas editables: días hábiles por mes.`],
+      ['Días hábiles →', '', '', '', dhAct, '', '', ...mesesProy.slice(1).flatMap(m => [dhDe(m), '', ''])],
+      ['Región', `Vtas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, 'Ritmo 3m (act/día)', `${MESES_L[mesAct - 1]} a la fecha`, `Proy. ${MESES_L[mesAct - 1]}`, `Meta ${MESES_L[mesAct - 1]}`, `Δ ${MESES_L[mesAct - 1]}`, ...mesesProy.slice(1).flatMap(m => [`Proy. ${MESES_L[m - 1]}`, `Meta ${MESES_L[m - 1]}`, `Δ ${MESES_L[m - 1]}`]), 'Proy. resto año', 'Meta resto año', 'Δ resto año']];
+    const pI = aP.length + 1;
+    const nMP = mesesProy.length;
+    regiones.forEach((r, i) => {
+      const rE = aP.length + 1, rMeta = f1i + i;
+      const v3 = nReg[r], vAct = rAct.filter(x => x.region === r).length;
+      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, v3, F(0, `IF(${dh3}>0,B${rE}/${dh3},0)`, '0.00'), vAct,
+        F(0, `ROUND(D${rE}+IF(${dtAct}>0,D${rE}/${dtAct},C${rE})*MAX(0,$E$3-${dtAct}),0)`),
+        F(0, `'Meta por region'!D${rMeta}`), F(0, `E${rE}-F${rE}`, '+0;-0;0')];
+      mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; fila.push(F(0, `ROUND(C${rE}*${col(cP)}$3,0)`), F(0, `'Meta por region'!${col(4 + k)}${rMeta}`), F(0, `${col(cP)}${rE}-${col(cP + 1)}${rE}`, '+0;-0;0')); });
+      const cFin = 7 + (nMP - 1) * 3;
+      const proyCols = ['E', ...mesesProy.slice(1).map((m, k) => col(7 + k * 3))], metaCols = ['F', ...mesesProy.slice(1).map((m, k) => col(8 + k * 3))];
+      fila.push(F(0, proyCols.map(c => `${c}${rE}`).join('+')), F(0, metaCols.map(c => `${c}${rE}`).join('+')), F(0, `${col(cFin)}${rE}-${col(cFin + 1)}${rE}`, '+0;-0;0'));
+      aP.push(fila);
+    });
+    const pT = aP.length + 1;
+    const totP = ['TOTAL', F(0, `SUM(B${pI}:B${pT - 1})`), F(0, `SUM(C${pI}:C${pT - 1})`, '0.00'), F(0, `SUM(D${pI}:D${pT - 1})`), F(0, `SUM(E${pI}:E${pT - 1})`), F(0, `SUM(F${pI}:F${pT - 1})`), F(0, `E${pT}-F${pT}`, '+0;-0;0')];
+    mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; totP.push(F(0, `SUM(${col(cP)}${pI}:${col(cP)}${pT - 1})`), F(0, `SUM(${col(cP + 1)}${pI}:${col(cP + 1)}${pT - 1})`), F(0, `${col(cP)}${pT}-${col(cP + 1)}${pT}`, '+0;-0;0')); });
+    { const cFin = 7 + (nMP - 1) * 3; totP.push(F(0, `SUM(${col(cFin)}${pI}:${col(cFin)}${pT - 1})`), F(0, `SUM(${col(cFin + 1)}${pI}:${col(cFin + 1)}${pT - 1})`), F(0, `${col(cFin)}${pT}-${col(cFin + 1)}${pT}`, '+0;-0;0')); }
+    aP.push(totP);
+    aP.push([]); aP.push(['Lectura: si la proyección del mes en curso queda abajo de la meta, el faltante hay que cerrarlo con programaciones (ver radiografía: progr./día requerida). La proyección de meses restantes es tendencia pura (mismo ritmo de hoy); la meta de esos meses es la que decidas en "Meta por region".']);
+    const wsP = XLSX.utils.aoa_to_sheet(aP);
+    const nColsP = 10 + (nMP - 1) * 3;
+    wsP['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, ...Array(nColsP - 4).fill({ wch: 11 })];
+    estiloCel(wsP, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
+    estiloCel(wsP, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
+    estiloCel(wsP, 2, 0, { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } });
+    estiloCel(wsP, 2, 4, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 10 } });
+    mesesProy.slice(1).forEach((m, k) => estiloCel(wsP, 2, 7 + k * 3, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 10 } }));
+    estiloHdr(wsP, 3, nColsP);
+    for (let r = pI - 1; r <= pT - 1; r++) {
+      const tot = r === pT - 1;
+      for (let c = 0; c < nColsP; c++) {
+        const s = { font: { name: 'Calibri', sz: 10, bold: tot || c === 0 } };
+        if (tot) s.fill = { fgColor: { rgb: 'DDEBF7' } };
+        const esProy = c === 4 || (c >= 7 && (c - 7) % 3 === 0 && c < nColsP - 3) || c === nColsP - 3;
+        const esDelta = c === 6 || (c >= 7 && (c - 7) % 3 === 2 && c < nColsP - 3) || c === nColsP - 1;
+        if (esProy) s.font.color = { rgb: MOR };
+        if (esDelta) { const x = wsP[XLSX.utils.encode_cell({ r, c })]; s.font.color = { rgb: (x && typeof x.v === 'number' && x.v < 0) ? 'C00000' : '16A34A' }; }
+        estiloCel(wsP, r, c, s);
+      }
+    }
+    wsP['!freeze'] = { xSplit: 1, ySplit: 4 };
+    XLSX.utils.book_append_sheet(wb, wsP, 'Proyeccion');
+
     // ===== Cruce inventario ↔ modelos vendidos =====
     const invRows = inventario.map(i => ({ ...i, region: _regionDeAlmacen(i.almacen), norm: _normEquipo(i.nombre), est: _estatusDe(i.nombre) || '' }));
     // modelo vendido (normalizado, sin color) → clave de inventario que le corresponde
     const COLORES = ['NEGRO', 'BLANCO', 'AZUL', 'VERDE', 'GRIS', 'ROSA', 'ROJO', 'MORADO', 'DORADO', 'PLATA', 'NARANJA', 'AMARILLO', 'CAFE', 'BLACK', 'WHITE', 'BLUE', 'GREEN', 'GRAY', 'GREY', 'PINK', 'RED', 'PURPLE', 'GOLD', 'SILVER', 'ORANGE', 'YELLOW', 'LAVENDER', 'GRAPHITE', 'TITANIUM', 'MIDNIGHT', 'MIDNIGTH', 'STARLIGHT', 'OLIVA', 'OLIVE', 'TEAL', 'CORAL', 'LILA', 'VIOLETA', 'DARK', 'LIGHT', 'COSMICO', 'OSCURO', 'CLARO', 'TIDAL', 'ULTRAMARINO'];
     const sinColor = s => String(s).split(' ').filter(t => t && !COLORES.includes(t)).join(' ');
     const modeloDeInv = i => sinColor(i.norm);
+    // Estatus de lista tolerante: sin marca, sin colores, sin capacidad (GB/TB), sin '&'/'BUNDLE'/'BDL'.
+    // Gana la clave de la lista con más tokens en común (todos los tokens "duros" de la clave deben estar en el modelo).
+    const MARCAS_EQ = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG'];
+    const RUIDO = new Set(['&', 'BUNDLE', 'BDL', 'CON', 'Y', 'O', 'ATT', 'PLUS']);
+    const tokensDuros = s => String(s).toUpperCase().replace(/\s*GB/g, 'GB').replace(/\s*TB/g, 'TB').replace(/[^A-Z0-9& ]/g, ' ').split(/\s+/)
+      .filter(t => t && !MARCAS_EQ.includes(t) && !COLORES.includes(t) && !RUIDO.has(t) && !/^\d+(GB|TB)$/.test(t));
+    const CAT = (window.__estatusDB && Object.keys(window.__estatusDB).length) ? window.__estatusDB : EQUIPOS_ESTATUS;
+    const CAT_TOK = Object.entries(CAT).map(([k, v]) => ({ k, v, t: tokensDuros(k) })).filter(x => x.t.length);
+    const estatusTol = modelo => {
+      const directo = _estatusDe(modelo); if (directo) return directo;
+      const toks = tokensDuros(modelo); if (!toks.length) return '';
+      // 1) la clave de la lista cabe completa en el modelo (gana la más larga)
+      let mejor = null;
+      CAT_TOK.forEach(x => { if (x.t.every(t => toks.includes(t)) && (!mejor || x.t.length > mejor.t.length)) mejor = x; });
+      if (mejor) return mejor.v;
+      // 2) el modelo cabe completo en la clave (p. ej. inventario "RENO16 F" vs lista "RENO16 F & BDL ENCO BUDS 3"): gana la más corta
+      CAT_TOK.forEach(x => { if (toks.every(t => x.t.includes(t)) && (!mejor || x.t.length < mejor.t.length)) mejor = x; });
+      return mejor ? mejor.v : '';
+    };
+    invRows.forEach(i => { if (!i.est) i.est = estatusTol(i.nombre); });
 
     // ===== Hojas por HUB =====
     regiones.forEach(reg => {
@@ -19658,7 +19735,7 @@ async function exportarForecastCC() {
         const toks = k.split(' ').filter(t => t.length > 1);
         const kInv = Object.keys(filas).find(ki => toks.length && toks.every(t => ki.includes(t)));
         if (kInv) { filas[kInv].alias = k; return; }
-        filas[k] = { modelo: k, nombres: [], existencia: 0, est: _estatusDe(k) || '', categoria: 'SIN STOCK', corte: '', alias: k };
+        filas[k] = { modelo: k, nombres: [], existencia: 0, est: estatusTol(k) || '', categoria: 'SIN STOCK', corte: '', alias: k };
       });
       const ventasDe = f => (vModelo[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModelo[f.alias] || 0) : 0);
       const ventasTot = f => (vModeloTot[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModeloTot[f.alias] || 0) : 0);
