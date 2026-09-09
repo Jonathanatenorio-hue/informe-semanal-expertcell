@@ -18538,13 +18538,15 @@ async function exportarPivoteEquipos() {
     if (mesComp < 1) { alert('Aún no hay meses completos para promediar.'); return; }
     const c3ini = Math.max(1, mesComp - 2), c6ini = Math.max(1, mesComp - 5);
 
+    // Días hábiles del calendario operativo (calendario_dias: factor_dia por fecha, el mismo
+    // que usa todo el reporte). Solo si un mes no está en el calendario, se aproxima L-V.
     const diasHabilesMes = (a, m) => {
-      let d = 0;
+      const key = `${a}-${String(m).padStart(2, '0')}`;
+      let d = 0, n = 0;
+      (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === key) { d += parseFloat(x.factor_dia || 0); n++; } });
+      if (n > 0) return d;
       const finM = new Date(a, m, 0).getDate();
-      for (let i = 1; i <= finM; i++) {
-        const dw = new Date(a, m - 1, i).getDay();
-        d += dw === 0 ? 0 : (dw === 6 ? 0.5 : 1);
-      }
+      for (let i = 1; i <= finM; i++) { const dw = new Date(a, m - 1, i).getDay(); d += (dw === 0 || dw === 6) ? 0 : 1; }
       return d;
     };
     // Mes a proyectar: en la primera quincena, el MES EN CURSO (recién arrancado);
@@ -18649,7 +18651,7 @@ async function exportarPivoteEquipos() {
     const PV_DIAS = `$${cParamVal1}$${FILA_DIAS}`;
     const PV_META = `$${cParamVal2}$${FILA_DIAS}`;   // Meta del mes proyectado (editable)
     const PV_CC = `$${letraPct(5)}$${FILA_DIAS}`;
-    const PCT_CC = 0.15;
+    const PCT_CC = 0.20;
     const MEZ_TOT = `SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal})`;
 
     const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
@@ -18671,7 +18673,7 @@ async function exportarPivoteEquipos() {
     filaDias[iPctIni + 3] = metaSig;
     mesesRestS1.forEach((x, k) => { filaDias[iRestIni + k] = x.meta; });
     filaDias[iPctIni + 4] = '% inv. asignado a CC:';
-    filaDias[iPctIni + 5] = { t: 'n', v: 0.15, z: '0%' };
+    filaDias[iPctIni + 5] = { t: 'n', v: 0.20, z: '0%' };
     const filaAge = ['Agentes del mes', ''];
     for (let m = 0; m < nMes; m++) filaAge[iMesIni + m] = agentesDelMes[m];
     for (let k = 0; k < nCols; k++) { if (filaDias[k] === undefined) filaDias[k] = ''; if (filaAge[k] === undefined) filaAge[k] = ''; }
@@ -19138,16 +19140,17 @@ async function exportarPivoteEquipos() {
     // parte de la meta, no del ritmo; descuenta las ventas solo-SIM que no llevan equipo.
     const critMes = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
     const totAct3 = regsDet.filter(x => x.mes >= c3ini && x.mes <= mesComp).length;
-    const proyEqTotal = (totAct3 > 0) ? Math.round(metaSig * totEq3 / totAct3) : 0;
+    // Criterio de dirección: proyectar como si TODA la meta se vendiera con equipo.
+    const proyEqTotal = metaSig;
     const marcasF = Object.entries(eq3.reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
       .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
     const regionesF = [...new Set(eq3.map(x => x.region))].sort();
     const aoaF = [
       [`FORECAST ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS POR REGION Y MARCA`],
-      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la proyección total. PROY. TOTAL = Meta de activadas del mes (P3, editable${metaSigEsReal ? ', tomada de metas_agente' : ', ESTIMADA con la última meta conocida'}) × equipos ÷ activadas del trimestre (descuenta ventas solo SIM). Ritmo y agentes quedan solo como referencia.`],
+      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la META del mes. PROY. TOTAL = Meta de activadas (P3, editable${metaSigEsReal ? ', tomada de metas_agente' : ', ESTIMADA con la última meta conocida'}), como si toda la meta se vendiera con equipo. Cada región recibe su participación histórica de la meta.`],
       ['Equipos 3m:', CF(totEq3, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
         'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'IF(R3>0,ROUND(P3*B3/R3,0),0)'),
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'P3'),
         'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
       [],
       ['Region', ...marcasF, 'Otras', 'TOTAL']];
@@ -19243,10 +19246,10 @@ async function exportarPivoteEquipos() {
     const colTotE = XLSX.utils.encode_col(2 + nR);
     const aoaE = [
       [`ESTRATEGIA ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS A SOLICITAR POR REGIÓN Y MODELO (SOLO RESURTIBLES)`],
-      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (= Meta de activadas del mes, P3 editable, × equipos ÷ activadas del trimestre) × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
+      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (= Meta de activadas del mes, P3 editable, como si toda la meta llevara equipo) × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
       ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
         'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'IF(R3>0,ROUND(P3*B3/R3,0),0)'),
+        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'P3'),
         'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
       [],
       ['Marca', 'Modelo (resurtible)', ...regionesF, 'TOTAL']];
@@ -19520,8 +19523,223 @@ function _renderLogisticaUI(cont, data) {
   _renderLogisticaUIBase(cont, data);
   // El botón del Excel de equipos+inventario debe sobrevivir al re-render
   cont.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:12px;">
+    <button onclick="exportarForecastCC()" style="background:#0F766E; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; margin-right:8px;">📦 Forecast CC (semana)</button>
     <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📥 Excel equipos + inventario</button>
   </div>`);
+}
+
+// ====================================================================
+// FORECAST CC · semana N — meta del mes repartida por región (histórico),
+// requerimiento por HUB con equipos RESURTIBLES que más se venden, sugerencia de
+// venta de no resurtibles con stock, y proyección de los meses restantes del año.
+// ====================================================================
+function _semanaISO(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dow = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dow);
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil((((t - y0) / 86400000) + 1) / 7);
+}
+const _HUB_REGION = { MEX: ['CDMX', 'COSMOPOL', 'MEXICO', 'MEX'], GDL: ['GDL', 'GUADALAJARA', 'JALISCO'], MTY: ['MTY', 'MONTERREY', 'NUEVO LEON'], PUE: ['PUE', 'PUEBLA'], TIJ: ['TIJ', 'TIJUANA'], VER: ['VER', 'VERACRUZ'], TOL: ['TOL', 'TOLUCA'] };
+const _REGION_NOMBRE = { MEX: 'HUB CDMX', GDL: 'HUB GUADALAJARA', MTY: 'HUB MONTERREY', PUE: 'HUB PUEBLA', TIJ: 'HUB TIJUANA', VER: 'HUB VERACRUZ', TOL: 'HUB TOLUCA' };
+function _regionDeAlmacen(alm) {
+  const a = String(alm || '').toUpperCase();
+  for (const [reg, toks] of Object.entries(_HUB_REGION)) if (toks.some(t => a.includes(t))) return reg;
+  return 'OTRO';
+}
+async function exportarForecastCC() {
+  try {
+    await _cargarEntregasData().catch(() => null);
+    const { data: inv } = await db.from('inventario_actual').select('*');
+    const inventario = (inv || []).filter(i => i && i.nombre);
+    const filasLog = _construirDatosLogistica(_entregasCache || []);
+    const hoy = new Date();
+    const anio = hoy.getFullYear(), mesAct = hoy.getMonth() + 1;
+    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    const MESES_LL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const semana = _semanaISO(hoy);
+    const hoyStr = `${anio}-${String(mesAct).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+
+    // ---- Histórico: últimos 3 meses COMPLETOS (todo se considera venta con equipo)
+    const mesComp = mesAct - 1; if (mesComp < 1) { alert('Se necesita al menos un mes cerrado del año.'); return; }
+    const c3ini = Math.max(1, mesComp - 2);
+    const regs = [];
+    filasLog.forEach(f => {
+      if (!String(f.fecha_activacion || '').startsWith(String(anio))) return;
+      const m = parseInt(String(f.fecha_activacion).substring(5, 7));
+      const region = (f.region && String(f.region).trim()) ? String(f.region).trim().toUpperCase() : 'TOL'; // sin región = HUB Toluca
+      regs.push({ m, region, marca: f.marca && f.marca !== 'SIM' ? String(f.marca).toUpperCase() : 'SIN EQUIPO', equipo: f.equipo && f.equipo !== 'SIM' ? _normEquipo(f.equipo) : 'SIN EQUIPO' });
+    });
+    const r3 = regs.filter(x => x.m >= c3ini && x.m <= mesComp);
+    if (!r3.length) { alert('Sin ventas en los últimos 3 meses cerrados.'); return; }
+
+    // ---- Metas por mes (metas_agente): mes actual y restantes; sin meta → última conocida
+    const metaMes = {};
+    (metasAgeData || []).forEach(m => { if (Number(m.anio) === anio) metaMes[m.mes] = (metaMes[m.mes] || 0) + (Number(m.meta_activadas) || 0); });
+    let ultMeta = 0; for (let m = 1; m <= 12; m++) if (metaMes[m] > 0) ultMeta = metaMes[m];
+    const mesesProy = []; for (let m = mesAct; m <= 12; m++) mesesProy.push(m);
+    const metaDe = m => metaMes[m] > 0 ? metaMes[m] : ultMeta;
+
+    // ---- Regiones, participación y marcas
+    const regiones = ['PUE', 'MEX', 'MTY', 'GDL', 'VER', 'TIJ', 'TOL'].filter(r => r3.some(x => x.region === r));
+    [...new Set(r3.map(x => x.region))].forEach(r => { if (!regiones.includes(r)) regiones.push(r); });
+    const nReg = {}; regiones.forEach(r => { nReg[r] = r3.filter(x => x.region === r).length; });
+    const marcas = [...new Set(r3.filter(x => x.marca !== 'SIN EQUIPO').map(x => x.marca))];
+    marcas.sort((a, b) => r3.filter(x => x.marca === b).length - r3.filter(x => x.marca === a).length);
+
+    const wb = XLSX.utils.book_new();
+    const NAVY = '1F3864', MOR = '5B3A8E', AMAR = 'FFF2CC';
+    const F = (v, f, z) => { const c = { t: 'n', v: v == null || isNaN(v) ? 0 : v, f }; if (z) c.z = z; return c; };
+    const col = i => XLSX.utils.encode_col(i);
+    const estiloHdr = (ws, r, n, fill) => { for (let c = 0; c < n; c++) { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x) x.s = { fill: { fgColor: { rgb: fill || NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; } };
+    const estiloCel = (ws, r, c, s) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x) x.s = s; };
+
+    // ===== Hoja 1: META POR REGIÓN =====
+    const a1 = [
+      [`FORECAST CC · SEMANA ${semana} · corte ${hoyStr}`],
+      [`Meta del mes repartida por región según participación de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (${r3.length} activaciones; todo se considera venta con equipo; sin región = HUB Toluca). Metas por mes en la fila 4 (amarillo, editable; "est." = sin meta cargada, usa la última conocida). Meses restantes del año = misma participación × meta de cada mes.`],
+      ['', '', '', ...mesesProy.map(m => metaMes[m] > 0 ? 'meta cargada' : 'meta est.')],
+      ['Meta activadas →', '', '', ...mesesProy.map(m => metaDe(m))],
+      ['Región', `Ventas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, 'Participación', ...mesesProy.map(m => MESES_L[m - 1]), 'Total resto año']];
+    const f1i = a1.length + 1;
+    regiones.forEach(r => {
+      const rE = a1.length + 1;
+      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, nReg[r], F(0, `IF($B$${f1i + regiones.length}>0,B${rE}/$B$${f1i + regiones.length},0)`, '0.0%')];
+      mesesProy.forEach((m, k) => fila.push(F(0, `ROUND(C${rE}*${col(3 + k)}$4,0)`)));
+      fila.push(F(0, `SUM(D${rE}:${col(2 + mesesProy.length)}${rE})`));
+      a1.push(fila);
+    });
+    const f1t = a1.length + 1;
+    const tot1 = ['TOTAL', F(0, `SUM(B${f1i}:B${f1t - 1})`), F(0, `SUM(C${f1i}:C${f1t - 1})`, '0.0%')];
+    mesesProy.forEach((m, k) => tot1.push(F(0, `SUM(${col(3 + k)}${f1i}:${col(3 + k)}${f1t - 1})`)));
+    tot1.push(F(0, `SUM(${col(3 + mesesProy.length)}${f1i}:${col(3 + mesesProy.length)}${f1t - 1})`));
+    a1.push(tot1);
+    // Marcas por región (participación dentro de la región)
+    a1.push([]); a1.push([`MARCAS QUE MÁS VENDE CADA REGIÓN (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}) · % dentro de la región · sirve para repartir el requerimiento por marca`]);
+    a1.push(['Región', ...marcas, 'Sin equipo']);
+    regiones.forEach(r => {
+      const fila = [r];
+      marcas.forEach(mk => { const n = r3.filter(x => x.region === r && x.marca === mk).length; fila.push({ t: 'n', v: nReg[r] ? n / nReg[r] : 0, z: '0.0%' }); });
+      const ne = r3.filter(x => x.region === r && x.marca === 'SIN EQUIPO').length; fila.push({ t: 'n', v: nReg[r] ? ne / nReg[r] : 0, z: '0.0%' });
+      a1.push(fila);
+    });
+    const ws1 = XLSX.utils.aoa_to_sheet(a1);
+    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 13 }, ...mesesProy.map(() => ({ wch: 11 })), { wch: 14 }];
+    estiloCel(ws1, 0, 0, { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } });
+    estiloCel(ws1, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
+    mesesProy.forEach((m, k) => { estiloCel(ws1, 3, 3 + k, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 } }); estiloCel(ws1, 2, 3 + k, { font: { name: 'Calibri', sz: 8, italic: true, color: { rgb: '808080' } }, alignment: { horizontal: 'center' } }); });
+    estiloCel(ws1, 3, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
+    estiloHdr(ws1, 4, 4 + mesesProy.length);
+    for (let r = f1i - 1; r < f1t - 1; r++) { estiloCel(ws1, r, 0, { font: { name: 'Calibri', bold: true, sz: 10 } }); mesesProy.forEach((m, k) => estiloCel(ws1, r, 3 + k, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } })); }
+    for (let c = 0; c < 4 + mesesProy.length; c++) estiloCel(ws1, f1t - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
+    estiloHdr(ws1, f1t + 2, marcas.length + 2, MOR);
+    ws1['!freeze'] = { xSplit: 1, ySplit: 5 };
+    XLSX.utils.book_append_sheet(wb, ws1, 'Meta por region');
+
+    // ===== Cruce inventario ↔ modelos vendidos =====
+    const invRows = inventario.map(i => ({ ...i, region: _regionDeAlmacen(i.almacen), norm: _normEquipo(i.nombre), est: _estatusDe(i.nombre) || '' }));
+    // modelo vendido (normalizado, sin color) → clave de inventario que le corresponde
+    const COLORES = ['NEGRO', 'BLANCO', 'AZUL', 'VERDE', 'GRIS', 'ROSA', 'ROJO', 'MORADO', 'DORADO', 'PLATA', 'NARANJA', 'AMARILLO', 'CAFE', 'BLACK', 'WHITE', 'BLUE', 'GREEN', 'GRAY', 'GREY', 'PINK', 'RED', 'PURPLE', 'GOLD', 'SILVER', 'ORANGE', 'YELLOW', 'LAVENDER', 'GRAPHITE', 'TITANIUM', 'MIDNIGHT', 'MIDNIGTH', 'STARLIGHT', 'OLIVA', 'OLIVE', 'TEAL', 'CORAL', 'LILA', 'VIOLETA', 'DARK', 'LIGHT', 'COSMICO', 'OSCURO', 'CLARO', 'TIDAL', 'ULTRAMARINO'];
+    const sinColor = s => String(s).split(' ').filter(t => t && !COLORES.includes(t)).join(' ');
+    const modeloDeInv = i => sinColor(i.norm);
+
+    // ===== Hojas por HUB =====
+    regiones.forEach(reg => {
+      const rR = r3.filter(x => x.region === reg);
+      const invR = invRows.filter(i => i.region === reg);
+      // ventas por modelo (sin color) en la región, 3 meses
+      const vModelo = {}; rR.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); vModelo[k] = (vModelo[k] || 0) + 1; } });
+      const vModeloTot = {}; r3.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); vModeloTot[k] = (vModeloTot[k] || 0) + 1; } });
+      // fila por modelo (inventario del HUB + modelos vendidos sin stock)
+      const filas = {};
+      invR.forEach(i => { const k = modeloDeInv(i); const f = filas[k] || (filas[k] = { modelo: k, nombres: [], existencia: 0, est: i.est, categoria: i.categoria || '', corte: i.fecha_corte || '' }); f.nombres.push(i.nombre); f.existencia += Number(i.existencia) || 0; if (!f.est && i.est) f.est = i.est; });
+      Object.keys(vModelo).forEach(k => {
+        if (filas[k]) return;
+        // tolerancia: buscar clave de inventario que contenga todos los tokens del modelo
+        const toks = k.split(' ').filter(t => t.length > 1);
+        const kInv = Object.keys(filas).find(ki => toks.length && toks.every(t => ki.includes(t)));
+        if (kInv) { filas[kInv].alias = k; return; }
+        filas[k] = { modelo: k, nombres: [], existencia: 0, est: _estatusDe(k) || '', categoria: 'SIN STOCK', corte: '', alias: k };
+      });
+      const ventasDe = f => (vModelo[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModelo[f.alias] || 0) : 0);
+      const ventasTot = f => (vModeloTot[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModeloTot[f.alias] || 0) : 0);
+      const lista = Object.values(filas).map(f => ({ ...f, v3: ventasDe(f), v3tot: ventasTot(f), resurt: /RESURTIBLE/.test(f.est) && !/NO RESURTIBLE/.test(f.est) }));
+      lista.sort((a, b) => (b.resurt - a.resurt) || (b.v3 - a.v3) || (b.existencia - a.existencia));
+      const totResurt = lista.filter(f => f.resurt).reduce((s, f) => s + f.v3, 0);
+
+      const aH = [
+        [`Forecast CC · ${_REGION_NOMBRE[reg] || reg} · semana ${semana} · corte ${hoyStr}`],
+        [`Requerimiento por modelo = meta de la región del mes (fila 4) × participación del modelo entre los RESURTIBLES vendidos en la región (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}). Los no resurtibles se listan con su stock pero no reciben requerimiento (ver hoja "Sugerencia no resurtibles"). Faltante = requerimiento del mes − existencia. Estatus según lista de precios; revisar cada semana: si un modelo deja de ser resurtible, su parte se reparte entre los demás al volver a generar.`],
+        ['', '', '', '', '', '', '', '', ...mesesProy.map(m => `Meta región ${MESES_L[m - 1]}`)],
+        ['Meta región →', '', '', '', '', '', '', '', ...mesesProy.map((m, k) => F(0, `'Meta por region'!${col(3 + k)}${f1i + regiones.indexOf(reg)}`))],
+        ['Nombre (inventario)', 'Modelo', 'Almacén', 'Existencia', 'Categoría', 'Corte', 'Estatus lista', `Vtas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} región`, ...mesesProy.map(m => MESES_LL[m - 1]), `Faltante ${MESES_LL[mesAct - 1]}`, '% entre resurtibles']];
+      const hI = aH.length + 1;
+      lista.forEach(f => {
+        const rE = aH.length + 1;
+        const nombreInv = f.nombres.length ? f.nombres.join(' / ') : `(sin stock en ${reg}) ${f.modelo}`;
+        const alm = invR.find(i => f.nombres.includes(i.nombre)); 
+        const fila = [nombreInv, f.modelo, alm ? alm.almacen : '', f.existencia, f.categoria, f.corte ? String(f.corte).substring(0, 10) : '', f.est || 'SIN LISTA', f.v3];
+        const cShare = 8 + mesesProy.length + 1; // columna % entre resurtibles
+        mesesProy.forEach((m, k) => fila.push(f.resurt ? F(0, `ROUND(${col(cShare)}${rE}*${col(8 + k)}$4,0)`) : ''));
+        fila.push(f.resurt ? F(0, `MAX(0,${col(8)}${rE}-D${rE})`) : '');
+        fila.push(f.resurt ? F(0, `IF($H$${hI + lista.length}>0,H${rE}/$H$${hI + lista.length},0)`, '0.0%') : '');
+        aH.push(fila);
+      });
+      const hT = aH.length + 1;
+      const totH = ['TOTAL', '', '', F(0, `SUM(D${hI}:D${hT - 1})`), '', '', `resurtibles: ${lista.filter(f => f.resurt).length} de ${lista.length}`, F(totResurt, `SUMIF(G${hI}:G${hT - 1},"RESURTIBLE",H${hI}:H${hT - 1})`)];
+      mesesProy.forEach((m, k) => totH.push(F(0, `SUM(${col(8 + k)}${hI}:${col(8 + k)}${hT - 1})`)));
+      totH.push(F(0, `SUM(${col(8 + mesesProy.length)}${hI}:${col(8 + mesesProy.length)}${hT - 1})`)); totH.push(F(0, `SUM(${col(9 + mesesProy.length)}${hI}:${col(9 + mesesProy.length)}${hT - 1})`, '0.0%'));
+      aH.push(totH);
+      const wsH = XLSX.utils.aoa_to_sheet(aH);
+      wsH['!cols'] = [{ wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 12 }, ...mesesProy.map(() => ({ wch: 11 })), { wch: 12 }, { wch: 12 }];
+      estiloCel(wsH, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
+      estiloCel(wsH, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
+      mesesProy.forEach((m, k) => { estiloCel(wsH, 2, 8 + k, { font: { name: 'Calibri', sz: 8, italic: true, color: { rgb: '808080' } }, alignment: { horizontal: 'center' } }); estiloCel(wsH, 3, 8 + k, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 }, alignment: { horizontal: 'center' } }); });
+      estiloCel(wsH, 3, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
+      estiloHdr(wsH, 4, 10 + mesesProy.length);
+      lista.forEach((f, i) => {
+        const r = hI - 1 + i;
+        const fill = f.resurt ? 'E2EFDA' : (/NO RESURTIBLE/.test(f.est) ? 'FDE9D9' : (f.est ? 'FFF2CC' : 'F2F2F2'));
+        estiloCel(wsH, r, 6, { fill: { fgColor: { rgb: fill } }, font: { name: 'Calibri', bold: true, sz: 9 } });
+        if (f.categoria === 'SIN STOCK') estiloCel(wsH, r, 0, { font: { name: 'Calibri', italic: true, sz: 10, color: { rgb: 'C00000' } } });
+        mesesProy.forEach((m, k) => { if (f.resurt) estiloCel(wsH, r, 8 + k, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); });
+        if (f.resurt) estiloCel(wsH, r, 8 + mesesProy.length, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } });
+      });
+      for (let c = 0; c < 10 + mesesProy.length; c++) estiloCel(wsH, hT - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
+      wsH['!autofilter'] = { ref: `A5:${col(9 + mesesProy.length)}${hT - 1}` };
+      wsH['!freeze'] = { xSplit: 2, ySplit: 5 };
+      XLSX.utils.book_append_sheet(wb, wsH, (_REGION_NOMBRE[reg] || reg).substring(0, 31));
+    });
+
+    // ===== Sugerencia: NO resurtibles con stock que sí se venden =====
+    const aS = [
+      [`SUGERENCIA DE VENTA · equipos NO resurtibles (o limitados) con stock que normalmente se venden · semana ${semana}`],
+      ['Empujarlos primero: cuando se acaben no se reponen. Cobertura = existencia ÷ ventas mensuales promedio (3 meses) en la región del HUB.'],
+      ['HUB / región', 'Nombre (inventario)', 'Almacén', 'Existencia', 'Estatus lista', `Vtas región 3m`, 'Vtas total 3m', 'Vtas/mes región', 'Cobertura (meses)', 'Sugerencia']];
+    const vTot = {}; r3.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); const kk = x.region + '|' + k; vTot[kk] = (vTot[kk] || 0) + 1; vTot['*|' + k] = (vTot['*|' + k] || 0) + 1; } });
+    const nM = mesComp - c3ini + 1;
+    invRows.filter(i => (Number(i.existencia) || 0) > 0 && i.est && !/^RESURTIBLE$/.test(i.est)).forEach(i => {
+      const k = modeloDeInv(i); const toks = k.split(' ').filter(t => t.length > 1);
+      const buscar = pref => { let n = vTot[pref + '|' + k] || 0; if (!n) { const kk = Object.keys(vTot).find(x => x.startsWith(pref + '|') && toks.every(t => x.includes(t))); if (kk) n = vTot[kk]; } return n; };
+      const vr = buscar(i.region), vt = buscar('*');
+      if (!vt) return;
+      const rE = aS.length + 1;
+      aS.push([`${i.region} · ${_REGION_NOMBRE[i.region] || i.region}`, i.nombre, i.almacen, Number(i.existencia) || 0, i.est, vr, vt, F(0, `F${rE}/${nM}`, '0.0'), F(0, `IF(H${rE}>0,D${rE}/H${rE},99)`, '0.0'), { t: 's', v: '', f: `IF(F${rE}=0,"No se vende en esta región: mover a otro HUB",IF(I${rE}<=1,"Se agota este mes: empujar ya",IF(I${rE}<=3,"Empujar en campaña","Stock alto: promoción o traspaso")))` }]);
+    });
+    if (aS.length === 3) aS.push(['(sin equipos no resurtibles con stock y ventas en el periodo)']);
+    const wsS = XLSX.utils.aoa_to_sheet(aS);
+    wsS['!cols'] = [{ wch: 22 }, { wch: 44 }, { wch: 22 }, { wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 40 }];
+    estiloCel(wsS, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
+    estiloCel(wsS, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
+    estiloHdr(wsS, 2, 10, 'C00000');
+    wsS['!autofilter'] = { ref: `A3:J${aS.length}` };
+    wsS['!freeze'] = { xSplit: 2, ySplit: 3 };
+    XLSX.utils.book_append_sheet(wb, wsS, 'Sugerencia no resurtibles');
+
+    XLSX.writeFile(wb, `Forecast CC semana ${semana}.xlsx`);
+  } catch (e) {
+    console.error('[Forecast CC]', e);
+    alert('No se pudo generar el Forecast CC: ' + (e.message || e));
+  }
 }
 function _renderLogisticaUIBase(cont, data) {
   // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
