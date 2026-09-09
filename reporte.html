@@ -19643,42 +19643,46 @@ async function exportarForecastCC() {
     const dhAct = dhDe(mesAct);
     let dtAct = 0; (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === `${anio}-${String(mesAct).padStart(2, '0')}` && x.fecha < hoyStr) dtAct += parseFloat(x.factor_dia || 0); });
     const rAct = regs.filter(x => x.m === mesAct);
-    // Crecimiento observado: ritmo (act/día hábil) de los 3 meses cerrados → crecimiento promedio mensual (media geométrica), acotado ±25%/mes
-    const ritmoMes = m => { const n = regs.filter(x => x.m === m).length; const d = dhDe(m); return d > 0 ? n / d : 0; };
-    const ritmos3 = []; for (let m = c3ini; m <= mesComp; m++) ritmos3.push(ritmoMes(m));
-    let g = 0; { const fs = []; for (let i = 1; i < ritmos3.length; i++) if (ritmos3[i - 1] > 0) fs.push(ritmos3[i] / ritmos3[i - 1]); if (fs.length) g = Math.pow(fs.reduce((a, b) => a * b, 1), 1 / fs.length) - 1; g = Math.max(-0.25, Math.min(0.25, g)); }
-    const ritmoUlt = ritmoMes(mesComp);
+    // Crecimiento en UNIDADES por mes (no porcentual): activaciones del último mes cerrado + incremento
+    // mensual. Incremento = último salto mes a mes (${mesComp-1}→${mesComp}); editable en C3.
+    const ventasMes = m => regs.filter(x => x.m === m).length;
+    const v3 = []; for (let m = c3ini; m <= mesComp; m++) v3.push(ventasMes(m));
+    const vUlt = ventasMes(mesComp);
+    const incr = v3.length >= 2 ? v3[v3.length - 1] - v3[v3.length - 2] : 0;
     const aP = [
       [`PROYECCIÓN · crecimiento vs meta · semana ${semana} · corte ${hoyStr}`],
-      [`Base = ritmo del último mes cerrado (${MESES_L[mesComp - 1]}: ${ritmoUlt.toFixed(2)} act/día hábil). Crecimiento mensual observado ${MESES_L[c3ini - 1]}→${MESES_L[mesComp - 1]}: ${(g * 100).toFixed(1)}%/mes (celda C3, amarilla, editable). Proyección de cada mes = ritmo base × (1 + crecimiento)^meses × días hábiles del mes. ${MESES_L[mesAct - 1]} = activadas a la fecha (${dtAct.toFixed(1)} de ${dhAct.toFixed(1)} días) + ritmo proyectado × días que faltan. Meta = hoja "Meta por region". Δ = proyección − meta.`],
-      ['Crecimiento %/mes →', '', { t: 'n', v: g, z: '0.0%' }, 'Días háb. →', dhAct, '', '', ...mesesProy.slice(1).flatMap(m => [dhDe(m), '', ''])],
-      ['Región', `Ritmo ${MESES_L[mesComp - 1]} (act/día)`, 'Ritmos ' + ritmos3.map(x => x.toFixed(1)).join(' → '), `${MESES_L[mesAct - 1]} a la fecha`, `Proy. ${MESES_L[mesAct - 1]}`, `Meta ${MESES_L[mesAct - 1]}`, `Δ ${MESES_L[mesAct - 1]}`, ...mesesProy.slice(1).flatMap(m => [`Proy. ${MESES_L[m - 1]}`, `Meta ${MESES_L[m - 1]}`, `Δ ${MESES_L[m - 1]}`]), 'Proy. resto año', 'Meta resto año', 'Δ resto año']];
+      [`Base = activaciones del último mes cerrado (${MESES_L[mesComp - 1]}: ${vUlt}). Crecimiento en unidades por mes: ${incr >= 0 ? '+' : ''}${incr} (último salto ${MESES_L[mesComp - 2] || ''}→${MESES_L[mesComp - 1]}; celda C3, amarilla, editable). Proyección de cada mes = base + crecimiento × meses transcurridos desde ${MESES_L[mesComp - 1]}, repartida por región según su participación en ${MESES_L[mesComp - 1]}. ${MESES_L[mesAct - 1]} a la fecha se muestra como referencia (${dtAct.toFixed(1)} de ${dhAct.toFixed(1)} días hábiles). Meta = hoja "Meta por region". Δ = proyección − meta.`],
+      ['Crecimiento (unid/mes) →', '', incr, 'Días háb. →', dhAct, '', '', ...mesesProy.slice(1).flatMap(m => [dhDe(m), '', ''])],
+      ['Región', `Ventas ${MESES_L[mesComp - 1]}`, 'Ventas ' + [...Array(v3.length)].map((_, i) => MESES_L[c3ini - 1 + i]).join('→') + ': ' + v3.join(' → '), `${MESES_L[mesAct - 1]} a la fecha`, `Proy. ${MESES_L[mesAct - 1]}`, `Meta ${MESES_L[mesAct - 1]}`, `Δ ${MESES_L[mesAct - 1]}`, ...mesesProy.slice(1).flatMap(m => [`Proy. ${MESES_L[m - 1]}`, `Meta ${MESES_L[m - 1]}`, `Δ ${MESES_L[m - 1]}`]), 'Proy. resto año', 'Meta resto año', 'Δ resto año']];
     const pI = aP.length + 1;
     const nMP = mesesProy.length;
     const G = '$C$3';
+    const pT0 = pI + regiones.length; // fila TOTAL (para la participación)
     regiones.forEach((r, i) => {
       const rE = aP.length + 1, rMeta = f1i + i;
       const vAct = rAct.filter(x => x.region === r).length;
-      const rUlt = regs.filter(x => x.m === mesComp && x.region === r).length / (dhDe(mesComp) || 1);
-      const rit3 = []; for (let m = c3ini; m <= mesComp; m++) rit3.push(regs.filter(x => x.m === m && x.region === r).length / (dhDe(m) || 1));
-      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, { t: 'n', v: rUlt, z: '0.00' }, rit3.map(x => x.toFixed(1)).join(' → '), vAct,
-        F(0, `ROUND(D${rE}+B${rE}*(1+${G})*MAX(0,$E$3-${dtAct}),0)`),
+      const vU = regs.filter(x => x.m === mesComp && x.region === r).length;
+      const vr3 = []; for (let m = c3ini; m <= mesComp; m++) vr3.push(regs.filter(x => x.m === m && x.region === r).length);
+      // participación de la región en el último mes: B{r}/B{total}
+      const part = `IF($B$${pT0}>0,B${rE}/$B$${pT0},0)`;
+      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, vU, vr3.join(' → '), vAct,
+        F(0, `ROUND(($B$${pT0}+${G}*1)*${part},0)`),
         F(0, `'Meta por region'!D${rMeta}`), F(0, `E${rE}-F${rE}`, '+0;-0;0')];
-      mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; fila.push(F(0, `ROUND(B${rE}*(1+${G})^${k + 2}*${col(cP)}$3,0)`), F(0, `'Meta por region'!${col(4 + k)}${rMeta}`), F(0, `${col(cP)}${rE}-${col(cP + 1)}${rE}`, '+0;-0;0')); });
+      mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; fila.push(F(0, `ROUND(($B$${pT0}+${G}*${k + 2})*${part},0)`), F(0, `'Meta por region'!${col(4 + k)}${rMeta}`), F(0, `${col(cP)}${rE}-${col(cP + 1)}${rE}`, '+0;-0;0')); });
       const cFin = 7 + (nMP - 1) * 3;
       const proyCols = ['E', ...mesesProy.slice(1).map((m, k) => col(7 + k * 3))], metaCols = ['F', ...mesesProy.slice(1).map((m, k) => col(8 + k * 3))];
       fila.push(F(0, proyCols.map(c => `${c}${rE}`).join('+')), F(0, metaCols.map(c => `${c}${rE}`).join('+')), F(0, `${col(cFin)}${rE}-${col(cFin + 1)}${rE}`, '+0;-0;0'));
       aP.push(fila);
     });
     const pT = aP.length + 1;
-    const totP = ['TOTAL', F(0, `SUM(B${pI}:B${pT - 1})`, '0.00'), ritmos3.map(x => x.toFixed(1)).join(' → '), F(0, `SUM(D${pI}:D${pT - 1})`), F(0, `SUM(E${pI}:E${pT - 1})`), F(0, `SUM(F${pI}:F${pT - 1})`), F(0, `E${pT}-F${pT}`, '+0;-0;0')];
+    const totP = ['TOTAL', F(0, `SUM(B${pI}:B${pT - 1})`), v3.join(' → '), F(0, `SUM(D${pI}:D${pT - 1})`), F(0, `SUM(E${pI}:E${pT - 1})`), F(0, `SUM(F${pI}:F${pT - 1})`), F(0, `E${pT}-F${pT}`, '+0;-0;0')];
     mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; totP.push(F(0, `SUM(${col(cP)}${pI}:${col(cP)}${pT - 1})`), F(0, `SUM(${col(cP + 1)}${pI}:${col(cP + 1)}${pT - 1})`), F(0, `${col(cP)}${pT}-${col(cP + 1)}${pT}`, '+0;-0;0')); });
     { const cFin = 7 + (nMP - 1) * 3; totP.push(F(0, `SUM(${col(cFin)}${pI}:${col(cFin)}${pT - 1})`), F(0, `SUM(${col(cFin + 1)}${pI}:${col(cFin + 1)}${pT - 1})`), F(0, `${col(cFin)}${pT}-${col(cFin + 1)}${pT}`, '+0;-0;0')); }
     aP.push(totP);
-    aP.push([]); aP.push(['Lectura: la proyección asume que el crecimiento mensual observado se mantiene (cambia C3 para simular otro escenario: 0% = mismo ritmo de ' + MESES_L[mesComp - 1] + '). Si el Δ del mes en curso es negativo, el faltante se cierra con programaciones (radiografía: progr./día requerida); el de los meses siguientes, con plantilla o productividad. La meta de cada mes se define en "Meta por region".']);
+    aP.push([]); aP.push(['Lectura: la proyección asume que cada mes se venden C3 unidades más que el anterior (pon 0 para "igual que ' + MESES_L[mesComp - 1] + '"). Si el Δ del mes en curso es negativo, el faltante se cierra con programaciones (radiografía: progr./día requerida); el de los meses siguientes, con plantilla o productividad. La meta de cada mes se define en "Meta por region".']);
     const wsP = XLSX.utils.aoa_to_sheet(aP);
     const nColsP = 10 + (nMP - 1) * 3;
-    wsP['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, ...Array(nColsP - 4).fill({ wch: 11 })];
+    wsP['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 22 }, { wch: 12 }, ...Array(nColsP - 4).fill({ wch: 11 })];
     estiloCel(wsP, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
     estiloCel(wsP, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
     estiloCel(wsP, 2, 0, { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } });
