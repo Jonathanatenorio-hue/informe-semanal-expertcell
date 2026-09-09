@@ -19596,23 +19596,17 @@ async function exportarForecastCC() {
     // ===== Hoja 1: META POR REGIÓN =====
     const a1 = [
       [`FORECAST CC · SEMANA ${semana} · corte ${hoyStr}`],
-      [`Meta del mes repartida por región según participación de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (${r3.length} activaciones; todo se considera venta con equipo; sin región = HUB Toluca). Metas por mes en la fila 4 (amarillo, editable; "est." = sin meta cargada, usa la última conocida). Meses restantes del año = misma participación × meta de cada mes.`],
-      ['', '', '', ...mesesProy.map(m => metaMes[m] > 0 ? 'meta cargada' : 'meta est.')],
-      ['Meta activadas →', '', '', ...mesesProy.map(m => metaDe(m))],
-      ['Región', `Ventas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, 'Participación', ...mesesProy.map(m => MESES_L[m - 1]), 'Total resto año']];
+      [`Meta de ${MESES_LL[mesAct - 1]} repartida por región según participación de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (${r3.length} activaciones; todo se considera venta con equipo; sin región = HUB Toluca). Meta en D3 (amarillo, editable${metaMes[mesAct] > 0 ? '' : '; estimada con la última meta conocida'}). Faltante = suma de faltantes de la hoja del HUB (requerimiento − existencia).`],
+      ['Meta activadas →', '', '', metaDe(mesAct)],
+      ['Región', `Ventas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, 'Participación', `Meta ${MESES_L[mesAct - 1]}`, 'Faltante', '% Faltante']];
     const f1i = a1.length + 1;
     regiones.forEach(r => {
       const rE = a1.length + 1;
-      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, nReg[r], F(0, `IF($B$${f1i + regiones.length}>0,B${rE}/$B$${f1i + regiones.length},0)`, '0.0%')];
-      mesesProy.forEach((m, k) => fila.push(F(0, `ROUND(C${rE}*${col(3 + k)}$4,0)`)));
-      fila.push(F(0, `SUM(D${rE}:${col(2 + mesesProy.length)}${rE})`));
-      a1.push(fila);
+      const hoja = (_REGION_NOMBRE[r] || r).substring(0, 31);
+      a1.push([`${r} · ${_REGION_NOMBRE[r] || r}`, nReg[r], F(0, `IF($B$${f1i + regiones.length}>0,B${rE}/$B$${f1i + regiones.length},0)`, '0.0%'), F(0, `ROUND(C${rE}*D$3,0)`), F(0, `'${hoja}'!J3`), F(0, `IF(D${rE}>0,E${rE}/D${rE},0)`, '0.0%')]);
     });
     const f1t = a1.length + 1;
-    const tot1 = ['TOTAL', F(0, `SUM(B${f1i}:B${f1t - 1})`), F(0, `SUM(C${f1i}:C${f1t - 1})`, '0.0%')];
-    mesesProy.forEach((m, k) => tot1.push(F(0, `SUM(${col(3 + k)}${f1i}:${col(3 + k)}${f1t - 1})`)));
-    tot1.push(F(0, `SUM(${col(3 + mesesProy.length)}${f1i}:${col(3 + mesesProy.length)}${f1t - 1})`));
-    a1.push(tot1);
+    a1.push(['TOTAL', F(0, `SUM(B${f1i}:B${f1t - 1})`), F(0, `SUM(C${f1i}:C${f1t - 1})`, '0.0%'), F(0, `SUM(D${f1i}:D${f1t - 1})`), F(0, `SUM(E${f1i}:E${f1t - 1})`), F(0, `IF(D${f1t}>0,E${f1t}/D${f1t},0)`, '0.0%')]);
     // Marcas por región (participación dentro de la región)
     a1.push([]); a1.push([`MARCAS QUE MÁS VENDE CADA REGIÓN (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}) · % dentro de la región · sirve para repartir el requerimiento por marca`]);
     a1.push(['Región', ...marcas, 'Sin equipo']);
@@ -19623,16 +19617,16 @@ async function exportarForecastCC() {
       a1.push(fila);
     });
     const ws1 = XLSX.utils.aoa_to_sheet(a1);
-    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 13 }, ...mesesProy.map(() => ({ wch: 11 })), { wch: 14 }];
+    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }];
     estiloCel(ws1, 0, 0, { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } });
     estiloCel(ws1, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
-    mesesProy.forEach((m, k) => { estiloCel(ws1, 3, 3 + k, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 } }); estiloCel(ws1, 2, 3 + k, { font: { name: 'Calibri', sz: 8, italic: true, color: { rgb: '808080' } }, alignment: { horizontal: 'center' } }); });
-    estiloCel(ws1, 3, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
-    estiloHdr(ws1, 4, 4 + mesesProy.length);
-    for (let r = f1i - 1; r < f1t - 1; r++) { estiloCel(ws1, r, 0, { font: { name: 'Calibri', bold: true, sz: 10 } }); mesesProy.forEach((m, k) => estiloCel(ws1, r, 3 + k, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } })); }
-    for (let c = 0; c < 4 + mesesProy.length; c++) estiloCel(ws1, f1t - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
+    estiloCel(ws1, 2, 3, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 } });
+    estiloCel(ws1, 2, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
+    estiloHdr(ws1, 3, 6);
+    for (let r = f1i - 1; r < f1t - 1; r++) { estiloCel(ws1, r, 0, { font: { name: 'Calibri', bold: true, sz: 10 } }); estiloCel(ws1, r, 3, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); estiloCel(ws1, r, 4, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } }); }
+    for (let c = 0; c < 6; c++) estiloCel(ws1, f1t - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
     estiloHdr(ws1, f1t + 2, marcas.length + 2, MOR);
-    ws1['!freeze'] = { xSplit: 1, ySplit: 5 };
+    ws1['!freeze'] = { xSplit: 1, ySplit: 4 };
     XLSX.utils.book_append_sheet(wb, ws1, 'Meta por region');
 
     // ===== Hoja PROYECCIÓN: tendencia vs meta, por región y total =====
@@ -19757,47 +19751,46 @@ async function exportarForecastCC() {
       lista.sort((a, b) => (b.resurt - a.resurt) || (b.v3 - a.v3) || (b.existencia - a.existencia));
       const totResurt = lista.filter(f => f.resurt).reduce((s, f) => s + f.v3, 0);
 
+      const filaMeta = f1i + regiones.indexOf(reg);
       const aH = [
         [`Forecast CC · ${_REGION_NOMBRE[reg] || reg} · semana ${semana} · corte ${hoyStr}`],
-        [`Requerimiento por modelo = meta de la región del mes (fila 4) × participación del modelo entre los RESURTIBLES vendidos en la región (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}). Los no resurtibles se listan con su stock pero no reciben requerimiento (ver hoja "Sugerencia no resurtibles"). Faltante = requerimiento del mes − existencia. Estatus según lista de precios; revisar cada semana: si un modelo deja de ser resurtible, su parte se reparte entre los demás al volver a generar.`],
-        ['', '', '', '', '', '', '', '', ...mesesProy.map(m => `Meta región ${MESES_L[m - 1]}`)],
-        ['Meta región →', '', '', '', '', '', '', '', ...mesesProy.map((m, k) => F(0, `'Meta por region'!${col(3 + k)}${f1i + regiones.indexOf(reg)}`))],
-        ['Nombre (inventario)', 'Modelo', 'Almacén', 'Existencia', 'Categoría', 'Corte', 'Estatus lista', `Vtas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} región`, ...mesesProy.map(m => MESES_LL[m - 1]), `Faltante ${MESES_LL[mesAct - 1]}`, '% entre resurtibles']];
+        ['', '', '', '', '', '', '', 'Meta', F(0, `'Meta por region'!D${filaMeta}`)],
+        ['Meta región →', '', '', '', '', '', '', '', null, null],
+        ['Nombre (inventario)', 'Modelo', 'Almacén', 'Existencia', 'Categoría', 'Corte', 'Estatus lista', `Vtas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} región`, MESES_LL[mesAct - 1], `Faltante ${MESES_LL[mesAct - 1]}`, '% entre resurtibles']];
       const hI = aH.length + 1;
       lista.forEach(f => {
         const rE = aH.length + 1;
         const nombreInv = f.nombres.length ? f.nombres.join(' / ') : `(sin stock en ${reg}) ${f.modelo}`;
-        const alm = invR.find(i => f.nombres.includes(i.nombre)); 
+        const alm = invR.find(i => f.nombres.includes(i.nombre));
         const fila = [nombreInv, f.modelo, alm ? alm.almacen : '', f.existencia, f.categoria, f.corte ? String(f.corte).substring(0, 10) : '', f.est || 'SIN LISTA', f.v3];
-        const cShare = 8 + mesesProy.length + 1; // columna % entre resurtibles
-        mesesProy.forEach((m, k) => fila.push(f.resurt ? F(0, `ROUND(${col(cShare)}${rE}*${col(8 + k)}$4,0)`) : ''));
-        fila.push(f.resurt ? F(0, `MAX(0,${col(8)}${rE}-D${rE})`) : '');
+        fila.push(f.resurt ? F(0, `ROUND(K${rE}*I$2,0)`) : '');
+        fila.push(f.resurt ? F(0, `MAX(0,I${rE}-D${rE})`) : '');
         fila.push(f.resurt ? F(0, `IF($H$${hI + lista.length}>0,H${rE}/$H$${hI + lista.length},0)`, '0.0%') : '');
         aH.push(fila);
       });
       const hT = aH.length + 1;
-      const totH = ['TOTAL', '', '', F(0, `SUM(D${hI}:D${hT - 1})`), '', '', `resurtibles: ${lista.filter(f => f.resurt).length} de ${lista.length}`, F(totResurt, `SUMIF(G${hI}:G${hT - 1},"RESURTIBLE",H${hI}:H${hT - 1})`)];
-      mesesProy.forEach((m, k) => totH.push(F(0, `SUM(${col(8 + k)}${hI}:${col(8 + k)}${hT - 1})`)));
-      totH.push(F(0, `SUM(${col(8 + mesesProy.length)}${hI}:${col(8 + mesesProy.length)}${hT - 1})`)); totH.push(F(0, `SUM(${col(9 + mesesProy.length)}${hI}:${col(9 + mesesProy.length)}${hT - 1})`, '0.0%'));
-      aH.push(totH);
+      // SUBTOTAL(9) arriba: suma solo lo VISIBLE tras aplicar filtros (p. ej. filtrar por marca)
+      aH[2][8] = F(0, `SUBTOTAL(9,I${hI}:I${hT - 1})`); aH[2][9] = F(0, `SUBTOTAL(9,J${hI}:J${hT - 1})`);
+      aH.push(['TOTAL', '', '', F(0, `SUM(D${hI}:D${hT - 1})`), '', '', `resurtibles: ${lista.filter(f => f.resurt).length} de ${lista.length}`, F(totResurt, `SUMIF(G${hI}:G${hT - 1},"RESURTIBLE",H${hI}:H${hT - 1})`), F(0, `SUM(I${hI}:I${hT - 1})`), F(0, `SUM(J${hI}:J${hT - 1})`), F(0, `SUM(K${hI}:K${hT - 1})`, '0.0%')]);
       const wsH = XLSX.utils.aoa_to_sheet(aH);
-      wsH['!cols'] = [{ wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 12 }, ...mesesProy.map(() => ({ wch: 11 })), { wch: 12 }, { wch: 12 }];
+      wsH['!cols'] = [{ wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 12 }];
       estiloCel(wsH, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
-      estiloCel(wsH, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
-      mesesProy.forEach((m, k) => { estiloCel(wsH, 2, 8 + k, { font: { name: 'Calibri', sz: 8, italic: true, color: { rgb: '808080' } }, alignment: { horizontal: 'center' } }); estiloCel(wsH, 3, 8 + k, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 }, alignment: { horizontal: 'center' } }); });
-      estiloCel(wsH, 3, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
-      estiloHdr(wsH, 4, 10 + mesesProy.length);
+      estiloCel(wsH, 1, 7, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } }, alignment: { horizontal: 'right' } });
+      estiloCel(wsH, 1, 8, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 12 }, alignment: { horizontal: 'center' } });
+      estiloCel(wsH, 2, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
+      estiloCel(wsH, 2, 8, { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: MOR } }, alignment: { horizontal: 'center' } });
+      estiloCel(wsH, 2, 9, { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: 'C00000' } }, alignment: { horizontal: 'center' } });
+      estiloHdr(wsH, 3, 11);
       lista.forEach((f, i) => {
         const r = hI - 1 + i;
         const fill = f.resurt ? 'E2EFDA' : (/NO RESURTIBLE/.test(f.est) ? 'FDE9D9' : (f.est ? 'FFF2CC' : 'F2F2F2'));
         estiloCel(wsH, r, 6, { fill: { fgColor: { rgb: fill } }, font: { name: 'Calibri', bold: true, sz: 9 } });
         if (f.categoria === 'SIN STOCK') estiloCel(wsH, r, 0, { font: { name: 'Calibri', italic: true, sz: 10, color: { rgb: 'C00000' } } });
-        mesesProy.forEach((m, k) => { if (f.resurt) estiloCel(wsH, r, 8 + k, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); });
-        if (f.resurt) estiloCel(wsH, r, 8 + mesesProy.length, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } });
+        if (f.resurt) { estiloCel(wsH, r, 8, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); estiloCel(wsH, r, 9, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } }); }
       });
-      for (let c = 0; c < 10 + mesesProy.length; c++) estiloCel(wsH, hT - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
-      wsH['!autofilter'] = { ref: `A5:${col(9 + mesesProy.length)}${hT - 1}` };
-      wsH['!freeze'] = { xSplit: 2, ySplit: 5 };
+      for (let c = 0; c < 11; c++) estiloCel(wsH, hT - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
+      wsH['!autofilter'] = { ref: `A4:K${hT - 1}` };
+      wsH['!freeze'] = { xSplit: 2, ySplit: 4 };
       XLSX.utils.book_append_sheet(wb, wsH, (_REGION_NOMBRE[reg] || reg).substring(0, 31));
     });
 
