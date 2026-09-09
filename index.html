@@ -755,6 +755,7 @@ async function procesar() {
         actPorFolio[folio] = {
           fecha: fechaStr,
           hora: horaStr,
+          ejecutivo: r.EJECUTIVO ? String(r.EJECUTIVO).trim() : null,
           plan: r.PLAN || null,
           precio: r.PRECIO || null,
           renta: r['RENTA SIN IMPUESTOS'] || null,
@@ -766,6 +767,7 @@ async function procesar() {
       log(`Rango de activadas: desde ${fechaMinActivadas}`, 'info');
     }
 
+    const cambiosEjecutivo = [];
     const canPorFolio = {};
     const canTelPorFolio = {};
     const canceladasPreBO = [];
@@ -890,7 +892,14 @@ async function procesar() {
         continue;
       }
 
-      const ejecutivo = row.Ejecutivo;
+      // Ejecutivo: el de la ACTIVACIÓN (Global) manda cuando existe; AT&T paga la comisión
+      // a quien aparece en la activación. El del backoffice solo mientras la venta no se activa.
+      let ejecutivo = row.Ejecutivo ? String(row.Ejecutivo).trim() : row.Ejecutivo;
+      const actPrev = actPorFolio[folio];
+      if (actPrev && actPrev.ejecutivo && actPrev.ejecutivo !== ejecutivo) {
+        cambiosEjecutivo.push({ folio, bo: ejecutivo, act: actPrev.ejecutivo });
+        ejecutivo = actPrev.ejecutivo;
+      }
 
       // Supervisor por fecha_bo (programadas y default)
       const supervisor = resolverSupervisorPorFecha(ejecutivo, fechaBO, asignaciones);
@@ -987,6 +996,8 @@ async function procesar() {
     // canceló después de pasar por BO, es una PROGRAMADA que se perdió y debe existir
     // en ventas_detalle como 'cancelada' (si no, la conversión sale inflada y el
     // seguimiento de canceladas no la ve). Se toma del archivo de canceladas.
+    if (cambiosEjecutivo.length) log(`👤 ${cambiosEjecutivo.length} venta(s) con ejecutivo distinto entre backoffice y activación: se acreditan al de la activación (${cambiosEjecutivo.slice(0, 5).map(c => `${c.folio}: ${c.bo} → ${c.act}`).join(' · ')}${cambiosEjecutivo.length > 5 ? ' …' : ''})`, 'warn');
+    state.cambiosEjecutivo = cambiosEjecutivo;
     let canceladasHuerfanas = 0;
     let canceladasReactivadas = 0;
     for (const folio of Object.keys(canPorFolio)) {
