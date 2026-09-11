@@ -7667,6 +7667,16 @@ function renderDetalleAgentesConMes(mesKey) {
   Object.keys(progPorAgente).forEach(e => {
     if (!ejecutivosConMeta.has(e) && progPorAgente[e] > 0) ejecutivosHuerfanos.add(e);
   });
+  // Agentes de PLANTILLA sin meta del mes y sin actividad todavía (ingresos recientes
+  // en rampa): también se listan, con cero, para que el supervisor los vea desde el día 1.
+  (plantillaData || []).forEach(p => {
+    if (!p || !p.nombre || ejecutivosConMeta.has(p.nombre)) return;
+    if (!SUPERVISORES.includes(p.supervisor)) return;
+    const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
+    if (!ing || ing > finMesStr) return;
+    if (p.fecha_baja && String(p.fecha_baja).substring(0, 10) < iniMesStr) return;
+    ejecutivosHuerfanos.add(p.nombre);
+  });
 
   ejecutivosHuerfanos.forEach(eje => {
     // Determinar supervisor del agente. Prioridad:
