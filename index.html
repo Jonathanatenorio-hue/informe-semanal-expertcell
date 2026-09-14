@@ -217,6 +217,7 @@
     <h1>Cargador de Informe Semanal</h1>
     <div class="subtitle">ExpertCell · Distribuidor Autorizado AT&T · Actualización semanal del reporte</div>
     <div id="sesion-info" style="margin-top:8px; font-size:12px; font-weight:700; color:#0077A8;"></div>
+    <label id="lbl-reparar" style="display:none; margin-top:6px; font-size:12px; color:#991B1B; font-weight:700;"><input type="checkbox" id="chk-reparar"> Reparar fechas de esta carga: las fechas de back office del archivo sustituyen a las guardadas (usar una sola vez, después de una carga con fechas corridas)</label>
   </div>
 
   <!-- PASO 1: Cargar Excels -->
@@ -379,6 +380,7 @@ async function _accesoIntentar() {
   const nombre = rol === 'director' ? 'Dirección' : rol.startsWith('coord:') ? rol.slice(6) : `Centro ${rol}`;
   window.__acceso = { rol, nombre, esDirector: rol === 'director' };
   document.getElementById('acceso-overlay').style.display = 'none';
+  if (rol === 'director') document.getElementById('lbl-reparar').style.display = 'block';
   const enV = _enVentanaCarga();
   document.getElementById('sesion-info').innerHTML = rol === 'director'
     ? `Sesión: ${nombre} (director)`
@@ -616,13 +618,26 @@ function normalizarFecha(val) {
   // Usamos getDate/getMonth/getFullYear LOCALES para preservar la fecha que el
   // ejecutivo registró realmente.
   if (typeof val === 'string') {
-    const d = new Date(val);
-    if (!isNaN(d.getTime()) && d.getFullYear() !== 1900) {
-      const y = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      return `${y}-${mm}-${dd}`;
+    const s = val.trim();
+    // ISO "YYYY-MM-DD" o "YYYY-MM-DD HH:MM:SS" (con espacio o 'T'): se toma la fecha tal cual está
+    // escrita. NUNCA new Date(): el navegador lee "2026-08-01" como UTC y lo corre al día anterior.
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)?/);
+    if (m) { if (parseInt(m[1], 10) < 2000) return null; return `${m[1]}-${m[2]}-${m[3]}`; }
+    // Regional "DD/MM/YYYY" o "DD/MM/YYYY HH:MM" (siempre día/mes/año)
+    m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T]\d{1,2}:\d{2}(?::\d{2})?)?$/);
+    if (m) { if (parseInt(m[3], 10) < 2000) return null; return `${m[3]}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`; }
+    // Serial de Excel escrito como texto ("46276")
+    if (/^\d{5}(\.\d+)?$/.test(s)) return normalizarFecha(parseFloat(s));
+    const d = new Date(s);
+    if (!isNaN(d.getTime()) && d.getFullYear() >= 2000) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }
+  }
+  // Serial de Excel como número (46276 = 2026-09-11)
+  if (typeof val === 'number' && val > 20000 && val < 80000) {
+    const d = new Date(Math.round((val - 25569) * 86400000));
+    if (d.getUTCFullYear() < 2000) return null;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
   }
   return null;
 }
@@ -786,8 +801,8 @@ async function procesar() {
         if (fechaCancVal instanceof Date) {
           dateObj = fechaCancVal;
         } else if (typeof fechaCancVal === 'string') {
-          const tmp = new Date(fechaCancVal);
-          if (!isNaN(tmp.getTime())) dateObj = tmp;
+          const mh = fechaCancVal.match(/[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+          if (mh) { const hh = mh[1].padStart(2, '0'), mm = mh[2], ss = (mh[3] || '00'); if (!(hh === '00' && mm === '00' && ss === '00')) horaCancStr = `${hh}:${mm}:${ss}`; }
         }
         if (dateObj) {
           // Usar getHours/Minutes/Seconds locales (consistente con el fix de fechas)
@@ -837,6 +852,8 @@ async function procesar() {
     // actividad de programación; una reprogramación con el mismo folio no debe mover el
     // folio a otro día (hacía que la matriz de cumplimiento cambiara hacia atrás).
     const boPrevioPorFolio = {};
+    const REPARAR = !!(document.getElementById('chk-reparar') && document.getElementById('chk-reparar').checked);
+    if (REPARAR) log('🔧 MODO REPARACIÓN: las fechas de back office del archivo sustituyen a las guardadas', 'warn');
     try {
       let dB = 0;
       while (true) {
@@ -975,7 +992,7 @@ async function procesar() {
         supervisor: supervisor || null,
         supervisor_act: supervisorAct || null,
         supervisor_can: supervisorCan || null,
-        fecha_bo: (boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < fechaBO) ? boPrevioPorFolio[folio] : fechaBO,
+        fecha_bo: (!REPARAR && boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < fechaBO) ? boPrevioPorFolio[folio] : fechaBO,
         fecha_bo_ultima: fechaBO,
         etapa_entrega: estatusBO ? String(estatusBO).trim() : null,
         fecha_activacion: actInfo ? actInfo.fecha : null,
@@ -1030,7 +1047,7 @@ async function procesar() {
         supervisor: supervisor || null,
         supervisor_act: reactivada ? (resolverSupervisorPorFecha(ejecutivo, actInfo.fecha, asignaciones) || null) : null,
         supervisor_can: reactivada ? null : (resolverSupervisorPorFecha(ejecutivo, c.fecha, asignaciones) || null),
-        fecha_bo: (boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < c.fechaBO) ? boPrevioPorFolio[folio] : c.fechaBO,
+        fecha_bo: (!REPARAR && boPrevioPorFolio[folio] && boPrevioPorFolio[folio] < c.fechaBO) ? boPrevioPorFolio[folio] : c.fechaBO,
         fecha_bo_ultima: c.fechaBO,
         etapa_entrega: r.Estatus ? String(r.Estatus).trim() : 'Canc Error',
         fecha_activacion: reactivada ? actInfo.fecha : null,
