@@ -1095,6 +1095,7 @@ async function procesar() {
       }
       state.abiertosPrevios = abiertos.length;
       state.sinRastro = abiertos.filter(a => { const f = String(a.folio); return !foliosVistos.has(f) && !actPorFolio[f] && !canPorFolio[f]; });
+      state.sinRastro.forEach(a => { const m = /SIN RASTRO EN BO \((\d{4}-\d{2}-\d{2})\)(?: x(\d+))?/.exec(a.etapa_entrega || ''); a.diasSinRastro = m ? (parseInt(m[2] || '1', 10) + 1) : 1; a.desdeSinRastro = m ? m[1] : null; });
 
       // ===== FOLIOS REEMPLAZADOS por AT&T (misma venta, folio nuevo) =====
       // Cuando un folio da problema, AT&T genera otro para la MISMA programación (PT).
@@ -1255,17 +1256,15 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
   const btnC = document.getElementById('btn-cargar');
   if (sr.length) {
     const minBO = sr.map(x => x.fecha_bo).filter(Boolean).sort()[0];
-    const lista = sr.slice(0, 40).map(x => `<tr><td style="padding:2px 8px; font-family:monospace;">${x.folio}</td><td style="padding:2px 8px;">${x.ejecutivo || '—'}</td><td style="padding:2px 8px;">${x.supervisor || '—'}</td><td style="padding:2px 8px;">${x.fecha_bo || '—'}</td><td style="padding:2px 8px;">${x.etapa_entrega || x.estatus}</td></tr>`).join('');
-    alertas = `<div class="alert" style="background:#FEE2E2; border-left:5px solid #DC2626;"><div>🛑</div><div>
-      <strong style="color:#991B1B; font-size:14px;">CARGA BLOQUEADA — ${sr.length} folio(s) abiertos desaparecieron del backoffice sin activación ni cancelación</strong><br>
-      Un folio en tránsito solo puede dejar de venir porque se activó o se canceló. Estos no están en ninguno de los dos archivos, así que <strong>los cuatro archivos no cuadran entre sí</strong>: descargados a distinta hora, un rango recortado${minBO ? ` (el más antiguo tiene back office del <strong>${minBO}</strong>: el backoffice debe descargarse al menos desde esa fecha)` : ''}, o un archivo viejo.<br>
-      <em>Vuelve a descargar los cuatro archivos juntos, con el rango completo, y procesa de nuevo. Si persiste, escálalo a dirección con esta lista.</em>
-      <table style="margin-top:8px; font-size:11.5px; border-collapse:collapse; background:white;"><tr style="background:#F1F5F9;"><th style="padding:3px 8px; text-align:left;">Folio</th><th style="padding:3px 8px; text-align:left;">Ejecutivo</th><th style="padding:3px 8px; text-align:left;">Sup.</th><th style="padding:3px 8px; text-align:left;">Fecha BO</th><th style="padding:3px 8px; text-align:left;">Etapa</th></tr>${lista}</table>${sr.length > 40 ? `<div style="font-size:11px; margin-top:4px;">… y ${sr.length - 40} más.</div>` : ''}
-      ${window.__acceso && window.__acceso.esDirector ? `<label style="display:block; margin-top:10px; font-weight:700; color:#991B1B;"><input type="checkbox" id="chk-forzar"> Soy dirección: forzar la carga de todos modos (los folios de la lista se conservan marcados "SIN RASTRO EN BO", no se borran)</label>` : ''}
+    const viejos = sr.filter(x => (x.diasSinRastro || 0) >= 3);
+    const lista = sr.slice(0, 40).map(x => `<tr><td style="padding:2px 8px; font-family:monospace;">${x.folio}</td><td style="padding:2px 8px;">${x.ejecutivo || '—'}</td><td style="padding:2px 8px;">${x.supervisor || '—'}</td><td style="padding:2px 8px;">${x.fecha_bo || '—'}</td><td style="padding:2px 8px;">${x.etapa_entrega || x.estatus}</td><td style="padding:2px 8px; text-align:center; font-weight:700; color:${(x.diasSinRastro || 0) >= 3 ? '#991B1B' : '#B45309'};">${x.diasSinRastro || 1}</td></tr>`).join('');
+    alertas = `<div class="alert" style="background:${viejos.length ? '#FEE2E2' : '#FFEDD5'}; border-left:5px solid ${viejos.length ? '#DC2626' : '#F97316'};"><div>${viejos.length ? '🛑' : '⚠️'}</div><div>
+      <strong style="color:${viejos.length ? '#991B1B' : '#9A3412'}; font-size:14px;">${sr.length} folio(s) abiertos sin rastro: no vienen en el backoffice y no están activados ni cancelados${viejos.length ? ` — ${viejos.length} llevan 3 cargas o más sin aclararse: ESCALAR A DIRECCIÓN` : ''}</strong><br>
+      La carga NO se bloquea: estos folios se conservan con su estatus, quedan marcados "SIN RASTRO EN BO" y en la bitácora, y se vuelven a revisar en cada carga (si reaparecen, se activan o se cancelan, la marca se quita sola). Causas típicas: AT&T les generó folio nuevo (revisar el aviso de reemplazos), o un archivo descargado a distinta hora o con rango corto${minBO ? ` (el más antiguo tiene back office del <strong>${minBO}</strong>)` : ''}.
+      <table style="margin-top:8px; font-size:11.5px; border-collapse:collapse; background:white;"><tr style="background:#F1F5F9;"><th style="padding:3px 8px; text-align:left;">Folio</th><th style="padding:3px 8px; text-align:left;">Ejecutivo</th><th style="padding:3px 8px; text-align:left;">Sup.</th><th style="padding:3px 8px; text-align:left;">Fecha BO</th><th style="padding:3px 8px; text-align:left;">Etapa</th><th style="padding:3px 8px;">Cargas sin rastro</th></tr>${lista}</table>${sr.length > 40 ? `<div style="font-size:11px; margin-top:4px;">… y ${sr.length - 40} más.</div>` : ''}
     </div></div>` + alertas;
-    if (btnC) { btnC.disabled = true; btnC.textContent = '🛑 Carga bloqueada: los archivos no cuadran'; }
-    setTimeout(() => { const ck = document.getElementById('chk-forzar'); if (ck) ck.addEventListener('change', () => { btnC.disabled = !ck.checked; btnC.textContent = ck.checked ? '⚠️ Cargar FORZADO (dirección)' : '🛑 Carga bloqueada: los archivos no cuadran'; }); }, 0);
-  } else if (btnC) { btnC.disabled = false; btnC.textContent = 'Cargar a Supabase (acumula por folio)'; }
+  }
+  if (btnC) { btnC.disabled = false; btnC.textContent = 'Cargar a Supabase (acumula por folio)'; }
   if (!alertas) {
     alertas = `<div class="alert success"><div>✅</div><div>Todos los registros se resolvieron correctamente.</div></div>`;
   }
@@ -1304,8 +1303,7 @@ function mostrarValidacion(registros, sinSupervisor, ejecSinResolver, canPreBO) 
 async function cargarASupabase() {
   if (!state.registros) return;
   if (!window.__acceso) { alert('Sin sesión. Recarga la página y entra con tu clave.'); return; }
-  const forzado = !!(state.sinRastro && state.sinRastro.length);
-  if (forzado && !window.__acceso.esDirector) { alert('Carga bloqueada: los archivos no cuadran. Escálalo a dirección.'); return; }
+  const forzado = false; // los folios sin rastro ya no bloquean: quedan marcados y en seguimiento
   // Ventana por hora de CARGA, solo para coordinadores. Dirección carga cuando quiera
   // (genera los archivos con la operación cerrada y los sube cuando puede).
   const um = _ultimoMovimiento();
@@ -1384,12 +1382,12 @@ async function cargarASupabase() {
       const sr = state.sinRastro || [];
       if (sr.length) {
         const hoyM = new Date().toISOString().substring(0, 10);
-        for (let i = 0; i < sr.length; i += 200) {
-          const lote = sr.slice(i, i + 200).map(x => x.folio);
-          const { error: eM } = await db.from('ventas_detalle').update({ etapa_entrega: `SIN RASTRO EN BO (${hoyM})` }).in('folio', lote);
+        for (const x of sr) {
+          const desde = x.desdeSinRastro || hoyM;
+          const { error: eM } = await db.from('ventas_detalle').update({ etapa_entrega: `SIN RASTRO EN BO (${desde}) x${x.diasSinRastro || 1}` }).eq('folio', x.folio);
           if (eM) { log('Aviso al marcar sin rastro: ' + eM.message, 'warn'); break; }
         }
-        log(`${sr.length} folios marcados "SIN RASTRO EN BO" para revisión (no se borraron)`, 'warn');
+        log(`${sr.length} folios marcados "SIN RASTRO EN BO" para seguimiento (no se borraron)`, 'warn');
       }
     } catch (e) { log('Aviso: no se pudieron marcar los sin rastro: ' + e.message, 'warn'); }
 
