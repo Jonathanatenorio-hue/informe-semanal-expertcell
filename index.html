@@ -582,6 +582,15 @@ function procesarEntregas(rows) {
       })(),
       costo_guia: num(r['Costo guia']),
       total_guia: num(r['Total Guía']),
+      // Desglose de la guía DHL y fechas (para sanidad de envíos y HUB ideal en el reporte)
+      fecha_bo: normalizarFecha(r['Back Office']),
+      fecha_creacion: normalizarFecha(r['Fecha creacion']),
+      cargo_transporte: num(r['Cargo transporte']),
+      recargo_combustible: num(r['Recargo combustible']),
+      proteccion_envio: num(r['Potección envío'] !== undefined ? r['Potección envío'] : r['Protección envío']),
+      area_remota: num(r['Entrega área remota']),
+      vav_tax: num(r['VAV/TAX']),
+      descuento_guia: num(r['Descuento aplicado']),
       estatus_entrega: txt(r['Estatus']),
       fecha_entregado: fechaEntregado,
       venta_codigo: txt(r['Venta']),
@@ -1455,10 +1464,11 @@ async function cargarASupabase() {
         for (let i = 0; i < totalEnt; i += batchSize) {
           let batch = state.registrosEntregas.slice(i, i + batchSize);
           let { error: e } = await db.from('entregas_detalle').insert(batch);
-          if (e && /programacion/i.test(e.message || '')) {
-            // La columna 'programacion' aún no existe: reintentar sin ella y avisar
-            if (!window.__avisoPT) { log('⚠️ entregas_detalle no tiene la columna "programacion" (PT). Créala con el SQL indicado para detectar folios reemplazados por PT.', 'warn'); window.__avisoPT = true; }
-            batch = batch.map(r => { const c = { ...r }; delete c.programacion; return c; });
+          const NUEVAS = ['programacion', 'fecha_bo', 'fecha_creacion', 'cargo_transporte', 'recargo_combustible', 'proteccion_envio', 'area_remota', 'vav_tax', 'descuento_guia'];
+          if (e && /column|columna|schema cache/i.test(e.message || '')) {
+            // Alguna columna nueva aún no existe en entregas_detalle: reintentar sin las nuevas y avisar
+            if (!window.__avisoCols) { log('⚠️ entregas_detalle no tiene las columnas nuevas de logística (' + (e.message || '') + '). Corre el SQL de index-187; mientras, se carga sin ellas.', 'warn'); window.__avisoCols = true; }
+            batch = batch.map(r => { const c = { ...r }; NUEVAS.forEach(k => delete c[k]); return c; });
             ({ error: e } = await db.from('entregas_detalle').insert(batch));
           }
           if (e) {
