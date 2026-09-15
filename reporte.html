@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   html, body { overflow-x: hidden; }
@@ -606,7 +607,7 @@
   }
   .nav-btn:hover { background: var(--att-navy); color: white; }
   /* Acceso de supervisor: ve logística pero sin descargas de inventario */
-  body.modo-sup button[onclick*="exportarPivoteEquipos"],
+  body.modo-sup button[onclick*="exportarForecastCC2"], body.modo-sup button[onclick*="exportarRequerimientoCC"],
   body.modo-sup #btn-excel-leads { display: none !important; }
   .nav-btn.active { background: var(--att-orange); color: white; }
 
@@ -1182,12 +1183,29 @@
         <div id="logistica-contenido">
           <div style="padding:24px; text-align:center;">
             <button onclick="renderLogistica()" id="btn-cargar-logistica" style="background:var(--att-blue); color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer;">📦 Cargar análisis de logística</button>
-            <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:12px 24px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; margin-left:10px;">📥 Excel equipos + inventario</button>
-            <label id="zona-lista-precios" style="display:inline-flex; align-items:center; gap:8px; margin-left:10px; padding:10px 16px; border:2px dashed #0077A8; border-radius:8px; font-size:12px; color:#0077A8; font-weight:700; cursor:pointer; background:#F0F9FD;">
-              📋 Subir lista de precios (.xlsm)
-              <input type="file" accept=".xlsm,.xlsx" style="display:none;" onchange="procesarListaPrecios(this.files[0]); this.value='';">
-            </label>
-            <span id="lista-precios-info" style="font-size:11px; color:#64748B; margin-left:8px;"></span>
+            <div style="margin-top:14px; padding:14px; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:10px; text-align:left;">
+              <div style="font-weight:800; color:#1F3864; margin-bottom:8px;">📦 Forecast CC · inventarios y requerimiento semanal</div>
+              <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                <button id="btn-forecast-cc" onclick="exportarForecastCC2(this)" style="background:#0F766E; color:white; border:none; padding:10px 18px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📊 Forecast CC (Excel completo, con fórmulas)</button>
+                <span style="display:inline-flex; align-items:center; gap:6px;">
+                  <button id="btn-req-cc" onclick="exportarRequerimientoCC(this)" style="background:#B45309; color:white; border:none; padding:10px 18px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📤 Requerimiento semanal (para enviar)</button>
+                  <select id="sel-req-base" style="padding:8px; border-radius:6px; border:1px solid #CBD5E1; font-size:12px;"><option value="META">base META</option><option value="PROYECCION">base PROYECCIÓN</option></select>
+                </span>
+              </div>
+              <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px;">
+                <label style="display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:2px dashed #0F766E; border-radius:8px; font-size:12px; color:#0F766E; font-weight:700; cursor:pointer; background:#ECFDF5;">
+                  🗂️ Subir inventario de series (martes)
+                  <input type="file" accept=".xlsx" style="display:none;" onchange="log2_subirInventarioSeries(this.files[0]); this.value='';">
+                </label>
+                <span id="inv-series-info" style="font-size:11px; color:#64748B;"></span>
+                <label id="zona-lista-precios" style="display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:2px dashed #0077A8; border-radius:8px; font-size:12px; color:#0077A8; font-weight:700; cursor:pointer; background:#F0F9FD;">
+                  📋 Subir lista de precios (.xlsm)
+                  <input type="file" accept=".xlsm,.xlsx" style="display:none;" onchange="procesarListaPrecios(this.files[0]); this.value='';">
+                </label>
+                <span id="lista-precios-info" style="font-size:11px; color:#64748B;"></span>
+              </div>
+              <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">El inventario de series se sube cada martes; la lista de precios solo cuando AT&T la cambie. El Forecast toma el último corte cargado y las ventas/envíos de Supabase.</div>
+            </div>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
           </div>
         </div>
@@ -18470,962 +18488,7 @@ function _estatusDe(mb) {
   return '';
 }
 
-async function procesarListaPrecios(file) {
-  if (!file) return;
-  if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede actualizar la lista.'); return; }
-  const info = document.getElementById('lista-precios-info');
-  const di = t => { if (info) info.textContent = t; };
-  try {
-    di('Leyendo…');
-    const wbP = XLSX.read(await file.arrayBuffer());
-    const MARCAS_EQ = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG'];
-    const PRIO = { 'RESURTIBLE': 3, 'NPI': 2, 'INV. LIMITADO EN CANAL': 1, 'NO RESURTIBLE': 0 };
-    const normP = eq => String(eq).toUpperCase().replace(/\s*GB/g, 'GB').replace(/\s*TB/g, 'TB')
-      .split(/\s+/).filter(t => t && !MARCAS_EQ.includes(t)).join(' ').trim();
-    const mapa = {};
-    wbP.SheetNames.filter(n => /^promo/i.test(n)).forEach(nombre => {
-      const rows = XLSX.utils.sheet_to_json(wbP.Sheets[nombre], { header: 1, defval: null });
-      let hIdx = -1, cE = -1, cQ = -1;
-      for (let r = 0; r < Math.min(12, rows.length); r++) {
-        const vals = (rows[r] || []).map(x => String(x || '').trim().toUpperCase());
-        const iE = vals.indexOf('ESTATUS');
-        if (iE >= 0) { hIdx = r; cE = iE; cQ = vals.indexOf('EQUIPO') >= 0 ? vals.indexOf('EQUIPO') : iE + 3; break; }
-      }
-      if (hIdx < 0) return;
-      for (let r = hIdx + 1; r < rows.length; r++) {
-        const f = rows[r] || [];
-        const e = String(f[cE] || '').trim().toUpperCase();
-        const q = f[cQ];
-        if (!q || !(e in PRIO)) continue;
-        const k = normP(q);
-        if (!k) continue;
-        if (!(k in mapa) || PRIO[e] > PRIO[mapa[k]]) mapa[k] = e;
-      }
-    });
-    const entradas = Object.entries(mapa);
-    if (!entradas.length) { di(''); alert('No encontré hojas de Promociones con columna Estatus. ¿Es la lista correcta?'); return; }
-    di(`Guardando ${entradas.length} modelos…`);
-    const { error: eDel } = await db.from('equipos_estatus').delete().neq('modelo', '');
-    if (eDel) throw eDel;
-    for (let i = 0; i < entradas.length; i += 200) {
-      const lote = entradas.slice(i, i + 200).map(([modelo, estatus]) => ({ modelo, estatus }));
-      const { error } = await db.from('equipos_estatus').insert(lote);
-      if (error) throw error;
-    }
-    window.__estatusDB = Object.fromEntries(entradas);
-    const resumen = {};
-    entradas.forEach(([, e]) => { resumen[e] = (resumen[e] || 0) + 1; });
-    di(`✅ ${entradas.length} modelos · ${new Date().toLocaleDateString('es-MX')}`);
-    alert('Lista de precios actualizada:\n' + Object.entries(resumen).map(([e, n]) => `${e}: ${n}`).join('\n') + '\n\nLos próximos Excel de equipos usarán este catálogo.');
-  } catch (e) {
-    console.error('[ListaPrecios]', e);
-    di('');
-    alert('Error al procesar (¿corriste el SQL de equipos_estatus?): ' + (e.message || e));
-  }
-}
-
-async function exportarPivoteEquipos() {
-  if (String(window.__accesoModo || '').startsWith('sup:')) {
-    alert('La descarga de inventarios es exclusiva de dirección y coordinación.');
-    return;
-  }
-  try {
-    await _cargarEntregasData().catch(() => null);
-    const { data: inv } = await db.from('inventario_actual').select('*');
-    const inventario = inv || [];
-    const filasLog = _construirDatosLogistica(_entregasCache || []);
-    if (!filasLog.length) { alert('Sin ventas activadas cargadas.'); return; }
-
-    const hoyF = new Date();
-    const anioAct = hoyF.getFullYear();
-    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const mesesConVenta = filasLog
-      .filter(f => String(f.fecha_activacion).startsWith(String(anioAct)))
-      .map(f => parseInt(String(f.fecha_activacion).substring(5, 7)));
-    if (!mesesConVenta.length) { alert('Sin ventas del año en curso.'); return; }
-    const mesMax = Math.max(...mesesConVenta);
-    const mesComp = Math.min(mesMax, hoyF.getMonth());
-    if (mesComp < 1) { alert('Aún no hay meses completos para promediar.'); return; }
-    const c3ini = Math.max(1, mesComp - 2), c6ini = Math.max(1, mesComp - 5);
-
-    // Días hábiles del calendario operativo (calendario_dias: factor_dia por fecha, el mismo
-    // que usa todo el reporte). Solo si un mes no está en el calendario, se aproxima L-V.
-    const diasHabilesMes = (a, m) => {
-      const key = `${a}-${String(m).padStart(2, '0')}`;
-      let d = 0, n = 0;
-      (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === key) { d += parseFloat(x.factor_dia || 0); n++; } });
-      if (n > 0) return d;
-      const finM = new Date(a, m, 0).getDate();
-      for (let i = 1; i <= finM; i++) { const dw = new Date(a, m - 1, i).getDay(); d += (dw === 0 || dw === 6) ? 0 : 1; }
-      return d;
-    };
-    // Mes a proyectar: en la primera quincena, el MES EN CURSO (recién arrancado);
-    // del 16 en adelante, el mes siguiente (compra anticipada).
-    let mesSig, anioSig;
-    if (hoyF.getDate() <= 15) {
-      mesSig = hoyF.getMonth() + 1;
-      anioSig = anioAct;
-    } else {
-      mesSig = hoyF.getMonth() + 2 > 12 ? 1 : hoyF.getMonth() + 2;
-      anioSig = mesSig === 1 ? anioAct + 1 : anioAct;
-    }
-    const dhSig = diasHabilesMes(anioSig, mesSig);
-
-    // ===== META por mes (suma de metas_agente): la proyección parte de la META, no del ritmo =====
-    const metaMesTotal = {};
-    (metasAgeData || []).forEach(m => { if (m.anio === anioAct) metaMesTotal[m.mes] = (metaMesTotal[m.mes] || 0) + (Number(m.meta_activadas) || 0); });
-    let ultimaMeta = 0; for (let m = 1; m <= 12; m++) if (metaMesTotal[m] > 0) ultimaMeta = metaMesTotal[m];
-    const metaSig = (anioSig === anioAct && metaMesTotal[mesSig] > 0) ? metaMesTotal[mesSig] : ultimaMeta;
-    const metaSigEsReal = anioSig === anioAct && metaMesTotal[mesSig] > 0;
-    const mesesRestS1 = []; // (la demanda de meses restantes vive en la hoja "Proy resto")
-
-    // Agentes activos que TENÍAMOS cada mes (al último día del mes)
-    const agentesDelMes = [];
-    for (let m = 1; m <= mesMax; m++) {
-      const finMesStr = `${anioAct}-${String(m).padStart(2, '0')}-${String(new Date(anioAct, m, 0).getDate()).padStart(2, '0')}`;
-      const n = (plantillaData || []).filter(p => {
-        if (!p || !p.nombre) return false;
-        const ing = p.fecha_ingreso ? String(p.fecha_ingreso).substring(0, 10) : null;
-        const baja = p.fecha_baja ? String(p.fecha_baja).substring(0, 10) : null;
-        return (!ing || ing <= finMesStr) && (!baja || baja > finMesStr);
-      }).length;
-      agentesDelMes.push(n || 1);
-    }
-
-    const porEquipo = {};
-    filasLog.forEach(f => {
-      if (!String(f.fecha_activacion).startsWith(String(anioAct))) return;
-      const m = parseInt(String(f.fecha_activacion).substring(5, 7));
-      const key = f.equipo || 'SIM';
-      if (!porEquipo[key]) porEquipo[key] = { marca: f.marca || '—', meses: Array(12).fill(0) };
-      porEquipo[key].meses[m - 1]++;
-    });
-
-    const invPorNorm = {};
-    inventario.forEach(i => {
-      const k = _normEquipo(i.nombre);
-      if (!invPorNorm[k]) invPorNorm[k] = { total: 0, filas: [] };
-      invPorNorm[k].total += Number(i.existencia) || 0;
-      invPorNorm[k].filas.push(i);
-    });
-    const invUsado = new Set();
-    const buscarInv = eqNorm => {
-      if (invPorNorm[eqNorm]) { invUsado.add(eqNorm); return invPorNorm[eqNorm].total; }
-      const toks = eqNorm.split(' ').filter(t => t.length > 1);
-      if (!toks.length) return null;
-      for (const k of Object.keys(invPorNorm)) {
-        if (toks.every(t => k.includes(t))) { invUsado.add(k); return invPorNorm[k].total; }
-      }
-      return null;
-    };
-
-    const modelos = Object.entries(porEquipo).map(([equipo, d]) => ({
-      equipo, marca: d.marca, meses: d.meses.slice(0, mesMax),
-      invT: equipo === 'SIM' ? null : buscarInv(_normEquipo(equipo))
-    })).map(mo => {
-      let s = 0, n = 0;
-      for (let m = c3ini; m <= mesComp; m++) { s += (mo.meses[m - 1] || 0) / diasHabilesMes(anioAct, m) / (agentesDelMes[m - 1] || 1); n++; }
-      mo.proyV = (n ? s / n : 0) * 145 * dhSig;
-      return mo;
-    }).sort((a, b) => b.proyV - a.proyV || (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
-
-    // ===== Layout espejo del ejercicio del director =====
-    // Marca | Modelo | meses | Total | % de cada mes | Proy. sig | Pedido proy |
-    // Inventario | Cobertura | Días | Prom3 | Prom6 | Media | Mejor | Pico | Multi | Tendencia | Pedido | Pedido promo
-    const col = i => XLSX.utils.encode_col(i);
-    const nMes = mesMax;
-    const iMesIni = 2;
-    const letra = mIdx => col(iMesIni + mIdx);
-    let ci = iMesIni + nMes;
-    const cTot = ci; ci++;
-    const iPctIni = ci; ci += nMes;                          // % por mes (una col por mes)
-    const cRitmo = ci++, cShare = ci++, cProy = ci++, cPedProy = ci++;
-    const cInv = ci++, cInvCC = ci++, cCob = ci++, cDias = ci++, cP3 = ci++, cP6 = ci++, cMed = ci++,
-      cMejor = ci++, cPico = ci++, cMulti = ci++, cTend = ci++, cPed = ci++, cPromo = ci++;
-    const iRestIni = ci; ci += mesesRestS1.length;
-    const nCols = ci;
-    const letraRest = k => col(iRestIni + k);
-    const letraPct = mIdx => col(iPctIni + mIdx);
-    const L3i = letra(c3ini - 1), L3f = letra(mesComp - 1);
-    const L6i = letra(c6ini - 1);
-    const LcompIni = letra(0), LcompFin = letra(mesComp - 1);
-
-    const FILA_DIAS = 3, FILA_AGE = 4, FILA_HDR = 5;         // filas Excel 1-based
-    const filaIni = FILA_HDR + 1;
-    const filaTotal = filaIni + modelos.length + 1; // +1: fila en blanco antes del TOTAL (ordenar sin arrastrarlo)
-    const F = (v, f, z) => { const c = { t: 'n', v: (v == null || isNaN(v) || !isFinite(v)) ? 0 : v, f }; if (z) c.z = z; return c; };
-
-    // Celdas de parámetros (a la derecha de los días/agentes, en la zona de %)
-    const cParamLbl1 = letraPct(0), cParamVal1 = letraPct(1);   // Días háb. mes proyectado
-    const cParamLbl2 = letraPct(2), cParamVal2 = letraPct(3);   // Agentes proyectados
-    const PV_DIAS = `$${cParamVal1}$${FILA_DIAS}`;
-    const PV_META = `$${cParamVal2}$${FILA_DIAS}`;   // Meta del mes proyectado (editable)
-    const PV_CC = `$${letraPct(5)}$${FILA_DIAS}`;
-    const PCT_CC = 0.20;
-    const MEZ_TOT = `SUM(${L3i}$${filaTotal}:${L3f}$${filaTotal})`;
-
-    const H = ['Marca', 'Modelo / Equipo', ...MESES_L.slice(0, nMes), 'Total',
-      ...MESES_L.slice(0, nMes).map(m => `% ${m}`),
-      'Ritmo 3m (unid / agente·día)', `Mezcla 3m (% del total ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, `Proy. ${MESES_L[mesSig - 1]} = mezcla × meta (unid)`, `Pedido proy. ${MESES_L[mesSig - 1]}`,
-      'Inventario HUB', 'Inv. CC efectivo (× % CC)', 'Cobertura CC (meses)', 'Días cobertura CC',
-      `Prom 3m (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]})`, 'Prom 6m', 'Media (meses completos)',
-      'Mejor mes', 'Pico', 'Multiplicador pico', 'Tendencia %',
-      'Pedido sugerido (1.3×prom3 − inv CC)', 'Pedido promo ((prom3 × mult × 1.2) − inv CC)',
-      ...mesesRestS1.map(x => '')];
-
-    // Fila 3: días hábiles por mes + parámetros · Fila 4: agentes de cada mes
-    const filaDias = ['Días hábiles', ''];
-    for (let m = 1; m <= nMes; m++) filaDias[iMesIni + m - 1] = diasHabilesMes(anioAct, m);
-    filaDias[cTot] = '';
-    filaDias[iPctIni] = `Días háb. ${MESES_L[mesSig - 1]}:`;
-    filaDias[iPctIni + 1] = dhSig;
-    filaDias[iPctIni + 2] = `Meta ${MESES_L[mesSig - 1]} (activadas)${metaSigEsReal ? '' : ' ESTIMADA'}:`;
-    filaDias[iPctIni + 3] = metaSig;
-    mesesRestS1.forEach((x, k) => { filaDias[iRestIni + k] = x.meta; });
-    filaDias[iPctIni + 4] = '% inv. asignado a CC:';
-    filaDias[iPctIni + 5] = { t: 'n', v: 0.20, z: '0%' };
-    const filaAge = ['Agentes del mes', ''];
-    for (let m = 0; m < nMes; m++) filaAge[iMesIni + m] = agentesDelMes[m];
-    for (let k = 0; k < nCols; k++) { if (filaDias[k] === undefined) filaDias[k] = ''; if (filaAge[k] === undefined) filaAge[k] = ''; }
-
-    const aoa = [
-      ['EQUIPOS E INVENTARIO — DEMANDA, STOCK Y PROYECCIÓN'],
-      [`Ventas activadas ${anioAct} por modelo · Proyección = mezcla de modelos de los últimos 3 meses completos × META de activadas del mes (fila 3, amarillo, editable) · La columna de ritmo queda solo como referencia · Los meses restantes del año están en la hoja "Proy resto"`],
-      filaDias,
-      filaAge,
-      H];
-
-    modelos.forEach((mo, idx) => {
-      const r = filaIni + idx;
-      const inv2 = mo.invT;
-      const sum3 = mo.meses.slice(c3ini - 1, mesComp).reduce((a, b) => a + b, 0);
-      const p3v = sum3 / Math.max(1, mesComp - c3ini + 1);
-      const p6v = mo.meses.slice(c6ini - 1, mesComp).reduce((a, b) => a + b, 0) / Math.max(1, mesComp - c6ini + 1);
-      const compl = mo.meses.slice(0, mesComp);
-      const medv = compl.reduce((a, b) => a + b, 0) / Math.max(1, compl.length);
-      const picov = Math.max(...compl, 0);
-      const multiv = medv > 0 ? picov / medv : 0;
-
-      const fila = [mo.marca, mo.equipo, ...mo.meses];
-      fila[cTot] = F(mo.meses.reduce((a, b) => a + b, 0), `SUM(${letra(0)}${r}:${letra(nMes - 1)}${r})`);
-      // % de cada mes = venta del modelo ÷ total del mes (fila TOTAL)
-      for (let m = 0; m < nMes; m++) {
-        fila[iPctIni + m] = F(0, `IF(${letra(m)}$${filaTotal}>0,${letra(m)}${r}/${letra(m)}$${filaTotal},0)`, '0.00%');
-      }
-      // Proyección con TUS datos: ritmo por agente·día háb. (3 meses completos) × agentes proy. × días del mes
-      const ritmos = [];
-      for (let m = c3ini; m <= mesComp; m++) {
-        ritmos.push(`${letra(m - 1)}${r}/${letra(m - 1)}$${FILA_DIAS}/${letra(m - 1)}$${FILA_AGE}`);
-      }
-      fila[cRitmo] = F(0, `AVERAGE(${ritmos.join(',')})`, '0.0000');
-      fila[cShare] = F(0, `IF(${MEZ_TOT}>0,SUM(${L3i}${r}:${L3f}${r})/${MEZ_TOT},0)`, '0.00%');
-      fila[cProy] = F(0, `ROUND(${col(cShare)}${r}*${PV_META},0)`);
-      mesesRestS1.forEach((x, k) => { fila[iRestIni + k] = F(0, `ROUND(${col(cShare)}${r}*${letraRest(k)}$${FILA_DIAS},0)`); });
-      fila[cPedProy] = inv2 == null
-        ? F(0, `${col(cProy)}${r}`)
-        : F(0, `MAX(0,${col(cProy)}${r}-${col(cInvCC)}${r})`);
-      fila[cInv] = inv2 == null ? '' : inv2;
-      const invCC = inv2 == null ? null : inv2 * PCT_CC;
-      fila[cInvCC] = inv2 == null ? '' : F(Math.round(invCC), `ROUND(${col(cInv)}${r}*${PV_CC},0)`);
-      fila[cCob] = inv2 == null ? '' : F(p3v > 0 ? invCC / p3v : 0, `IF(${col(cP3)}${r}>0,${col(cInvCC)}${r}/${col(cP3)}${r},0)`, '0.00');
-      fila[cDias] = inv2 == null ? '' : F(p3v > 0 ? Math.round(invCC / p3v * 30) : 0, `ROUND(${col(cCob)}${r}*30,0)`);
-      fila[cP3] = F(p3v, `AVERAGE(${L3i}${r}:${L3f}${r})`, '0.0');
-      fila[cP6] = F(p6v, `AVERAGE(${L6i}${r}:${L3f}${r})`, '0.0');
-      fila[cMed] = F(medv, `AVERAGE(${LcompIni}${r}:${LcompFin}${r})`, '0.0');
-      fila[cMejor] = MESES_L[compl.indexOf(picov)] || '—';
-      fila[cPico] = F(picov, `MAX(${LcompIni}${r}:${LcompFin}${r})`);
-      fila[cMulti] = F(multiv, `IF(${col(cMed)}${r}>0,${col(cPico)}${r}/${col(cMed)}${r},0)`, '0.00');
-      fila[cTend] = F(p3v > 0 ? (mo.meses[mesComp - 1] || 0) / p3v - 1 : 0, `IF(${col(cP3)}${r}>0,${L3f}${r}/${col(cP3)}${r}-1,0)`, '0.0%');
-      fila[cPed] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * 1.3 - invCC)), `MAX(0,ROUND(${col(cP3)}${r}*1.3-${col(cInvCC)}${r},0))`);
-      fila[cPromo] = inv2 == null ? '' : F(Math.max(0, Math.ceil(p3v * multiv * 1.2 - invCC)), `MAX(0,ROUND(${col(cP3)}${r}*${col(cMulti)}${r}*1.2-${col(cInvCC)}${r},0))`);
-      for (let k = 0; k < nCols; k++) if (fila[k] === undefined) fila[k] = '';
-      aoa.push(fila);
-    });
-
-    aoa.push(Array(nCols).fill(''));
-    const tRow = ['TOTAL', ''];
-    for (let m = 0; m < nMes; m++) tRow[iMesIni + m] = F(0, `SUM(${letra(m)}${filaIni}:${letra(m)}${filaTotal - 1})`);
-    tRow[cTot] = F(0, `SUM(${col(cTot)}${filaIni}:${col(cTot)}${filaTotal - 1})`);
-    tRow[cProy] = F(0, `SUM(${col(cProy)}${filaIni}:${col(cProy)}${filaTotal - 1})`);
-    tRow[cShare] = F(0, `SUM(${col(cShare)}${filaIni}:${col(cShare)}${filaTotal - 1})`, '0.00%');
-    mesesRestS1.forEach((x, k) => { tRow[iRestIni + k] = F(0, `SUM(${letraRest(k)}${filaIni}:${letraRest(k)}${filaTotal - 1})`); });
-    tRow[cPedProy] = F(0, `SUM(${col(cPedProy)}${filaIni}:${col(cPedProy)}${filaTotal - 1})`);
-    tRow[cInv] = F(0, `SUM(${col(cInv)}${filaIni}:${col(cInv)}${filaTotal - 1})`);
-    tRow[cInvCC] = F(0, `SUM(${col(cInvCC)}${filaIni}:${col(cInvCC)}${filaTotal - 1})`);
-    for (let k = 0; k < nCols; k++) if (tRow[k] === undefined) tRow[k] = '';
-    aoa.push(tRow);
-
-    const ws1 = XLSX.utils.aoa_to_sheet(aoa);
-    ws1['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(nMes).fill({ wch: 6 }), { wch: 7 },
-      ...Array(nMes).fill({ wch: 8 }), { wch: 13 }, { wch: 13 }, { wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 },
-      { wch: 13 }, { wch: 8 }, { wch: 13 }, { wch: 9 }, { wch: 6 }, { wch: 15 }, { wch: 11 }, { wch: 26 }, { wch: 26 }, ...mesesRestS1.map(() => ({ wch: 14 }))];
-
-    (() => {
-      const NAVY = '1F3864', GRIS = '595959', CRIT = 'F8CBAD', OKF = 'E2EFDA', PARAM = 'FFF2CC', PROY = 'E8E0F5';
-      const rango = XLSX.utils.decode_range(ws1['!ref']);
-      const celda = (r, c) => ws1[XLSX.utils.encode_cell({ r, c })];
-      if (celda(0, 0)) celda(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
-      if (celda(1, 0)) celda(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: GRIS } } };
-      for (const rr of [FILA_DIAS - 1, FILA_AGE - 1]) {
-        for (let c = 0; c < nCols; c++) {
-          const x = celda(rr, c);
-          if (!x || x.v === '') continue;
-          x.s = (typeof x.v === 'number')
-            ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 9 }, alignment: { horizontal: 'center' } }
-            : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } };
-        }
-      }
-      for (let c = 0; c < nCols; c++) {
-        const h = celda(FILA_HDR - 1, c);
-        if (!h) continue;
-        const hFill = (c >= iPctIni && c < iPctIni + nMes) ? '0077A8'
-          : (c === cRitmo || c === cShare || c === cProy || c === cPedProy || c >= iRestIni) ? '5B3A8E' : NAVY;
-        h.s = { fill: { fgColor: { rgb: hFill } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } };
-      }
-      for (let r = FILA_HDR; r <= rango.e.r; r++) {
-        const esTotal = r === rango.e.r;
-        for (let c = 0; c < nCols; c++) {
-          const x = celda(r, c);
-          if (!x) continue;
-          const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
-          if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
-          else if (c >= iPctIni && c < iPctIni + nMes) s.fill = { fgColor: { rgb: 'EAF4FA' } };
-          else if (c === cCob && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 1 ? CRIT : OKF } };
-          else if (c === cDias && x.f) s.fill = { fgColor: { rgb: (x.v || 0) < 30 ? CRIT : OKF } };
-          else if (c === cPed && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'C00000' }; }
-          else if (c === cPromo && typeof x.v === 'number' && x.v > 0) { s.font.bold = true; s.font.color = { rgb: 'BF5B00' }; }
-          else if (c === cRitmo || c === cProy || c === cPedProy) { s.fill = { fgColor: { rgb: PROY } }; if (c === cPedProy) s.font.bold = true; }
-          x.s = s;
-        }
-      }
-      ws1['!freeze'] = { xSplit: 2, ySplit: FILA_HDR };
-      ws1['!autofilter'] = { ref: `A${FILA_HDR}:${col(nCols - 1)}${filaTotal - 2}` };
-    })();
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws1, 'Pivote equipos');
-
-    // ===== Hoja: VISTA SEMANAL (últimas 10 semanas, lunes a domingo) =====
-    const lunesDe = f => { const d = new Date(f + 'T12:00:00'); const dw = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dw); return d; };
-    const fmtD = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const lunActual = lunesDe(fmtD(hoyF));
-    const semanas = [];
-    for (let k = 9; k >= 0; k--) {
-      const d = new Date(lunActual); d.setDate(d.getDate() - k * 7);
-      semanas.push({ ini: fmtD(d), lbl: `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}` });
-    }
-    const idxSem = f => {
-      const l = fmtD(lunesDe(f));
-      return semanas.findIndex(s => s.ini === l);
-    };
-    const porEquipoSem = {};
-    filasLog.forEach(f => {
-      if (!f.fecha_activacion) return;
-      const i = idxSem(String(f.fecha_activacion).substring(0, 10));
-      if (i < 0) return;
-      const key = f.equipo || 'SIM';
-      if (!porEquipoSem[key]) porEquipoSem[key] = { marca: f.marca || '—', sem: Array(10).fill(0) };
-      porEquipoSem[key].sem[i]++;
-    });
-    const modSem = Object.entries(porEquipoSem).map(([e, d]) => ({ equipo: e, marca: d.marca, sem: d.sem }))
-      .sort((a, b) => (a.marca + a.equipo).localeCompare(b.marca + b.equipo));
-    const colS = i => XLSX.utils.encode_col(2 + i);
-    const cSTot = 12, cSProm = 13, cSTend = 14;
-    const filaTotS = 4 + modSem.length + 1;
-    const aoaS = [
-      ['VISTA SEMANAL POR MODELO'],
-      [`Últimas 10 semanas (lunes a domingo) | semana en curso al final, parcial`],
-      [],
-      ['Marca', 'Modelo / Equipo', ...semanas.map(s => `Sem ${s.lbl}`), 'Total 10 sem', 'Prom 4 sem completas', 'Últ. completa vs prom']];
-    modSem.forEach((mo, idx) => {
-      const r = 5 + idx;
-      const fila = [mo.marca, mo.equipo, ...mo.sem];
-      fila[cSTot] = F(mo.sem.reduce((a, b) => a + b, 0), `SUM(C${r}:L${r})`);
-      const ult4 = mo.sem.slice(5, 9);
-      const prom4 = ult4.reduce((a, b) => a + b, 0) / 4;
-      fila[cSProm] = F(prom4, `AVERAGE(H${r}:K${r})`, '0.0');
-      fila[cSTend] = F(prom4 > 0 ? (mo.sem[8] || 0) / prom4 - 1 : 0, `IF(${XLSX.utils.encode_col(cSProm)}${r}>0,K${r}/${XLSX.utils.encode_col(cSProm)}${r}-1,0)`, '0.0%');
-      aoaS.push(fila);
-    });
-    const tS = ['TOTAL', ''];
-    for (let i = 0; i < 10; i++) tS[2 + i] = F(0, `SUM(${colS(i)}5:${colS(i)}${filaTotS - 1})`);
-    tS[cSTot] = F(0, `SUM(M5:M${filaTotS - 1})`);
-    tS[cSProm] = ''; tS[cSTend] = '';
-    aoaS.push(tS);
-    const wsS = XLSX.utils.aoa_to_sheet(aoaS);
-    wsS['!cols'] = [{ wch: 10 }, { wch: 38 }, ...Array(10).fill({ wch: 9 }), { wch: 10 }, { wch: 12 }, { wch: 12 }];
-    (() => {
-      const NAVY = '1F3864';
-      const rango = XLSX.utils.decode_range(wsS['!ref']);
-      const cel = (r, c) => wsS[XLSX.utils.encode_cell({ r, c })];
-      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
-      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < 15; c++) { const h = cel(3, c); if (h) h.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-      for (let r = 4; r <= rango.e.r; r++) {
-        const esT = r === rango.e.r;
-        for (let c = 0; c < 15; c++) {
-          const x = cel(r, c);
-          if (!x) continue;
-          x.s = { font: { name: 'Calibri', sz: 10, bold: esT || c === 0 } };
-          if (esT) x.s.fill = { fgColor: { rgb: 'DDEBF7' } };
-        }
-      }
-      wsS['!freeze'] = { xSplit: 2, ySplit: 4 };
-    })();
-    XLSX.utils.book_append_sheet(wb, wsS, 'Vista semanal');
-
-    const aoa2 = [['Nombre', 'Almacén', 'Existencia', 'Categoría', 'Corte']];
-    inventario.sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)))
-      .forEach(i => aoa2.push([i.nombre, i.almacen, Number(i.existencia) || 0, i.categoria, i.fecha_corte]));
-    const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
-    ws2['!cols'] = [{ wch: 42 }, { wch: 30 }, { wch: 10 }, { wch: 12 }, { wch: 11 }];
-    XLSX.utils.book_append_sheet(wb, ws2, 'Inventario por almacen');
-
-    const aoa3 = [['Nombre en inventario', 'Existencia total', 'Nota']];
-    Object.entries(invPorNorm).forEach(([k, v]) => {
-      if (!invUsado.has(k)) aoa3.push([v.filas[0].nombre, v.total, 'Sin venta cruzada este año (o nombre distinto al del backoffice)']);
-    });
-    const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
-    ws3['!cols'] = [{ wch: 42 }, { wch: 14 }, { wch: 50 }];
-    XLSX.utils.book_append_sheet(wb, ws3, 'Inventario sin cruzar');
-
-    // ===== Hoja DATOS: renglón por venta activada (motor del dashboard) =====
-    const entMapD = {};
-    (_entregasCache || []).forEach(e => { if (e && e.folio) entMapD[String(e.folio)] = e; });
-    const lunesDeD = f => { const d = new Date(f + 'T12:00:00'); const dw = (d.getDay() + 6) % 7; d.setDate(d.getDate() - dw); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-    const aoaD = [['Fecha', 'Mes', 'Semana (lunes)', 'Marca', 'Equipo', 'Plan', 'Region', 'Entrega', 'Centro']];
-    (ventasData || []).forEach(r => {
-      if (r.estatus !== 'activada' || !r.fecha_activacion) return;
-      const f = String(r.fecha_activacion).substring(0, 10);
-      if (!f.startsWith(String(anioAct))) return;
-      const det = entMapD[String(r.folio)];
-      aoaD.push([f, parseInt(f.substring(5, 7)), lunesDeD(f),
-        det ? (det.marca || '—') : 'SIM', det ? (det.equipo || '—') : 'SIM',
-        r.plan || '', det ? (det.region || det.plaza || '') : '',
-        (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local',
-        r.centro || '']);
-    });
-    const wsD = XLSX.utils.aoa_to_sheet(aoaD);
-    wsD['!cols'] = [{ wch: 11 }, { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 36 }, { wch: 14 }, { wch: 8 }, { wch: 7 }, { wch: 7 }];
-    XLSX.utils.book_append_sheet(wb, wsD, 'Datos');
-
-    // ===== Hoja DETALLE PROGRAMACION (fuente para tabla dinámica) =====
-    const COLORES_EQ = ['NEGRO','BLACK','BLANCO','WHITE','AZUL','BLUE','NAVY','ROJO','RED','VERDE','GREEN','MORADO','PURPLE','PURPURA','ROSA','PINK','ORO','DORADO','GOLD','PLATA','PLATEADO','SILVER','GRIS','GRAY','GREY','GRAFITO','GRAPHITE','MEDIANOCHE','MIDNIGHT','ESTELAR','STARLIGHT','LAVANDA','LAVENDER','LILA','MENTA','MINT','CREMA','CREAM','BEIGE','CORAL','AMARILLO','YELLOW','NARANJA','ORANGE','VIOLETA','CIAN','TURQUESA','OBSIDIANA','NIEVE','MARFIL','CHAMPAGNE','TITANIO','TITANIUM','NATURAL','DESIERTO','DESERT','ULTRAMARINO','ULTRAMARINE','COSMICO','COSMIC','AURORA','OCEANO','CELESTE','INDIGO','TEAL'];
-    const _modeloBase = eq => {
-      if (!eq || eq === '—' || eq === 'SIM') return eq || '—';
-      let t = String(eq).toUpperCase();
-      COLORES_EQ.forEach(c => { t = t.replace(new RegExp('\\b' + c + '\\b', 'g'), ' '); });
-      return t.replace(/\s+/g, ' ').trim();
-    };
-    const regsDet = [];
-    (ventasData || []).forEach(r => {
-      if (r.estatus !== 'activada' || !r.fecha_activacion) return;
-      const f = String(r.fecha_activacion).substring(0, 10);
-      if (!f.startsWith(String(anioAct))) return;
-      const det = entMapD[String(r.folio)];
-      regsDet.push({
-        folio: r.folio, f, mes: parseInt(f.substring(5, 7)),
-        region: det ? (det.region || det.plaza || 'Sin region') : 'Sin region',
-        centro: r.centro || '', sup: r.supervisor || '',
-        marca: det ? (det.marca || '—') : 'SIM', equipo: det ? (det.equipo || '—') : 'SIM',
-        plan: r.plan || '', ent: (typeof _dhlFolios !== 'undefined' && _dhlFolios.has(r.folio)) ? 'DHL' : 'Local',
-        modeloB: det ? _modeloBase(det.equipo || '—') : 'SIM'
-      });
-    });
-    const aoaDet = [['Folio', 'Fecha', 'Mes', 'Region', 'Centro', 'Supervisor', 'Marca', 'Equipo', 'Plan', 'Entrega', 'Modelo (sin color)']];
-    regsDet.forEach(x => aoaDet.push([x.folio, x.f, x.mes, x.region, x.centro, x.sup, x.marca, x.equipo, x.plan, x.ent, x.modeloB]));
-    const wsDet = XLSX.utils.aoa_to_sheet(aoaDet);
-    wsDet['!cols'] = [{ wch: 12 }, { wch: 11 }, { wch: 5 }, { wch: 9 }, { wch: 7 }, { wch: 26 }, { wch: 10 }, { wch: 34 }, { wch: 14 }, { wch: 7 }, { wch: 30 }];
-    for (let c = 0; c < 11; c++) { const h = wsDet[XLSX.utils.encode_cell({ r: 0, c })]; if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
-    wsDet['!autofilter'] = { ref: `A1:K${aoaDet.length}` };
-    XLSX.utils.book_append_sheet(wb, wsDet, 'Detalle programacion');
-
-    // ===== Hoja PIVOTE ENTREGAS (fórmulas + proyección Sep en morado) =====
-    const DET = "'Detalle programacion'";
-    const CF = (v, f) => ({ t: 'n', v: v == null || isNaN(v) ? 0 : v, f });
-    const nDet = (fn) => regsDet.filter(fn).length;
-    const esc = s => String(s).replace(/"/g, '""');
-    const critMesP = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
-    let dh3P = 0;
-    for (let m = c3ini; m <= mesComp; m++) dh3P += diasHabilesMes(anioAct, m);
-    let agPromP = 0, nAgP = 0;
-    for (let m = c3ini; m <= mesComp; m++) { agPromP += (agentesDelMes[m - 1] || 0); nAgP++; }
-    agPromP = nAgP ? Math.round(agPromP / nAgP) : 1;
-    const ent3m = nDet(x => x.mes >= c3ini && x.mes <= mesComp);
-    const eq3m = nDet(x => x.marca !== 'SIM' && x.mes >= c3ini && x.mes <= mesComp);
-    const proyEntV = (ent3m && dh3P && agPromP) ? Math.round(ent3m / dh3P / agPromP * 145 * dhSig) : 0;
-    const proyEqV = (eq3m && dh3P && agPromP) ? Math.round(eq3m / dh3P / agPromP * 145 * dhSig) : 0;
-    const lblProy = `Proy ${MESES_L[mesSig - 1]}`;
-
-    const aoaP = [];
-    const titulosP = [], hdrRowsP = [], proyRowsP = [];
-    aoaP.push(['ENTREGAS Y PROYECCIÓN POR REGIÓN']);
-    aoaP.push([`Cifras reales con fórmulas sobre "Detalle programacion" · columnas/filas moradas "${lblProy}" = proyección (participación 3 meses completos × proyección total) · parámetros editables abajo`]);
-    aoaP.push(['PARÁMETROS:', 'Entregas 3m', CF(ent3m, `COUNTIFS(${critMesP})`), 'Días háb. 3m', dh3P,
-      'Agentes prom', agPromP, 'Agentes proy.', 145, `Días ${MESES_L[mesSig - 1]}`, dhSig,
-      'PROY. ENTREGAS', CF(proyEntV, 'ROUND(C3/E3/G3*I3*K3,0)'),
-      'Equipos 3m', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMesP})`),
-      'PROY. EQUIPOS', CF(proyEqV, 'ROUND(O3/E3/G3*I3*K3,0)')]);
-    aoaP.push([]);
-    const PENT = '$M$3', PEQ = '$Q$3', BENT = '$C$3', BEQ = '$O$3';
-
-    const regionesP = [...new Set(regsDet.map(x => x.region))].sort();
-    const mesesP = [...new Set(regsDet.map(x => x.mes))].sort((a, b) => a - b);
-
-    // --- T1: Mes × Región + fila proyección ---
-    titulosP.push(aoaP.length);
-    aoaP.push(['1. ENTREGAS POR MES Y REGIÓN']);
-    hdrRowsP.push(aoaP.length);
-    aoaP.push(['Mes', ...regionesP, 'Total']);
-    const f1 = aoaP.length + 1;
-    mesesP.forEach(m => {
-      const rE = aoaP.length + 1;
-      const row = [MESES_L[m - 1]];
-      regionesP.forEach(rg => row.push(CF(nDet(x => x.mes === m && x.region === rg),
-        `COUNTIFS(${DET}!$C:$C,${m},${DET}!$D:$D,"${esc(rg)}")`)));
-      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
-      aoaP.push(row);
-    });
-    const l1 = aoaP.length;
-    proyRowsP.push(aoaP.length);
-    const rowP1 = [lblProy];
-    {
-      const rE = aoaP.length + 1;
-      regionesP.forEach(rg => {
-        const n3 = nDet(x => x.region === rg && x.mes >= c3ini && x.mes <= mesComp);
-        rowP1.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
-          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${critMesP})/${BENT}*${PENT},0)`));
-      });
-      rowP1.push(CF(0, `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
-    }
-    aoaP.push(rowP1);
-    const tR1 = ['TOTAL real'];
-    for (let c = 1; c <= regionesP.length + 1; c++) {
-      const L = XLSX.utils.encode_col(c);
-      tR1.push(CF(0, `SUM(${L}${f1}:${L}${l1})`));
-    }
-    aoaP.push(tR1);
-    aoaP.push([]);
-
-    // --- T2: Región × Centro + columna proyección ---
-    const centrosP = [...new Set(regsDet.map(x => x.centro || ''))].sort();
-    titulosP.push(aoaP.length);
-    aoaP.push(['2. ENTREGAS POR REGIÓN Y CENTRO']);
-    hdrRowsP.push(aoaP.length);
-    aoaP.push(['Región', ...centrosP.map(c => c || '(sin centro)'), 'Total', lblProy]);
-    const f2 = aoaP.length + 1;
-    regionesP.forEach(rg => {
-      const rE = aoaP.length + 1;
-      const row = [rg];
-      centrosP.forEach(ce => row.push(CF(nDet(x => x.region === rg && (x.centro || '') === ce),
-        `COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$E:$E,"${esc(ce)}")`)));
-      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(centrosP.length)}${rE})`));
-      const n3 = nDet(x => x.region === rg && x.mes >= c3ini && x.mes <= mesComp);
-      row.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
-        `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${critMesP})/${BENT}*${PENT},0)`));
-      aoaP.push(row);
-    });
-    const l2 = aoaP.length;
-    const tR2 = ['TOTAL'];
-    for (let c = 1; c <= centrosP.length + 2; c++) {
-      const L = XLSX.utils.encode_col(c);
-      tR2.push(CF(0, `SUM(${L}${f2}:${L}${l2})`));
-    }
-    aoaP.push(tR2);
-    aoaP.push([]);
-
-    // --- T3: por cada REGIÓN (HUB), marcas × meses + proyección ---
-    titulosP.push(aoaP.length);
-    aoaP.push(['3. EQUIPOS POR HUB: MARCA × MES (sin SIM) — con proyección']);
-    const regionesEq = regionesP.filter(rg => nDet(x => x.region === rg && x.marca !== 'SIM') > 0)
-      .sort((a, b) => nDet(x => x.region === b && x.marca !== 'SIM') - nDet(x => x.region === a && x.marca !== 'SIM'));
-    regionesEq.forEach(rg => {
-      titulosP.push(aoaP.length);
-      aoaP.push([`HUB ${rg}`]);
-      hdrRowsP.push(aoaP.length);
-      aoaP.push(['Marca', ...mesesP.map(m => MESES_L[m - 1]), 'Total', lblProy]);
-      const fR = aoaP.length + 1;
-      const marcasRg = Object.entries(regsDet.filter(x => x.region === rg && x.marca !== 'SIM')
-        .reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
-        .sort((a, b) => b[1] - a[1]).slice(0, 6).map(e => e[0]);
-      marcasRg.forEach(mk => {
-        const rE = aoaP.length + 1;
-        const row = [mk];
-        mesesP.forEach(m => row.push(CF(nDet(x => x.region === rg && x.marca === mk && x.mes === m),
-          `COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${DET}!$C:$C,${m})`)));
-        row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(mesesP.length)}${rE})`));
-        const n3 = nDet(x => x.region === rg && x.marca === mk && x.mes >= c3ini && x.mes <= mesComp);
-        row.push(CF(eq3m ? Math.round(n3 / eq3m * proyEqV) : 0,
-          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${critMesP})/${BEQ}*${PEQ},0)`));
-        aoaP.push(row);
-      });
-      const lR = aoaP.length;
-      const tRr = ['TOTAL ' + rg];
-      for (let c = 1; c <= mesesP.length + 2; c++) {
-        const L = XLSX.utils.encode_col(c);
-        tRr.push(CF(0, `SUM(${L}${fR}:${L}${lR})`));
-      }
-      aoaP.push(tRr);
-      aoaP.push([]);
-    });
-
-    // --- T4: Top supervisores × región + proyección ---
-    const supsCnt = {};
-    regsDet.forEach(x => { supsCnt[x.sup] = (supsCnt[x.sup] || 0) + 1; });
-    const supsTop = Object.entries(supsCnt).sort((a, b) => b[1] - a[1]).slice(0, 15).map(e => e[0]);
-    titulosP.push(aoaP.length);
-    aoaP.push(['4. TOP 15 SUPERVISORES POR REGIÓN']);
-    hdrRowsP.push(aoaP.length);
-    aoaP.push(['Supervisor', ...regionesP, 'Total', lblProy]);
-    const f4 = aoaP.length + 1;
-    supsTop.forEach(sp => {
-      const rE = aoaP.length + 1;
-      const row = [sp];
-      regionesP.forEach(rg => row.push(CF(nDet(x => x.sup === sp && x.region === rg),
-        `COUNTIFS(${DET}!$F:$F,"${esc(sp)}",${DET}!$D:$D,"${esc(rg)}")`)));
-      row.push(CF(row.slice(1).reduce((a, x) => a + (x.v || 0), 0), `SUM(B${rE}:${XLSX.utils.encode_col(regionesP.length)}${rE})`));
-      const n3 = nDet(x => x.sup === sp && x.mes >= c3ini && x.mes <= mesComp);
-      row.push(CF(ent3m ? Math.round(n3 / ent3m * proyEntV) : 0,
-        `ROUND(COUNTIFS(${DET}!$F:$F,"${esc(sp)}",${critMesP})/${BENT}*${PENT},0)`));
-      aoaP.push(row);
-    });
-    const l4 = aoaP.length;
-    const tR4 = ['TOTAL'];
-    for (let c = 1; c <= regionesP.length + 2; c++) {
-      const L = XLSX.utils.encode_col(c);
-      tR4.push(CF(0, `SUM(${L}${f4}:${L}${l4})`));
-    }
-    aoaP.push(tR4);
-    aoaP.push([]);
-    aoaP.push(['Celdas moradas = PROYECCIÓN calculada · resto = datos reales. Fórmulas vivas sobre "Detalle programacion"; tabla dinámica libre: Insertar → Tabla dinámica sobre esa hoja.']);
-
-    const wsP = XLSX.utils.aoa_to_sheet(aoaP);
-    const maxColsP = Math.max(regionesP.length + 2, centrosP.length + 3, mesesP.length + 3, 16);
-    wsP['!cols'] = [{ wch: 30 }, ...Array(maxColsP).fill({ wch: 9 })];
-    (() => {
-      const NAVY = '1F3864', PROY = 'E8E0F5', PARAM = 'FFF2CC';
-      const cel = (r, c) => wsP[XLSX.utils.encode_cell({ r, c })];
-      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } };
-      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < 17; c++) {
-        const x = cel(2, c);
-        if (!x) continue;
-        x.s = (typeof x.v === 'number' || x.f)
-          ? { fill: { fgColor: { rgb: PARAM } }, font: { name: 'Calibri', bold: true, sz: 9 } }
-          : { font: { name: 'Calibri', bold: true, sz: 8.5, color: { rgb: NAVY } } };
-      }
-      titulosP.forEach(r => { const x = cel(r, 0); if (x) x.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: NAVY } } }; });
-      hdrRowsP.forEach(r => {
-        for (let c = 0; c < maxColsP; c++) {
-          const x = cel(r, c);
-          if (x && x.v !== '') x.s = { fill: { fgColor: { rgb: NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } };
-        }
-      });
-      const rango = XLSX.utils.decode_range(wsP['!ref']);
-      for (let r = 3; r <= rango.e.r; r++) {
-        const primero = cel(r, 0);
-        const esTotal = primero && typeof primero.v === 'string' && primero.v.startsWith('TOTAL');
-        const esProyFila = proyRowsP.includes(r);
-        for (let c = 0; c < maxColsP; c++) {
-          const x = cel(r, c);
-          if (!x || hdrRowsP.includes(r) || titulosP.includes(r) || r <= 2) continue;
-          const s = { font: { name: 'Calibri', sz: 10, bold: esTotal || c === 0 } };
-          const esProyCelda = x.f && (x.f.includes(PENT.replace(/\$/g, '$')) || x.f.includes(PEQ.replace(/\$/g, '$')) || esProyFila);
-          if (esTotal) s.fill = { fgColor: { rgb: 'DDEBF7' } };
-          if (esProyCelda && !esTotal) { s.fill = { fgColor: { rgb: PROY } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
-          x.s = s;
-        }
-      }
-    })();
-    XLSX.utils.book_append_sheet(wb, wsP, 'Pivote entregas');
-
-    // ===== Hoja FORECAST por REGION x MARCA (fórmulas y parámetros editables) =====
-    const eq3 = regsDet.filter(x => x.marca !== 'SIM' && x.mes >= c3ini && x.mes <= mesComp);
-    const totEq3 = eq3.length;
-    let agProm = 0, nAg = 0;
-    for (let m = c3ini; m <= mesComp; m++) { agProm += (agentesDelMes[m - 1] || 0); nAg++; }
-    agProm = nAg ? Math.round(agProm / nAg) : 1;
-    let dh3F = 0;
-    for (let m = c3ini; m <= mesComp; m++) dh3F += diasHabilesMes(anioAct, m);
-    // PROY. TOTAL de equipos = META de activadas del mes × (equipos ÷ activadas de los 3 meses):
-    // parte de la meta, no del ritmo; descuenta las ventas solo-SIM que no llevan equipo.
-    const critMes = `${DET}!$C:$C,">=${c3ini}",${DET}!$C:$C,"<=${mesComp}"`;
-    const totAct3 = regsDet.filter(x => x.mes >= c3ini && x.mes <= mesComp).length;
-    // Criterio de dirección: proyectar como si TODA la meta se vendiera con equipo.
-    const proyEqTotal = metaSig;
-    const marcasF = Object.entries(eq3.reduce((a, x) => { a[x.marca] = (a[x.marca] || 0) + 1; return a; }, {}))
-      .sort((a, b) => b[1] - a[1]).slice(0, 8).map(e => e[0]);
-    const regionesF = [...new Set(eq3.map(x => x.region))].sort();
-    const aoaF = [
-      [`FORECAST ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS POR REGION Y MARCA`],
-      [`Participación región×marca de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} aplicada a la META del mes. PROY. TOTAL = Meta de activadas (P3, editable${metaSigEsReal ? ', tomada de metas_agente' : ', ESTIMADA con la última meta conocida'}), como si toda la meta se vendiera con equipo. Cada región recibe su participación histórica de la meta.`],
-      ['Equipos 3m:', CF(totEq3, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
-        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'P3'),
-        'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
-      [],
-      ['Region', ...marcasF, 'Otras', 'TOTAL']];
-    const firstF = 6;
-    const colOtrasF = XLSX.utils.encode_col(marcasF.length + 1);
-    const colUltF = XLSX.utils.encode_col(marcasF.length);
-    regionesF.forEach(rg => {
-      const rExcel = aoaF.length + 1;
-      const fila = [rg];
-      marcasF.forEach(mk => {
-        const n = eq3.filter(x => x.region === rg && x.marca === mk).length;
-        fila.push(CF(totEq3 ? Math.round(n / totEq3 * proyEqTotal) : 0,
-          `ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"${esc(mk)}",${critMes})/$B$3*$L$3,0)`));
-      });
-      const nReg = eq3.filter(x => x.region === rg).length;
-      const nOtras = nReg - fila.slice(1).reduce((a, x) => a + 0, 0);
-      const vMarcas = fila.slice(1).reduce((a, x) => a + (x.v || 0), 0);
-      fila.push(CF(totEq3 ? Math.max(0, Math.round(nReg / totEq3 * proyEqTotal) - vMarcas) : 0,
-        `MAX(0,ROUND(COUNTIFS(${DET}!$D:$D,"${esc(rg)}",${DET}!$G:$G,"<>SIM",${critMes})/$B$3*$L$3,0)-SUM(B${rExcel}:${colUltF}${rExcel}))`));
-      fila.push(CF(0, `SUM(B${rExcel}:${colOtrasF}${rExcel})`));
-      aoaF.push(fila);
-    });
-    const lastF = aoaF.length;
-    const tF = ['TOTAL'];
-    for (let c = 1; c <= marcasF.length + 2; c++) {
-      const L = XLSX.utils.encode_col(c);
-      tF.push(CF(0, `SUM(${L}${firstF}:${L}${lastF})`));
-    }
-    aoaF.push(tF);
-    const idxTotMat = aoaF.length - 1;
-
-    // --- FORECAST POR MODELO (colores agrupados) ---
-    aoaF.push([]);
-    const idxTitMod = aoaF.length;
-    aoaF.push([`FORECAST POR MODELO — unidades a considerar para ${MESES_L[mesSig - 1]} (colores agrupados)`]);
-    const idxHdrMod = aoaF.length;
-    aoaF.push(['Marca', 'Modelo (sin color)', 'Estatus lista de precios', 'Ventas 3m', 'Part. %', `Proy ${MESES_L[mesSig - 1]}`, 'Proy AJUSTADA (× factor)']);
-    const modCnt = {};
-    eq3.forEach(x => { const k = x.modeloB || x.equipo; if (!modCnt[k]) modCnt[k] = { n: 0, marca: x.marca }; modCnt[k].n++; });
-    const modelosF2 = Object.entries(modCnt).sort((a, b) => b[1].n - a[1].n);
-    const firstMod = aoaF.length + 1;
-    modelosF2.forEach(([mk, d]) => {
-      const rE = aoaF.length + 1;
-      const pv = eq3m ? Math.round(d.n / eq3m * proyEqTotal) : 0;
-      aoaF.push([d.marca, mk, _estatusDe(mk) || 'SIN LISTA',
-        CF(d.n, `COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})`),
-        { t: 'n', v: eq3m ? d.n / eq3m : 0, f: `D${rE}/$B$3`, z: '0.0%' },
-        CF(pv, `ROUND(E${rE}*$L$3,0)`),
-        CF(Math.round(pv * 1.1), `ROUND(F${rE}*$N$3,0)`)]);
-    });
-    const lastMod = aoaF.length;
-    aoaF.push(['TOTAL', '', '', CF(0, `SUM(D${firstMod}:D${lastMod})`), '',
-      CF(0, `SUM(F${firstMod}:F${lastMod})`), CF(0, `SUM(G${firstMod}:G${lastMod})`)]);
-    const idxTotMod = aoaF.length - 1;
-    const wsF = XLSX.utils.aoa_to_sheet(aoaF);
-    wsF['!cols'] = [{ wch: 13 }, { wch: 27 }, { wch: 20 }, ...Array(Math.max(marcasF.length + 1, 5)).fill({ wch: 11 })];
-    (() => {
-      const cel = (r, c) => wsF[XLSX.utils.encode_cell({ r, c })];
-      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
-      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < 14; c++) {
-        const x = cel(2, c);
-        if (!x) continue;
-        x.s = (typeof x.v === 'number' || x.f)
-          ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } }
-          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
-      }
-      for (let c = 0; c < marcasF.length + 3; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } } }; }
-      for (let c = 0; c < marcasF.length + 3; c++) { const x = cel(idxTotMat, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
-      const t = cel(idxTitMod, 0);
-      if (t) t.s = { font: { name: 'Calibri', bold: true, sz: 12, color: { rgb: '1F3864' } } };
-      for (let c = 0; c < 7; c++) { const h = cel(idxHdrMod, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-      const EST_COLOR = { 'RESURTIBLE': '16A34A', 'NO RESURTIBLE': 'C00000', 'INV. LIMITADO EN CANAL': 'D97706', 'NPI': '0077A8', 'SIN LISTA': '94A3B8' };
-      for (let r = idxHdrMod + 1; r < idxTotMod; r++) {
-        for (let c = 0; c < 7; c++) {
-          const x = cel(r, c);
-          if (!x) continue;
-          const s = { font: { name: 'Calibri', sz: 10, bold: c === 0 } };
-          if (c === 2 && EST_COLOR[x.v]) { s.font.bold = true; s.font.color = { rgb: EST_COLOR[x.v] }; }
-          if (c === 5) { s.fill = { fgColor: { rgb: 'E8E0F5' } }; s.font.bold = true; s.font.color = { rgb: '5B3A8E' }; }
-          if (c === 6) { s.fill = { fgColor: { rgb: 'DCC9F0' } }; s.font.bold = true; s.font.color = { rgb: '3E2566' }; }
-          x.s = s;
-        }
-      }
-      for (let c = 0; c < 7; c++) { const x = cel(idxTotMod, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
-    })();
-    XLSX.utils.book_append_sheet(wb, wsF, `Forecast ${MESES_L[mesSig - 1]}`);
-
-    // ===== ESTRATEGIA: pedido por REGIÓN × MODELO (solo RESURTIBLES) =====
-    const resurt = modelosF2.filter(([mk]) => _estatusDe(mk) === 'RESURTIBLE');
-    const nR = regionesF.length;
-    const colRegE = i => XLSX.utils.encode_col(2 + i);
-    const colTotE = XLSX.utils.encode_col(2 + nR);
-    const aoaE = [
-      [`ESTRATEGIA ${MESES_L[mesSig - 1].toUpperCase()} — EQUIPOS A SOLICITAR POR REGIÓN Y MODELO (SOLO RESURTIBLES)`],
-      [`Proyección por participación histórica de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} × proyección total (= Meta de activadas del mes, P3 editable, como si toda la meta llevara equipo) × factor de ajuste. Fórmulas vivas sobre "Detalle programacion"; parámetros editables (fila 3).`],
-      ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`),
-        'Días háb. 3m:', dh3F, 'Agentes prom:', agProm, 'Ritmo (unid/ag·día):', CF(0, 'IF(D3*F3>0,B3/D3/F3,0)'),
-        `Días ${MESES_L[mesSig - 1]}:`, dhSig, 'PROY. TOTAL:', CF(proyEqTotal, 'P3'),
-        'Factor ajuste:', 1.1, `Meta ${MESES_L[mesSig - 1]} (activadas):`, metaSig, 'Activadas 3m:', CF(totAct3, `COUNTIFS(${critMes})`)],
-      [],
-      ['Marca', 'Modelo (resurtible)', ...regionesF, 'TOTAL']];
-    const firstE = aoaE.length + 1;
-    resurt.forEach(([mk, d]) => {
-      const rE = aoaE.length + 1;
-      const fila = [d.marca, mk];
-      regionesF.forEach(rg => {
-        const nRM = eq3.filter(x => (x.modeloB || x.equipo) === mk && x.region === rg).length;
-        fila.push(CF(eq3m ? Math.round(nRM / eq3m * proyEqTotal * 1.1) : 0,
-          `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${DET}!$D:$D,"${esc(rg)}",${critMes})/$B$3*$L$3*$N$3,0)`));
-      });
-      fila.push(CF(0, `SUM(C${rE}:${XLSX.utils.encode_col(1 + nR)}${rE})`));
-      aoaE.push(fila);
-    });
-    const lastE = aoaE.length;
-    if (!resurt.length) aoaE.push(['(ningún modelo vendido cruza como RESURTIBLE en la lista de precios)']);
-    const tE = ['TOTAL', ''];
-    for (let c = 2; c <= 2 + nR; c++) {
-      const L = XLSX.utils.encode_col(c);
-      tE.push(CF(0, `SUM(${L}${firstE}:${L}${lastE})`));
-    }
-    aoaE.push(tE);
-    const idxTotE = aoaE.length - 1;
-    const npis = modelosF2.filter(([mk]) => _estatusDe(mk) === 'NPI');
-    aoaE.push([]);
-    const idxNpi = aoaE.length;
-    aoaE.push(['LANZAMIENTOS (NPI) con venta reciente — pedir por asignación de la marca, sin histórico suficiente:']);
-    npis.forEach(([mk, d]) => aoaE.push([d.marca, mk]));
-    if (!npis.length) aoaE.push(['(sin NPIs con venta en el trimestre)']);
-
-    // Demanda que quedará SIN SURTIR → migrar a equivalentes resurtibles
-    aoaE.push([]);
-    const idxSS = aoaE.length;
-    aoaE.push(['DEMANDA QUE QUEDARÁ SIN SURTIR (no resurtible / inv. limitado) — a migrar hacia resurtibles:']);
-    aoaE.push(['Marca', 'Modelo', 'Estatus', `Proy ${MESES_L[mesSig - 1]} (unid)`, 'Migrar hacia (resurtible más vendido de la marca)']);
-    const topResurtMarca = {};
-    resurt.forEach(([mk, d]) => { if (!topResurtMarca[d.marca]) topResurtMarca[d.marca] = mk; });
-    const topResurtGlobal = resurt.length ? `${resurt[0][1].marca} ${resurt[0][0]}` : '—';
-    const sinSurtir = modelosF2.filter(([mk]) => ['NO RESURTIBLE', 'INV. LIMITADO EN CANAL'].includes(_estatusDe(mk)));
-    const firstSS = idxSS + 3;
-    sinSurtir.forEach(([mk, d]) => {
-      const rE = aoaE.length + 1;
-      const pv = eq3m ? Math.round(d.n / eq3m * proyEqTotal * 1.1) : 0;
-      aoaE.push([d.marca, mk, _estatusDe(mk),
-        CF(pv, `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$B$3*$L$3*$N$3,0)`),
-        topResurtMarca[d.marca] || topResurtGlobal]);
-    });
-    const lastSS = aoaE.length;
-    aoaE.push(['TOTAL A MIGRAR', '', '', sinSurtir.length ? CF(0, `SUM(D${firstSS}:D${lastSS})`) : 0,
-      'Súmalo al pedido de los equivalentes indicados']);
-    const idxTotSS = aoaE.length - 1;
-    const wsE = XLSX.utils.aoa_to_sheet(aoaE);
-    wsE['!cols'] = [{ wch: 12 }, { wch: 30 }, ...Array(nR).fill({ wch: 9 }), { wch: 9 }];
-    (() => {
-      const cel = (r, c) => wsE[XLSX.utils.encode_cell({ r, c })];
-      if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
-      if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-      for (let c = 0; c < 14; c++) {
-        const x = cel(2, c);
-        if (!x) continue;
-        x.s = (typeof x.v === 'number' || x.f)
-          ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 10 } }
-          : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
-      }
-      for (let c = 0; c < nR + 3; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-      for (let r = 5; r < idxTotE; r++) {
-        for (let c = 0; c < nR + 3; c++) {
-          const x = cel(r, c);
-          if (!x) continue;
-          x.s = { font: { name: 'Calibri', sz: 10, bold: c === 0 }, fill: c >= 2 ? { fgColor: { rgb: 'E8F5E9' } } : undefined };
-          if (!x.s.fill) delete x.s.fill;
-        }
-      }
-      for (let c = 0; c < nR + 3; c++) { const x = cel(idxTotE, c); if (x) x.s = { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
-      const np = cel(idxNpi, 0);
-      if (np) np.s = { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: '0077A8' } } };
-      const ss = cel(idxSS, 0);
-      if (ss) ss.s = { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: 'C00000' } } };
-      for (let c = 0; c < 5; c++) { const h = cel(idxSS + 1, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-      for (let r = idxSS + 2; r < idxTotSS; r++) {
-        for (let c = 0; c < 5; c++) {
-          const x = cel(r, c);
-          if (!x) continue;
-          x.s = { font: { name: 'Calibri', sz: 10, bold: c === 0 || c === 4, color: c === 3 ? { rgb: 'C00000' } : (c === 4 ? { rgb: '16A34A' } : undefined) } };
-          if (!x.s.font.color) delete x.s.font.color;
-        }
-      }
-      for (let c = 0; c < 5; c++) { const x = cel(idxTotSS, c); if (x) x.s = { fill: { fgColor: { rgb: 'F8CBAD' } }, font: { name: 'Calibri', bold: true, sz: 10 } }; }
-    })();
-    XLSX.utils.book_append_sheet(wb, wsE, `Estrategia ${MESES_L[mesSig - 1]}`);
-
-    // ===== PROYECCIÓN RESTO DEL AÑO por modelo = MEZCLA de modelos (3 meses) × META de cada mes =====
-    const mesesRest = [];
-    for (let m = mesSig; m <= 12; m++) mesesRest.push(m);
-    if (mesesRest.length) {
-      const colMR = i => XLSX.utils.encode_col(3 + i);
-      const colTotR = XLSX.utils.encode_col(3 + mesesRest.length);
-      const metaDe = m => (anioSig === anioAct || m !== mesSig) ? (metaMesTotal[m] > 0 ? metaMesTotal[m] : ultimaMeta) : metaSig;
-      const aoaR = [
-        ['PROYECCIÓN RESTO DEL AÑO POR MODELO'],
-        [`Demanda de cada mes = META de activadas del mes (fila 4, amarillo, editable) × mezcla del modelo en el trimestre ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (participación sobre el total de equipos vendidos). Metas tomadas de metas_agente; "estimada" = mes sin meta cargada, usa la última conocida.`],
-        ['Equipos 3m:', CF(eq3m, `COUNTIFS(${DET}!$G:$G,"<>SIM",${critMes})`), '', ...mesesRest.map(m => metaMesTotal[m] > 0 ? 'meta cargada' : 'meta estimada'), ''],
-        ['Meta activadas →', '', '', ...mesesRest.map(m => metaDe(m)), ''],
-        ['Marca', 'Modelo', 'Estatus', ...mesesRest.map(m => MESES_L[m - 1]), 'TOTAL resto']];
-      const firstR = aoaR.length + 1;
-      modelosF2.forEach(([mk, d]) => {
-        const rE = aoaR.length + 1;
-        const share = eq3m > 0 ? d.n / eq3m : 0;
-        const fila = [d.marca, mk, _estatusDe(mk) || 'SIN LISTA'];
-        mesesRest.forEach((m, i) => {
-          fila.push(CF(Math.round(share * metaDe(m)),
-            `ROUND(COUNTIFS(${DET}!$K:$K,"${esc(mk)}",${critMes})/$B$3*${colMR(i)}$4,0)`));
-        });
-        fila.push(CF(0, `SUM(${colMR(0)}${rE}:${colMR(mesesRest.length - 1)}${rE})`));
-        aoaR.push(fila);
-      });
-      const lastR = aoaR.length;
-      const tR2 = ['TOTAL', '', ''];
-      for (let c = 3; c <= 3 + mesesRest.length; c++) {
-        const L = XLSX.utils.encode_col(c);
-        tR2.push(CF(0, `SUM(${L}${firstR}:${L}${lastR})`));
-      }
-      aoaR.push(tR2);
-      const wsR = XLSX.utils.aoa_to_sheet(aoaR);
-      wsR['!cols'] = [{ wch: 12 }, { wch: 30 }, { wch: 18 }, ...Array(mesesRest.length).fill({ wch: 8 }), { wch: 10 }];
-      (() => {
-        const cel = (r, c) => wsR[XLSX.utils.encode_cell({ r, c })];
-        const nC = 4 + mesesRest.length;
-        if (cel(0, 0)) cel(0, 0).s = { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: '1F3864' } } };
-        if (cel(1, 0)) cel(1, 0).s = { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } };
-        for (const rr of [2, 3]) {
-          for (let c = 0; c < nC; c++) {
-            const x = cel(rr, c);
-            if (!x || x.v === '') continue;
-            x.s = (typeof x.v === 'number' || x.f)
-              ? { fill: { fgColor: { rgb: 'FFF2CC' } }, font: { name: 'Calibri', bold: true, sz: 9 }, alignment: { horizontal: 'center' } }
-              : { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: '1F3864' } } };
-          }
-        }
-        for (let c = 0; c < nC; c++) { const h = cel(4, c); if (h) h.s = { fill: { fgColor: { rgb: '1F3864' } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', wrapText: true } }; }
-        const rangoR = XLSX.utils.decode_range(wsR['!ref']);
-        for (let r = 5; r <= rangoR.e.r; r++) {
-          const esT = r === rangoR.e.r;
-          for (let c = 0; c < nC; c++) {
-            const x = cel(r, c);
-            if (!x) continue;
-            const s = { font: { name: 'Calibri', sz: 10, bold: esT || c === 0 } };
-            if (esT) s.fill = { fgColor: { rgb: 'DDEBF7' } };
-            else if (c === 2 && x.v === 'RESURTIBLE') s.font.color = { rgb: '16A34A' };
-            else if (c === 2 && x.v === 'NO RESURTIBLE') s.font.color = { rgb: 'C00000' };
-            x.s = s;
-          }
-        }
-        wsR['!freeze'] = { xSplit: 3, ySplit: 5 };
-      })();
-      XLSX.utils.book_append_sheet(wb, wsR, 'Proy resto 2026');
-    }
-
-    XLSX.writeFile(wb, `equipos_inventario_${anioAct}.xlsx`);
-  } catch (e) {
-    console.error('[PivoteEquipos]', e);
-    alert('Error al generar: ' + (e.message || e));
-  }
-}
-
+// (Excel de equipos + inventario eliminado: sustituido por el Forecast CC v2)
 async function renderLogistica() {
   const cont = document.getElementById('logistica-contenido');
   if (!cont) return;
@@ -19531,10 +18594,10 @@ function _construirDatosLogistica(entregasRaw) {
 
 function _renderLogisticaUI(cont, data) {
   _renderLogisticaUIBase(cont, data);
-  // El botón del Excel de equipos+inventario debe sobrevivir al re-render
-  cont.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:12px;">
-    <button onclick="exportarForecastCC()" style="background:#0F766E; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; margin-right:8px;">📦 Forecast CC (semana)</button>
-    <button onclick="exportarPivoteEquipos()" style="background:#7C3AED; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📥 Excel equipos + inventario</button>
+  // Botones del Forecast CC v2 (sobreviven al re-render de la sección)
+  cont.insertAdjacentHTML('afterbegin', `<div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+    <button onclick="exportarForecastCC2(this)" style="background:#0F766E; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📊 Forecast CC (Excel completo)</button>
+    <button onclick="exportarRequerimientoCC(this)" style="background:#B45309; color:white; border:none; padding:10px 20px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;">📤 Requerimiento semanal (para enviar)</button>
   </div>`);
 }
 
@@ -19556,285 +18619,7 @@ function _regionDeAlmacen(alm) {
   for (const [reg, toks] of Object.entries(_HUB_REGION)) if (toks.some(t => a.includes(t))) return reg;
   return 'OTRO';
 }
-async function exportarForecastCC() {
-  try {
-    await _cargarEntregasData().catch(() => null);
-    const { data: inv } = await db.from('inventario_actual').select('*');
-    const inventario = (inv || []).filter(i => i && i.nombre);
-    const filasLog = _construirDatosLogistica(_entregasCache || []);
-    const hoy = new Date();
-    const anio = hoy.getFullYear(), mesAct = hoy.getMonth() + 1;
-    const MESES_L = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    const MESES_LL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-    const semana = _semanaISO(hoy);
-    const hoyStr = `${anio}-${String(mesAct).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-
-    // ---- Histórico: últimos 3 meses COMPLETOS (todo se considera venta con equipo)
-    const mesComp = mesAct - 1; if (mesComp < 1) { alert('Se necesita al menos un mes cerrado del año.'); return; }
-    const c3ini = Math.max(1, mesComp - 2);
-    const regs = [];
-    filasLog.forEach(f => {
-      if (!String(f.fecha_activacion || '').startsWith(String(anio))) return;
-      const m = parseInt(String(f.fecha_activacion).substring(5, 7));
-      const region = (f.region && String(f.region).trim()) ? String(f.region).trim().toUpperCase() : 'TOL'; // sin región = HUB Toluca
-      regs.push({ m, region, marca: f.marca && f.marca !== 'SIM' ? String(f.marca).toUpperCase() : 'SIN EQUIPO', equipo: f.equipo && f.equipo !== 'SIM' ? _normEquipo(f.equipo) : 'SIN EQUIPO' });
-    });
-    const r3 = regs.filter(x => x.m >= c3ini && x.m <= mesComp);
-    if (!r3.length) { alert('Sin ventas en los últimos 3 meses cerrados.'); return; }
-
-    // ---- Metas por mes (metas_agente): mes actual y restantes; sin meta → última conocida
-    const metaMes = {};
-    (metasAgeData || []).forEach(m => { if (Number(m.anio) === anio) metaMes[m.mes] = (metaMes[m.mes] || 0) + (Number(m.meta_activadas) || 0); });
-    let ultMeta = 0; for (let m = 1; m <= 12; m++) if (metaMes[m] > 0) ultMeta = metaMes[m];
-    const mesesProy = []; for (let m = mesAct; m <= 12; m++) mesesProy.push(m);
-    const metaDe = m => metaMes[m] > 0 ? metaMes[m] : ultMeta;
-
-    // ---- Regiones, participación y marcas
-    const regiones = ['PUE', 'MEX', 'MTY', 'GDL', 'VER', 'TIJ', 'TOL'].filter(r => r3.some(x => x.region === r));
-    [...new Set(r3.map(x => x.region))].forEach(r => { if (!regiones.includes(r)) regiones.push(r); });
-    const nReg = {}; regiones.forEach(r => { nReg[r] = r3.filter(x => x.region === r).length; });
-    const marcas = [...new Set(r3.filter(x => x.marca !== 'SIN EQUIPO').map(x => x.marca))];
-    marcas.sort((a, b) => r3.filter(x => x.marca === b).length - r3.filter(x => x.marca === a).length);
-
-    const wb = XLSX.utils.book_new();
-    const NAVY = '1F3864', MOR = '5B3A8E', AMAR = 'FFF2CC';
-    const F = (v, f, z) => { const c = { t: 'n', v: v == null || isNaN(v) ? 0 : v, f }; if (z) c.z = z; return c; };
-    const col = i => XLSX.utils.encode_col(i);
-    const estiloHdr = (ws, r, n, fill) => { for (let c = 0; c < n; c++) { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x) x.s = { fill: { fgColor: { rgb: fill || NAVY } }, font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; } };
-    const estiloCel = (ws, r, c, s) => { const x = ws[XLSX.utils.encode_cell({ r, c })]; if (x) x.s = s; };
-
-    // ===== Hoja 1: META POR REGIÓN =====
-    const a1 = [
-      [`FORECAST CC · SEMANA ${semana} · corte ${hoyStr}`],
-      [`Meta de ${MESES_LL[mesAct - 1]} repartida por región según participación de ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} (${r3.length} activaciones; todo se considera venta con equipo; sin región = HUB Toluca). Meta en D3 (amarillo, editable${metaMes[mesAct] > 0 ? '' : '; estimada con la última meta conocida'}). Faltante = suma de faltantes de la hoja del HUB (requerimiento − existencia).`],
-      ['Meta activadas →', '', '', metaDe(mesAct)],
-      ['Región', `Ventas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}`, 'Participación', `Meta ${MESES_L[mesAct - 1]}`, 'Faltante', '% Faltante']];
-    const f1i = a1.length + 1;
-    regiones.forEach(r => {
-      const rE = a1.length + 1;
-      const hoja = (_REGION_NOMBRE[r] || r).substring(0, 31);
-      a1.push([`${r} · ${_REGION_NOMBRE[r] || r}`, nReg[r], F(0, `IF($B$${f1i + regiones.length}>0,B${rE}/$B$${f1i + regiones.length},0)`, '0.0%'), F(0, `ROUND(C${rE}*D$3,0)`), F(0, `'${hoja}'!J3`), F(0, `IF(D${rE}>0,E${rE}/D${rE},0)`, '0.0%')]);
-    });
-    const f1t = a1.length + 1;
-    a1.push(['TOTAL', F(0, `SUM(B${f1i}:B${f1t - 1})`), F(0, `SUM(C${f1i}:C${f1t - 1})`, '0.0%'), F(0, `SUM(D${f1i}:D${f1t - 1})`), F(0, `SUM(E${f1i}:E${f1t - 1})`), F(0, `IF(D${f1t}>0,E${f1t}/D${f1t},0)`, '0.0%')]);
-    // Marcas por región (participación dentro de la región)
-    a1.push([]); a1.push([`MARCAS QUE MÁS VENDE CADA REGIÓN (${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]}) · % dentro de la región · sirve para repartir el requerimiento por marca`]);
-    a1.push(['Región', ...marcas, 'Sin equipo']);
-    regiones.forEach(r => {
-      const fila = [r];
-      marcas.forEach(mk => { const n = r3.filter(x => x.region === r && x.marca === mk).length; fila.push({ t: 'n', v: nReg[r] ? n / nReg[r] : 0, z: '0.0%' }); });
-      const ne = r3.filter(x => x.region === r && x.marca === 'SIN EQUIPO').length; fila.push({ t: 'n', v: nReg[r] ? ne / nReg[r] : 0, z: '0.0%' });
-      a1.push(fila);
-    });
-    const ws1 = XLSX.utils.aoa_to_sheet(a1);
-    ws1['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 13 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 11 }];
-    estiloCel(ws1, 0, 0, { font: { name: 'Calibri', bold: true, sz: 14, color: { rgb: NAVY } } });
-    estiloCel(ws1, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
-    estiloCel(ws1, 2, 3, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11 } });
-    estiloCel(ws1, 2, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
-    estiloHdr(ws1, 3, 6);
-    for (let r = f1i - 1; r < f1t - 1; r++) { estiloCel(ws1, r, 0, { font: { name: 'Calibri', bold: true, sz: 10 } }); estiloCel(ws1, r, 3, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); estiloCel(ws1, r, 4, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } }); }
-    for (let c = 0; c < 6; c++) estiloCel(ws1, f1t - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
-    estiloHdr(ws1, f1t + 2, marcas.length + 2, MOR);
-    ws1['!freeze'] = { xSplit: 1, ySplit: 4 };
-    XLSX.utils.book_append_sheet(wb, ws1, 'Meta por region');
-
-    // ===== Hoja PROYECCIÓN: tendencia vs meta, por región y total =====
-    // Ritmo = activaciones por día hábil (promedio de los 3 meses cerrados). Mes en curso = lo
-    // que va + ritmo real del mes × días que faltan. Meses restantes = ritmo 3m × días hábiles.
-    const dhDe = m => { const key = `${anio}-${String(m).padStart(2, '0')}`; let d = 0, n = 0; (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === key) { d += parseFloat(x.factor_dia || 0); n++; } }); if (n) return d; const fin = new Date(anio, m, 0).getDate(); for (let i = 1; i <= fin; i++) { const w = new Date(anio, m - 1, i).getDay(); d += (w === 0 || w === 6) ? 0 : 1; } return d; };
-    let dh3 = 0; for (let m = c3ini; m <= mesComp; m++) dh3 += dhDe(m);
-    const dhAct = dhDe(mesAct);
-    let dtAct = 0; (calendarioData || []).forEach(x => { if (x.fecha && x.fecha.substring(0, 7) === `${anio}-${String(mesAct).padStart(2, '0')}` && x.fecha < hoyStr) dtAct += parseFloat(x.factor_dia || 0); });
-    const rAct = regs.filter(x => x.m === mesAct);
-    // Crecimiento en UNIDADES por mes (no porcentual): activaciones del último mes cerrado + incremento
-    // mensual. Incremento = último salto mes a mes (${mesComp-1}→${mesComp}); editable en C3.
-    const ventasMes = m => regs.filter(x => x.m === m).length;
-    const v3 = []; for (let m = c3ini; m <= mesComp; m++) v3.push(ventasMes(m));
-    const vUlt = ventasMes(mesComp);
-    const incr = v3.length >= 2 ? v3[v3.length - 1] - v3[v3.length - 2] : 0;
-    const aP = [
-      [`PROYECCIÓN · crecimiento vs meta · semana ${semana} · corte ${hoyStr}`],
-      [`Base = activaciones del último mes cerrado (${MESES_L[mesComp - 1]}: ${vUlt}). Crecimiento en unidades por mes: ${incr >= 0 ? '+' : ''}${incr} (último salto ${MESES_L[mesComp - 2] || ''}→${MESES_L[mesComp - 1]}; celda C3, amarilla, editable). Proyección de cada mes = base + crecimiento × meses transcurridos desde ${MESES_L[mesComp - 1]}, repartida por región según su participación en ${MESES_L[mesComp - 1]}. ${MESES_L[mesAct - 1]} a la fecha se muestra como referencia (${dtAct.toFixed(1)} de ${dhAct.toFixed(1)} días hábiles). Meta = hoja "Meta por region". Δ = proyección − meta.`],
-      ['Crecimiento (unid/mes) →', '', incr, 'Días háb. →', dhAct, '', '', ...mesesProy.slice(1).flatMap(m => [dhDe(m), '', ''])],
-      ['Región', `Ventas ${MESES_L[mesComp - 1]}`, 'Ventas ' + [...Array(v3.length)].map((_, i) => MESES_L[c3ini - 1 + i]).join('→') + ': ' + v3.join(' → '), `${MESES_L[mesAct - 1]} a la fecha`, `Proy. ${MESES_L[mesAct - 1]}`, `Meta ${MESES_L[mesAct - 1]}`, `Δ ${MESES_L[mesAct - 1]}`, ...mesesProy.slice(1).flatMap(m => [`Proy. ${MESES_L[m - 1]}`, `Meta ${MESES_L[m - 1]}`, `Δ ${MESES_L[m - 1]}`]), 'Proy. resto año', 'Meta resto año', 'Δ resto año']];
-    const pI = aP.length + 1;
-    const nMP = mesesProy.length;
-    const G = '$C$3';
-    const pT0 = pI + regiones.length; // fila TOTAL (para la participación)
-    regiones.forEach((r, i) => {
-      const rE = aP.length + 1, rMeta = f1i + i;
-      const vAct = rAct.filter(x => x.region === r).length;
-      const vU = regs.filter(x => x.m === mesComp && x.region === r).length;
-      const vr3 = []; for (let m = c3ini; m <= mesComp; m++) vr3.push(regs.filter(x => x.m === m && x.region === r).length);
-      // participación de la región en el último mes: B{r}/B{total}
-      const part = `IF($B$${pT0}>0,B${rE}/$B$${pT0},0)`;
-      const fila = [`${r} · ${_REGION_NOMBRE[r] || r}`, vU, vr3.join(' → '), vAct,
-        F(0, `ROUND(($B$${pT0}+${G}*1)*${part},0)`),
-        F(0, `'Meta por region'!D${rMeta}`), F(0, `E${rE}-F${rE}`, '+0;-0;0')];
-      mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; fila.push(F(0, `ROUND(($B$${pT0}+${G}*${k + 2})*${part},0)`), F(0, `'Meta por region'!${col(4 + k)}${rMeta}`), F(0, `${col(cP)}${rE}-${col(cP + 1)}${rE}`, '+0;-0;0')); });
-      const cFin = 7 + (nMP - 1) * 3;
-      const proyCols = ['E', ...mesesProy.slice(1).map((m, k) => col(7 + k * 3))], metaCols = ['F', ...mesesProy.slice(1).map((m, k) => col(8 + k * 3))];
-      fila.push(F(0, proyCols.map(c => `${c}${rE}`).join('+')), F(0, metaCols.map(c => `${c}${rE}`).join('+')), F(0, `${col(cFin)}${rE}-${col(cFin + 1)}${rE}`, '+0;-0;0'));
-      aP.push(fila);
-    });
-    const pT = aP.length + 1;
-    const totP = ['TOTAL', F(0, `SUM(B${pI}:B${pT - 1})`), v3.join(' → '), F(0, `SUM(D${pI}:D${pT - 1})`), F(0, `SUM(E${pI}:E${pT - 1})`), F(0, `SUM(F${pI}:F${pT - 1})`), F(0, `E${pT}-F${pT}`, '+0;-0;0')];
-    mesesProy.slice(1).forEach((m, k) => { const cP = 7 + k * 3; totP.push(F(0, `SUM(${col(cP)}${pI}:${col(cP)}${pT - 1})`), F(0, `SUM(${col(cP + 1)}${pI}:${col(cP + 1)}${pT - 1})`), F(0, `${col(cP)}${pT}-${col(cP + 1)}${pT}`, '+0;-0;0')); });
-    { const cFin = 7 + (nMP - 1) * 3; totP.push(F(0, `SUM(${col(cFin)}${pI}:${col(cFin)}${pT - 1})`), F(0, `SUM(${col(cFin + 1)}${pI}:${col(cFin + 1)}${pT - 1})`), F(0, `${col(cFin)}${pT}-${col(cFin + 1)}${pT}`, '+0;-0;0')); }
-    aP.push(totP);
-    aP.push([]); aP.push(['Lectura: la proyección asume que cada mes se venden C3 unidades más que el anterior (pon 0 para "igual que ' + MESES_L[mesComp - 1] + '"). Si el Δ del mes en curso es negativo, el faltante se cierra con programaciones (radiografía: progr./día requerida); el de los meses siguientes, con plantilla o productividad. La meta de cada mes se define en "Meta por region".']);
-    const wsP = XLSX.utils.aoa_to_sheet(aP);
-    const nColsP = 10 + (nMP - 1) * 3;
-    wsP['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 22 }, { wch: 12 }, ...Array(nColsP - 4).fill({ wch: 11 })];
-    estiloCel(wsP, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
-    estiloCel(wsP, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
-    estiloCel(wsP, 2, 0, { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } });
-    estiloCel(wsP, 2, 4, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 10 } });
-    estiloCel(wsP, 2, 2, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: '92400E' } } });
-    estiloCel(wsP, 2, 3, { font: { name: 'Calibri', bold: true, sz: 9, color: { rgb: NAVY } } });
-    mesesProy.slice(1).forEach((m, k) => estiloCel(wsP, 2, 7 + k * 3, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 10 } }));
-    estiloHdr(wsP, 3, nColsP);
-    for (let r = pI - 1; r <= pT - 1; r++) {
-      const tot = r === pT - 1;
-      for (let c = 0; c < nColsP; c++) {
-        const s = { font: { name: 'Calibri', sz: 10, bold: tot || c === 0 } };
-        if (tot) s.fill = { fgColor: { rgb: 'DDEBF7' } };
-        const esProy = c === 4 || (c >= 7 && (c - 7) % 3 === 0 && c < nColsP - 3) || c === nColsP - 3;
-        const esDelta = c === 6 || (c >= 7 && (c - 7) % 3 === 2 && c < nColsP - 3) || c === nColsP - 1;
-        if (esProy) s.font.color = { rgb: MOR };
-        if (esDelta) { const x = wsP[XLSX.utils.encode_cell({ r, c })]; s.font.color = { rgb: (x && typeof x.v === 'number' && x.v < 0) ? 'C00000' : '16A34A' }; }
-        estiloCel(wsP, r, c, s);
-      }
-    }
-    wsP['!freeze'] = { xSplit: 1, ySplit: 4 };
-    XLSX.utils.book_append_sheet(wb, wsP, 'Proyeccion');
-
-    // ===== Cruce inventario ↔ modelos vendidos =====
-    const invRows = inventario.map(i => ({ ...i, region: _regionDeAlmacen(i.almacen), norm: _normEquipo(i.nombre), est: _estatusDe(i.nombre) || '' }));
-    // modelo vendido (normalizado, sin color) → clave de inventario que le corresponde
-    const COLORES = ['NEGRO', 'BLANCO', 'AZUL', 'VERDE', 'GRIS', 'ROSA', 'ROJO', 'MORADO', 'DORADO', 'PLATA', 'NARANJA', 'AMARILLO', 'CAFE', 'BLACK', 'WHITE', 'BLUE', 'GREEN', 'GRAY', 'GREY', 'PINK', 'RED', 'PURPLE', 'GOLD', 'SILVER', 'ORANGE', 'YELLOW', 'LAVENDER', 'GRAPHITE', 'TITANIUM', 'MIDNIGHT', 'MIDNIGTH', 'STARLIGHT', 'OLIVA', 'OLIVE', 'TEAL', 'CORAL', 'LILA', 'VIOLETA', 'DARK', 'LIGHT', 'COSMICO', 'OSCURO', 'CLARO', 'TIDAL', 'ULTRAMARINO'];
-    const sinColor = s => String(s).split(' ').filter(t => t && !COLORES.includes(t)).join(' ');
-    const modeloDeInv = i => sinColor(i.norm);
-    // Estatus de lista tolerante: sin marca, sin colores, sin capacidad (GB/TB), sin '&'/'BUNDLE'/'BDL'.
-    // Gana la clave de la lista con más tokens en común (todos los tokens "duros" de la clave deben estar en el modelo).
-    const MARCAS_EQ = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG'];
-    const RUIDO = new Set(['&', 'BUNDLE', 'BDL', 'CON', 'Y', 'O', 'ATT', 'PLUS']);
-    const tokensDuros = s => String(s).toUpperCase().replace(/\s*GB/g, 'GB').replace(/\s*TB/g, 'TB').replace(/[^A-Z0-9& ]/g, ' ').split(/\s+/)
-      .filter(t => t && !MARCAS_EQ.includes(t) && !COLORES.includes(t) && !RUIDO.has(t) && !/^\d+(GB|TB)$/.test(t));
-    const CAT = (window.__estatusDB && Object.keys(window.__estatusDB).length) ? window.__estatusDB : EQUIPOS_ESTATUS;
-    const CAT_TOK = Object.entries(CAT).map(([k, v]) => ({ k, v, t: tokensDuros(k) })).filter(x => x.t.length);
-    const estatusTol = modelo => {
-      const directo = _estatusDe(modelo); if (directo) return directo;
-      const toks = tokensDuros(modelo); if (!toks.length) return '';
-      // 1) la clave de la lista cabe completa en el modelo (gana la más larga)
-      let mejor = null;
-      CAT_TOK.forEach(x => { if (x.t.every(t => toks.includes(t)) && (!mejor || x.t.length > mejor.t.length)) mejor = x; });
-      if (mejor) return mejor.v;
-      // 2) el modelo cabe completo en la clave (p. ej. inventario "RENO16 F" vs lista "RENO16 F & BDL ENCO BUDS 3"): gana la más corta
-      CAT_TOK.forEach(x => { if (toks.every(t => x.t.includes(t)) && (!mejor || x.t.length < mejor.t.length)) mejor = x; });
-      return mejor ? mejor.v : '';
-    };
-    invRows.forEach(i => { if (!i.est) i.est = estatusTol(i.nombre); });
-
-    // ===== Hojas por HUB =====
-    regiones.forEach(reg => {
-      const rR = r3.filter(x => x.region === reg);
-      const invR = invRows.filter(i => i.region === reg);
-      // ventas por modelo (sin color) en la región, 3 meses
-      const vModelo = {}; rR.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); vModelo[k] = (vModelo[k] || 0) + 1; } });
-      const vModeloTot = {}; r3.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); vModeloTot[k] = (vModeloTot[k] || 0) + 1; } });
-      // fila por modelo (inventario del HUB + modelos vendidos sin stock)
-      const filas = {};
-      invR.forEach(i => { const k = modeloDeInv(i); const f = filas[k] || (filas[k] = { modelo: k, nombres: [], existencia: 0, est: i.est, categoria: i.categoria || '', corte: i.fecha_corte || '' }); f.nombres.push(i.nombre); f.existencia += Number(i.existencia) || 0; if (!f.est && i.est) f.est = i.est; });
-      Object.keys(vModelo).forEach(k => {
-        if (filas[k]) return;
-        // tolerancia: buscar clave de inventario que contenga todos los tokens del modelo
-        const toks = k.split(' ').filter(t => t.length > 1);
-        const kInv = Object.keys(filas).find(ki => toks.length && toks.every(t => ki.includes(t)));
-        if (kInv) { filas[kInv].alias = k; return; }
-        filas[k] = { modelo: k, nombres: [], existencia: 0, est: estatusTol(k) || '', categoria: 'SIN STOCK', corte: '', alias: k };
-      });
-      const ventasDe = f => (vModelo[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModelo[f.alias] || 0) : 0);
-      const ventasTot = f => (vModeloTot[f.modelo] || 0) + (f.alias && f.alias !== f.modelo ? (vModeloTot[f.alias] || 0) : 0);
-      const lista = Object.values(filas).map(f => ({ ...f, v3: ventasDe(f), v3tot: ventasTot(f), resurt: /RESURTIBLE/.test(f.est) && !/NO RESURTIBLE/.test(f.est) }));
-      lista.sort((a, b) => (b.resurt - a.resurt) || (b.v3 - a.v3) || (b.existencia - a.existencia));
-      const totResurt = lista.filter(f => f.resurt).reduce((s, f) => s + f.v3, 0);
-
-      const filaMeta = f1i + regiones.indexOf(reg);
-      const aH = [
-        [`Forecast CC · ${_REGION_NOMBRE[reg] || reg} · semana ${semana} · corte ${hoyStr}`],
-        ['', '', '', '', '', '', '', 'Meta', F(0, `'Meta por region'!D${filaMeta}`)],
-        ['Meta región →', '', '', '', '', '', '', '', null, null],
-        ['Nombre (inventario)', 'Modelo', 'Almacén', 'Existencia', 'Categoría', 'Corte', 'Estatus lista', `Vtas ${MESES_L[c3ini - 1]}-${MESES_L[mesComp - 1]} región`, MESES_LL[mesAct - 1], `Faltante ${MESES_LL[mesAct - 1]}`, '% entre resurtibles']];
-      const hI = aH.length + 1;
-      lista.forEach(f => {
-        const rE = aH.length + 1;
-        const nombreInv = f.nombres.length ? f.nombres.join(' / ') : `(sin stock en ${reg}) ${f.modelo}`;
-        const alm = invR.find(i => f.nombres.includes(i.nombre));
-        const fila = [nombreInv, f.modelo, alm ? alm.almacen : '', f.existencia, f.categoria, f.corte ? String(f.corte).substring(0, 10) : '', f.est || 'SIN LISTA', f.v3];
-        fila.push(f.resurt ? F(0, `ROUND(K${rE}*I$2,0)`) : '');
-        fila.push(f.resurt ? F(0, `MAX(0,I${rE}-D${rE})`) : '');
-        fila.push(f.resurt ? F(0, `IF($H$${hI + lista.length}>0,H${rE}/$H$${hI + lista.length},0)`, '0.0%') : '');
-        aH.push(fila);
-      });
-      const hT = aH.length + 1;
-      // SUBTOTAL(9) arriba: suma solo lo VISIBLE tras aplicar filtros (p. ej. filtrar por marca)
-      aH[2][8] = F(0, `SUBTOTAL(9,I${hI}:I${hT - 1})`); aH[2][9] = F(0, `SUBTOTAL(9,J${hI}:J${hT - 1})`);
-      aH.push(['TOTAL', '', '', F(0, `SUM(D${hI}:D${hT - 1})`), '', '', `resurtibles: ${lista.filter(f => f.resurt).length} de ${lista.length}`, F(totResurt, `SUMIF(G${hI}:G${hT - 1},"RESURTIBLE",H${hI}:H${hT - 1})`), F(0, `SUM(I${hI}:I${hT - 1})`), F(0, `SUM(J${hI}:J${hT - 1})`), F(0, `SUM(K${hI}:K${hT - 1})`, '0.0%')]);
-      const wsH = XLSX.utils.aoa_to_sheet(aH);
-      wsH['!cols'] = [{ wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 12 }];
-      estiloCel(wsH, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
-      estiloCel(wsH, 1, 7, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } }, alignment: { horizontal: 'right' } });
-      estiloCel(wsH, 1, 8, { fill: { fgColor: { rgb: AMAR } }, font: { name: 'Calibri', bold: true, sz: 12 }, alignment: { horizontal: 'center' } });
-      estiloCel(wsH, 2, 0, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: NAVY } } });
-      estiloCel(wsH, 2, 8, { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: MOR } }, alignment: { horizontal: 'center' } });
-      estiloCel(wsH, 2, 9, { font: { name: 'Calibri', bold: true, sz: 11, color: { rgb: 'C00000' } }, alignment: { horizontal: 'center' } });
-      estiloHdr(wsH, 3, 11);
-      lista.forEach((f, i) => {
-        const r = hI - 1 + i;
-        const fill = f.resurt ? 'E2EFDA' : (/NO RESURTIBLE/.test(f.est) ? 'FDE9D9' : (f.est ? 'FFF2CC' : 'F2F2F2'));
-        estiloCel(wsH, r, 6, { fill: { fgColor: { rgb: fill } }, font: { name: 'Calibri', bold: true, sz: 9 } });
-        if (f.categoria === 'SIN STOCK') estiloCel(wsH, r, 0, { font: { name: 'Calibri', italic: true, sz: 10, color: { rgb: 'C00000' } } });
-        if (f.resurt) { estiloCel(wsH, r, 8, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: MOR } } }); estiloCel(wsH, r, 9, { font: { name: 'Calibri', bold: true, sz: 10, color: { rgb: 'C00000' } } }); }
-      });
-      for (let c = 0; c < 11; c++) estiloCel(wsH, hT - 1, c, { fill: { fgColor: { rgb: 'DDEBF7' } }, font: { name: 'Calibri', bold: true, sz: 10 } });
-      wsH['!autofilter'] = { ref: `A4:K${hT - 1}` };
-      wsH['!freeze'] = { xSplit: 2, ySplit: 4 };
-      XLSX.utils.book_append_sheet(wb, wsH, (_REGION_NOMBRE[reg] || reg).substring(0, 31));
-    });
-
-    // ===== Sugerencia: NO resurtibles con stock que sí se venden =====
-    const aS = [
-      [`SUGERENCIA DE VENTA · equipos NO resurtibles (o limitados) con stock que normalmente se venden · semana ${semana}`],
-      ['Empujarlos primero: cuando se acaben no se reponen. Cobertura = existencia ÷ ventas mensuales promedio (3 meses) en la región del HUB.'],
-      ['HUB / región', 'Nombre (inventario)', 'Almacén', 'Existencia', 'Estatus lista', `Vtas región 3m`, 'Vtas total 3m', 'Vtas/mes región', 'Cobertura (meses)', 'Sugerencia']];
-    const vTot = {}; r3.forEach(x => { if (x.equipo !== 'SIN EQUIPO') { const k = sinColor(x.equipo); const kk = x.region + '|' + k; vTot[kk] = (vTot[kk] || 0) + 1; vTot['*|' + k] = (vTot['*|' + k] || 0) + 1; } });
-    const nM = mesComp - c3ini + 1;
-    invRows.filter(i => (Number(i.existencia) || 0) > 0 && i.est && !/^RESURTIBLE$/.test(i.est)).forEach(i => {
-      const k = modeloDeInv(i); const toks = k.split(' ').filter(t => t.length > 1);
-      const buscar = pref => { let n = vTot[pref + '|' + k] || 0; if (!n) { const kk = Object.keys(vTot).find(x => x.startsWith(pref + '|') && toks.every(t => x.includes(t))); if (kk) n = vTot[kk]; } return n; };
-      const vr = buscar(i.region), vt = buscar('*');
-      if (!vt) return;
-      const rE = aS.length + 1;
-      aS.push([`${i.region} · ${_REGION_NOMBRE[i.region] || i.region}`, i.nombre, i.almacen, Number(i.existencia) || 0, i.est, vr, vt, F(0, `F${rE}/${nM}`, '0.0'), F(0, `IF(H${rE}>0,D${rE}/H${rE},99)`, '0.0'), { t: 's', v: '', f: `IF(F${rE}=0,"No se vende en esta región: mover a otro HUB",IF(I${rE}<=1,"Se agota este mes: empujar ya",IF(I${rE}<=3,"Empujar en campaña","Stock alto: promoción o traspaso")))` }]);
-    });
-    if (aS.length === 3) aS.push(['(sin equipos no resurtibles con stock y ventas en el periodo)']);
-    const wsS = XLSX.utils.aoa_to_sheet(aS);
-    wsS['!cols'] = [{ wch: 22 }, { wch: 44 }, { wch: 22 }, { wch: 10 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 40 }];
-    estiloCel(wsS, 0, 0, { font: { name: 'Calibri', bold: true, sz: 13, color: { rgb: NAVY } } });
-    estiloCel(wsS, 1, 0, { font: { name: 'Calibri', sz: 9, color: { rgb: '595959' } } });
-    estiloHdr(wsS, 2, 10, 'C00000');
-    wsS['!autofilter'] = { ref: `A3:J${aS.length}` };
-    wsS['!freeze'] = { xSplit: 2, ySplit: 3 };
-    XLSX.utils.book_append_sheet(wb, wsS, 'Sugerencia no resurtibles');
-
-    XLSX.writeFile(wb, `Forecast CC semana ${semana}.xlsx`);
-  } catch (e) {
-    console.error('[Forecast CC]', e);
-    alert('No se pudo generar el Forecast CC: ' + (e.message || e));
-  }
-}
+// (Forecast CC v1 eliminado: sustituido por exportarForecastCC2)
 function _renderLogisticaUIBase(cont, data) {
   // Calcular meses disponibles a partir de la fecha de ACTIVACIÓN (la fecha "real" del negocio)
   const mesesUnicos = [...new Set(data.filter(d => d.fecha_activacion).map(d => String(d.fecha_activacion).substring(0, 7)))].sort().reverse();
@@ -22784,6 +21569,512 @@ function _comDescargarExcel(data, agFiltrados, meses, totalesPorMes) {
   const fechaActual = new Date().toISOString().split('T')[0];
   XLSX.writeFile(wb, `comisiones_2026_${fechaActual}.xlsx`);
 }
+</script>
+<script>
+// ============================================================================
+// LOGÍSTICA v2 · Forecast CC — cálculo (modelos, tarifario DHL, HUB ideal, VSO,
+// sanidad, requerimiento) y generación de Excel con ExcelJS. Sin gráficas en Excel.
+// ============================================================================
+const LOG2 = (() => {
+  const REGIONES = ['PUEBLA', 'CDMX', 'MONTERREY', 'GUADALAJARA', 'VERACRUZ', 'TIJUANA', 'TOLUCA'];
+  const REG_SIGLA = { MEX: 'CDMX', GDL: 'GUADALAJARA', MTY: 'MONTERREY', PUE: 'PUEBLA', TIJ: 'TIJUANA', VER: 'VERACRUZ', TOL: 'TOLUCA' };
+  const PLAZA_REG = { CDMX: 'CDMX', ATLACOMULCO: 'TOLUCA', TOLUCA: 'TOLUCA', MEXICALI: 'TIJUANA', ENSENADA: 'TIJUANA', TIJUANA: 'TIJUANA', MONTERREY: 'MONTERREY', SALTILLO: 'MONTERREY', GUADALAJARA: 'GUADALAJARA', PUEBLA: 'PUEBLA', 'SAN MARTIN': 'PUEBLA', APIZACO: 'PUEBLA', TLAXCALA: 'PUEBLA', ORIZABA: 'VERACRUZ', VERACRUZ: 'VERACRUZ', XALAPA: 'VERACRUZ' };
+  // ---- Tarifario DHL (contrato VAVTRADE 2026, 1 kg, neto con 50% de descuento, sin IVA)
+  const TARIFA = { A: 142.83, B: 150.94, C: 157.89, D: 175.76, E: 220.25, F: 224.37, G: 233.01, H: 240.64 };
+  const MATRIZ = {1:{1:'A',2:'B',3:'C',4:'C',5:'D',6:'E',7:'F',8:'F',9:'G',10:'C',11:'A',12:'B',13:'D',14:'B',15:'C',16:'E',17:'B'},2:{1:'B',2:'A',3:'E',4:'E',5:'F',6:'G',7:'G',8:'G',9:'H',10:'E',11:'C',12:'D',13:'F',14:'E',15:'E',16:'F',17:'D'},3:{1:'C',2:'E',3:'A',4:'C',5:'C',6:'E',7:'F',8:'D',9:'G',10:'D',11:'C',12:'C',13:'B',14:'D',15:'F',16:'G',17:'F'},4:{1:'C',2:'E',3:'C',4:'A',5:'C',6:'D',7:'E',8:'E',9:'G',10:'A',11:'C',12:'B',13:'D',14:'D',15:'F',16:'G',17:'E'},5:{1:'D',2:'F',3:'C',4:'C',5:'A',6:'D',7:'E',8:'C',9:'F',10:'D',11:'D',12:'C',13:'D',14:'F',15:'F',16:'G',17:'F'},6:{1:'E',2:'G',3:'E',4:'D',5:'D',6:'A',7:'C',8:'E',9:'E',10:'E',11:'F',12:'E',13:'F',14:'F',15:'G',16:'H',17:'F'},7:{1:'F',2:'G',3:'F',4:'E',5:'E',6:'C',7:'A',8:'E',9:'C',10:'F',11:'G',12:'F',13:'G',14:'G',15:'H',16:'H',17:'G'},8:{1:'F',2:'G',3:'D',4:'E',5:'C',6:'E',7:'E',8:'A',9:'E',10:'F',11:'F',12:'F',13:'E',14:'G',15:'G',16:'H',17:'G'},9:{1:'G',2:'H',3:'G',4:'G',5:'F',6:'E',7:'C',8:'E',9:'A',10:'G',11:'G',12:'G',13:'H',14:'H',15:'H',16:'H',17:'H'},10:{1:'C',2:'E',3:'D',4:'A',5:'D',6:'E',7:'F',8:'F',9:'G',10:'A',11:'D',12:'C',13:'E',14:'E',15:'F',16:'G',17:'E'},11:{1:'A',2:'C',3:'C',4:'C',5:'D',6:'F',7:'G',8:'F',9:'G',10:'D',11:'A',12:'B',13:'D',14:'C',15:'C',16:'F',17:'B'},12:{1:'B',2:'D',3:'C',4:'B',5:'C',6:'E',7:'F',8:'F',9:'G',10:'C',11:'B',12:'A',13:'D',14:'D',15:'E',16:'F',17:'E'},13:{1:'D',2:'F',3:'B',4:'D',5:'D',6:'F',7:'G',8:'E',9:'H',10:'E',11:'D',12:'D',13:'A',14:'E',15:'F',16:'G',17:'F'},14:{1:'B',2:'E',3:'D',4:'D',5:'F',6:'F',7:'G',8:'G',9:'H',10:'E',11:'C',12:'D',13:'E',14:'A',15:'C',16:'F',17:'B'},15:{1:'C',2:'E',3:'F',4:'F',5:'F',6:'G',7:'H',8:'G',9:'H',10:'F',11:'C',12:'E',13:'F',14:'C',15:'A',16:'B',17:'B'},16:{1:'E',2:'F',3:'G',4:'G',5:'G',6:'H',7:'H',8:'H',9:'H',10:'G',11:'F',12:'F',13:'G',14:'F',15:'B',16:'A',17:'C'},17:{1:'B',2:'D',3:'F',4:'E',5:'F',6:'F',7:'G',8:'G',9:'H',10:'E',11:'B',12:'E',13:'F',14:'B',15:'B',16:'C',17:'A'}};
+  const EDO_ZONA = { 'CIUDAD DE MEXICO': 1, 'ESTADO DE MEXICO': 11, 'PUEBLA': 11, 'MORELOS': 11, 'HIDALGO': 11, 'TLAXCALA': 11, 'NUEVO LEON': 3, 'COAHUILA': 3, 'JALISCO': 4, 'DURANGO': 5, 'SINALOA': 6, 'BAJA CALIFORNIA SUR': 6, 'SONORA': 7, 'CHIHUAHUA': 8, 'BAJA CALIFORNIA': 9, 'NAYARIT': 10, 'COLIMA': 10, 'GUANAJUATO': 12, 'QUERETARO': 12, 'AGUASCALIENTES': 12, 'SAN LUIS POTOSI': 12, 'ZACATECAS': 12, 'MICHOACAN': 12, 'TAMAULIPAS': 14, 'VERACRUZ': 17, 'OAXACA': 17, 'GUERRERO': 2, 'CHIAPAS': 15, 'TABASCO': 15, 'CAMPECHE': 15, 'YUCATAN': 16, 'QUINTANA ROO': 16 };
+  const HUB_ZONA = { CDMX: 1, PUEBLA: 11, TOLUCA: 11, GUADALAJARA: 4, MONTERREY: 3, VERACRUZ: 17, TIJUANA: 9 };
+  const EST_HUB = { PUEBLA: 'PUEBLA', TLAXCALA: 'PUEBLA', OAXACA: 'PUEBLA', 'CIUDAD DE MEXICO': 'CDMX', MORELOS: 'CDMX', HIDALGO: 'CDMX', QUERETARO: 'CDMX', GUERRERO: 'CDMX', JALISCO: 'GUADALAJARA', COLIMA: 'GUADALAJARA', NAYARIT: 'GUADALAJARA', MICHOACAN: 'GUADALAJARA', AGUASCALIENTES: 'GUADALAJARA', ZACATECAS: 'GUADALAJARA', GUANAJUATO: 'GUADALAJARA', SINALOA: 'GUADALAJARA', SONORA: 'GUADALAJARA', 'BAJA CALIFORNIA SUR': 'GUADALAJARA', 'NUEVO LEON': 'MONTERREY', COAHUILA: 'MONTERREY', TAMAULIPAS: 'MONTERREY', CHIHUAHUA: 'MONTERREY', DURANGO: 'MONTERREY', 'SAN LUIS POTOSI': 'MONTERREY', VERACRUZ: 'VERACRUZ', TABASCO: 'VERACRUZ', CAMPECHE: 'VERACRUZ', YUCATAN: 'VERACRUZ', 'QUINTANA ROO': 'VERACRUZ', CHIAPAS: 'VERACRUZ', 'BAJA CALIFORNIA': 'TIJUANA' };
+  const TOL_MUN = new Set(['TOLUCA','METEPEC','ZINACANTEPEC','LERMA','SAN MATEO ATENCO','OCOYOACAC','ATLACOMULCO','IXTLAHUACA','TENANGO DEL VALLE','TENANCINGO','VALLE DE BRAVO','ALMOLOYA DE JUAREZ','TEMOAYA','XONACATLAN','OTZOLOTEPEC','CALIMAYA','TIANGUISTENCO','CAPULHUAC','JOCOTITLAN','EL ORO','TEJUPILCO','MEXICALTZINGO','CHAPULTEPEC','RAYON','SAN ANTONIO LA ISLA','TEMASCALTEPEC','IXTAPAN DE LA SAL','MALINALCO','VILLA GUERRERO','TEMASCALCINGO','ACAMBAY','SAN FELIPE DEL PROGRESO','VILLA VICTORIA','JILOTEPEC','ALMOLOYA DEL RIO','JOQUICINGO','TEXCALYACAC','ATIZAPAN','SANTIAGO TIANGUISTENCO','XALATLACO','TONATICO','ZUMPAHUACAN','DONATO GUERRA','AMANALCO','VILLA DE ALLENDE','ACULCO','POLOTITLAN','CHAPA DE MOTA','TIMILPAN','JIQUIPILCO','SAN JOSE DEL RINCON']);
+  const ESTADOS = Object.keys(EDO_ZONA);
+  const FIX_EDO = { CDMX: 'CIUDAD DE MEXICO', 'DISTRITO FEDERAL': 'CIUDAD DE MEXICO', MEXICO: 'ESTADO DE MEXICO', MEX: 'ESTADO DE MEXICO', 'EDO DE MEXICO': 'ESTADO DE MEXICO', 'EDO.MEXICO': 'ESTADO DE MEXICO', 'ESTADO MEXICO': 'ESTADO DE MEXICO', 'EDO MEX': 'ESTADO DE MEXICO', 'BAJA CALIFORNIA NORTE': 'BAJA CALIFORNIA', 'COAHUILA DE ZARAGOZA': 'COAHUILA', 'MICHOACAN DE OCAMPO': 'MICHOACAN', 'VERACRUZ DE IGNACIO DE LA LLAVE': 'VERACRUZ', GUADALAJARA: 'JALISCO', MONTERREY: 'NUEVO LEON', CUERNAVACA: 'MORELOS', TIJUANA: 'BAJA CALIFORNIA', CANCUN: 'QUINTANA ROO', LEON: 'GUANAJUATO', TOLUCA: 'ESTADO DE MEXICO', 'QUERETARO DE ARTEAGA': 'QUERETARO' };
+  const norm = s => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+  function similar(a, b) { // similitud simple (Sørensen sobre bigramas)
+    const bg = s => { const o = {}; for (let i = 0; i < s.length - 1; i++) { const k = s.slice(i, i + 2); o[k] = (o[k] || 0) + 1; } return o; };
+    const A = bg(a), B = bg(b); let inter = 0; for (const k in A) if (B[k]) inter += Math.min(A[k], B[k]);
+    const tot = (a.length - 1) + (b.length - 1); return tot > 0 ? 2 * inter / tot : 0;
+  }
+  function estadoNorm(s) {
+    if (!s) return ''; let n = norm(s); n = FIX_EDO[n] || n;
+    if (EDO_ZONA[n]) return n;
+    let best = '', bs = 0; for (const e of ESTADOS) { const sc = similar(n, e); if (sc > bs) { bs = sc; best = e; } }
+    return bs >= 0.75 ? best : n;
+  }
+  function hubGeo(estado, muni) {
+    if (estado === 'ESTADO DE MEXICO') return TOL_MUN.has(muni) ? 'TOLUCA' : 'CDMX';
+    return EST_HUB[estado] || '';
+  }
+  function tarifa(hub, estado) { const z = EDO_ZONA[estado]; if (!z || !HUB_ZONA[hub]) return null; return TARIFA[MATRIZ[HUB_ZONA[hub]][z]]; }
+  function hubIdeal(estado, muni) {
+    const geo = hubGeo(estado, muni);
+    if (!EDO_ZONA[estado]) return geo;
+    if (estado === 'BAJA CALIFORNIA') return 'TIJUANA';
+    const cands = Object.keys(HUB_ZONA).filter(h => h !== 'TIJUANA');
+    const cost = {}; let mn = Infinity; cands.forEach(h => { cost[h] = tarifa(h, estado); if (cost[h] < mn) mn = cost[h]; });
+    const emp = cands.filter(h => Math.abs(cost[h] - mn) < 0.01);
+    if (emp.includes('PUEBLA')) return 'PUEBLA';
+    return emp.includes(geo) ? geo : emp[0];
+  }
+  // ---- Normalización de modelos
+  const COL = new Set('NEGRO NEGRA BLANCO BLANCA AZUL VERDE GRIS ROSA ROJO MORADO DORADO PLATA NARANJA AMARILLO CAFE BLACK WHITE BLUE GREEN GRAY GREY PINK RED PURPLE GOLD SILVER ORANGE YELLOW LAVENDER LAVANDA GRAPHITE GRAFITO TITANIUM TITANIO MIDNIGHT MIDNIGTH STARLIGHT OLIVA OLIVE TEAL CORAL LILA LILAC VIOLETA VIOLET DARK LIGHT COSMICO OSCURO CLARO PROFUNDO TIDAL ULTRAMARINO ATT JETBLACK CREAM ICE MINT NAVY SAND DESERT DESIERTO NATURAL DEL TURQUESA CELESTE MARINO ARENA PLATEADO CHAMPAGNE BEIGE AQUA FROST NEBULA SKY OBSIDIAN MOONSTONE PORCELAIN CYAN VELVELT VELVET COBALTO COBALT PURPURA NEG TECHNOVIOLET NUBE'.split(' '));
+  const MARCAS = ['APPLE', 'SAMSUNG', 'MOTOROLA', 'XIAOMI', 'HONOR', 'OPPO', 'ZTE', 'VIVO', 'ALCATEL', 'NOKIA', 'HUAWEI', 'TCL', 'REALME', 'LG', 'GOOGLE'];
+  const ALIAS_MARCA = { IPHONE: 'APPLE', GALAXY: 'SAMSUNG', REDMI: 'XIAOMI', MOTO: 'MOTOROLA', PIXEL: 'GOOGLE' };
+  const RUIDO = new Set(['&', 'BUNDLE', 'BDL', 'CON', 'Y', 'O', 'ATT', 'PLUS', 'GALAXY']);
+  function base(s) {
+    let t = String(s || '').toUpperCase().replace(/(\d+)\s+GB/g, '$1GB').replace(/[^A-Z0-9 ]/g, ' ').replace(/\bXIAOMIREDMINOTE/g, 'XIAOMI REDMI NOTE').replace(/\bMOTOROLAEDGE/g, 'MOTOROLA EDGE');
+    return t.replace(/\s+/g, ' ').trim();
+  }
+  function marca(s) { for (const x of base(s).split(' ')) { if (MARCAS.includes(x)) return x; if (ALIAS_MARCA[x]) return ALIAS_MARCA[x]; } return ''; }
+  function modelo(s) { if (!s || !String(s).trim()) return 'SIN EQUIPO'; return base(s).split(' ').filter(x => x && !COL.has(x) && x.length > 1).join(' '); }
+  function color(s) { if (!s || !String(s).trim()) return 'SIN EQUIPO'; return base(s).split(' ').filter(x => x && x !== 'ATT').join(' '); }
+  function toks(s) { return base(s).split(' ').filter(x => x && !MARCAS.includes(x) && !ALIAS_MARCA[x] && !COL.has(x) && !RUIDO.has(x) && x.length > 1 && !/^\d+(GB|TB)$/.test(x)); }
+  function gb(s) { const m = base(s).match(/(\d+)(GB|TB)/); return m ? m[0] : ''; }
+  const ALIAS = { 'HONOR MAGIC8 LITE BDLCHOICEH5G': 'Honor Magic 8 Lite 512GB 5G Bundle Headphones', 'HONOR MAGIC8 LITE BDLAUDYJERSEY': 'Honor Magic 8 Lite 512GB 5G Bundle Headphones + Jersey', 'MOTOROLA EDGE70PRO BDLMOTOWATCH': 'Motorola Moto Edge 70 Pro + Watch', 'MOTOROLA EDGE70PRO BDLMOTOWJER': 'Motorola Moto Edge 70 Pro + Watch + Chamarra', 'SAMSUNG GALAXY ZFOLD8 ULTRA512GB': 'Samsung Galaxy Z Fold8 Ultra 512GB', 'SAMSUNG GALAXY ZFOLD8 512GB': 'Samsung Galaxy Z Fold8 512GB', 'SAMSUNG GALAXY ZFLIP8 512GB': 'Samsung Galaxy Z Flip8 512GB', 'XIAOMI REDMI NOTE17 BDLSOUNDPOCK': 'Xiaomi Redmi Note 17 Bundle Sound Pocket', 'OPPO A6 BDL ENCO BUDS3': 'Oppo A6 Bundle Enco Buds 3', 'MOTOROLA EDGE60 PRO BDLWATCH': 'Motorola Moto Edge 60 Pro + Watch y Balon', 'XIAOMI REDMI NOTE14 PRO5G BDL AUDIFONOS': 'Xiaomi Note 14 Pro 5G Bundle Audifonos', 'XIAOMI REDMINOTE15PRO5G BDLBUD8': 'Redmi Note 15 Pro 5G + Buds 8 Active + Smart Band 9 Active', 'XIAOMI REDMINOTE15PRO5G BDLBUDS': 'Redmi Note 15 Pro 5G + Buds 6 Active + Smart Band 9 Active', 'OPPO RENO16 BDLENCO BUDS3PRO': 'Oppo Reno16 F & Bdl Enco Buds 3', 'HONOR MAGICV3 5G': 'Honor Magic V3 5G', 'HONOR MAGIC7 PRO BDL X8C SOMBRA': 'Honor Magic 7 Pro + X8C', 'HONOR 400 BDL HEADPHONE': 'Honor 400 512GB Bundle Headphones', 'XIAOMI 15T PRO BDL REDMI PADSE': 'Xiaomi 15T Pro Bundle Redmi Pad', 'HONOR MAGIC7 PRO 5G SOMBRA LUNAR': 'Honor Magic 7 Pro', 'MOTOROLA EDGE 70 FUSIONBDLBUDSB': 'Motorola Edge 70 Fusion Bundle Buds' };
+  // ---- Cruce con lista de precios (equipos_estatus con oferta/vigencia/precio)
+  function hacerLista(rows, hoy) {
+    const cat = rows.map(r => {
+      const fi = r.fecha_inicio ? new Date(r.fecha_inicio + 'T12:00:00') : null, ff = r.fecha_fin ? new Date(r.fecha_fin + 'T12:00:00') : null;
+      return { k: r.modelo, e: String(r.estatus || '').toUpperCase(), o: r.oferta || '', v: r.vigencia || '', p: r.precio_contado != null ? Number(r.precio_contado) : null, t: toks(r.modelo), m: marca(r.modelo) || String(r.marca || '').toUpperCase(), gb: gb(r.modelo), vig: (!fi || fi <= hoy) && (!ff || ff >= hoy), fi };
+    });
+    const cache = {};
+    return function lista(mo) {
+      if (cache[mo] !== undefined) return cache[mo];
+      let res = null;
+      const key = ALIAS[mo] || ALIAS[modelo(mo)];
+      if (key) { const a = cat.filter(c => c.k === key); if (a.length) { a.sort((x, y) => (y.vig - x.vig) || ((y.fi ? y.fi.getTime() : 0) - (x.fi ? x.fi.getTime() : 0))); res = a[0]; } }
+      if (!res) {
+        const tk = toks(mo), mb = marca(mo), g = gb(mo);
+        const cands = cat.filter(c => c.t.length && (!mb || c.m === mb) && (!g || !c.gb || c.gb === g));
+        let a = cands.filter(c => c.t.every(x => tk.includes(x)));
+        let dir = true;
+        if (!a.length) { a = cands.filter(c => tk.length && tk.every(x => c.t.includes(x))); dir = false; }
+        if (a.length) { a.sort((x, y) => (y.vig - x.vig) || (dir ? (y.t.length - x.t.length) : (x.t.length - y.t.length)) || ((y.fi ? y.fi.getTime() : 0) - (x.fi ? x.fi.getTime() : 0))); res = a[0]; }
+      }
+      cache[mo] = res; return res;
+    };
+  }
+  function semanaISO(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dow = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dow); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil((((t - y0) / 86400000) + 1) / 7); }
+  function mesDeSemana(anio, w) { // mes del jueves de la semana ISO
+    const jan4 = new Date(anio, 0, 4); const dow = jan4.getDay() || 7; const lunes1 = new Date(jan4); lunes1.setDate(jan4.getDate() - dow + 1);
+    const jue = new Date(lunes1); jue.setDate(lunes1.getDate() + (w - 1) * 7 + 3); return jue.getMonth() + 1;
+  }
+  return { REGIONES, REG_SIGLA, PLAZA_REG, TARIFA, MATRIZ, EDO_ZONA, HUB_ZONA, norm, estadoNorm, hubGeo, hubIdeal, tarifa, modelo, color, marca, toks, gb, base, hacerLista, semanaISO, mesDeSemana, ALIAS };
+})();
+// ============================================================================
+// LOGÍSTICA v2 · carga de datos y cálculo (valores). Todo lo que necesitan el
+// Excel completo, el requerimiento plano y la pantalla del reporte.
+// ============================================================================
+async function log2_fetchAll(tabla, select, filtro) {
+  const out = []; let from = 0; const page = 1000;
+  while (true) {
+    let q = db.from(tabla).select(select).range(from, from + page - 1);
+    if (filtro) q = filtro(q);
+    const { data, error } = await q; if (error) throw error;
+    if (!data || !data.length) break; out.push(...data); if (data.length < page) break; from += page;
+  }
+  return out;
+}
+async function log2_cargarDatos(hoy) {
+  const anio = hoy.getFullYear();
+  const [entregas, ventas, invRows, listaRows, corteRows] = await Promise.all([
+    log2_fetchAll('entregas_detalle', 'folio, programacion, fecha_bo, fecha_creacion, fecha_venta, fecha_entregado, region, tipo_entrega, estado, municipio, cp, equipo, marca, guia, costo_guia, total_guia, cargo_transporte, recargo_combustible, proteccion_envio, area_remota, vav_tax, descuento_guia, estatus_entrega, vendedor, supervisor, plan'),
+    log2_fetchAll('ventas_detalle', 'folio, ejecutivo, supervisor, fecha_activacion, fecha_bo, estatus, plan', q => q.eq('estatus', 'activada').gte('fecha_activacion', `${anio}-01-01`)),
+    (async () => { const { data } = await db.from('inventario_series').select('fecha_corte').order('fecha_corte', { ascending: false }).limit(1); if (!data || !data.length) return []; const corte = data[0].fecha_corte; const rows = await log2_fetchAll('inventario_series', 'fecha_corte, plaza, tipo_tienda, tipo_almacen, tienda, sku, categoria, marca, nombre, serie, inventario', q => q.eq('fecha_corte', corte)); rows.__corte = corte; return rows; })(),
+    log2_fetchAll('equipos_estatus', 'modelo, estatus, marca, oferta, vigencia, fecha_inicio, fecha_fin, precio_contado'),
+    Promise.resolve(null)
+  ]);
+  return { entregas, ventas, inv: invRows, lista: listaRows, corteInv: invRows.__corte || null };
+}
+function log2_calcular(D, hoy) {
+  const R = LOG2; const anio = hoy.getFullYear(), mesAct = hoy.getMonth() + 1;
+  const hoyStr = `${anio}-${String(mesAct).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+  const semAct = R.semanaISO(hoy); const sem = [semAct - 5, semAct - 4, semAct - 3, semAct - 2, semAct - 1]; const sems = [semAct, semAct + 1, semAct + 2, semAct + 3];
+  const lista = R.hacerLista(D.lista, hoy);
+  // ---- entregas: última PT por folio; estado/hub
+  const porFolio = {};
+  D.entregas.forEach(e => { const f = String(e.folio || '').trim(); if (!f) return; const prev = porFolio[f]; if (!prev || String(e.fecha_creacion || '') >= String(prev.fecha_creacion || '')) porFolio[f] = e; });
+  const enr = e => { const estado = R.estadoNorm(e.estado); const muni = R.norm(e.municipio); return { estado, muni, hubReal: R.REG_SIGLA[String(e.region || '').toUpperCase()] || 'TOLUCA', hubIdeal: R.hubIdeal(estado, muni) || '', domicilio: /DOMICILIO/i.test(e.tipo_entrega || '') }; };
+  // ---- ventas activadas del año con equipo y región
+  const ventas = D.ventas.map(v => {
+    const e = porFolio[String(v.folio)]; const x = e ? enr(e) : { estado: '', muni: '', hubReal: 'TOLUCA', hubIdeal: '', domicilio: false };
+    const fa = v.fecha_activacion; const d = new Date(fa + 'T12:00:00');
+    const equipo = e ? e.equipo : null; const mo = R.modelo(equipo); const li = lista(mo);
+    return { folio: v.folio, fa, mes: d.getMonth() + 1, iso: R.semanaISO(d), hubReal: x.hubReal, hubIdeal: x.hubIdeal || x.hubReal, estado: x.estado, muni: x.muni, entrega: e ? (e.tipo_entrega || '') : '', ejecutivo: v.ejecutivo, plan: v.plan, equipo, modelo: mo, colorkey: R.color(equipo), estatusLista: li ? li.e : 'SIN LISTA', resurt: li && li.e === 'RESURTIBLE' ? 1 : 0 };
+  });
+  // unificar "sin capacidad" con su única variante con capacidad
+  const invE = D.inv.filter(i => String(i.categoria || '').toUpperCase() === 'EQUIPO').map(i => ({ ...i, region: R.PLAZA_REG[String(i.plaza || '').toUpperCase()] || String(i.plaza || '').toUpperCase(), modelo: R.modelo(i.nombre), colorkey: R.color(i.nombre), ubic: ({ HUB: 'HUB', PROPIO: 'TIENDA', SUB: 'TIENDA', VIRTUAL: 'VIRTUAL' })[String(i.tipo_tienda || '').toUpperCase()] || 'TIENDA', fisico: ['INVENTARIO', 'TRANSITO'].includes(String(i.tipo_almacen || '').toUpperCase()), porrec: String(i.tipo_almacen || '').toUpperCase() === 'POR RECIBIR', n: Number(i.inventario) || 1 }));
+  const mods = new Set([...ventas.map(v => v.modelo), ...invE.map(i => i.modelo)]);
+  const unif = {}; mods.forEach(m => { if (/GB/.test(m) || m === 'SIN EQUIPO') { unif[m] = m; return; } const cand = [...mods].filter(x => x !== m && x.replace(/\s\d+GB/, '') === m); unif[m] = cand.length === 1 ? cand[0] : m; });
+  ventas.forEach(v => { v.modelo = unif[v.modelo] || v.modelo; }); invE.forEach(i => { i.modelo = unif[i.modelo] || i.modelo; });
+  const gs = ventas.filter(v => sem.includes(v.iso)); const h3 = ventas.filter(v => v.mes >= Math.max(1, mesAct - 3) && v.mes <= mesAct - 1); // 3 meses cerrados
+  const m3 = [...new Set(h3.map(v => v.mes))].sort((a, b) => a - b);
+  // ---- metas
+  const metaMes = {}; (metasAgeData || []).forEach(m => { if (Number(m.anio) === anio) metaMes[m.mes] = (metaMes[m.mes] || 0) + (Number(m.meta_activadas) || 0); });
+  let ultMeta = 0; for (let m = 1; m <= 12; m++) if (metaMes[m] > 0) ultMeta = metaMes[m];
+  const metaDe = m => metaMes[m] > 0 ? metaMes[m] : ultMeta; const metaSep = metaDe(mesAct);
+  const nReal = {}, nIdeal = {}; R.REGIONES.forEach(r => { nReal[r] = h3.filter(v => v.hubReal === r).length; nIdeal[r] = h3.filter(v => v.hubIdeal === r).length; });
+  const totH3 = h3.length;
+  const meta = R.REGIONES.map(r => ({ region: r, real: nReal[r], pctReal: totH3 ? nReal[r] / totH3 : 0, metaReal: Math.round((totH3 ? nReal[r] / totH3 : 0) * metaSep), ideal: nIdeal[r], pctIdeal: totH3 ? nIdeal[r] / totH3 : 0, metaIdeal: Math.round((totH3 ? nIdeal[r] / totH3 : 0) * metaSep), metaSem: Math.round((totH3 ? nIdeal[r] / totH3 : 0) * metaSep / 4.34) }));
+  // ---- envíos 2026 (sanidad)
+  const env = D.entregas.filter(e => e.guia && /DOMICILIO/i.test(e.tipo_entrega || '') && e.fecha_bo && String(e.fecha_bo).startsWith(String(anio))).map(e => { const x = enr(e); const mes = parseInt(String(e.fecha_bo).substring(5, 7), 10); return { ...e, ...x, mes, combPct: (Number(e.cargo_transporte) > 0 && e.recargo_combustible != null) ? Number(e.recargo_combustible) / Number(e.cargo_transporte) : null }; }).filter(e => R.EDO_ZONA[e.estado]);
+  const combMes = {}; for (let m = 1; m <= 12; m++) { const v = env.filter(e => e.mes === m && e.combPct != null && isFinite(e.combPct)).map(e => e.combPct).sort((a, b) => a - b); combMes[m] = v.length ? v[Math.floor(v.length / 2)] : 0.07; }
+  env.forEach(e => { e.tReal = R.tarifa(e.hubReal, e.estado); e.tIdeal = R.tarifa(e.hubIdeal, e.estado); const f = (1 + combMes[e.mes]) * 1.16; e.cReal = e.tReal * f; e.cIdeal = e.tIdeal * f; e.acierto = e.tReal <= e.tIdeal + 0.01 ? 1 : 0; e.sobre = e.cReal - e.cIdeal; });
+  const envOk = env.filter(e => e.tReal != null && e.tIdeal != null);
+  const sanidad = []; for (let m = 1; m <= 12; m++) { const s = envOk.filter(e => e.mes === m); sanidad.push({ mes: m, n: s.length, ok: s.reduce((a, e) => a + e.acierto, 0), cReal: s.reduce((a, e) => a + e.cReal, 0), cIdeal: s.reduce((a, e) => a + e.cIdeal, 0), comb: combMes[m] }); }
+  const sanidadHub = {}; R.REGIONES.forEach(h => { sanidadHub[h] = []; for (let m = 1; m <= 12; m++) { const s = envOk.filter(e => e.mes === m && e.hubReal === h); sanidadHub[h].push({ mes: m, n: s.length, ok: s.reduce((a, e) => a + e.acierto, 0), sobre: s.reduce((a, e) => a + e.sobre, 0) }); } });
+  // ---- VSO (por modelo y por color), todas las regiones (valores); fórmulas en Excel
+  const totales5 = key => { const o = {}; gs.forEach(v => { o[v[key]] = (o[v[key]] || 0) + 1; }); return o; };
+  const vsoLista = key => { const t5 = totales5(key); const ex = {}; invE.forEach(i => { if (i.fisico) ex[i[key]] = (ex[i[key]] || 0) + i.n; }); const idx = [...new Set([...gs.map(v => v[key]), ...invE.map(i => i[key])])].filter(x => x !== 'SIN EQUIPO'); idx.sort((a, b) => ((t5[b] || 0) - (t5[a] || 0)) || ((ex[b] || 0) - (ex[a] || 0))); return idx; };
+  const idxModelo = vsoLista('modelo'), idxColor = vsoLista('colorkey');
+  const stat = (key, k, region) => { const f = v => v[key] === k && (!region || v.hubIdeal === region); const semanas = sem.map(w => gs.filter(v => f(v) && v.iso === w).length); const inv = invE.filter(i => i[key] === k && (!region || i.region === region)); const ex = inv.filter(i => i.fisico).reduce((a, i) => a + i.n, 0); const eh = inv.filter(i => i.fisico && i.ubic === 'HUB').reduce((a, i) => a + i.n, 0), et = inv.filter(i => i.fisico && i.ubic === 'TIENDA').reduce((a, i) => a + i.n, 0), ev = inv.filter(i => i.fisico && i.ubic === 'VIRTUAL').reduce((a, i) => a + i.n, 0); const pr = inv.filter(i => i.porrec).reduce((a, i) => a + i.n, 0); const tot = semanas.reduce((a, b) => a + b, 0); const prom = tot / 5; const cc = Math.round(ex * 0.2) + Math.round(pr * 0.2); return { semanas, tot, prom, ex, eh, et, ev, pr, cc, wos: prom > 0 ? cc / prom : null }; };
+  // ---- proyección (unidades) y objetivos
+  const vMes = m => ventas.filter(v => v.mes === m).length; const base = vMes(mesAct - 1) || 0; const incr = base - (vMes(mesAct - 2) || 0);
+  const partAgo = {}; R.REGIONES.forEach(r => { partAgo[r] = base ? ventas.filter(v => v.mes === mesAct - 1 && v.hubIdeal === r).length / base : 0; });
+  const proy = k => base + incr * k; // k = meses desde el último cerrado (1 = mes en curso)
+  const mesesProy = [mesAct, mesAct + 1, mesAct + 2, mesAct + 3].map(m => ((m - 1) % 12) + 1);
+  const objSem = (r, w, baseObj) => { const mw = R.mesDeSemana(anio, w); const k = ((mw - mesAct + 12) % 12) + 1; const tot = baseObj === 'META' ? metaDe(mw) : proy(k); const part = baseObj === 'META' ? (totH3 ? nIdeal[r] / totH3 : 0) : partAgo[r]; return Math.round(Math.round(tot * part) / 4.34); };
+  // ---- requerimiento 4 semanas (por región × modelo resurtible)
+  const req = []; R.REGIONES.forEach(rg => { const resurtTot = gs.filter(v => v.hubIdeal === rg && v.resurt).length; idxModelo.forEach(m => { const li = lista(m); if (!li || li.e !== 'RESURTIBLE') return; const s = stat('modelo', m, rg); if (s.tot === 0 && s.ex === 0 && s.pr === 0) return; const part = resurtTot ? s.tot / resurtTot : 0; const prev4 = s.semanas.slice(0, 4).reduce((a, b) => a + b, 0) / 4; const tend = prev4 > 0 ? s.semanas[4] / prev4 - 1 : (s.semanas[4] > 0 ? 1 : 0); const wk = base => sems.map(w => Math.round(part * objSem(rg, w, base))); const wP = wk('PROYECCION'), wM = wk('META'); const totP = wP.reduce((a, b) => a + b, 0), totM = wM.reduce((a, b) => a + b, 0); const alerta = (tot) => (s.ex === 0 && s.pr > 0) ? 'DEPENDE DE ARRIBO (sin stock en región)' : tend <= -0.3 ? 'A LA BAJA: validar promoción / vigencia' : tend >= 0.3 ? 'AL ALZA: cuidar stock' : (tot - s.cc > 0 ? 'Pedir asignación' : ''); req.push({ region: rg, modelo: m, estatus: li.e, vigencia: li.v + (li.vig ? '' : ' (vencida)'), semanas: s.semanas, prom: s.prom, tend, part, wP, wM, totP, totM, ex: s.ex, pr: s.pr, cc: s.cc, faltP: Math.max(0, totP - s.cc), faltM: Math.max(0, totM - s.cc), alertaP: alerta(totP), alertaM: alerta(totM) }); }); });
+  // ---- revisión semanal (WOS < 2, todas las regiones)
+  const revision = []; const infoM = {}; idxModelo.forEach(m => { const li = lista(m); const s = stat('modelo', m, null); infoM[m] = { est: li ? li.e : 'SIN LISTA', precio: li ? li.p : null, marca: R.marca(m), wos: s.wos, prom: s.prom, s }; });
+  const reemplazo = m => { const o = infoM[m]; let c = Object.entries(infoM).filter(([x, i]) => x !== m && i.est === 'RESURTIBLE' && i.marca === o.marca && i.wos != null && i.wos >= 4); if (!c.length) c = Object.entries(infoM).filter(([x, i]) => x !== m && i.est === 'RESURTIBLE' && i.wos != null && i.wos >= 4); if (!c.length) return null; if (o.precio) { const cp = c.filter(x => x[1].precio); if (cp.length) c = cp; c.sort((a, b) => Math.abs((a[1].precio || 0) - o.precio) - Math.abs((b[1].precio || 0) - o.precio) || (b[1].wos - a[1].wos)); } else c.sort((a, b) => b[1].prom - a[1].prom); return { modelo: c[0][0], wos: c[0][1].wos, precio: c[0][1].precio }; };
+  idxModelo.forEach(m => { const o = infoM[m]; if (o.wos == null || o.wos >= 2) return; const acc = o.est === 'NO RESURTIBLE' ? 'REEMPLAZAR' : o.est === 'RESURTIBLE' ? 'VALIDAR ARRIBO' : 'REVISAR'; revision.push({ accion: acc, modelo: m, estatus: o.est, prom: o.prom, ex: o.s.ex, pr: o.s.pr, cc: o.s.cc, wos: o.wos, precio: o.precio, reemplazo: acc === 'REEMPLAZAR' ? reemplazo(m) : null }); });
+  // ---- sugerencia no resurtibles
+  const sug = []; R.REGIONES.forEach(rg => { const exR = {}; invE.filter(i => i.region === rg && i.fisico).forEach(i => { exR[i.modelo] = (exR[i.modelo] || 0) + i.n; }); Object.entries(exR).forEach(([m, ex]) => { if (ex <= 0 || m === 'SIN EQUIPO') return; const li = lista(m); const est = li ? li.e : 'SIN LISTA'; const vT = h3.filter(v => v.modelo === m).length; if (est === 'RESURTIBLE' || vT === 0) return; const vR = h3.filter(v => v.modelo === m && v.hubIdeal === rg).length; const cc = Math.round(ex * 0.2); const vm = vR / Math.max(1, m3.length); const cob = vm > 0 ? cc / vm : 99; sug.push({ region: rg, modelo: m, estatus: est, ex, cc, vR, vm, cob, sugerencia: vR === 0 ? 'Sin ventas en esta región: mover a otro HUB' : cob <= 1 ? 'Se agota este mes: empujar ya' : cob <= 3 ? 'Empujar en campaña' : 'Stock alto: promoción o traspaso' }); }); });
+  return { anio, mesAct, hoyStr, semAct, sem, sems, mesesProy, lista, ventas, gs, h3, m3, invE, corteInv: D.corteInv, metaMes, metaDe, metaSep, meta, env: envOk, combMes, sanidad, sanidadHub, idxModelo, idxColor, stat, base, incr, proy, partAgo, objSem, req, revision, sug, infoM, totH3, nIdeal, listaRows: D.lista };
+}
+// ============================================================================
+// LOGÍSTICA v2 · Excel completo (ExcelJS) con fórmulas, formatos condicionales y
+// selectores — mismo diseño que "Forecast CC semana N.xlsx" aprobado, sin gráficas.
+// ============================================================================
+const XL = (() => {
+  const L = n => { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const NAVY = '1F3864', MOR = '5B3A8E', AZ = '0077A8', VER = '0F766E', NAR = 'B45309', GR = '595959', ROJO = '991B1B', AM = 'FFF2CC';
+  const fill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + c } });
+  const F = (o) => ({ name: 'Calibri', size: 10, ...o });
+  const B = F({}), BB = F({ bold: true }), H = F({ bold: true, color: { argb: 'FFFFFFFF' } }), T = F({ bold: true, size: 13, color: { argb: 'FF' + NAVY } }), N9 = F({ size: 9, italic: true, color: { argb: 'FF' + GR } });
+  const set = (ws, r, c, v, opt = {}) => { const cell = ws.getCell(r, c); cell.value = v; if (opt.font) cell.font = opt.font; if (opt.fill) cell.fill = fill(opt.fill); if (opt.fmt) cell.numFmt = opt.fmt; if (opt.align) cell.alignment = opt.align; return cell; };
+  const fx = (ws, r, c, formula, opt = {}) => set(ws, r, c, { formula }, opt);
+  const hdr = (ws, r, cols, color, c0 = 1) => cols.forEach((h, i) => set(ws, r, c0 + i, h, { font: H, fill: color || NAVY, align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+  const widths = (ws, arr) => arr.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+  const cf = (ws, ref, rules) => ws.addConditionalFormatting({ ref, rules });
+  const cfFill = c => ({ fill: fill(c) });
+  const listVal = (ws, addr, items) => { ws.getCell(addr).dataValidation = { type: 'list', allowBlank: false, formulae: ['"' + items.join(',') + '"'] }; };
+  const tot = (ws, r, cols, opt = {}) => cols.forEach(c => set(ws, r, c, null, { fill: 'DDEBF7', font: BB }));
+  const MESN = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const MESLL = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+  function datos(wb, nombre, cols, rows, titulo, opts = {}) {
+    const ws = wb.addWorksheet(nombre); set(ws, 1, 1, titulo, { font: F({ bold: true, size: 12, color: { argb: 'FF' + NAVY } }) });
+    hdr(ws, 3, cols);
+    rows.forEach((row, i) => row.forEach((v, j) => { const c = ws.getCell(4 + i, 1 + j); c.value = v == null ? null : v; }));
+    if (opts.formulas) rows.forEach((_, i) => { const r = 4 + i; Object.entries(opts.formulas).forEach(([col, fn]) => { const cc = ws.getCell(r, Number(col)); cc.value = { formula: fn(r) }; if (opts.fmt && opts.fmt[col]) cc.numFmt = opts.fmt[col]; }); });
+    ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }]; const n = 3 + rows.length; ws.autoFilter = `A3:${L(cols.length)}${n}`;
+    cols.forEach((c, j) => { ws.getColumn(j + 1).width = Math.min(Math.max(12, String(c).length + 2), 34); });
+    return n;
+  }
+
+  function construir(C, opciones = {}) {
+    const R = LOG2, REG = R.REGIONES; const wb = new ExcelJS.Workbook(); wb.calcProperties.fullCalcOnLoad = true;
+    const { anio, mesAct, hoyStr, semAct, sem, sems, mesesProy } = C; const SEMANA = semAct;
+    // ===== Tarifario DHL =====
+    const wt = wb.addWorksheet('Tarifario DHL');
+    set(wt, 1, 1, 'TARIFARIO DHL · contrato VAVTRADE 2026 · 1 kg · neto con 50% de descuento · sin IVA', { font: T });
+    set(wt, 2, 1, 'Costo comparable por envío = tarifa × (1 + combustible del mes) × 1.16. Tijuana (zona 9) solo puede ser origen para Baja California.', { font: N9 });
+    hdr(wt, 4, ['Letra', 'Tarifa neta']); Object.entries(R.TARIFA).forEach(([k, v], i) => { set(wt, 5 + i, 1, k, { font: BB }); set(wt, 5 + i, 2, v, { fmt: '$#,##0.00' }); });
+    hdr(wt, 4, ['HUB', 'Zona origen'], MOR, 4); Object.entries(R.HUB_ZONA).forEach(([h, z], i) => { set(wt, 5 + i, 4, h, { font: BB }); set(wt, 5 + i, 5, z); });
+    const edos = Object.entries(R.EDO_ZONA).sort((a, b) => a[0].localeCompare(b[0])); hdr(wt, 4, ['Estado', 'Zona destino'], VER, 7); edos.forEach(([e, z], i) => { set(wt, 5 + i, 7, e); set(wt, 5 + i, 8, z); });
+    const nE = 4 + edos.length;
+    set(wt, 40, 1, 'MATRIZ origen (fila) × destino (columna) → letra', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    hdr(wt, 41, ['origen \\ destino', ...Array.from({ length: 17 }, (_, i) => i + 1)], NAR);
+    for (let i = 1; i <= 17; i++) { set(wt, 41 + i, 1, i, { font: BB }); for (let j = 1; j <= 17; j++) set(wt, 41 + i, 1 + j, R.MATRIZ[i][j]); }
+    for (let c = 1; c <= 18; c++) wt.getColumn(c).width = 8; wt.getColumn(1).width = 16; wt.getColumn(4).width = 14; wt.getColumn(7).width = 24;
+    const R_TAR = "'Tarifario DHL'!$A$5:$B$12", R_HUB = "'Tarifario DHL'!$D$5:$E$11", R_EDO = `'Tarifario DHL'!$G$5:$H$${nE}`, R_MAT = "'Tarifario DHL'!$B$42:$R$58";
+    // ===== Datos envios =====
+    const envRows = C.env.map(e => [e.programacion, e.folio, e.fecha_bo, e.mes, e.hubReal, e.estado, e.muni, e.cp, e.hubIdeal, e.total_guia != null ? Number(e.total_guia) : null]);
+    const nEnv = datos(wb, 'Datos envios', ['Programación', 'Folio', 'Fecha BO', 'Mes', 'HUB que envió', 'Estado entrega', 'Municipio', 'CP', 'HUB ideal (menor tarifa; empate → Puebla; TIJ solo BC)', 'Total guía real', 'Zona destino', 'Zona origen real', 'Letra real', 'Tarifa real', 'Zona origen ideal', 'Letra ideal', 'Tarifa ideal', 'Combustible mes', 'Costo real comparable', 'Costo ideal comparable', 'Acierto (mismo costo)', 'Sobrecosto'], envRows,
+      `Envíos a domicilio con guía DHL ${anio} (${envRows.length}) · columnas K en adelante son FÓRMULAS sobre "Tarifario DHL" y la tabla de combustible de "Sanidad envios"`,
+      { formulas: { 11: r => `VLOOKUP(F${r},${R_EDO},2,0)`, 12: r => `VLOOKUP(E${r},${R_HUB},2,0)`, 13: r => `INDEX(${R_MAT},L${r},K${r})`, 14: r => `VLOOKUP(M${r},${R_TAR},2,0)`, 15: r => `VLOOKUP(I${r},${R_HUB},2,0)`, 16: r => `INDEX(${R_MAT},O${r},K${r})`, 17: r => `VLOOKUP(P${r},${R_TAR},2,0)`, 18: r => `INDEX('Sanidad envios'!$J$5:$J$16,D${r})`, 19: r => `N${r}*(1+R${r})*1.16`, 20: r => `Q${r}*(1+R${r})*1.16`, 21: r => `IF(N${r}<=Q${r}+0.01,1,0)`, 22: r => `S${r}-T${r}` }, fmt: { 14: '$#,##0.00', 17: '$#,##0.00', 18: '0.0%', 19: '$#,##0.00', 20: '$#,##0.00', 22: '$#,##0.00' } });
+    const E = col => `'Datos envios'!$${col}$4:$${col}$${nEnv}`;
+    // ===== Datos ventas (junio → hoy) =====
+    const vRows = C.ventas.filter(v => v.mes >= 6).sort((a, b) => a.fa.localeCompare(b.fa)).map(v => [v.folio, v.fa, v.mes, v.iso, v.hubReal, v.hubIdeal, v.estado, v.muni, v.entrega, v.ejecutivo, v.plan, v.equipo, v.modelo, v.colorkey, v.estatusLista, v.resurt]);
+    const nv = datos(wb, 'Datos ventas', ['Folio', 'Fecha activación', 'Mes', 'Semana ISO', 'Región HISTÓRICO (HUB que envió)', 'Región DEMANDA REAL (HUB ideal)', 'Estado', 'Municipio', 'Tipo entrega', 'Ejecutivo', 'Plan', 'Equipo (detalle programación)', 'Modelo (sin color)', 'Modelo / color', 'Estatus lista (al corte)', 'Resurtible (1/0)'], vRows, `Activaciones desde junio (${vRows.length}) · Región demanda real = HUB de menor tarifa por dirección de entrega (empate → Puebla; Tijuana solo BC); ventas en tienda/HUB o sin dirección = HUB que atendió`);
+    const V = col => `'Datos ventas'!$${col}$4:$${col}$${nv}`;
+    // ===== Datos inventario =====
+    const iRows = C.invE.map(i => [i.region, i.plaza, i.tipo_tienda, i.ubic, i.tipo_almacen, i.tienda, i.sku, i.marca, i.nombre, i.serie, i.n, i.modelo, i.colorkey]);
+    const ni = datos(wb, 'Datos inventario', ['Región', 'Plaza', 'Tipo tienda', 'Ubicación', 'Tipo almacén', 'Tienda / almacén', 'SKU', 'Marca', 'Nombre', 'Serie', 'Inventario', 'Modelo (sin color)', 'Modelo / color'], iRows, `Inventario de series ExpertCell al corte ${C.corteInv || ''} — categoría EQUIPO, ${iRows.length} series · físico = INVENTARIO + TRANSITO · POR RECIBIR = confirmado en camino`);
+    const I = col => `'Datos inventario'!$${col}$4:$${col}$${ni}`;
+    // ===== Datos lista de precios =====
+    datos(wb, 'Datos lista de precios', ['Estatus', 'Oferta', 'Marca', 'Equipo', 'Precio de contado', 'Fecha inicio', 'Fecha fin', 'Vigencia'], (C.listaRows || []).map(r => [r.estatus, r.oferta, r.marca, r.modelo, r.precio_contado, r.fecha_inicio, r.fecha_fin, r.vigencia]), 'Lista de precios AT&T (.xlsm) — hoja "Promociones AT&T Premium": estatus, oferta y vigencia por equipo');
+    // ===== Meta por region =====
+    const wm = wb.addWorksheet('Meta por region');
+    set(wm, 1, 1, `META DE ${MESLL[mesAct - 1].toUpperCase()} POR REGIÓN · histórico (HUB que despachó) vs demanda real (HUB ideal por dirección)`, { font: T });
+    set(wm, 2, 1, `Todo formulado sobre "Datos ventas" (3 meses cerrados: Mes ${C.m3[0]}-${C.m3[C.m3.length - 1]}). Histórico = COUNTIFS por Región HISTÓRICO. Demanda real = COUNTIFS por Región DEMANDA REAL (HUB de menor tarifa DHL; empate → Puebla; Tijuana solo BC). Meta del mes en C3, semanas/mes en E3.`, { font: N9 });
+    set(wm, 3, 2, 'Meta mes:', { font: BB }); set(wm, 3, 3, C.metaSep, { fill: AM, font: BB }); set(wm, 3, 4, 'Semanas/mes:', { font: BB }); set(wm, 3, 5, 4.34, { fill: AM });
+    hdr(wm, 5, ['Región', `Envíos ${MESN[C.m3[0] - 1]}-${MESN[C.m3[C.m3.length - 1] - 1]} por HUB que despachó`, '% sobre histórico de envíos', 'Meta si repartimos como hoy', 'Ventas por HUB ideal (demanda real)', '% sobre demanda real', 'Meta según demanda real', 'Meta semanal (demanda real)']);
+    const m0 = C.m3[0], m1 = C.m3[C.m3.length - 1];
+    REG.forEach((rg, i) => { const r = 6 + i; set(wm, r, 1, rg, { font: BB }); fx(wm, r, 2, `COUNTIFS(${V('E')},A${r},${V('C')},">=${m0}",${V('C')},"<=${m1}")`); fx(wm, r, 3, `IF($B$13>0,B${r}/$B$13,0)`, { fmt: '0.0%' }); fx(wm, r, 4, `ROUND(C${r}*$C$3,0)`); fx(wm, r, 5, `COUNTIFS(${V('F')},A${r},${V('C')},">=${m0}",${V('C')},"<=${m1}")`); fx(wm, r, 6, `IF($E$13>0,E${r}/$E$13,0)`, { fmt: '0.0%' }); fx(wm, r, 7, `ROUND(F${r}*$C$3,0)`, { font: BB, fill: 'E2EFDA' }); fx(wm, r, 8, `ROUND(G${r}/$E$3,0)`, { font: BB }); });
+    set(wm, 13, 1, 'TODAS', { font: BB }); [[2, 'B'], [4, 'D'], [5, 'E'], [7, 'G'], [8, 'H']].forEach(([c, f]) => fx(wm, 13, c, `SUM(${f}6:${f}12)`, { font: BB })); fx(wm, 13, 3, 'SUM(C6:C12)', { fmt: '0.0%' }); fx(wm, 13, 6, 'SUM(F6:F12)', { fmt: '0.0%' }); for (let c = 1; c <= 8; c++) wm.getCell(13, c).fill = fill('DDEBF7');
+    widths(wm, [14, 16, 12, 14, 16, 12, 14, 14]);
+    // ===== Sanidad envios =====
+    const wsn = wb.addWorksheet('Sanidad envios');
+    set(wsn, 1, 1, 'SANIDAD DE ENVÍOS · % de envíos que salen al menor costo posible · impacto en pesos', { font: T });
+    set(wsn, 2, 1, `Formulado sobre "Datos envios". Acierto = el HUB que envió tiene la misma tarifa que el HUB ideal. Costo comparable = tarifa neta × (1 + combustible del mes) × 1.16. Combustible = mediana de recargo ÷ transporte de las guías del mes (columna J, editable). Objetivo mensual en E (amarillo). El indicador de mejora es SOBRECOSTO POR ENVÍO (columna I y bloque por HUB abajo). Las gráficas viven en el reporte maestro.`, { font: N9 });
+    hdr(wsn, 4, ['Mes', 'Envíos', 'Al menor costo', '% acierto', 'Objetivo %', 'Costo real (MXN)', 'Costo ideal (MXN)', 'Sobrecosto (MXN)', 'Sobrecosto por envío', 'Combustible mes']);
+    const ultM = Math.max(...C.sanidad.filter(s => s.n > 0).map(s => s.mes), 1); const acUlt = (() => { const s = C.sanidad[ultM - 1]; return s.n ? s.ok / s.n : 0.4; })();
+    for (let m = 1; m <= 12; m++) { const r = 4 + m; set(wsn, r, 1, MESN[m - 1], { font: BB }); fx(wsn, r, 2, `COUNTIFS(${E('D')},${m})`); fx(wsn, r, 3, `SUMIFS(${E('U')},${E('D')},${m})`); fx(wsn, r, 4, `IF(B${r}>0,C${r}/B${r},"")`, { fmt: '0.0%' }); set(wsn, r, 5, m === ultM ? Math.round(acUlt * 100) / 100 : (m > ultM ? Math.round(Math.min(0.8, acUlt + 0.1 * (m - ultM)) * 100) / 100 : null), { fill: AM, fmt: '0%' }); fx(wsn, r, 6, `SUMIFS(${E('S')},${E('D')},${m})`, { fmt: '$#,##0' }); fx(wsn, r, 7, `SUMIFS(${E('T')},${E('D')},${m})`, { fmt: '$#,##0' }); fx(wsn, r, 8, `F${r}-G${r}`, { fmt: '$#,##0', font: F({ bold: true, color: { argb: 'FFC00000' } }) }); fx(wsn, r, 9, `IF(B${r}>0,H${r}/B${r},"")`, { fmt: '$#,##0.0' }); set(wsn, r, 10, Math.round(C.combMes[m] * 10000) / 10000, { fmt: '0.0%', fill: AM }); }
+    set(wsn, 17, 1, `TOTAL ${anio}`, { font: BB }); [2, 3, 6, 7, 8].forEach(c => fx(wsn, 17, c, `SUM(${L(c)}5:${L(c)}16)`, { font: BB, fmt: c >= 6 ? '$#,##0' : undefined })); fx(wsn, 17, 4, 'IF(B17>0,C17/B17,0)', { fmt: '0.0%' }); fx(wsn, 17, 9, 'IF(B17>0,H17/B17,0)', { fmt: '$#,##0.0' }); for (let c = 1; c <= 10; c++) wsn.getCell(17, c).fill = fill('DDEBF7');
+    const mf = m => m ? `,${E('D')},${m}` : '';
+    const bloque = (r0, titulo, color, fcell, etq, fmt, conTodos) => { set(wsn, r0, 1, titulo, { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) }); hdr(wsn, r0 + 1, [etq, ...MESN, anio], color); REG.forEach((h, i) => { const rr = r0 + 2 + i; set(wsn, rr, 1, h, { font: BB }); for (let m = 1; m <= 12; m++) fx(wsn, rr, 1 + m, fcell(`$A${rr}`, m), { fmt }); fx(wsn, rr, 14, fcell(`$A${rr}`, null), { fmt }); }); let end = r0 + 2 + REG.length; if (conTodos) { set(wsn, end, 1, 'TODOS', { font: BB }); for (let m = 1; m <= 12; m++) fx(wsn, end, 1 + m, fcell('"*"', m), { fmt }); fx(wsn, end, 14, fcell('"*"', null), { fmt }); for (let c = 1; c <= 14; c++) wsn.getCell(end, c).fill = fill('DDEBF7'); end++; } return end + 2; };
+    let rr2 = bloque(19, '% ACIERTO POR HUB QUE ENVÍA (de lo que despachó, cuánto salió al menor costo)', MOR, (h, m) => `IFERROR(SUMIFS(${E('U')},${E('E')},${h}${mf(m)})/COUNTIFS(${E('E')},${h}${mf(m)}),"")`, 'HUB', '0%', false);
+    rr2 = bloque(rr2, 'PARTICIPACIÓN DE ENVÍOS POR HUB QUE DESPACHÓ (% del mes)', VER, (h, m) => `IFERROR(COUNTIFS(${E('E')},${h}${mf(m)})/COUNTIFS(${E('E')},"*"${mf(m)}),"")`, 'HUB', '0%', false);
+    rr2 = bloque(rr2, 'DEMANDA REAL POR HUB IDEAL (% de envíos del mes que debieron salir de cada HUB)', NAR, (h, m) => `IFERROR(COUNTIFS(${E('I')},${h}${mf(m)})/COUNTIFS(${E('I')},"*"${mf(m)}),"")`, 'HUB ideal', '0%', false);
+    rr2 = bloque(rr2, 'SOBRECOSTO POR HUB QUE ENVÍA Y MES (MXN)', 'C00000', (h, m) => `SUMIFS(${E('V')},${E('E')},${h}${mf(m)})`, 'HUB', '$#,##0', true);
+    rr2 = bloque(rr2, 'SOBRECOSTO POR ENVÍO, POR HUB Y MES (MXN/envío) · EL INDICADOR DE MEJORA', '7C2D12', (h, m) => `IFERROR(SUMIFS(${E('V')},${E('E')},${h}${mf(m)})/COUNTIFS(${E('E')},${h}${mf(m)}),"")`, 'HUB', '$#,##0.0', true);
+    widths(wsn, [14, 10, 12, 10, 10, 14, 14, 14, 12, 12]); wsn.views = [{ state: 'frozen', xSplit: 1, ySplit: 4 }];
+    // ===== HUB ideal - analisis =====
+    const wa = wb.addWorksheet('HUB ideal - analisis');
+    set(wa, 1, 1, `¿DESDE QUÉ HUB SE ENVÍA vs DESDE CUÁL CONVENDRÍA (menor tarifa DHL)? · entregas a domicilio, meses ${m0}-${m1} de ${anio}`, { font: T });
+    set(wa, 2, 1, 'Formulado sobre "Datos envios". Un envío cuenta como correcto si salió al mismo costo que el ideal (columna U), aunque el HUB ideal por regla sea otro. Abajo, solo los municipios donde el envío salió MÁS CARO del necesario.', { font: N9 });
+    hdr(wa, 4, ['HUB que ENVIÓ ↓ / HUB IDEAL →', ...REG, 'TOTAL enviado', 'Al menor costo', '% al menor costo', 'Sobrecosto (MXN)']);
+    const MR = `${E('D')},">=${m0}",${E('D')},"<=${m1}"`;
+    REG.forEach((h, i) => { const r = 5 + i; set(wa, r, 1, h, { font: BB }); REG.forEach((ci, j) => fx(wa, r, 2 + j, `COUNTIFS(${E('E')},$A${r},${E('I')},"${ci}",${MR})`, { font: h === ci ? BB : B, fill: h === ci ? 'E2EFDA' : undefined })); fx(wa, r, 9, `SUM(B${r}:H${r})`, { font: BB }); fx(wa, r, 10, `SUMIFS(${E('U')},${E('E')},$A${r},${MR})`); fx(wa, r, 11, `IF(I${r}>0,J${r}/I${r},"")`, { fmt: '0%' }); fx(wa, r, 12, `SUMIFS(${E('V')},${E('E')},$A${r},${MR})`, { fmt: '$#,##0' }); });
+    set(wa, 12, 1, 'TOTAL', { font: BB }); for (let c = 2; c <= 10; c++) fx(wa, 12, c, `SUM(${L(c)}5:${L(c)}11)`, { font: BB }); fx(wa, 12, 11, 'IF(I12>0,J12/I12,"")', { fmt: '0%' }); fx(wa, 12, 12, 'SUM(L5:L11)', { fmt: '$#,##0', font: BB }); for (let c = 1; c <= 12; c++) wa.getCell(12, c).fill = fill('DDEBF7');
+    set(wa, 14, 1, 'Municipios donde más se envía MÁS CARO del necesario · detalle en "Datos envios" filtrando Sobrecosto > 0', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    hdr(wa, 15, ['Estado', 'Municipio', 'HUB que envió', 'HUB ideal', 'Envíos', 'Sobrecosto (MXN)'], MOR);
+    const mal = {}; C.env.filter(e => e.mes >= m0 && e.mes <= m1 && e.tReal > e.tIdeal + 0.01).forEach(e => { const k = [e.estado, e.muni, e.hubReal, e.hubIdeal].join('|'); mal[k] = mal[k] || { n: 0, s: 0 }; mal[k].n++; mal[k].s += e.sobre; });
+    Object.entries(mal).sort((a, b) => b[1].s - a[1].s).slice(0, 40).forEach(([k, v], i) => { const [e, m, hr, hi] = k.split('|'); const r = 16 + i; set(wa, r, 1, e); set(wa, r, 2, m); set(wa, r, 3, hr); set(wa, r, 4, hi, { font: BB }); set(wa, r, 5, v.n, { font: BB }); set(wa, r, 6, Math.round(v.s * 100) / 100, { fmt: '$#,##0' }); });
+    set(wa, 16, 8, 'Regla de HUB ideal', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    ['1) Zona DHL del estado de entrega (hoja Tarifario DHL).', '2) Tarifa desde cada HUB = letra de la matriz origen × destino → ratecard.', '3) HUB ideal = el de menor tarifa. Tijuana solo si el destino es Baja California.', '4) Empate de tarifa: Puebla si está empatado; si no, el más cercano.', '5) Ventas en tienda / HUB o sin dirección: el HUB que atendió.'].forEach((t, i) => set(wa, 17 + i, 8, t));
+    widths(wa, [22, 18, 14, 14, 10, 14, 12, 80]); wa.views = [{ state: 'frozen', ySplit: 4 }];
+    // ===== Proyeccion =====
+    const wp = wb.addWorksheet('Proyeccion');
+    set(wp, 1, 1, `PROYECCIÓN · crecimiento en unidades vs meta · semana ${SEMANA}`, { font: T });
+    set(wp, 2, 1, `Formulado sobre "Datos ventas". Base = activaciones de ${MESN[mesAct - 2]} (fila TOTAL, col. B). Crecimiento mensual en C3 (por default el salto ${MESN[mesAct - 3]}→${MESN[mesAct - 2]}, editable). Proyección del mes n = base + crecimiento × n, repartida por región según demanda real de ${MESN[mesAct - 2]}. Meta = hoja "Meta por region".`, { font: N9 });
+    set(wp, 3, 1, 'Crecimiento (unid/mes) →', { font: BB }); set(wp, 3, 3, C.incr, { fill: AM, font: BB });
+    const mp = mesesProy; hdr(wp, 4, ['Región', `Ventas ${MESN[mesAct - 2]} (demanda real)`, `Ventas ${MESN[mesAct - 4] || ''}`, `Ventas ${MESN[mesAct - 3] || ''}`, `${MESN[mesAct - 1]} a la fecha`, ...mp.flatMap(m => [`Proy. ${MESN[m - 1]}`, `Meta ${MESN[m - 1]}`, `Δ ${MESN[m - 1]}`])]);
+    REG.forEach((rg, i) => { const r = 5 + i; set(wp, r, 1, rg, { font: BB }); fx(wp, r, 2, `COUNTIFS(${V('F')},A${r},${V('C')},${mesAct - 1})`); fx(wp, r, 3, `COUNTIFS(${V('F')},A${r},${V('C')},${mesAct - 3})`); fx(wp, r, 4, `COUNTIFS(${V('F')},A${r},${V('C')},${mesAct - 2})`); fx(wp, r, 5, `COUNTIFS(${V('F')},A${r},${V('C')},${mesAct})`); const part = `IF($B$12>0,B${r}/$B$12,0)`; mp.forEach((m, k) => { const cP = 6 + k * 3; fx(wp, r, cP, `ROUND(($B$12+$C$3*${k + 1})*${part},0)`, { font: F({ bold: true, color: { argb: 'FF' + MOR } }) }); fx(wp, r, cP + 1, `'Meta por region'!$G$${6 + i}`); fx(wp, r, cP + 2, `${L(cP)}${r}-${L(cP + 1)}${r}`, { fmt: '+0;-0;0' }); }); });
+    set(wp, 12, 1, 'TOTAL', { font: BB }); for (let c = 2; c <= 5 + mp.length * 3; c++) fx(wp, 12, c, `SUM(${L(c)}5:${L(c)}11)`, { font: BB, fmt: ((c - 6) % 3 === 2 && c >= 6) ? '+0;-0;0' : undefined }); for (let c = 1; c <= 5 + mp.length * 3; c++) wp.getCell(12, c).fill = fill('DDEBF7');
+    // objetivos: 4 semanas + 3 meses (proyección, meta, diferencia)
+    const colP = {}; mp.forEach((m, k) => { colP[m] = L(6 + k * 3); });
+    const mesSem = w => R.mesDeSemana(anio, w); const meses3 = mp.slice(1);
+    set(wp, 15, 1, 'OBJETIVOS SEGÚN PROYECCIÓN · próximas 4 semanas + 3 meses siguientes (alimenta el forecast real)', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    set(wp, 16, 1, `Semana = proyección del mes al que pertenece (jueves de la semana ISO) ÷ semanas/mes. Hoy semana ${SEMANA}.`, { font: N9 });
+    hdr(wp, 17, ['Región', ...sems.map(w => `W${w} (${MESN[mesSem(w) - 1]})`), ...meses3.map(m => MESN[m - 1])], VER);
+    [...REG, 'TOTAL'].forEach((rg, i) => { const r = 18 + i, src = rg === 'TOTAL' ? 12 : 5 + i; set(wp, r, 1, rg, { font: BB }); sems.forEach((w, j) => { const c = colP[mesSem(w)]; if (c) fx(wp, r, 2 + j, `ROUND(${c}${src}/'Meta por region'!$E$3,0)`); }); meses3.forEach((m, j) => { const c = colP[m]; if (c) fx(wp, r, 6 + j, `${c}${src}`, { font: BB }); }); if (rg === 'TOTAL') for (let c = 1; c <= 8; c++) wp.getCell(r, c).fill = fill('DDEBF7'); });
+    set(wp, 28, 1, 'OBJETIVO REAL (META) · mismas semanas y meses', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    set(wp, 29, 1, 'Meta de cada mes en la fila 30 (amarillo): el mes en curso viene de "Meta por region"; los siguientes toman por default la misma meta hasta que cargues metas nuevas. Se reparte por región con la participación de demanda real. Semana = meta del mes ÷ semanas/mes.', { font: N9 });
+    set(wp, 30, 1, 'Meta total del mes →', { font: BB }); const mesCols = {}; mp.forEach((m, j) => { const c = 2 + j; fx(wp, 30, c, m === mesAct ? "'Meta por region'!$C$3" : 'B30', { fill: AM, font: BB }); set(wp, 31, c, MESN[m - 1], { font: N9 }); mesCols[m] = L(c); });
+    hdr(wp, 32, ['Región', ...sems.map(w => `W${w} (${MESN[mesSem(w) - 1]})`), ...meses3.map(m => MESN[m - 1])], NAVY);
+    [...REG, 'TOTAL'].forEach((rg, i) => { const r = 33 + i; set(wp, r, 1, rg, { font: BB }); const part = rg === 'TOTAL' ? '1' : `'Meta por region'!$F$${6 + i}`; sems.forEach((w, j) => { const c = mesCols[mesSem(w)]; if (c) fx(wp, r, 2 + j, `ROUND(${c}$30*${part}/'Meta por region'!$E$3,0)`); }); meses3.forEach((m, j) => { const c = mesCols[m]; if (c) fx(wp, r, 6 + j, `ROUND(${c}$30*${part},0)`, { font: BB }); }); if (rg === 'TOTAL') for (let c = 1; c <= 8; c++) wp.getCell(r, c).fill = fill('DDEBF7'); });
+    set(wp, 43, 1, 'META − PROYECCIÓN · lo que hay que cerrar además de la tendencia', { font: F({ bold: true, size: 11, color: { argb: 'FF' + NAVY } }) });
+    hdr(wp, 44, ['Región', ...sems.map(w => `W${w}`), ...meses3.map(m => MESN[m - 1])], 'C00000');
+    [...REG, 'TOTAL'].forEach((rg, i) => { const r = 45 + i; set(wp, r, 1, rg, { font: BB }); for (let c = 2; c <= 8; c++) fx(wp, r, c, `${L(c)}${33 + i}-${L(c)}${18 + i}`, { fmt: '+0;-0;0' }); if (rg === 'TOTAL') for (let c = 1; c <= 8; c++) wp.getCell(r, c).fill = fill('DDEBF7'); });
+    widths(wp, [14, 12, 10, 10, 10, ...Array(12).fill(10)]);
+    return { wb, L, V, I, E, set, fx, hdr, widths, cf, fill, fonts: { B, BB, H, T, N9, F }, listVal, MESN, MESLL, mesSem, colP, mesCols };
+  }
+  return { construir, L, MESN, MESLL };
+})();
+// ============================================================================
+// LOGÍSTICA v2 · Excel: VSO por modelo / color, Revisión semanal, Requerimiento
+// 4 sem, Sugerencia; y el Requerimiento semanal plano. Orden de hojas y descarga.
+// ============================================================================
+const XL2 = (() => {
+  const CAT = { id: '1F3864', vta: '0077A8', calc: '5B3A8E', inv: '0F766E', cc: 'B45309', lista: '595959', acc: '991B1B' };
+  const fill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF' + c } });
+  function hojaVSO(X, C, key, titulo, etiq, vcol, icol) {
+    const { wb, L, V, I, set, fx, cf, fonts: { B, BB, H, T, N9, F }, listVal } = X; const R = LOG2, REG = R.REGIONES, sem = C.sem;
+    const ws = wb.addWorksheet(key === 'modelo' ? 'VSO por modelo' : 'VSO por color');
+    const idx = key === 'modelo' ? C.idxModelo : C.idxColor; const n = idx.length; const r0 = 6, rn = r0 + n - 1;
+    set(ws, 1, 1, titulo, { font: T });
+    set(ws, 2, 1, 'FILTRO DE REGIÓN en C4 (TODAS o una): ventas (semanas ISO cerradas, por región de demanda real), existencias y meta se recalculan con COUNTIFS/SUMIFS sobre "Datos ventas" y "Datos inventario". EXIST. TOTAL = físico (inventario + tránsito) en HUB / TIENDAS / VIRTUAL · POR RECIBIR = confirmado · ASIG. CC = % CC × total · WOS = TOTAL CC ÷ promedio semanal (rojo <2 · ámbar 2-4 · verde 4-8 · gris >8).', { font: N9 });
+    set(ws, 3, 2, 'Meta mes región:', { font: BB }); fx(ws, 3, 3, "INDEX('Meta por region'!$G$6:$G$13,MATCH($C$4,'Meta por region'!$A$6:$A$13,0))", { font: BB });
+    set(ws, 3, 4, 'Semanas/mes:', { font: BB }); fx(ws, 3, 5, "'Meta por region'!$E$3"); set(ws, 3, 6, 'Meta semanal:', { font: BB }); fx(ws, 3, 7, 'ROUND(C3/E3,0)', { font: BB });
+    set(ws, 3, 8, '% para CC:', { font: BB }); set(ws, 3, 9, 0.2, { fmt: '0%', fill: 'FFF2CC', font: BB }); set(ws, 3, 11, '★ Dorado = TOP 5 en ventas de esa semana', { font: F({ size: 9, bold: true, color: { argb: 'FF7F6000' } }) });
+    set(ws, 4, 2, 'REGIÓN →', { font: F({ bold: true, size: 12, color: { argb: 'FFB45309' } }) }); set(ws, 4, 3, 'TODAS', { fill: 'FDE68A', font: F({ bold: true, size: 12 }) }); listVal(ws, 'C4', ['TODAS', ...REG]);
+    set(ws, 4, 4, '(crit.)', { font: F({ size: 8, color: { argb: 'FF999999' } }) }); fx(ws, 4, 5, 'IF($C$4="TODAS","*",$C$4)', { font: F({ size: 8, color: { argb: 'FF999999' } }) });
+    [[7, 'VENTAS por semana ISO', CAT.vta], [12, 'INVENTARIO (todo ExpertCell)', CAT.inv], [17, 'ASIGNACIÓN CALL CENTER', CAT.cc], [21, 'LISTA DE PRECIOS', CAT.lista]].forEach(([c, t, col]) => set(ws, 4, c, t, { font: F({ size: 9, bold: true, color: { argb: 'FF' + col } }) }));
+    const cols1 = [['#', 'id'], [etiq, 'id'], ...sem.map(s => [String(s), 'vta']), ['TOTAL', 'vta'], ['PROMEDIO', 'vta'], ['META SEM', 'calc'], ['P EXT', 'calc'], ['EXIST. TOTAL', 'inv'], ['en HUB', 'inv'], ['en TIENDAS', 'inv'], ['en VIRTUAL', 'inv'], ['POR RECIBIR', 'inv'], ['ASIG. CC', 'cc'], ['ASIG. POR RECIBIR', 'cc'], ['TOTAL CC', 'cc'], ['WOS', 'cc'], ['Estatus', 'lista'], ['Promoción', 'lista'], ['Vigencia', 'lista'], ['Equipo en lista', 'lista'], ['ACCIÓN SEMANAL', 'acc']];
+    cols1.forEach(([h, c], i) => set(ws, 5, 1 + i, h, { font: H, fill: CAT[c], align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    const fis = (r, extra) => `SUMIFS(${I('K')},${I(icol)},$B${r},${I('E')},"INVENTARIO",${I('A')},$E$4${extra})+SUMIFS(${I('K')},${I(icol)},$B${r},${I('E')},"TRANSITO",${I('A')},$E$4${extra})`;
+    idx.forEach((k, i) => {
+      const r = r0 + i; set(ws, r, 1, i + 1); set(ws, r, 2, k, { font: BB });
+      sem.forEach((s, j) => fx(ws, r, 3 + j, `COUNTIFS(${V(vcol)},$B${r},${V('D')},${s},${V('F')},$E$4)`));
+      fx(ws, r, 8, `SUM(C${r}:G${r})`, { font: BB }); fx(ws, r, 9, `AVERAGE(C${r}:G${r})`, { fmt: '0.0' }); fx(ws, r, 10, `IF($H$${rn + 1}>0,ROUND(H${r}/$H$${rn + 1}*$G$3,1),0)`, { fmt: '0.0' });
+      fx(ws, r, 11, `SUMPRODUCT(--(($L$${r0}:$L$${rn}+0)>(L${r}+0)))+SUMPRODUCT(--(($L$${r0}:L${r}+0)=(L${r}+0)))`);
+      fx(ws, r, 12, `M${r}+N${r}+O${r}`, { font: BB }); fx(ws, r, 13, fis(r, `,${I('D')},"HUB"`)); fx(ws, r, 14, fis(r, `,${I('D')},"TIENDA"`)); fx(ws, r, 15, fis(r, `,${I('D')},"VIRTUAL"`));
+      fx(ws, r, 16, `SUMIFS(${I('K')},${I(icol)},$B${r},${I('E')},"POR RECIBIR",${I('A')},$E$4)`);
+      fx(ws, r, 17, `ROUND(L${r}*$I$3,0)`, { font: BB }); fx(ws, r, 18, `ROUND(P${r}*$I$3,0)`); fx(ws, r, 19, `Q${r}+R${r}`, { font: BB }); fx(ws, r, 20, `IF(I${r}>0,S${r}/I${r},"")`, { fmt: '0.0' });
+      const m = C.lista(k); const est = m ? m.e : 'SIN LISTA';
+      set(ws, r, 21, est, { font: BB, fill: est === 'RESURTIBLE' ? 'E2EFDA' : est === 'NO RESURTIBLE' ? 'FDE9D9' : est !== 'SIN LISTA' ? 'FFF2CC' : 'F2F2F2' }); if (m) { set(ws, r, 22, m.o); set(ws, r, 23, m.v + (m.vig ? '' : '  (vencida)')); set(ws, r, 24, m.k); }
+      fx(ws, r, 25, `IF(T${r}="","",IF(AND(T${r}<2,U${r}="NO RESURTIBLE"),"REEMPLAZAR: no llega más stock",IF(AND(T${r}<2,U${r}="RESURTIBLE"),"VALIDAR ARRIBO / frenar al agotarse",IF(AND(T${r}<2,U${r}<>"RESURTIBLE"),"REVISAR: sin lista o limitado",""))))`, { font: F({ bold: true, color: { argb: 'FF991B1B' } }) });
+    });
+    const rt = rn + 1; set(ws, rt, 2, 'TOTAL', { font: BB }); [...Array.from({ length: 8 }, (_, i) => 3 + i), ...Array.from({ length: 8 }, (_, i) => 12 + i)].forEach(c => fx(ws, rt, c, `SUM(${L(c)}${r0}:${L(c)}${rn})`, { font: BB })); for (let c = 1; c <= 25; c++) ws.getCell(rt, c).fill = fill('DDEBF7');
+    cf(ws, `T${r0}:T${rn}`, [{ type: 'cellIs', operator: 'lessThan', formulae: [2], style: { fill: fill('F8CBAD') } }, { type: 'cellIs', operator: 'between', formulae: [2, 4], style: { fill: fill('FFE699') } }, { type: 'cellIs', operator: 'between', formulae: [4, 8], style: { fill: fill('C6E0B4') } }, { type: 'cellIs', operator: 'greaterThan', formulae: [8], style: { fill: fill('D9D9D9') } }]);
+    cf(ws, `Y${r0}:Y${rn}`, [{ type: 'expression', formulae: [`LEFT(Y${r0},4)="REEM"`], style: { fill: fill('FDE9D9') } }, { type: 'expression', formulae: [`LEFT(Y${r0},4)="VALI"`], style: { fill: fill('FFF2CC') } }]);
+    const top5 = { type: 'top10', rank: 5, style: { fill: fill('FFD966'), font: { bold: true, color: { argb: 'FF7F6000' } } } };
+    // ---- Tabla 2: stock rezagado (ordenado por existencia)
+    const c0 = 27; set(ws, 4, c0 + 1, 'STOCK REZAGADO · ordenado por existencia (barra = cuánto hay) · Pos. vtas verde = vende mucho, rojo = vende poco · WOS: verde sano, rojo agotándose o sobrado · DIAGNÓSTICO al final →', { font: F({ size: 9, italic: true, bold: true, color: { argb: 'FF' + CAT.calc } }) });
+    const cols2 = [['#', 'id2'], [etiq, 'id2'], ['EXIST. TOTAL', 'inv'], ['POR RECIBIR', 'inv'], ['TOTAL CC', 'cc'], ['Pos. vtas', 'calc'], ...sem.map(s => [String(s), 'vta']), ['TOTAL', 'vta'], ['PROMEDIO', 'vta'], ['WOS', 'cc'], ['Estatus', 'lista'], ['DIAGNÓSTICO', 'acc']];
+    cols2.forEach(([h, c], i) => set(ws, 5, c0 + i, h, { font: H, fill: c === 'id2' ? CAT.calc : CAT[c], align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    for (let i = 0; i < n; i++) { const rr = r0 + i, ix = `MATCH(${i + 1},$K$${r0}:$K$${rn},0)`; set(ws, rr, c0, i + 1); fx(ws, rr, c0 + 1, `INDEX($B$${r0}:$B$${rn},${ix})`, { font: BB }); ['L', 'P', 'S', 'A'].forEach((src, j) => fx(ws, rr, c0 + 2 + j, `INDEX($${src}$${r0}:$${src}$${rn},${ix})`)); for (let j = 0; j < 5; j++) fx(ws, rr, c0 + 6 + j, `INDEX($${L(3 + j)}$${r0}:$${L(3 + j)}$${rn},${ix})`); fx(ws, rr, c0 + 11, `INDEX($H$${r0}:$H$${rn},${ix})`); fx(ws, rr, c0 + 12, `INDEX($I$${r0}:$I$${rn},${ix})`, { fmt: '0.0' }); fx(ws, rr, c0 + 13, `INDEX($T$${r0}:$T$${rn},${ix})`, { fmt: '0.0' }); fx(ws, rr, c0 + 14, `INDEX($U$${r0}:$U$${rn},${ix})`); const cE = L(c0 + 2), cW = L(c0 + 13), cP = L(c0 + 5); fx(ws, rr, c0 + 15, `IF(${cE}${rr}=0,"",IF(${cW}${rr}="","⚫ STOCK SIN VENTA: "&${cE}${rr}&" pzas y cero ventas en 5 sem",IF(${cW}${rr}>12,"🔴 REZAGADO: "&TEXT(${cW}${rr},"0")&" sem de stock · vende poco (pos. "&${cP}${rr}&")",IF(${cW}${rr}>8,"🟠 SOBRESTOCK: "&TEXT(${cW}${rr},"0")&" sem",IF(${cW}${rr}>=4,"🟢 SANO",IF(${cW}${rr}>=2,"🟡 JUSTO: "&TEXT(${cW}${rr},"0.0")&" sem","🔺 SE AGOTA: "&TEXT(${cW}${rr},"0.0")&" sem"))))))`, { font: BB }); }
+    const rng = c => `${L(c)}${r0}:${L(c)}${rn}`;
+    for (let j = 0; j < 5; j++) { cf(ws, rng(3 + j), [top5]); cf(ws, rng(c0 + 6 + j), [top5]); }
+    cf(ws, rng(c0 + 2), [{ type: 'dataBar', cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: 'FF5B3A8E' } }]);
+    cf(ws, rng(c0 + 13), [{ type: 'colorScale', cfvo: [{ type: 'num', value: 0 }, { type: 'num', value: 6 }, { type: 'num', value: 16 }], color: [{ argb: 'FFF8CBAD' }, { argb: 'FFC6E0B4' }, { argb: 'FFF8CBAD' }] }]);
+    cf(ws, rng(c0 + 5), [{ type: 'colorScale', cfvo: [{ type: 'min' }, { type: 'max' }], color: [{ argb: 'FFC6E0B4' }, { argb: 'FFF8CBAD' }] }]);
+    const cD = L(c0 + 15); cf(ws, rng(c0 + 15), [['⚫', 'D9D9D9'], ['🔴', 'F8CBAD'], ['🟠', 'FFE699'], ['🟢', 'C6E0B4'], ['🟡', 'FFF2CC'], ['🔺', 'FDE9D9']].map(([p, col]) => ({ type: 'expression', formulae: [`LEFT(${cD}${r0},1)="${p}"`], style: { fill: fill(col) } })));
+    // ---- Tabla 3: existencia por región
+    const c1 = c0 + 17; set(ws, 4, c1 + 1, 'EXISTENCIA FÍSICA POR REGIÓN (HUB + tiendas + virtual) →', { font: F({ size: 9, italic: true, bold: true, color: { argb: 'FF' + CAT.inv } }) });
+    ['#', etiq, ...REG, 'TOTAL'].forEach((h, i) => set(ws, 5, c1 + i, h, { font: H, fill: CAT.inv, align: { horizontal: 'center', wrapText: true } }));
+    idx.forEach((k, i) => { const rr = r0 + i; set(ws, rr, c1, i + 1); set(ws, rr, c1 + 1, k); REG.forEach((p, j) => fx(ws, rr, c1 + 2 + j, `SUMIFS(${I('K')},${I(icol)},$B${rr},${I('E')},"INVENTARIO",${I('A')},"${p}")+SUMIFS(${I('K')},${I(icol)},$B${rr},${I('E')},"TRANSITO",${I('A')},"${p}")`)); fx(ws, rr, c1 + 2 + REG.length, `SUM(${L(c1 + 2)}${rr}:${L(c1 + 1 + REG.length)}${rr})`, { font: BB }); });
+    const W_ID = 38, W_SEM = 7, W_NUM = 10, W_TXT = 22; const anchos = [4, W_ID, ...Array(5).fill(W_SEM), W_NUM, W_NUM, W_NUM, 7, ...Array(5).fill(W_NUM), ...Array(3).fill(W_NUM), 7, W_TXT, 16, 30, 36, 34, 2, 4, W_ID, W_NUM, W_NUM, W_NUM, 7, ...Array(5).fill(W_SEM), W_NUM, W_NUM, 7, W_TXT, 44, 2, 4, W_ID, ...Array(REG.length + 1).fill(W_NUM)];
+    anchos.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 5 }]; ws.autoFilter = `A5:Y${rn}`;
+    return ws;
+  }
+  function hojaRevision(X, C) {
+    const { wb, set, fx, fonts: { B, BB, H, T, N9, F } } = X; const ws = wb.addWorksheet('Revision semanal');
+    set(ws, 1, 1, `REVISIÓN SEMANAL · semana ${C.semAct} · modelos con menos de 2 semanas de stock asignado a CC (WOS < 2)`, { font: T });
+    set(ws, 2, 1, 'NO RESURTIBLE con WOS < 2 → REEMPLAZAR (se propone el resurtible de la misma marca con precio más cercano y WOS ≥ 4). RESURTIBLE con WOS < 2 → VALIDAR ARRIBO: anotar fecha de llegada y decidir si se sigue ofreciendo o se frena al agotarse. WOS y existencias enlazados a "VSO por modelo".', { font: N9 });
+    ['Acción', 'Modelo', 'Estatus', 'Vtas/sem (prom 5 sem)', 'Existencia total', 'Por recibir', 'Asig. CC', 'WOS', 'Precio contado (lista)', 'Reemplazo sugerido', 'Reemplazo: WOS · precio', 'Fecha de arribo (capturar)', 'Decisión (capturar)'].forEach((h, i) => set(ws, 4, 1 + i, h, { font: H, fill: '991B1B', align: { horizontal: 'center', wrapText: true } }));
+    const filaDe = {}; C.idxModelo.forEach((m, i) => { filaDe[m] = 6 + i; });
+    let r = 5; C.revision.forEach(x => { const fv = filaDe[x.modelo]; set(ws, r, 1, x.accion, { font: F({ bold: true, color: { argb: x.accion === 'REEMPLAZAR' ? 'FF991B1B' : 'FFB45309' } }), fill: x.accion === 'REEMPLAZAR' ? 'FDE9D9' : 'FFF2CC' }); set(ws, r, 2, x.modelo, { font: BB }); set(ws, r, 3, x.estatus); fx(ws, r, 4, `'VSO por modelo'!I${fv}`, { fmt: '0.0' }); fx(ws, r, 5, `'VSO por modelo'!L${fv}`); fx(ws, r, 6, `'VSO por modelo'!P${fv}`); fx(ws, r, 7, `'VSO por modelo'!S${fv}`); fx(ws, r, 8, `'VSO por modelo'!T${fv}`, { fmt: '0.0' }); set(ws, r, 9, x.precio, { fmt: '$#,##0' }); if (x.reemplazo) { set(ws, r, 10, x.reemplazo.modelo, { font: BB }); set(ws, r, 11, `WOS ${x.reemplazo.wos.toFixed(1)} · ${x.reemplazo.precio ? '$' + Math.round(x.reemplazo.precio).toLocaleString('en-US') : 's/precio'}`); } set(ws, r, 12, null, { fill: 'FFF2CC' }); set(ws, r, 13, null, { fill: 'FFF2CC' }); r++; });
+    if (r === 5) set(ws, 5, 1, 'Sin modelos con WOS < 2 esta semana.', { font: N9 });
+    [16, 40, 16, 12, 12, 11, 10, 8, 14, 40, 22, 18, 30].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }]; ws.autoFilter = `A4:M${Math.max(r - 1, 5)}`;
+  }
+  function hojaRequerimiento(X, C) {
+    const { wb, L, V, I, set, fx, cf, fonts: { B, BB, H, T, N9, F }, listVal } = X; const R = LOG2, REG = R.REGIONES, sem = C.sem, sems = C.sems;
+    const ws = wb.addWorksheet('Requerimiento 4 sem');
+    set(ws, 1, 1, `REQUERIMIENTO DE INVENTARIO POR REGIÓN · próximas 4 semanas (W${sems[0]}-W${sems[3]}) · semana ${C.semAct} · corte ${C.hoyStr}`, { font: T });
+    set(ws, 2, 1, 'Entregable semanal para pedir asignación. Solo modelos RESURTIBLES con existencia en la región, por recibir o ventas en las últimas 5 semanas. Cantidad semanal = objetivo de la región esa semana (hoja Proyección, base elegida en C3) × participación del modelo entre los resurtibles vendidos a clientes de esa región en las últimas 5 semanas. Faltante 4 sem = total 4 semanas − asignación CC (% CC × (existencia + por recibir)). Tendencia = última semana vs promedio de las 4 anteriores.', { font: N9 });
+    set(ws, 3, 2, 'Base del objetivo →', { font: BB }); set(ws, 3, 3, 'PROYECCION', { fill: 'FDE68A', font: F({ bold: true, size: 12 }) }); listVal(ws, 'C3', ['PROYECCION', 'META']);
+    set(ws, 3, 5, '% para CC:', { font: BB }); set(ws, 3, 6, 0.2, { fmt: '0%', fill: 'FFF2CC', font: BB });
+    set(ws, 3, 8, 'REGIÓN →', { font: F({ bold: true, size: 12, color: { argb: 'FFB45309' } }) }); set(ws, 3, 9, 'TODAS', { fill: 'FDE68A', font: F({ bold: true, size: 12 }) }); listVal(ws, 'I3', ['TODAS', ...REG]); fx(ws, 3, 10, 'IF($I$3="TODAS","*",$I$3)', { font: F({ size: 8, color: { argb: 'FF999999' } }) });
+    set(ws, 3, 11, '← resalta la región elegida (resumen y detalle), atenúa las demás y llena la fila naranja de totales; para ver solo esa región usa el filtro de la columna Región', { font: N9 });
+    ['RESUMEN · objetivo por región', ...sems.map(w => `W${w}`), 'Total 4 sem', 'Modelos resurtibles', 'Faltante 4 sem (pzas)'].forEach((h, i) => set(ws, 5, 1 + i, h, { font: H, fill: '0F766E', align: { horizontal: 'center', wrapText: true } }));
+    REG.forEach((rg, i) => { const r = 6 + i; set(ws, r, 1, rg, { font: BB }); sems.forEach((w, j) => fx(ws, r, 2 + j, `IF($C$3="META",Proyeccion!${L(2 + j)}${33 + i},Proyeccion!${L(2 + j)}${18 + i})`)); fx(ws, r, 6, `SUM(B${r}:E${r})`, { font: BB }); });
+    set(ws, 13, 1, 'TOTAL', { font: BB }); for (let c = 2; c <= 6; c++) fx(ws, 13, c, `SUM(${L(c)}6:${L(c)}12)`, { font: BB }); for (let c = 1; c <= 9; c++) ws.getCell(13, c).fill = fill('DDEBF7');
+    const r0 = 17; const filas = C.req; const n = filas.length, rn = r0 + n - 1;
+    set(ws, 14, 1, 'DETALLE · un renglón por región y modelo resurtible · filtra por región para armar el pedido de cada HUB', { font: F({ bold: true, size: 11, color: { argb: 'FF1F3864' } }) });
+    [[1, 2, 'IDENTIFICACIÓN', CAT.id], [3, 4, 'LISTA DE PRECIOS', CAT.lista], [5, 11, 'VENTAS últimas 5 semanas ISO', CAT.vta], [12, 17, 'CÁLCULO · piezas por semana', CAT.calc], [18, 19, 'INVENTARIO región', CAT.inv], [20, 20, 'ASIGNACIÓN CC', CAT.cc], [21, 22, 'ACCIÓN', CAT.acc]].forEach(([c1, c2, txt, col]) => { for (let c = c1; c <= c2; c++) ws.getCell(15, c).fill = fill(col); set(ws, 15, c1, txt, { font: F({ size: 9, bold: true, color: { argb: 'FFFFFFFF' } }) }); if (c2 > c1) ws.mergeCells(15, c1, 15, c2); });
+    const cats = [['Región', 'id'], ['Modelo', 'id'], ['Estatus', 'lista'], ['Vigencia promo', 'lista'], ...sem.map(s => [String(s), 'vta']), ['Prom 5 sem', 'vta'], ['Tendencia', 'vta'], ['% entre resurtibles región', 'calc'], ...sems.map(w => [`W${w}`, 'calc']), ['Total 4 sem', 'calc'], ['Existencia región', 'inv'], ['Por recibir', 'inv'], ['Asig. CC', 'cc'], ['FALTANTE 4 sem', 'acc'], ['Alerta', 'acc']];
+    cats.forEach(([h, c], i) => set(ws, 16, 1 + i, h, { font: H, fill: CAT[c], align: { horizontal: 'center', vertical: 'middle', wrapText: true } }));
+    filas.forEach((f, k) => { const r = r0 + k; set(ws, r, 1, f.region, { font: BB }); set(ws, r, 2, f.modelo, { font: BB }); set(ws, r, 3, f.estatus, { fill: 'E2EFDA' }); set(ws, r, 4, f.vigencia); sem.forEach((w, j) => fx(ws, r, 5 + j, `COUNTIFS(${V('M')},$B${r},${V('D')},${w},${V('F')},$A${r})`)); fx(ws, r, 10, `AVERAGE(E${r}:I${r})`, { fmt: '0.0' }); fx(ws, r, 11, `IF(AVERAGE(E${r}:H${r})>0,I${r}/AVERAGE(E${r}:H${r})-1,IF(I${r}>0,1,0))`, { fmt: '+0%;-0%;0%' }); fx(ws, r, 12, `IF(SUMIFS($J$${r0}:$J$${rn},$A$${r0}:$A$${rn},$A${r})>0,J${r}/SUMIFS($J$${r0}:$J$${rn},$A$${r0}:$A$${rn},$A${r}),0)`, { fmt: '0.0%' }); const ri = REG.indexOf(f.region); sems.forEach((w, j) => fx(ws, r, 13 + j, `ROUND(L${r}*${L(2 + j)}$${6 + ri},0)`, { font: F({ bold: true, color: { argb: 'FF5B3A8E' } }) })); fx(ws, r, 17, `SUM(M${r}:P${r})`, { font: BB }); fx(ws, r, 18, `SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"INVENTARIO")+SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"TRANSITO")`); fx(ws, r, 19, `SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"POR RECIBIR")`); fx(ws, r, 20, `ROUND((R${r}+S${r})*$F$3,0)`); fx(ws, r, 21, `MAX(0,Q${r}-T${r})`, { font: F({ bold: true, color: { argb: 'FFC00000' } }) }); fx(ws, r, 22, `IF(AND(R${r}=0,S${r}>0),"DEPENDE DE ARRIBO (sin stock en región)",IF(K${r}<=-0.3,"A LA BAJA: validar promoción / vigencia",IF(K${r}>=0.3,"AL ALZA: cuidar stock",IF(U${r}>0,"Pedir asignación",""))))`, { font: BB }); });
+    const rt = rn + 1; set(ws, rt, 2, 'TOTAL (visible / todas las regiones)', { font: BB }); [...Array.from({ length: 6 }, (_, i) => 5 + i), ...Array.from({ length: 9 }, (_, i) => 13 + i)].forEach(c => fx(ws, rt, c, `SUBTOTAL(9,${L(c)}${r0}:${L(c)}${rn})`, { font: BB })); for (let c = 1; c <= 22; c++) ws.getCell(rt, c).fill = fill('DDEBF7');
+    fx(ws, rt + 1, 2, 'IF($I$3="TODAS","TOTAL región seleccionada: todas","TOTAL región seleccionada: "&$I$3)', { font: BB }); [...Array.from({ length: 6 }, (_, i) => 5 + i), ...Array.from({ length: 9 }, (_, i) => 13 + i)].forEach(c => fx(ws, rt + 1, c, `SUMIFS(${L(c)}${r0}:${L(c)}${rn},$A$${r0}:$A$${rn},$J$3)`, { font: F({ bold: true, color: { argb: 'FFB45309' } }) })); for (let c = 1; c <= 22; c++) ws.getCell(rt + 1, c).fill = fill('FFEDD5');
+    REG.forEach((rg, i) => { const r = 6 + i; fx(ws, r, 7, `COUNTIF($A$${r0}:$A$${rn},A${r})`); fx(ws, r, 8, `SUMIFS($U$${r0}:$U$${rn},$A$${r0}:$A$${rn},A${r})`, { font: F({ bold: true, color: { argb: 'FFC00000' } }) }); }); fx(ws, 13, 7, 'SUM(G6:G12)', { font: BB }); fx(ws, 13, 8, 'SUM(H6:H12)', { font: BB });
+    cf(ws, `A${r0}:V${rn}`, [{ type: 'expression', formulae: [`AND($I$3<>"TODAS",$A${r0}<>$I$3)`], style: { font: { color: { argb: 'FFB0B0B0' } } } }]); cf(ws, `A${r0}:B${rn}`, [{ type: 'expression', formulae: [`AND($I$3<>"TODAS",$A${r0}=$I$3)`], style: { fill: fill('FFF7E6') } }]); cf(ws, 'A6:H12', [{ type: 'expression', formulae: ['$A6=$I$3'], style: { fill: fill('FFF7E6') } }]);
+    cf(ws, `V${r0}:V${rn}`, [{ type: 'expression', formulae: [`LEFT(V${r0},4)="A LA"`], style: { fill: fill('FDE9D9') } }, { type: 'expression', formulae: [`LEFT(V${r0},4)="AL A"`], style: { fill: fill('C6E0B4') } }, { type: 'expression', formulae: [`LEFT(V${r0},4)="DEPE"`], style: { fill: fill('FFF2CC') } }]);
+    cf(ws, `K${r0}:K${rn}`, [{ type: 'expression', formulae: [`K${r0}<=-0.3`], style: { font: { color: { argb: 'FFC00000' }, bold: true } } }, { type: 'expression', formulae: [`K${r0}>=0.3`], style: { font: { color: { argb: 'FF16A34A' }, bold: true } } }]);
+    [14, 38, 13, 30, 7, 7, 7, 7, 7, 9, 10, 12, 8, 8, 8, 8, 10, 11, 10, 9, 12, 40].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 16 }]; ws.autoFilter = `A16:V${rn}`;
+  }
+  function hojaSugerencia(X, C) {
+    const { wb, V, I, set, fx, fonts: { B, BB, H, T, N9 } } = X; const ws = wb.addWorksheet('Sugerencia no resurtibles');
+    set(ws, 1, 1, `SUGERENCIA DE VENTA · equipos NO resurtibles con stock que se venden · semana ${C.semAct}`, { font: T });
+    set(ws, 2, 1, 'Cuando se acaben no se reponen: empujar primero. Cobertura = asignación CC ÷ ventas mensuales promedio (3 meses cerrados, región de demanda real). ≤1 mes empujar ya · ≤3 en campaña · >3 promoción o traspaso · sin ventas en la región: mover a otro HUB.', { font: N9 });
+    ['Región', 'Modelo', 'Estatus', 'Existencia región', 'Asig. CC (20%)', 'Vtas región 3m', 'Vtas/mes región', 'Cobertura (meses)', 'Sugerencia'].forEach((h, i) => set(ws, 4, 1 + i, h, { font: H, fill: 'C00000', align: { horizontal: 'center', wrapText: true } }));
+    const m0 = C.m3[0], m1 = C.m3[C.m3.length - 1];
+    C.sug.forEach((s, k) => { const r = 5 + k; set(ws, r, 1, s.region); set(ws, r, 2, s.modelo, { font: BB }); set(ws, r, 3, s.estatus); fx(ws, r, 4, `SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"INVENTARIO")+SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"TRANSITO")`); fx(ws, r, 5, `ROUND(D${r}*0.2,0)`); fx(ws, r, 6, `COUNTIFS(${V('M')},$B${r},${V('F')},$A${r},${V('C')},">=${m0}",${V('C')},"<=${m1}")`); fx(ws, r, 7, `F${r}/${C.m3.length}`, { fmt: '0.0' }); fx(ws, r, 8, `IF(G${r}>0,E${r}/G${r},99)`, { fmt: '0.0' }); fx(ws, r, 9, `IF(F${r}=0,"Sin ventas en esta región: mover a otro HUB",IF(H${r}<=1,"Se agota este mes: empujar ya",IF(H${r}<=3,"Empujar en campaña","Stock alto: promoción o traspaso")))`); });
+    [13, 40, 18, 12, 12, 12, 12, 12, 42].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }]; ws.autoFilter = `A4:I${4 + C.sug.length}`;
+  }
+  async function forecastCompleto(C) {
+    const X = XL.construir(C);
+    hojaVSO(X, C, 'modelo', `VSO CC · semana ${C.semAct} · corte ${C.hoyStr} · por MODELO (sin color)`, 'MODELO', 'M', 'L');
+    hojaVSO(X, C, 'colorkey', `VSO CC · semana ${C.semAct} · corte ${C.hoyStr} · por MODELO Y COLOR`, 'MODELO / COLOR', 'N', 'M');
+    hojaRevision(X, C); hojaRequerimiento(X, C); hojaSugerencia(X, C);
+    const orden = ['Meta por region', 'Sanidad envios', 'HUB ideal - analisis', 'Proyeccion', 'VSO por modelo', 'VSO por color', 'Revision semanal', 'Requerimiento 4 sem', 'Sugerencia no resurtibles', 'Tarifario DHL', 'Datos ventas', 'Datos envios', 'Datos inventario', 'Datos lista de precios'];
+    orden.forEach((n, i) => { const ws = X.wb.getWorksheet(n); if (ws) ws.orderNo = i; });
+    X.wb.worksheets.forEach(ws => { ws.state = 'visible'; });
+    const buf = await X.wb.xlsx.writeBuffer(); return { buf, nombre: `Forecast CC semana ${C.semAct}.xlsx` };
+  }
+  // ---- Requerimiento semanal plano (valores, base META, una hoja)
+  async function requerimientoPlano(C, base = 'META') {
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('Requerimiento'); const REG = LOG2.REGIONES, sems = C.sems, sem = C.sem;
+    const st = (r, c, v, o = {}) => { const cell = ws.getCell(r, c); cell.value = v; if (o.b) cell.font = { name: 'Calibri', size: 10, bold: true, color: o.color ? { argb: o.color } : undefined }; else cell.font = { name: 'Calibri', size: 10 }; if (o.fill) cell.fill = fill(o.fill); if (o.fmt) cell.numFmt = o.fmt; if (o.h) cell.font = { name: 'Calibri', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }; if (o.center) cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; };
+    st(1, 1, `REQUERIMIENTO DE INVENTARIO POR REGIÓN · próximas 4 semanas (W${sems[0]}-W${sems[3]}) · semana ${C.semAct} · corte ${C.hoyStr} · base ${base === 'META' ? 'META' : 'PROYECCIÓN'}`, { b: true, color: 'FF1F3864' });
+    st(3, 4, '% para CC:', { b: true }); st(3, 5, 0.2, { fmt: '0%' });
+    ['RESUMEN · objetivo por región', ...sems.map(w => `W${w}`), 'Total 4 sem', 'Modelos resurtibles', 'Faltante 4 sem (pzas)'].forEach((h, i) => st(5, 1 + i, h, { h: true, fill: '0F766E', center: true }));
+    const filas = C.req; const keyW = base === 'META' ? 'wM' : 'wP', keyT = base === 'META' ? 'totM' : 'totP', keyF = base === 'META' ? 'faltM' : 'faltP';
+    const tot = { w: [0, 0, 0, 0], t: 0, n: 0, f: 0 };
+    REG.forEach((rg, i) => { const r = 6 + i; const ws_ = sems.map(w => C.objSem(rg, w, base)); const fr = filas.filter(f => f.region === rg); st(r, 1, rg, { b: true }); ws_.forEach((v, j) => { st(r, 2 + j, v); tot.w[j] += v; }); const t = ws_.reduce((a, b) => a + b, 0); st(r, 6, t, { b: true }); st(r, 7, fr.length); const f = fr.reduce((a, x) => a + x[keyF], 0); st(r, 8, f, { b: true, color: 'FFC00000' }); tot.t += t; tot.n += fr.length; tot.f += f; });
+    st(13, 1, 'TOTAL', { b: true }); tot.w.forEach((v, j) => st(13, 2 + j, v, { b: true })); st(13, 6, tot.t, { b: true }); st(13, 7, tot.n, { b: true }); st(13, 8, tot.f, { b: true }); for (let c = 1; c <= 8; c++) ws.getCell(13, c).fill = fill('DDEBF7');
+    [[1, 2, 'IDENTIFICACIÓN', CAT.id], [3, 4, 'LISTA DE PRECIOS', CAT.lista], [5, 11, 'VENTAS últimas 5 semanas ISO', CAT.vta], [12, 16, 'CÁLCULO · piezas por semana', CAT.calc], [17, 18, 'INVENTARIO región', CAT.inv], [19, 19, 'ASIGNACIÓN CC', CAT.cc], [20, 20, 'ACCIÓN', CAT.acc]].forEach(([c1, c2, txt, col]) => { for (let c = c1; c <= c2; c++) ws.getCell(15, c).fill = fill(col); st(15, c1, txt, { h: true }); if (c2 > c1) ws.mergeCells(15, c1, 15, c2); });
+    const cols = [['Región', 'id'], ['Modelo', 'id'], ['Estatus', 'lista'], ['Vigencia promo', 'lista'], ...sem.map(s => [String(s), 'vta']), ['Prom 5 sem', 'vta'], ['% entre resurtibles región', 'calc'], ...sems.map(w => [`W${w}`, 'calc']), ['Total 4 sem', 'calc'], ['Existencia región', 'inv'], ['Por recibir', 'inv'], ['Asig. CC', 'cc'], ['FALTANTE 4 sem', 'acc']];
+    cols.forEach(([h, c], i) => st(16, 1 + i, h, { h: true, fill: CAT[c], center: true }));
+    filas.forEach((f, k) => { const r = 17 + k; st(r, 1, f.region, { b: true }); st(r, 2, f.modelo, { b: true }); st(r, 3, f.estatus, { fill: 'E2EFDA' }); st(r, 4, f.vigencia); f.semanas.forEach((v, j) => st(r, 5 + j, v)); st(r, 10, Math.round(f.prom * 10) / 10, { fmt: '0.0' }); st(r, 11, f.part, { fmt: '0.0%' }); f[keyW].forEach((v, j) => st(r, 12 + j, v, { b: true, color: 'FF5B3A8E' })); st(r, 16, f[keyT], { b: true }); st(r, 17, f.ex); st(r, 18, f.pr); st(r, 19, f.cc); st(r, 20, f[keyF], { b: true, color: 'FFC00000' }); });
+    const rt = 17 + filas.length; st(rt, 2, 'TOTAL', { b: true }); [5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18, 19, 20].forEach(c => { let s = 0; filas.forEach((f, k) => { const v = ws.getCell(17 + k, c).value; if (typeof v === 'number') s += v; }); st(rt, c, s, { b: true }); }); for (let c = 1; c <= 20; c++) ws.getCell(rt, c).fill = fill('DDEBF7');
+    [14, 38, 13, 30, 7, 7, 7, 7, 7, 9, 12, 8, 8, 8, 8, 10, 11, 10, 9, 12].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 16 }]; ws.autoFilter = `A16:T${rt - 1}`;
+    const buf = await wb.xlsx.writeBuffer(); return { buf, nombre: `Requerimiento CC W${C.semAct}.xlsx` };
+  }
+  function descargar(buf, nombre) { const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nombre; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000); }
+  return { forecastCompleto, requerimientoPlano, descargar };
+})();
+// ============================================================================
+// LOGÍSTICA v2 · cargas semanales (inventario de series, lista de precios) y botones
+// ============================================================================
+async function log2_subirInventarioSeries(file) {
+  if (!file) return; if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede subir el inventario.'); return; }
+  const info = document.getElementById('inv-series-info'); const di = t => { if (info) info.textContent = t; };
+  try {
+    di('Leyendo…'); const wbI = XLSX.read(await file.arrayBuffer(), { cellDates: true }); const rows = XLSX.utils.sheet_to_json(wbI.Sheets[wbI.SheetNames[0]], { defval: null });
+    if (!rows.length || !('Plaza' in rows[0]) || !('Tipo Almacen' in rows[0])) { di(''); alert('El archivo no tiene las columnas esperadas (Plaza, Tipo Tienda, Tipo Almacen, Nombre, Serie…). ¿Es el inventario de series?'); return; }
+    const m = file.name.match(/(\d{4})[-_]?(\d{2})[-_]?(\d{2})/); const corte = m ? `${m[1]}-${m[2]}-${m[3]}` : new Date().toISOString().substring(0, 10);
+    const regs = rows.map(r => ({ fecha_corte: corte, region: r['Region'] != null ? String(r['Region']) : null, subregion: r['Subregion'] != null ? String(r['Subregion']) : null, plaza: r['Plaza'] != null ? String(r['Plaza']) : null, tipo_tienda: r['Tipo Tienda'] != null ? String(r['Tipo Tienda']) : null, tipo_almacen: r['Tipo Almacen'] != null ? String(r['Tipo Almacen']) : null, tienda: r['Tienda'] != null ? String(r['Tienda']) : null, sku: r['SKU'] != null ? String(r['SKU']) : null, categoria: r['Categoria'] != null ? String(r['Categoria']) : null, marca: r['Marca'] != null ? String(r['Marca']) : null, nombre: r['Nombre'] != null ? String(r['Nombre']) : null, serie: r['Serie'] != null ? String(r['Serie']) : null, inventario: Number(r['Inventario']) || 1 }));
+    di(`Guardando ${regs.length} series (corte ${corte})…`);
+    const { error: eDel } = await db.from('inventario_series').delete().eq('fecha_corte', corte); if (eDel) throw eDel;
+    for (let i = 0; i < regs.length; i += 500) { const { error } = await db.from('inventario_series').insert(regs.slice(i, i + 500)); if (error) throw error; }
+    const eq = regs.filter(r => String(r.categoria).toUpperCase() === 'EQUIPO').length;
+    di(`✅ ${regs.length} series (${eq} equipos) · corte ${corte}`); window.__log2cache = null;
+    alert(`Inventario de series cargado: ${regs.length} series, ${eq} equipos, corte ${corte}.\n\nEl Forecast CC y el requerimiento usan este corte.`);
+  } catch (e) { di(''); alert('Error al cargar el inventario: ' + (e.message || e)); }
+}
+async function procesarListaPrecios(file) {
+  if (!file) return; if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede actualizar la lista.'); return; }
+  const info = document.getElementById('lista-precios-info'); const di = t => { if (info) info.textContent = t; };
+  try {
+    di('Leyendo…'); const wbP = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+    const hoja = wbP.SheetNames.find(n => /promociones/i.test(n) && /premium/i.test(n)) || wbP.SheetNames.find(n => /^promo/i.test(n));
+    if (!hoja) { di(''); alert('No encontré la hoja "Promociones AT&T Premium".'); return; }
+    const rows = XLSX.utils.sheet_to_json(wbP.Sheets[hoja], { header: 1, defval: null });
+    let hIdx = -1, H = {};
+    for (let r = 0; r < Math.min(15, rows.length); r++) { const vals = (rows[r] || []).map(x => String(x || '').trim().toUpperCase()); if (vals.includes('ESTATUS') && vals.includes('EQUIPO')) { hIdx = r; vals.forEach((v, i) => { if (v) H[v] = i; }); break; } }
+    if (hIdx < 0) { di(''); alert('La hoja no tiene encabezados Estatus / Equipo.'); return; }
+    const fecha = v => { if (!v) return null; if (v instanceof Date) return isNaN(v) ? null : `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`; const s = String(v); const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : null; };
+    const regs = [];
+    for (let r = hIdx + 1; r < rows.length; r++) { const f = rows[r] || []; const eq = f[H['EQUIPO']]; const est = String(f[H['ESTATUS']] || '').trim().toUpperCase(); if (!eq || !est) continue; regs.push({ modelo: String(eq).trim(), estatus: est, marca: H['MARCA'] != null && f[H['MARCA']] != null ? String(f[H['MARCA']]) : null, oferta: H['OFERTA'] != null && f[H['OFERTA']] != null ? String(f[H['OFERTA']]) : null, vigencia: H['VIGENCIA'] != null && f[H['VIGENCIA']] != null ? String(f[H['VIGENCIA']]).trim() : null, fecha_inicio: H['FECHA INICIO'] != null ? fecha(f[H['FECHA INICIO']]) : null, fecha_fin: H['FECHA FIN'] != null ? fecha(f[H['FECHA FIN']]) : null, precio_contado: H['PRECIO DE CONTADO'] != null && f[H['PRECIO DE CONTADO']] != null && !isNaN(Number(f[H['PRECIO DE CONTADO']])) ? Number(f[H['PRECIO DE CONTADO']]) : null }); }
+    // un equipo puede repetirse con varias vigencias: se guardan todas con sufijo interno para no chocar en la clave
+    const vistos = {}; regs.forEach(x => { const k = x.modelo; vistos[k] = (vistos[k] || 0) + 1; if (vistos[k] > 1) x.modelo = `${k} #${vistos[k]}`; });
+    if (!regs.length) { di(''); alert('La hoja no trae equipos.'); return; }
+    di(`Guardando ${regs.length} equipos…`);
+    const { error: eDel } = await db.from('equipos_estatus').delete().neq('modelo', ''); if (eDel) throw eDel;
+    for (let i = 0; i < regs.length; i += 200) { const { error } = await db.from('equipos_estatus').insert(regs.slice(i, i + 200)); if (error) throw error; }
+    window.__estatusDB = Object.fromEntries(regs.map(x => [x.modelo.replace(/ #\d+$/, '').toUpperCase(), x.estatus])); window.__log2cache = null;
+    const res = {}; regs.forEach(x => { res[x.estatus] = (res[x.estatus] || 0) + 1; });
+    di(`✅ ${regs.length} equipos · ${new Date().toLocaleDateString('es-MX')}`);
+    alert('Lista de precios actualizada:\n' + Object.entries(res).map(([e, n]) => `${e}: ${n}`).join('\n'));
+  } catch (e) { di(''); alert('Error al procesar la lista: ' + (e.message || e)); }
+}
+async function log2_preparar(forzar) {
+  if (window.__log2cache && !forzar) return window.__log2cache;
+  const hoy = new Date(); const D = await log2_cargarDatos(hoy);
+  if (!D.inv.length) throw new Error('No hay inventario de series cargado. Súbelo primero (archivo de los martes).');
+  if (!D.lista.length) throw new Error('No hay lista de precios cargada. Súbela primero.');
+  const C = log2_calcular(D, hoy); window.__log2cache = C; return C;
+}
+async function exportarForecastCC2(btn) {
+  const b = btn || document.getElementById('btn-forecast-cc'); const t0 = b ? b.textContent : '';
+  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); if (b) b.textContent = '⏳ Armando Excel…'; const { buf, nombre } = await XL2.forecastCompleto(C); XL2.descargar(buf, nombre); }
+  catch (e) { console.error(e); alert('No se pudo generar el Forecast CC: ' + (e.message || e)); }
+  finally { if (b) { b.disabled = false; b.textContent = t0; } }
+}
+async function exportarRequerimientoCC(btn) {
+  const b = btn || document.getElementById('btn-req-cc'); const t0 = b ? b.textContent : '';
+  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); const base = (document.getElementById('sel-req-base') || {}).value || 'META'; const { buf, nombre } = await XL2.requerimientoPlano(C, base); XL2.descargar(buf, nombre); }
+  catch (e) { console.error(e); alert('No se pudo generar el requerimiento: ' + (e.message || e)); }
+  finally { if (b) { b.disabled = false; b.textContent = t0; } }
+}
+
 </script>
 </body>
 </html>
