@@ -1204,6 +1204,14 @@
                 </label>
                 <span id="lista-precios-info" style="font-size:11px; color:#64748B;"></span>
               </div>
+              <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px;">
+                <label style="display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:2px dashed #B45309; border-radius:8px; font-size:12px; color:#B45309; font-weight:700; cursor:pointer; background:#FFF7ED;">
+                  📨 Subir asignación de AT&T (Reabasto WKnn .xlsb/.xlsx)
+                  <input type="file" accept=".xlsb,.xlsx,.xlsm" style="display:none;" onchange="log2_subirAsignacion(this.files[0]); this.value='';">
+                </label>
+                <span id="asig-info" style="font-size:11px; color:#64748B;"></span>
+              </div>
+              <div id="log2-alertas" style="margin-top:8px;"></div>
               <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">El inventario de series se sube cada martes; la lista de precios solo cuando AT&T la cambie. El Forecast toma el último corte cargado y las ventas/envíos de Supabase.</div>
             </div>
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
@@ -21676,14 +21684,17 @@ async function log2_fetchAll(tabla, select, filtro) {
 }
 async function log2_cargarDatos(hoy) {
   const anio = hoy.getFullYear();
-  const [entregas, ventas, invRows, listaRows, corteRows] = await Promise.all([
+  const cortes = (await db.from('inventario_series').select('fecha_corte').order('fecha_corte', { ascending: false }).limit(400)).data || [];
+  const cortesU = [...new Set(cortes.map(c => c.fecha_corte))].sort().reverse(); const corteAct = cortesU[0] || null, cortePrev = cortesU[1] || null;
+  const [entregas, ventas, invRows, listaRows, invPrev, logReq, logAsig, logKpi] = await Promise.all([
     log2_fetchAll('entregas_detalle', 'folio, programacion, fecha_bo, fecha_creacion, fecha_venta, fecha_entregado, region, tipo_entrega, estado, municipio, cp, equipo, marca, guia, costo_guia, total_guia, cargo_transporte, recargo_combustible, proteccion_envio, area_remota, vav_tax, descuento_guia, estatus_entrega, vendedor, supervisor, plan'),
     log2_fetchAll('ventas_detalle', 'folio, ejecutivo, supervisor, fecha_activacion, fecha_bo, estatus, plan', q => q.eq('estatus', 'activada').gte('fecha_activacion', `${anio}-01-01`)),
-    (async () => { const { data } = await db.from('inventario_series').select('fecha_corte').order('fecha_corte', { ascending: false }).limit(1); if (!data || !data.length) return []; const corte = data[0].fecha_corte; const rows = await log2_fetchAll('inventario_series', 'fecha_corte, plaza, tipo_tienda, tipo_almacen, tienda, sku, categoria, marca, nombre, serie, inventario', q => q.eq('fecha_corte', corte)); rows.__corte = corte; return rows; })(),
+    corteAct ? log2_fetchAll('inventario_series', 'fecha_corte, plaza, tipo_tienda, tipo_almacen, tienda, sku, categoria, marca, nombre, serie, inventario', q => q.eq('fecha_corte', corteAct)) : Promise.resolve([]),
     log2_fetchAll('equipos_estatus', 'modelo, estatus, marca, oferta, vigencia, fecha_inicio, fecha_fin, precio_contado'),
-    Promise.resolve(null)
+    cortePrev ? log2_fetchAll('inventario_series', 'plaza, tipo_almacen, categoria, nombre, serie', q => q.eq('fecha_corte', cortePrev)) : Promise.resolve([]),
+    log2_fetchAll('log_requerimiento', '*'), log2_fetchAll('log_asignacion', '*'), log2_fetchAll('log_kpi_semana', '*')
   ]);
-  return { entregas, ventas, inv: invRows, lista: listaRows, corteInv: invRows.__corte || null };
+  return { entregas, ventas, inv: invRows, lista: listaRows, corteInv: corteAct, cortePrev, invPrev, logReq, logAsig, logKpi };
 }
 function log2_calcular(D, hoy) {
   const R = LOG2; const anio = hoy.getFullYear(), mesAct = hoy.getMonth() + 1;
@@ -21741,7 +21752,33 @@ function log2_calcular(D, hoy) {
   idxModelo.forEach(m => { const o = infoM[m]; if (o.wos == null || o.wos >= 2) return; const acc = o.est === 'NO RESURTIBLE' ? 'REEMPLAZAR' : o.est === 'RESURTIBLE' ? 'VALIDAR ARRIBO' : 'REVISAR'; revision.push({ accion: acc, modelo: m, estatus: o.est, prom: o.prom, ex: o.s.ex, pr: o.s.pr, cc: o.s.cc, wos: o.wos, precio: o.precio, reemplazo: acc === 'REEMPLAZAR' ? reemplazo(m) : null }); });
   // ---- sugerencia no resurtibles
   const sug = []; R.REGIONES.forEach(rg => { const exR = {}; invE.filter(i => i.region === rg && i.fisico).forEach(i => { exR[i.modelo] = (exR[i.modelo] || 0) + i.n; }); Object.entries(exR).forEach(([m, ex]) => { if (ex <= 0 || m === 'SIN EQUIPO') return; const li = lista(m); const est = li ? li.e : 'SIN LISTA'; const vT = h3.filter(v => v.modelo === m).length; if (est === 'RESURTIBLE' || vT === 0) return; const vR = h3.filter(v => v.modelo === m && v.hubIdeal === rg).length; const cc = Math.round(ex * 0.2); const vm = vR / Math.max(1, m3.length); const cob = vm > 0 ? cc / vm : 99; sug.push({ region: rg, modelo: m, estatus: est, ex, cc, vR, vm, cob, sugerencia: vR === 0 ? 'Sin ventas en esta región: mover a otro HUB' : cob <= 1 ? 'Se agota este mes: empujar ya' : cob <= 3 ? 'Empujar en campaña' : 'Stock alto: promoción o traspaso' }); }); });
-  return { anio, mesAct, hoyStr, semAct, sem, sems, mesesProy, lista, ventas, gs, h3, m3, invE, corteInv: D.corteInv, metaMes, metaDe, metaSep, meta, env: envOk, combMes, sanidad, sanidadHub, idxModelo, idxColor, stat, base, incr, proy, partAgo, objSem, req, revision, sug, infoM, totH3, nIdeal, listaRows: D.lista };
+  // ---- SEGUIMIENTO DE ASIGNACIÓN (lo pedido vs lo asignado vs lo recibido), por semana ISO
+  const semRow = x => Number(x.semana) + Number(x.anio) * 100;
+  const reqPorSem = {}; (D.logReq || []).forEach(x => { const k = semRow(x); reqPorSem[k] = reqPorSem[k] || { fecha: x.fecha, base: x.base, filas: [] }; reqPorSem[k].filas.push(x); if (x.fecha < reqPorSem[k].fecha) reqPorSem[k].fecha = x.fecha; });
+  const asigPorSem = {}; (D.logAsig || []).forEach(x => { const k = semRow(x); asigPorSem[k] = asigPorSem[k] || { fechas: [], filas: [] }; asigPorSem[k].filas.push(x); if (!asigPorSem[k].fechas.includes(x.fecha_asignacion)) asigPorSem[k].fechas.push(x.fecha_asignacion); });
+  // recibido = series que están hoy en INVENTARIO/TRANSITO y no estaban en el corte anterior (por modelo y región)
+  const prevSet = new Set((D.invPrev || []).map(i => String(i.serie))); const recibido = {}; const recibidoReg = {};
+  if (D.cortePrev) invE.forEach(i => { if (i.fisico && !prevSet.has(String(i.serie))) { recibido[i.modelo] = (recibido[i.modelo] || 0) + i.n; const k = i.modelo + '|' + i.region; recibidoReg[k] = (recibidoReg[k] || 0) + i.n; } });
+  const semanasSeg = [...new Set([...Object.keys(reqPorSem), ...Object.keys(asigPorSem)])].map(Number).sort((a, b) => b - a).slice(0, 8);
+  const seguimiento = semanasSeg.map(k => {
+    const rq = reqPorSem[k], as = asigPorSem[k]; const w = k % 100, y = Math.floor(k / 100);
+    const solPorM = {}; (rq ? rq.filas : []).forEach(x => { solPorM[x.modelo] = (solPorM[x.modelo] || 0) + (Number(x.total) || 0); });
+    const asPorM = {}; (as ? as.filas : []).forEach(x => { const m = x.modelo_norm || R.modelo(x.modelo_att || x.descripcion); asPorM[m] = (asPorM[m] || 0) + (Number(x.ccenter) || 0); });
+    const modelos = [...new Set([...Object.keys(solPorM), ...Object.keys(asPorM)])];
+    const fechaReq = rq ? rq.fecha : null; const fechaAs = as && as.fechas.length ? as.fechas.sort()[0] : null;
+    const dias = (fechaReq && fechaAs) ? Math.round((new Date(fechaAs + 'T12:00:00') - new Date(fechaReq + 'T12:00:00')) / 86400000) : null;
+    const esActual = (w === semAct && y === anio);
+    const filas = modelos.map(m => ({ modelo: m, solicitado: solPorM[m] || 0, asignado: asPorM[m] || 0, recibido: esActual ? (recibido[m] || 0) : null })).sort((a, b) => b.solicitado - a.solicitado || b.asignado - a.asignado);
+    const sol = filas.reduce((a, f) => a + f.solicitado, 0), asg = filas.reduce((a, f) => a + f.asignado, 0), rec = esActual ? filas.reduce((a, f) => a + (f.recibido || 0), 0) : null;
+    return { semana: w, anio: y, fechaReq, fechaAs, fechasAs: as ? as.fechas : [], nArchivos: as ? as.fechas.length : 0, dias, solicitado: sol, asignado: asg, cobertura: sol ? asg / sol : null, recibido: rec, filas, esActual, base: rq ? rq.base : null };
+  });
+  // ---- KPIs de la semana (para congelar en log_kpi_semana)
+  const sanMes = C_ => C_; const sm = sanidad[mesAct - 1]; const sobreEnvio = sm.n ? (sm.cReal - sm.cIdeal) / sm.n : null;
+  const rezag = idxModelo.reduce((a, m) => { const i = infoM[m]; return a + ((i.wos != null && i.wos > 12) ? i.s.ex : 0); }, 0);
+  const segAct = seguimiento.find(x => x.esActual) || null;
+  const kpi = { semana: semAct, anio, fecha: hoyStr, corte_inventario: D.corteInv, acierto_envios: sm.n ? sm.ok / sm.n : null, sobrecosto_envio: sobreEnvio, envios_mes: sm.n, wos_menor_2: revision.length, faltante_4sem_meta: req.reduce((a, f) => a + f.faltM, 0), faltante_4sem_proy: req.reduce((a, f) => a + f.faltP, 0), stock_rezagado_pzas: rezag, cobertura_asignacion: segAct ? segAct.cobertura : null, dias_respuesta: segAct ? segAct.dias : null, recibido_semana: segAct ? segAct.recibido : null, solicitado: segAct ? segAct.solicitado : null, asignado: segAct ? segAct.asignado : null, existencia_total: invE.filter(i => i.fisico).reduce((a, i) => a + i.n, 0), por_recibir: invE.filter(i => i.porrec).reduce((a, i) => a + i.n, 0) };
+  const evol = [...(D.logKpi || []).filter(x => (Number(x.semana) + Number(x.anio) * 100) !== (semAct + anio * 100)).map(x => ({ ...x, ...(x.kpis || {}) })), kpi].sort((a, b) => (Number(a.anio) * 100 + Number(a.semana)) - (Number(b.anio) * 100 + Number(b.semana))).slice(-12);
+  return { anio, mesAct, hoyStr, semAct, sem, sems, mesesProy, lista, ventas, gs, h3, m3, invE, corteInv: D.corteInv, cortePrev: D.cortePrev, metaMes, metaDe, metaSep, meta, env: envOk, combMes, sanidad, sanidadHub, idxModelo, idxColor, stat, base, incr, proy, partAgo, objSem, req, revision, sug, infoM, totH3, nIdeal, listaRows: D.lista, seguimiento, recibido, recibidoReg, kpi, evol, logReq: D.logReq || [], logAsig: D.logAsig || [] };
 }
 // ============================================================================
 // LOGÍSTICA v2 · Excel completo (ExcelJS) con fórmulas, formatos condicionales y
@@ -21978,12 +22015,35 @@ const XL2 = (() => {
     C.sug.forEach((s, k) => { const r = 5 + k; set(ws, r, 1, s.region); set(ws, r, 2, s.modelo, { font: BB }); set(ws, r, 3, s.estatus); fx(ws, r, 4, `SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"INVENTARIO")+SUMIFS(${I('K')},${I('L')},$B${r},${I('A')},$A${r},${I('E')},"TRANSITO")`); fx(ws, r, 5, `ROUND(D${r}*0.2,0)`); fx(ws, r, 6, `COUNTIFS(${V('M')},$B${r},${V('F')},$A${r},${V('C')},">=${m0}",${V('C')},"<=${m1}")`); fx(ws, r, 7, `F${r}/${C.m3.length}`, { fmt: '0.0' }); fx(ws, r, 8, `IF(G${r}>0,E${r}/G${r},99)`, { fmt: '0.0' }); fx(ws, r, 9, `IF(F${r}=0,"Sin ventas en esta región: mover a otro HUB",IF(H${r}<=1,"Se agota este mes: empujar ya",IF(H${r}<=3,"Empujar en campaña","Stock alto: promoción o traspaso")))`); });
     [13, 40, 18, 12, 12, 12, 12, 12, 42].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 4 }]; ws.autoFilter = `A4:I${4 + C.sug.length}`;
   }
+  function hojaSeguimiento(X, C) {
+    const { wb, set, fonts: { B, BB, H, T, N9, F } } = X; const ws = wb.addWorksheet('Seguimiento asignacion');
+    set(ws, 1, 1, `SEGUIMIENTO DE ASIGNACIÓN · lo pedido (requerimiento enviado) vs lo asignado por AT&T vs lo recibido en inventario · semana ${C.semAct}`, { font: T });
+    set(ws, 2, 1, 'Solicitado = requerimiento semanal guardado al descargarlo (log_requerimiento). Asignado = archivos de asignación de AT&T subidos en la semana (log_asignacion, columna CCENTER; puede haber varios: semanal + especiales). Recibido = series nuevas en INVENTARIO/TRÁNSITO respecto al corte anterior del inventario (solo se calcula para la semana en curso). Días de respuesta = primera asignación − fecha del requerimiento.', { font: N9 });
+    ['Semana', 'Fecha requerimiento', 'Base', 'Fecha 1ª asignación', 'Archivos de asignación', 'Días de respuesta', 'Solicitado (pzas)', 'Asignado CC (pzas)', '% cobertura', 'Recibido (series nuevas)'].forEach((h, i) => set(ws, 4, 1 + i, h, { font: H, fill: '0F766E', align: { horizontal: 'center', wrapText: true } }));
+    C.seguimiento.forEach((s, i) => { const r = 5 + i; set(ws, r, 1, `W${s.semana} ${s.anio}${s.esActual ? ' (en curso)' : ''}`, { font: BB }); set(ws, r, 2, s.fechaReq); set(ws, r, 3, s.base); set(ws, r, 4, s.fechaAs); set(ws, r, 5, s.nArchivos ? `${s.nArchivos} (${s.fechasAs.join(', ')})` : 'PENDIENTE', { font: F({ bold: true, color: { argb: s.nArchivos ? 'FF16A34A' : 'FFC00000' } }) }); set(ws, r, 6, s.dias); set(ws, r, 7, s.solicitado, { font: BB }); set(ws, r, 8, s.asignado, { font: BB }); set(ws, r, 9, s.cobertura, { fmt: '0%' }); set(ws, r, 10, s.recibido); });
+    let r = 6 + C.seguimiento.length; set(ws, r, 1, 'DETALLE POR MODELO · semana en curso', { font: F({ bold: true, size: 11, color: { argb: 'FF1F3864' } }) }); r++;
+    ['Modelo', 'Solicitado', 'Asignado CC', '% cobertura', 'Recibido (series nuevas)', 'Pendiente por llegar', 'Lectura'].forEach((h, i) => set(ws, r, 1 + i, h, { font: H, fill: '5B3A8E', align: { horizontal: 'center', wrapText: true } })); r++;
+    const act = C.seguimiento.find(x => x.esActual);
+    if (act) act.filas.forEach(f => { set(ws, r, 1, f.modelo, { font: BB }); set(ws, r, 2, f.solicitado); set(ws, r, 3, f.asignado); set(ws, r, 4, f.solicitado ? f.asignado / f.solicitado : null, { fmt: '0%' }); set(ws, r, 5, f.recibido); const pend = Math.max(0, f.asignado - (f.recibido || 0)); set(ws, r, 6, pend); set(ws, r, 7, f.solicitado && !f.asignado ? 'NO ASIGNADO' : (f.asignado && f.solicitado && f.asignado < f.solicitado ? 'Asignación parcial' : (f.asignado && !f.solicitado ? 'Asignado sin pedirlo' : (pend > 0 ? 'En camino' : (f.asignado ? 'Recibido' : ''))))); r++; });
+    else set(ws, r, 1, 'Sin requerimiento ni asignación registrados esta semana.', { font: N9 });
+    [18, 16, 12, 16, 30, 12, 14, 14, 11, 16].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', ySplit: 4 }];
+  }
+  function hojaEvolucion(X, C) {
+    const { wb, set, fonts: { B, BB, H, T, N9, F } } = X; const ws = wb.addWorksheet('Evolucion semanal');
+    set(ws, 1, 1, 'EVOLUCIÓN SEMANAL · indicadores congelados cada semana (log_kpi_semana) · ¿vamos mejorando?', { font: T });
+    set(ws, 2, 1, 'Cada vez que se genera el Forecast se guarda la foto de la semana. Δ = cambio contra la semana anterior. Sobrecosto por envío y % de acierto son del mes en curso a la fecha.', { font: N9 });
+    const K = [['% envíos al menor costo', 'acierto_envios', '0%', 1], ['Sobrecosto por envío (MXN)', 'sobrecosto_envio', '$#,##0.0', -1], ['Envíos del mes', 'envios_mes', '#,##0', 0], ['Modelos con WOS < 2', 'wos_menor_2', '0', -1], ['Faltante 4 sem (meta)', 'faltante_4sem_meta', '#,##0', -1], ['Faltante 4 sem (proyección)', 'faltante_4sem_proy', '#,##0', -1], ['Stock rezagado (pzas, WOS > 12)', 'stock_rezagado_pzas', '#,##0', -1], ['Solicitado (pzas)', 'solicitado', '#,##0', 0], ['Asignado CC (pzas)', 'asignado', '#,##0', 0], ['% cobertura de asignación', 'cobertura_asignacion', '0%', 1], ['Días de respuesta AT&T', 'dias_respuesta', '0', -1], ['Recibido en la semana (series)', 'recibido_semana', '#,##0', 0], ['Existencia total', 'existencia_total', '#,##0', 0], ['Por recibir', 'por_recibir', '#,##0', 0]];
+    const ev = C.evol; ['Indicador', ...ev.map(e => `W${e.semana}`), 'Δ última vs anterior'].forEach((h, i) => set(ws, 4, 1 + i, h, { font: H, fill: '1F3864', align: { horizontal: 'center', wrapText: true } }));
+    K.forEach(([lbl, key, fmt, dirBuena], i) => { const r = 5 + i; set(ws, r, 1, lbl, { font: BB }); ev.forEach((e, j) => set(ws, r, 2 + j, e[key] != null ? e[key] : null, { fmt })); const a = ev.length > 1 ? ev[ev.length - 2][key] : null, b = ev.length ? ev[ev.length - 1][key] : null; if (a != null && b != null) { const d = b - a; const ok = dirBuena === 0 ? null : (dirBuena > 0 ? d >= 0 : d <= 0); set(ws, r, 2 + ev.length, (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '= ') + (fmt.includes('%') ? (Math.round(d * 1000) / 10) + ' pts' : Math.round(d * 10) / 10), { font: F({ bold: true, color: { argb: ok == null ? 'FF595959' : ok ? 'FF16A34A' : 'FFC00000' } }) }); } });
+    set(ws, 5 + K.length + 1, 1, 'Verde = mejoró, rojo = empeoró, gris = informativo.', { font: N9 });
+    [30, ...ev.map(() => 11), 18].forEach((w, i) => { ws.getColumn(i + 1).width = w; }); ws.views = [{ state: 'frozen', xSplit: 1, ySplit: 4 }];
+  }
   async function forecastCompleto(C) {
     const X = XL.construir(C);
     hojaVSO(X, C, 'modelo', `VSO CC · semana ${C.semAct} · corte ${C.hoyStr} · por MODELO (sin color)`, 'MODELO', 'M', 'L');
     hojaVSO(X, C, 'colorkey', `VSO CC · semana ${C.semAct} · corte ${C.hoyStr} · por MODELO Y COLOR`, 'MODELO / COLOR', 'N', 'M');
-    hojaRevision(X, C); hojaRequerimiento(X, C); hojaSugerencia(X, C);
-    const orden = ['Meta por region', 'Sanidad envios', 'HUB ideal - analisis', 'Proyeccion', 'VSO por modelo', 'VSO por color', 'Revision semanal', 'Requerimiento 4 sem', 'Sugerencia no resurtibles', 'Tarifario DHL', 'Datos ventas', 'Datos envios', 'Datos inventario', 'Datos lista de precios'];
+    hojaRevision(X, C); hojaRequerimiento(X, C); hojaSugerencia(X, C); hojaSeguimiento(X, C); hojaEvolucion(X, C);
+    const orden = ['Evolucion semanal', 'Meta por region', 'Sanidad envios', 'HUB ideal - analisis', 'Proyeccion', 'VSO por modelo', 'VSO por color', 'Revision semanal', 'Requerimiento 4 sem', 'Seguimiento asignacion', 'Sugerencia no resurtibles', 'Tarifario DHL', 'Datos ventas', 'Datos envios', 'Datos inventario', 'Datos lista de precios'];
     orden.forEach((n, i) => { const ws = X.wb.getWorksheet(n); if (ws) ws.orderNo = i; });
     X.wb.worksheets.forEach(ws => { ws.state = 'visible'; });
     const buf = await X.wb.xlsx.writeBuffer(); return { buf, nombre: `Forecast CC semana ${C.semAct}.xlsx` };
@@ -22025,9 +22085,32 @@ async function log2_subirInventarioSeries(file) {
     const { error: eDel } = await db.from('inventario_series').delete().eq('fecha_corte', corte); if (eDel) throw eDel;
     for (let i = 0; i < regs.length; i += 500) { const { error } = await db.from('inventario_series').insert(regs.slice(i, i + 500)); if (error) throw error; }
     const eq = regs.filter(r => String(r.categoria).toUpperCase() === 'EQUIPO').length;
-    di(`✅ ${regs.length} series (${eq} equipos) · corte ${corte}`); window.__log2cache = null;
+    window.__log2cache = null; await log2_estadoCargas();
     alert(`Inventario de series cargado: ${regs.length} series, ${eq} equipos, corte ${corte}.\n\nEl Forecast CC y el requerimiento usan este corte.`);
   } catch (e) { di(''); alert('Error al cargar el inventario: ' + (e.message || e)); }
+}
+async function log2_subirAsignacion(file) {
+  if (!file) return; if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede subir la asignación.'); return; }
+  const info = document.getElementById('asig-info'); const di = t => { if (info) info.textContent = t; };
+  try {
+    di('Leyendo…'); const wbA = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+    let rows = null, H = null;
+    for (const n of wbA.SheetNames) { const rr = XLSX.utils.sheet_to_json(wbA.Sheets[n], { header: 1, defval: null }); for (let r = 0; r < Math.min(20, rr.length); r++) { const vals = (rr[r] || []).map(x => String(x || '').trim().toUpperCase()); if (vals.includes('SKU') && vals.some(v => /CCENTER|CALL CENTER|^CC$/.test(v))) { H = {}; vals.forEach((v, i) => { if (v) H[v] = i; }); rows = rr.slice(r + 1); break; } } if (rows) break; }
+    if (!rows) { di(''); alert('No encontré la tabla con columnas SKU / DESCRIPCION / MODELO / SUGERIDO / CCENTER. ¿Es el archivo de asignación de AT&T?'); return; }
+    const col = (...names) => { for (const nm of names) { const k = Object.keys(H).find(h => h === nm || h.startsWith(nm)); if (k != null) return H[k]; } return null; };
+    const cSku = col('SKU'), cDesc = col('DESCRIPCION', 'DESCRIPCIÓN'), cMod = col('MODELO'), cSug = col('SUGERIDO'), cCC = col('CCENTER', 'CALL CENTER', 'CC'), cTda = col('TDA', 'TIENDA');
+    const hoy = new Date(); const mW = file.name.match(/W(?:K)?\s?(\d{1,2})/i); const semArch = mW ? parseInt(mW[1], 10) : LOG2.semanaISO(hoy); const semAct = LOG2.semanaISO(hoy);
+    const resp = prompt(`Asignación de AT&T\n\nSemana ISO a la que pertenece (el archivo sugiere W${semArch}; hoy es W${semAct}).\nEscribe el número de semana:`, String(semArch)); if (resp === null) { di(''); return; }
+    const semana = parseInt(resp, 10); if (!(semana >= 1 && semana <= 53)) { di(''); alert('Semana inválida.'); return; }
+    const tipo = confirm('¿Es la asignación SEMANAL regular?\n\nAceptar = semanal · Cancelar = asignación ESPECIAL fuera de fecha') ? 'semanal' : 'especial';
+    const fecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+    const regs = rows.filter(f => f && f[cSku]).map(f => { const desc = f[cDesc] != null ? String(f[cDesc]) : ''; const modAtt = cMod != null && f[cMod] != null ? String(f[cMod]) : ''; return { semana, anio: hoy.getFullYear(), fecha_asignacion: fecha, tipo, archivo: file.name, sku: String(f[cSku]), descripcion: desc, modelo_att: modAtt, modelo_norm: LOG2.modelo(desc || modAtt), sugerido: cSug != null ? (Number(f[cSug]) || 0) : null, ccenter: cCC != null ? (Number(f[cCC]) || 0) : 0, tda: cTda != null ? (Number(f[cTda]) || 0) : null }; });
+    if (!regs.length) { di(''); alert('El archivo no trae renglones con SKU.'); return; }
+    const { error: eDel } = await db.from('log_asignacion').delete().eq('semana', semana).eq('anio', hoy.getFullYear()).eq('archivo', file.name); if (eDel) throw eDel;
+    for (let i = 0; i < regs.length; i += 300) { const { error } = await db.from('log_asignacion').insert(regs.slice(i, i + 300)); if (error) throw error; }
+    const cc = regs.reduce((a, x) => a + (x.ccenter || 0), 0); window.__log2cache = null; await log2_estadoCargas();
+    alert(`Asignación ${tipo} W${semana} guardada: ${regs.length} SKUs · ${cc} piezas para call center.\n\nYa se puede ver en "Seguimiento asignacion" del Forecast.`);
+  } catch (e) { di(''); alert('Error al cargar la asignación: ' + (e.message || e)); }
 }
 async function procesarListaPrecios(file) {
   if (!file) return; if ((window.__accesoModo || 'director') !== 'director') { alert('Solo el acceso de director puede actualizar la lista.'); return; }
@@ -22051,10 +22134,39 @@ async function procesarListaPrecios(file) {
     for (let i = 0; i < regs.length; i += 200) { const { error } = await db.from('equipos_estatus').insert(regs.slice(i, i + 200)); if (error) throw error; }
     window.__estatusDB = Object.fromEntries(regs.map(x => [x.modelo.replace(/ #\d+$/, '').toUpperCase(), x.estatus])); window.__log2cache = null;
     const res = {}; regs.forEach(x => { res[x.estatus] = (res[x.estatus] || 0) + 1; });
-    di(`✅ ${regs.length} equipos · ${new Date().toLocaleDateString('es-MX')}`);
+    window.__log2cache = null; await log2_estadoCargas();
     alert('Lista de precios actualizada:\n' + Object.entries(res).map(([e, n]) => `${e}: ${n}`).join('\n'));
   } catch (e) { di(''); alert('Error al procesar la lista: ' + (e.message || e)); }
 }
+async function log2_estadoCargas() {
+  try {
+    const { data: inv } = await db.from('inventario_series').select('fecha_corte, created_at').order('fecha_corte', { ascending: false }).limit(1);
+    const invInfo = document.getElementById('inv-series-info');
+    if (invInfo) {
+      if (inv && inv.length) { const { count } = await db.from('inventario_series').select('*', { count: 'exact', head: true }).eq('fecha_corte', inv[0].fecha_corte); invInfo.innerHTML = `<b style="color:#0F766E;">Cargado:</b> corte ${inv[0].fecha_corte} · ${(count || 0).toLocaleString('es-MX')} series · subido ${new Date(inv[0].created_at).toLocaleDateString('es-MX')}`; }
+      else invInfo.innerHTML = '<b style="color:#B91C1C;">Sin inventario de series cargado</b>';
+    }
+    const { data: lp } = await db.from('equipos_estatus').select('updated_at').order('updated_at', { ascending: false }).limit(1);
+    const { count: nlp } = await db.from('equipos_estatus').select('*', { count: 'exact', head: true });
+    const lpInfo = document.getElementById('lista-precios-info');
+    if (lpInfo) lpInfo.innerHTML = nlp ? `<b style="color:#0077A8;">Cargada:</b> ${nlp} equipos · subida ${lp && lp.length && lp[0].updated_at ? new Date(lp[0].updated_at).toLocaleDateString('es-MX') : '—'}` : '<b style="color:#B91C1C;">Sin lista de precios cargada</b>';
+    // ---- alertas de la semana: inventario vigente, requerimiento enviado, asignación recibida
+    const hoy = new Date(); const semAct = LOG2.semanaISO(hoy), anio = hoy.getFullYear();
+    const { data: rq } = await db.from('log_requerimiento').select('fecha, base').eq('semana', semAct).eq('anio', anio).limit(1);
+    const { data: asg } = await db.from('log_asignacion').select('fecha_asignacion, tipo, archivo, ccenter').eq('semana', semAct).eq('anio', anio);
+    const asigInfo = document.getElementById('asig-info');
+    if (asigInfo) { if (asg && asg.length) { const arch = [...new Set(asg.map(x => `${x.archivo} (${x.tipo}, ${x.fecha_asignacion})`))]; const cc = asg.reduce((a, x) => a + (Number(x.ccenter) || 0), 0); asigInfo.innerHTML = `<b style="color:#B45309;">W${semAct}:</b> ${arch.length} archivo(s) · ${cc} pzas CC · ${arch.join(' · ')}`; } else asigInfo.innerHTML = `<b style="color:#B91C1C;">W${semAct}: asignación PENDIENTE</b>`; }
+    const al = document.getElementById('log2-alertas'); if (al) {
+      const msgs = []; const diasInv = inv && inv.length ? Math.round((hoy - new Date(inv[0].fecha_corte + 'T12:00:00')) / 86400000) : null;
+      if (diasInv == null) msgs.push('🛑 <b>Falta el inventario de series.</b> Sin él no se puede generar el Forecast.'); else if (diasInv > 7) msgs.push(`🛑 <b>El inventario de series está vencido</b> (corte ${inv[0].fecha_corte}, hace ${diasInv} días). Sube el de esta semana antes de generar el Forecast.`);
+      if (!nlp) msgs.push('🛑 <b>Falta la lista de precios.</b>');
+      if (!(rq && rq.length)) msgs.push(`⚠️ W${semAct}: el <b>requerimiento semanal</b> aún no se ha descargado (se registra al descargarlo).`); else msgs.push(`✅ W${semAct}: requerimiento enviado el ${rq[0].fecha} (base ${rq[0].base}).`);
+      if (!(asg && asg.length)) msgs.push(`⚠️ W${semAct}: <b>asignación de AT&T pendiente</b>. Cuando llegue el archivo (Reabasto WK${semAct}), súbelo aquí.`); else msgs.push(`✅ W${semAct}: asignación recibida (${asg.length} SKUs).`);
+      al.innerHTML = msgs.map(m => `<div style="padding:6px 10px; border-radius:6px; background:${m.startsWith('🛑') ? '#FEE2E2' : m.startsWith('⚠️') ? '#FEF3C7' : '#DCFCE7'}; font-size:12px; margin-top:4px;">${m}</div>`).join('');
+    }
+  } catch (e) { console.warn('[log2] estado de cargas', e); }
+}
+if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => { setTimeout(log2_estadoCargas, 2500); });
 async function log2_preparar(forzar) {
   if (window.__log2cache && !forzar) return window.__log2cache;
   const hoy = new Date(); const D = await log2_cargarDatos(hoy);
@@ -22062,15 +22174,28 @@ async function log2_preparar(forzar) {
   if (!D.lista.length) throw new Error('No hay lista de precios cargada. Súbela primero.');
   const C = log2_calcular(D, hoy); window.__log2cache = C; return C;
 }
+function log2_validarVigencia(C) {
+  const hoy = new Date(); const dias = C.corteInv ? Math.round((hoy - new Date(C.corteInv + 'T12:00:00')) / 86400000) : 999;
+  if (dias > 7) { if (!confirm(`El inventario de series cargado es del ${C.corteInv || '—'} (hace ${dias} días). Lo correcto es subir el de esta semana antes.\n\n¿Generar de todos modos con ese inventario?`)) return false; }
+  return true;
+}
+async function log2_guardarKpi(C) {
+  try { const { error: eD } = await db.from('log_kpi_semana').delete().eq('semana', C.kpi.semana).eq('anio', C.kpi.anio); if (eD) throw eD; const { error } = await db.from('log_kpi_semana').insert({ semana: C.kpi.semana, anio: C.kpi.anio, fecha: C.kpi.fecha, kpis: C.kpi }); if (error) throw error; } catch (e) { console.warn('[log2] kpi', e); }
+}
+async function log2_guardarRequerimiento(C, base) {
+  const regs = C.req.map(f => { const w = base === 'META' ? f.wM : f.wP; return { semana: C.semAct, anio: C.anio, fecha: C.hoyStr, base, region: f.region, modelo: f.modelo, w1: w[0], w2: w[1], w3: w[2], w4: w[3], total: base === 'META' ? f.totM : f.totP, existencia: f.ex, por_recibir: f.pr, asig_cc: f.cc, faltante: base === 'META' ? f.faltM : f.faltP }; });
+  const { error: eD } = await db.from('log_requerimiento').delete().eq('semana', C.semAct).eq('anio', C.anio); if (eD) throw eD;
+  for (let i = 0; i < regs.length; i += 300) { const { error } = await db.from('log_requerimiento').insert(regs.slice(i, i + 300)); if (error) throw error; }
+}
 async function exportarForecastCC2(btn) {
   const b = btn || document.getElementById('btn-forecast-cc'); const t0 = b ? b.textContent : '';
-  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); if (b) b.textContent = '⏳ Armando Excel…'; const { buf, nombre } = await XL2.forecastCompleto(C); XL2.descargar(buf, nombre); }
+  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); if (!log2_validarVigencia(C)) return; if (b) b.textContent = '⏳ Armando Excel…'; await log2_guardarKpi(C); const { buf, nombre } = await XL2.forecastCompleto(C); XL2.descargar(buf, nombre); log2_estadoCargas(); }
   catch (e) { console.error(e); alert('No se pudo generar el Forecast CC: ' + (e.message || e)); }
   finally { if (b) { b.disabled = false; b.textContent = t0; } }
 }
 async function exportarRequerimientoCC(btn) {
   const b = btn || document.getElementById('btn-req-cc'); const t0 = b ? b.textContent : '';
-  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); const base = (document.getElementById('sel-req-base') || {}).value || 'META'; const { buf, nombre } = await XL2.requerimientoPlano(C, base); XL2.descargar(buf, nombre); }
+  try { if (b) { b.disabled = true; b.textContent = '⏳ Calculando…'; } const C = await log2_preparar(); if (!log2_validarVigencia(C)) return; const base = (document.getElementById('sel-req-base') || {}).value || 'META'; await log2_guardarRequerimiento(C, base); await log2_guardarKpi(C); window.__log2cache = null; const { buf, nombre } = await XL2.requerimientoPlano(C, base); XL2.descargar(buf, nombre); log2_estadoCargas(); }
   catch (e) { console.error(e); alert('No se pudo generar el requerimiento: ' + (e.message || e)); }
   finally { if (b) { b.disabled = false; b.textContent = t0; } }
 }
