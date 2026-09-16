@@ -1206,7 +1206,7 @@
               </div>
               <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px;">
                 <label style="display:inline-flex; align-items:center; gap:8px; padding:8px 14px; border:2px dashed #B45309; border-radius:8px; font-size:12px; color:#B45309; font-weight:700; cursor:pointer; background:#FFF7ED;">
-                  📨 Subir asignación de AT&T (Reabasto WKnn .xlsb/.xlsx)
+                  📨 Subir asignación de AT&T (.xlsx / .xlsb)
                   <input type="file" accept=".xlsb,.xlsx,.xlsm" style="display:none;" onchange="log2_subirAsignacion(this.files[0]); this.value='';">
                 </label>
                 <span id="asig-info" style="font-size:11px; color:#64748B;"></span>
@@ -21763,14 +21763,16 @@ function log2_calcular(D, hoy) {
   const seguimiento = semanasSeg.map(k => {
     const rq = reqPorSem[k], as = asigPorSem[k]; const w = k % 100, y = Math.floor(k / 100);
     const solPorM = {}; (rq ? rq.filas : []).forEach(x => { solPorM[x.modelo] = (solPorM[x.modelo] || 0) + (Number(x.total) || 0); });
-    const asPorM = {}; (as ? as.filas : []).forEach(x => { const m = x.modelo_norm || R.modelo(x.modelo_att || x.descripcion); asPorM[m] = (asPorM[m] || 0) + (Number(x.ccenter) || 0); });
+    const asPorM = {}, asPorMR = {}; (as ? as.filas : []).forEach(x => { const m = x.modelo_norm || R.modelo(x.modelo_att || x.descripcion); asPorM[m] = (asPorM[m] || 0) + (Number(x.ccenter) || 0); const pr = x.por_region && typeof x.por_region === 'object' ? x.por_region : null; if (pr) Object.entries(pr).forEach(([rg, v]) => { const kk = m + '|' + rg; asPorMR[kk] = (asPorMR[kk] || 0) + (Number(v) || 0); }); });
+    const solPorMR = {}; (rq ? rq.filas : []).forEach(x => { const kk = x.modelo + '|' + x.region; solPorMR[kk] = (solPorMR[kk] || 0) + (Number(x.total) || 0); });
     const modelos = [...new Set([...Object.keys(solPorM), ...Object.keys(asPorM)])];
     const fechaReq = rq ? rq.fecha : null; const fechaAs = as && as.fechas.length ? as.fechas.sort()[0] : null;
     const dias = (fechaReq && fechaAs) ? Math.round((new Date(fechaAs + 'T12:00:00') - new Date(fechaReq + 'T12:00:00')) / 86400000) : null;
     const esActual = (w === semAct && y === anio);
     const filas = modelos.map(m => ({ modelo: m, solicitado: solPorM[m] || 0, asignado: asPorM[m] || 0, recibido: esActual ? (recibido[m] || 0) : null })).sort((a, b) => b.solicitado - a.solicitado || b.asignado - a.asignado);
     const sol = filas.reduce((a, f) => a + f.solicitado, 0), asg = filas.reduce((a, f) => a + f.asignado, 0), rec = esActual ? filas.reduce((a, f) => a + (f.recibido || 0), 0) : null;
-    return { semana: w, anio: y, fechaReq, fechaAs, fechasAs: as ? as.fechas : [], nArchivos: as ? as.fechas.length : 0, dias, solicitado: sol, asignado: asg, cobertura: sol ? asg / sol : null, recibido: rec, filas, esActual, base: rq ? rq.base : null };
+    const porRegion = R.REGIONES.map(rg => { const solR = Object.entries(solPorMR).filter(([k]) => k.endsWith('|' + rg)).reduce((a, [, v]) => a + v, 0); const asR = Object.entries(asPorMR).filter(([k]) => k.endsWith('|' + rg)).reduce((a, [, v]) => a + v, 0); const recR = esActual ? Object.entries(recibidoReg).filter(([k]) => k.endsWith('|' + rg)).reduce((a, [, v]) => a + v, 0) : null; return { region: rg, solicitado: solR, asignado: asR, cobertura: solR ? asR / solR : null, recibido: recR }; });
+    return { semana: w, anio: y, fechaReq, fechaAs, fechasAs: as ? as.fechas : [], nArchivos: as ? as.fechas.length : 0, dias, solicitado: sol, asignado: asg, cobertura: sol ? asg / sol : null, recibido: rec, filas, porRegion, esActual, base: rq ? rq.base : null };
   });
   // ---- KPIs de la semana (para congelar en log_kpi_semana)
   const sanMes = C_ => C_; const sm = sanidad[mesAct - 1]; const sobreEnvio = sm.n ? (sm.cReal - sm.cIdeal) / sm.n : null;
@@ -22021,7 +22023,9 @@ const XL2 = (() => {
     set(ws, 2, 1, 'Solicitado = requerimiento semanal guardado al descargarlo (log_requerimiento). Asignado = archivos de asignación de AT&T subidos en la semana (log_asignacion, columna CCENTER; puede haber varios: semanal + especiales). Recibido = series nuevas en INVENTARIO/TRÁNSITO respecto al corte anterior del inventario (solo se calcula para la semana en curso). Días de respuesta = primera asignación − fecha del requerimiento.', { font: N9 });
     ['Semana', 'Fecha requerimiento', 'Base', 'Fecha 1ª asignación', 'Archivos de asignación', 'Días de respuesta', 'Solicitado (pzas)', 'Asignado CC (pzas)', '% cobertura', 'Recibido (series nuevas)'].forEach((h, i) => set(ws, 4, 1 + i, h, { font: H, fill: '0F766E', align: { horizontal: 'center', wrapText: true } }));
     C.seguimiento.forEach((s, i) => { const r = 5 + i; set(ws, r, 1, `W${s.semana} ${s.anio}${s.esActual ? ' (en curso)' : ''}`, { font: BB }); set(ws, r, 2, s.fechaReq); set(ws, r, 3, s.base); set(ws, r, 4, s.fechaAs); set(ws, r, 5, s.nArchivos ? `${s.nArchivos} (${s.fechasAs.join(', ')})` : 'PENDIENTE', { font: F({ bold: true, color: { argb: s.nArchivos ? 'FF16A34A' : 'FFC00000' } }) }); set(ws, r, 6, s.dias); set(ws, r, 7, s.solicitado, { font: BB }); set(ws, r, 8, s.asignado, { font: BB }); set(ws, r, 9, s.cobertura, { fmt: '0%' }); set(ws, r, 10, s.recibido); });
-    let r = 6 + C.seguimiento.length; set(ws, r, 1, 'DETALLE POR MODELO · semana en curso', { font: F({ bold: true, size: 11, color: { argb: 'FF1F3864' } }) }); r++;
+    let r = 6 + C.seguimiento.length; const actR = C.seguimiento.find(x => x.esActual);
+    if (actR && actR.porRegion.some(p => p.asignado || p.solicitado)) { set(ws, r, 1, 'POR REGIÓN · semana en curso (asignación con desglose por HUB)', { font: F({ bold: true, size: 11, color: { argb: 'FF1F3864' } }) }); r++; ['Región', 'Solicitado', 'Asignado CC', '% cobertura', 'Recibido (series nuevas)'].forEach((h, i) => set(ws, r, 1 + i, h, { font: H, fill: '0F766E', align: { horizontal: 'center', wrapText: true } })); r++; actR.porRegion.forEach(p => { set(ws, r, 1, p.region, { font: BB }); set(ws, r, 2, p.solicitado); set(ws, r, 3, p.asignado); set(ws, r, 4, p.cobertura, { fmt: '0%' }); set(ws, r, 5, p.recibido); r++; }); r++; }
+    set(ws, r, 1, 'DETALLE POR MODELO · semana en curso', { font: F({ bold: true, size: 11, color: { argb: 'FF1F3864' } }) }); r++;
     ['Modelo', 'Solicitado', 'Asignado CC', '% cobertura', 'Recibido (series nuevas)', 'Pendiente por llegar', 'Lectura'].forEach((h, i) => set(ws, r, 1 + i, h, { font: H, fill: '5B3A8E', align: { horizontal: 'center', wrapText: true } })); r++;
     const act = C.seguimiento.find(x => x.esActual);
     if (act) act.filas.forEach(f => { set(ws, r, 1, f.modelo, { font: BB }); set(ws, r, 2, f.solicitado); set(ws, r, 3, f.asignado); set(ws, r, 4, f.solicitado ? f.asignado / f.solicitado : null, { fmt: '0%' }); set(ws, r, 5, f.recibido); const pend = Math.max(0, f.asignado - (f.recibido || 0)); set(ws, r, 6, pend); set(ws, r, 7, f.solicitado && !f.asignado ? 'NO ASIGNADO' : (f.asignado && f.solicitado && f.asignado < f.solicitado ? 'Asignación parcial' : (f.asignado && !f.solicitado ? 'Asignado sin pedirlo' : (pend > 0 ? 'En camino' : (f.asignado ? 'Recibido' : ''))))); r++; });
@@ -22095,19 +22099,20 @@ async function log2_subirAsignacion(file) {
   try {
     di('Leyendo…'); const wbA = XLSX.read(await file.arrayBuffer(), { cellDates: true });
     let rows = null, H = null;
-    for (const n of wbA.SheetNames) { const rr = XLSX.utils.sheet_to_json(wbA.Sheets[n], { header: 1, defval: null }); for (let r = 0; r < Math.min(20, rr.length); r++) { const vals = (rr[r] || []).map(x => String(x || '').trim().toUpperCase()); if (vals.includes('SKU') && vals.some(v => /CCENTER|CALL CENTER|^CC$/.test(v))) { H = {}; vals.forEach((v, i) => { if (v) H[v] = i; }); rows = rr.slice(r + 1); break; } } if (rows) break; }
+    for (const n of wbA.SheetNames) { const rr = XLSX.utils.sheet_to_json(wbA.Sheets[n], { header: 1, defval: null }); for (let r = 0; r < Math.min(20, rr.length); r++) { const vals = (rr[r] || []).map(x => String(x || '').trim().toUpperCase()); if (vals.includes('SKU') && vals.some(v => /C\s?CENTER|CALL CENTER|^CC$/.test(v))) { H = {}; vals.forEach((v, i) => { if (v) H[v] = i; }); rows = rr.slice(r + 1); break; } } if (rows) break; }
     if (!rows) { di(''); alert('No encontré la tabla con columnas SKU / DESCRIPCION / MODELO / SUGERIDO / CCENTER. ¿Es el archivo de asignación de AT&T?'); return; }
-    const col = (...names) => { for (const nm of names) { const k = Object.keys(H).find(h => h === nm || h.startsWith(nm)); if (k != null) return H[k]; } return null; };
-    const cSku = col('SKU'), cDesc = col('DESCRIPCION', 'DESCRIPCIÓN'), cMod = col('MODELO'), cSug = col('SUGERIDO'), cCC = col('CCENTER', 'CALL CENTER', 'CC'), cTda = col('TDA', 'TIENDA');
+    const col = (...names) => { for (const nm of names) { const k = Object.keys(H).find(h => h === nm || h.startsWith(nm) || h.includes(nm)); if (k != null) return H[k]; } return null; };
+    const cSku = col('SKU'), cDesc = col('DESCRIPCION', 'DESCRIPCIÓN'), cMod = col('MODELO'), cSug = col('SUGERIDO'), cCC = col('CCENTER', 'C CENTER', 'CALL CENTER', 'CC'), cTda = col('TDA', 'TIENDA');
+    const REGCOLS = {}; LOG2.REGIONES.forEach(rg => { const k = Object.keys(H).find(h => h === rg || h === rg.replace('CDMX', 'MEXICO')); if (k != null) REGCOLS[rg] = H[k]; });
     const hoy = new Date(); const mW = file.name.match(/W(?:K)?\s?(\d{1,2})/i); const semArch = mW ? parseInt(mW[1], 10) : LOG2.semanaISO(hoy); const semAct = LOG2.semanaISO(hoy);
     const resp = prompt(`Asignación de AT&T\n\nSemana ISO a la que pertenece (el archivo sugiere W${semArch}; hoy es W${semAct}).\nEscribe el número de semana:`, String(semArch)); if (resp === null) { di(''); return; }
     const semana = parseInt(resp, 10); if (!(semana >= 1 && semana <= 53)) { di(''); alert('Semana inválida.'); return; }
     const tipo = confirm('¿Es la asignación SEMANAL regular?\n\nAceptar = semanal · Cancelar = asignación ESPECIAL fuera de fecha') ? 'semanal' : 'especial';
     const fecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
-    const regs = rows.filter(f => f && f[cSku]).map(f => { const desc = f[cDesc] != null ? String(f[cDesc]) : ''; const modAtt = cMod != null && f[cMod] != null ? String(f[cMod]) : ''; return { semana, anio: hoy.getFullYear(), fecha_asignacion: fecha, tipo, archivo: file.name, sku: String(f[cSku]), descripcion: desc, modelo_att: modAtt, modelo_norm: LOG2.modelo(desc || modAtt), sugerido: cSug != null ? (Number(f[cSug]) || 0) : null, ccenter: cCC != null ? (Number(f[cCC]) || 0) : 0, tda: cTda != null ? (Number(f[cTda]) || 0) : null }; });
+    const regs = rows.filter(f => f && f[cSku]).map(f => { const desc = f[cDesc] != null ? String(f[cDesc]) : ''; const modAtt = cMod != null && f[cMod] != null ? String(f[cMod]) : ''; const porReg = {}; Object.entries(REGCOLS).forEach(([rg, ci]) => { porReg[rg] = Number(f[ci]) || 0; }); return { semana, anio: hoy.getFullYear(), fecha_asignacion: fecha, tipo, archivo: file.name, sku: String(f[cSku]), descripcion: desc, modelo_att: modAtt, modelo_norm: LOG2.modelo(desc || modAtt), sugerido: cSug != null ? (Number(f[cSug]) || 0) : null, ccenter: cCC != null ? (Number(f[cCC]) || 0) : 0, tda: cTda != null ? (Number(f[cTda]) || 0) : null, por_region: Object.keys(porReg).length ? porReg : null }; });
     if (!regs.length) { di(''); alert('El archivo no trae renglones con SKU.'); return; }
     const { error: eDel } = await db.from('log_asignacion').delete().eq('semana', semana).eq('anio', hoy.getFullYear()).eq('archivo', file.name); if (eDel) throw eDel;
-    for (let i = 0; i < regs.length; i += 300) { const { error } = await db.from('log_asignacion').insert(regs.slice(i, i + 300)); if (error) throw error; }
+    for (let i = 0; i < regs.length; i += 300) { let lote = regs.slice(i, i + 300); let { error } = await db.from('log_asignacion').insert(lote); if (error && /por_region/i.test(error.message || '')) { lote = lote.map(x => { const c = { ...x }; delete c.por_region; return c; }); ({ error } = await db.from('log_asignacion').insert(lote)); } if (error) throw error; }
     const cc = regs.reduce((a, x) => a + (x.ccenter || 0), 0); window.__log2cache = null; await log2_estadoCargas();
     alert(`Asignación ${tipo} W${semana} guardada: ${regs.length} SKUs · ${cc} piezas para call center.\n\nYa se puede ver en "Seguimiento asignacion" del Forecast.`);
   } catch (e) { di(''); alert('Error al cargar la asignación: ' + (e.message || e)); }
