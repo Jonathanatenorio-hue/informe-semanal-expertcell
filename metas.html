@@ -2658,6 +2658,14 @@ async function calcularMetasAuto() {
     } catch (eC) { calMapV = null; }
     let dhMesCal = 0;
     for (let dV = new Date(dia1); dV <= finMesV; dV.setDate(dV.getDate() + 1)) dhMesCal += _vacFactorDia(_vacIso(dV), calMapV);
+    // ---- Ausencias VALIDADAS en los 3 meses previos: un mes con ≥50% de los días hábiles ausente no entra al promedio
+    let vacasPrevRows = [], calPrevMap = null;
+    try { vacasPrevRows = await _calcFetchTodo('vacaciones', '*', q => q.eq('validada', true).lte('fecha_inicio', finPrevStr).gte('fecha_fin', iniPrevStr)); } catch (e1) { vacasPrevRows = []; }
+    try { const cr = await _calcFetchTodo('calendario_laboral', 'fecha, factor_dia', q => q.gte('fecha', iniPrevStr).lte('fecha', finPrevStr)); if (cr.length) { calPrevMap = {}; cr.forEach(r => { calPrevMap[String(r.fecha).substring(0, 10)] = parseFloat(r.factor_dia) || 0; }); } } catch (e2) { calPrevMap = null; }
+    const dhPrevMes = {}; mesesPrevios.forEach(mp => { let s = 0; const f0 = new Date(mp.anio, mp.mes - 1, 1), f1 = new Date(mp.anio, mp.mes, 0); for (let d = new Date(f0); d <= f1; d.setDate(d.getDate() + 1)) s += _vacFactorDia(_vacIso(d), calPrevMap); dhPrevMes[mp.key] = s; });
+    const ausenciaPrev = {}; // agente -> { key: { dias, tipo } }
+    vacasPrevRows.forEach(v => { if (!v.agente) return; mesesPrevios.forEach(mp => { const f0 = `${mp.anio}-${_calcPad(mp.mes)}-01`, f1 = _vacIso(new Date(mp.anio, mp.mes, 0)); const vi = String(v.fecha_inicio).substring(0, 10) < f0 ? f0 : String(v.fecha_inicio).substring(0, 10); const vf = String(v.fecha_fin).substring(0, 10) > f1 ? f1 : String(v.fecha_fin).substring(0, 10); if (vi > vf) return; let dh = 0; for (let d = new Date(vi + 'T12:00:00'); _vacIso(d) <= vf; d.setDate(d.getDate() + 1)) dh += _vacFactorDia(_vacIso(d), calPrevMap); if (!ausenciaPrev[v.agente]) ausenciaPrev[v.agente] = {}; const a = ausenciaPrev[v.agente][mp.key] || { dias: 0, tipo: v.tipo === 'incapacidad' ? 'incapacidad' : 'vacaciones' }; a.dias += dh; if (v.tipo === 'incapacidad') a.tipo = 'incapacidad'; ausenciaPrev[v.agente][mp.key] = a; }); });
+    const mesExcluido = (nombre, key) => { const a = ausenciaPrev[nombre] && ausenciaPrev[nombre][key]; if (!a) return null; const dh = dhPrevMes[key] || 0; return (dh > 0 && a.dias >= dh * 0.5) ? a : null; };
     const vacasVal = {}, vacasPend = {};
     vacasRows.forEach(v => {
       if (!v.agente) return;
@@ -2706,21 +2714,25 @@ async function calcularMetasAuto() {
       } else {
         banda = 'Maduro (90+ días)'; tipo = 'calculada';
         // Promedio de peso de los meses previos en los que ya estaba ingresado
-        let suma = 0, n = 0;
+        let suma = 0, n = 0; const excluidos = [];
         mesesPrevios.forEach(mp => {
           const finMesPrev = new Date(mp.anio, mp.mes, 0);
           if (ing <= finMesPrev) {
+            const ex = mesExcluido(p.nombre, mp.key);
+            if (ex) { excluidos.push(`${MESES[mp.mes - 1].substring(0, 3)} (${ex.tipo}, ${ex.dias.toFixed(1)} días háb.)`); return; }
             suma += (pesoPorAgenteMes[p.nombre] && pesoPorAgenteMes[p.nombre][mp.key]) || 0;
             n++;
           }
         });
-        prom = n > 0 ? suma / n : 0;
-        if (n < 3) flags.push(`Solo ${n} mes(es) de historia para el promedio`);
-        const calc = Math.min(20, Math.max(12, Math.round(prom + 1)));
+        prom = n > 0 ? suma / n : null;
+        if (excluidos.length) flags.push(`🏥 Excluido del promedio: ${excluidos.join(', ')}`);
+        if (n > 0 && n < 3) flags.push(`Solo ${n} mes(es) de historia para el promedio`);
         const metaAnt = metaAntMap[p.nombre] || 0;
-        meta = Math.max(calc, metaAnt); // nunca desciende
-        if (metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
-        if (prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
+        const calc = prom == null ? 0 : Math.min(20, Math.max(12, Math.round(prom + 1)));
+        if (prom == null) { meta = metaAnt > 0 ? metaAnt : 12; flags.push(metaAnt > 0 ? `Sin meses trabajados en el periodo: se sostiene ${metaAnt}` : 'Sin meses trabajados en el periodo: mínima de 12'); }
+        else meta = Math.max(calc, metaAnt); // nunca desciende
+        if (prom != null && metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
+        if (prom != null && prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
       }
 
       // 🏖️ Prorrateo por vacaciones VALIDADAS (redondeo estándar: .5 sube)
