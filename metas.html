@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cargador de Metas · ExpertCell</title>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
@@ -2957,6 +2957,8 @@ function exportarMetasExcel() {
   });
   const ws1 = XLSX.utils.aoa_to_sheet(hoja1);
   ws1['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+  ['A1', 'B1', 'C1', 'D1'].forEach(a => { if (ws1[a]) ws1[a].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F3864' } }, alignment: { horizontal: 'center' } }; });
+  filas.forEach((f, i) => { const a = `D${i + 2}`; if (ws1[a]) ws1[a].s = { font: { bold: true }, alignment: { horizontal: 'center' } }; });
   XLSX.utils.book_append_sheet(wb, ws1, 'Metas_Mes');
 
   // Hoja 2: revisión completa del cálculo
@@ -3007,6 +3009,8 @@ function exportarMetasExcel() {
   hoja3.push(['TOTAL', metasSup.reduce((a, s) => a + s.meta_activadas, 0)]);
   const ws3 = XLSX.utils.aoa_to_sheet(hoja3);
   ws3['!cols'] = [{ wch: 20 }, { wch: 10 }];
+  ['A1', 'B1'].forEach(a => { if (ws3[a]) ws3[a].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F3864' } }, alignment: { horizontal: 'center' } }; });
+  const rT = hoja3.length; ['A', 'B'].forEach(c => { const a = `${c}${rT}`; if (ws3[a]) ws3[a].s = { font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } } }; });
   XLSX.utils.book_append_sheet(wb, ws3, 'Supervisores');
 
   XLSX.writeFile(wb, `metas_calculadas_${MESES[mes - 1]}_${anio}.xlsx`);
