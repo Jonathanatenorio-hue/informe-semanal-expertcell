@@ -2604,8 +2604,10 @@ function _calcInicializarSelector() {
   sel.innerHTML = opciones.map(o =>
     `<option value="${o.anio}-${o.mes}">${MESES[o.mes - 1]} ${o.anio}</option>`
   ).join('');
-  // Default: el mes siguiente (las metas se calculan para el mes que arranca)
-  sel.value = `${opciones[1].anio}-${opciones[1].mes}`;
+  // Default: en los primeros 10 días del mes se calcula el mes en curso (el que acaba de arrancar);
+  // después, el mes siguiente.
+  const o = hoy.getDate() <= 10 ? opciones[0] : opciones[1];
+  sel.value = `${o.anio}-${o.mes}`;
 }
 
 async function calcularMetasAuto() {
@@ -2633,13 +2635,15 @@ async function calcularMetasAuto() {
     // Mes anterior (para la regla "nunca desciende")
     const dAnt = new Date(anio, mes - 2, 1);
 
-    const [plantilla, ventas, metasAnt, existentes] = await Promise.all([
+    const [plantilla, ventas, metasAnt, existentes, metasHist] = await Promise.all([
       _calcFetchTodo('plantilla', 'nombre, supervisor, fecha_ingreso, fecha_baja'),
       _calcFetchTodo('ventas_detalle', 'ejecutivo, plan, fecha_activacion, fecha_bo, estatus',
         q => q.eq('estatus', 'activada').gte('fecha_activacion', iniPrevStr).lte('fecha_activacion', finPrevStr)),
       _calcFetchTodo('metas_agente', 'ejecutivo, meta_activadas',
         q => q.eq('anio', dAnt.getFullYear()).eq('mes', dAnt.getMonth() + 1)),
-      db.from('metas_agente').select('id', { count: 'exact', head: true }).eq('anio', anio).eq('mes', mes)
+      db.from('metas_agente').select('id', { count: 'exact', head: true }).eq('anio', anio).eq('mes', mes),
+      _calcFetchTodo('metas_agente', 'ejecutivo, meta_activadas, anio, mes',
+        q => q.gte('anio', iniPrev.getFullYear()).lte('anio', finPrev.getFullYear()))
     ]);
     calcState.existePrevio = (existentes.count || 0) > 0;
 
@@ -2672,6 +2676,11 @@ async function calcularMetasAuto() {
 
     const metaAntMap = {};
     metasAnt.forEach(m => { metaAntMap[m.ejecutivo] = m.meta_activadas || 0; });
+    // Meta de cada uno de los 3 meses previos por agente (para mostrar su logro histórico)
+    const metaHistMap = {};
+    (metasHist || []).forEach(m => { const k = `${m.anio}-${_calcPad(m.mes)}`; if (!mesesPrevios.some(mp => mp.key === k)) return; if (!metaHistMap[m.ejecutivo]) metaHistMap[m.ejecutivo] = {}; metaHistMap[m.ejecutivo][k] = m.meta_activadas || 0; });
+    const histDe = nombre => mesesPrevios.map(mp => { const v = (pesoPorAgenteMes[nombre] && pesoPorAgenteMes[nombre][mp.key]) || 0; const mt = (metaHistMap[nombre] && metaHistMap[nombre][mp.key]) || 0; return { key: mp.key, mes: mp.mes, ventas: Math.round(v * 10) / 10, meta: mt, pct: mt > 0 ? v / mt : null }; });
+    window.__calcMesesPrevios = mesesPrevios;
 
     const filas = [];
     const sinSupervisor = [];
@@ -2680,7 +2689,7 @@ async function calcularMetasAuto() {
       if (!p || !p.nombre) return;
       if (p.fecha_baja && p.fecha_baja < dia1Str) { bajas.push(p.nombre); return; }
       if (!p.fecha_ingreso) {
-        filas.push({ ejecutivo: p.nombre, supervisor: p.supervisor || null, dias: null, banda: '⚠️ sin fecha de ingreso', prom: null, metaAnt: metaAntMap[p.nombre] || 0, meta: 0, tipo: 'sin_meta', flags: ['Sin fecha de ingreso en plantilla: revisar'] });
+        filas.push({ ejecutivo: p.nombre, supervisor: p.supervisor || null, dias: null, banda: '⚠️ sin fecha de ingreso', prom: null, metaAnt: metaAntMap[p.nombre] || 0, meta: 0, tipo: 'sin_meta', flags: ['Sin fecha de ingreso en plantilla: revisar'], hist: histDe(p.nombre) });
         return;
       }
       const ing = new Date(p.fecha_ingreso + 'T00:00:00');
@@ -2739,7 +2748,7 @@ async function calcularMetasAuto() {
 
       filas.push({
         ejecutivo: p.nombre, supervisor: p.supervisor || null, dias,
-        banda, prom, metaAnt: metaAntMap[p.nombre] || 0, meta, tipo, flags
+        banda, prom, metaAnt: metaAntMap[p.nombre] || 0, meta, tipo, flags, hist: histDe(p.nombre)
       });
     });
 
@@ -2951,16 +2960,25 @@ function exportarMetasExcel() {
   XLSX.utils.book_append_sheet(wb, ws1, 'Metas_Mes');
 
   // Hoja 2: revisión completa del cálculo
-  const hoja2 = [['Agente', 'Supervisor', 'Días al 1°', 'Banda', 'Prom. 3 meses', 'Meta anterior', 'META', 'Tipo', 'Observaciones']];
-  filas.forEach(f => {
+  const mp = window.__calcMesesPrevios || [];
+  const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+  const encHist = mp.flatMap(m => [`${MES3[m.mes - 1]} vtas`, `${MES3[m.mes - 1]} meta`, `${MES3[m.mes - 1]} % logro`]);
+  const hoja2 = [['Agente', 'Supervisor', 'Días al 1°', 'Banda', 'Prom. 3 meses', ...encHist, 'Meta anterior', 'META', 'Tipo', 'Observaciones']];
+  filas.forEach((f, i) => {
+    const r = i + 2; // fila en Excel
+    const hist = (f.hist || mp.map(() => ({ ventas: '', meta: '', pct: null })));
+    const celdasHist = hist.flatMap((hh, k) => { const cV = XLSX.utils.encode_col(5 + k * 3), cM = XLSX.utils.encode_col(6 + k * 3); return [hh.ventas === '' ? '' : hh.ventas, hh.meta || '', '']; });
     hoja2.push([
       f.ejecutivo, f.supervisor || 'SIN SUPERVISOR', f.dias == null ? '' : f.dias,
       f.banda, f.prom == null ? '' : Number(f.prom.toFixed(2)),
+      ...celdasHist,
       f.metaAnt || '', f.meta, f.tipo, f.flags.join(' · ')
     ]);
   });
   const ws2 = XLSX.utils.aoa_to_sheet(hoja2);
-  ws2['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 10 }, { wch: 24 }, { wch: 13 }, { wch: 13 }, { wch: 8 }, { wch: 11 }, { wch: 60 }];
+  // % de logro como fórmula viva (ventas / meta de ese mes)
+  filas.forEach((f, i) => { mp.forEach((m, k) => { const addr = XLSX.utils.encode_cell({ r: i + 1, c: 7 + k * 3 }); const cV = XLSX.utils.encode_col(5 + k * 3), cM = XLSX.utils.encode_col(6 + k * 3); ws2[addr] = { t: 'n', f: `IF(${cM}${i + 2}>0,${cV}${i + 2}/${cM}${i + 2},"")`, z: '0%' }; }); });
+  ws2['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 10 }, { wch: 24 }, { wch: 13 }, ...mp.flatMap(() => [{ wch: 9 }, { wch: 9 }, { wch: 10 }]), { wch: 13 }, { wch: 8 }, { wch: 11 }, { wch: 60 }];
   XLSX.utils.book_append_sheet(wb, ws2, 'Revision');
 
   // Hoja 3: metas de supervisor
