@@ -2963,22 +2963,42 @@ function exportarMetasExcel() {
   const mp = window.__calcMesesPrevios || [];
   const MES3 = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
   const encHist = mp.flatMap(m => [`${MES3[m.mes - 1]} vtas`, `${MES3[m.mes - 1]} meta`, `${MES3[m.mes - 1]} % logro`]);
-  const hoja2 = [['Agente', 'Supervisor', 'Días al 1°', 'Banda', 'Prom. 3 meses', ...encHist, 'Meta anterior', 'META', 'Tipo', 'Observaciones']];
-  filas.forEach((f, i) => {
-    const r = i + 2; // fila en Excel
-    const hist = (f.hist || mp.map(() => ({ ventas: '', meta: '', pct: null })));
-    const celdasHist = hist.flatMap((hh, k) => { const cV = XLSX.utils.encode_col(5 + k * 3), cM = XLSX.utils.encode_col(6 + k * 3); return [hh.ventas === '' ? '' : hh.ventas, hh.meta || '', '']; });
+  const enc2 = ['Agente', 'Supervisor', 'Días al 1°', 'Banda', 'Prom. 3 meses', ...encHist, 'Meta anterior', 'META', 'Tipo', 'Observaciones'];
+  const hoja2 = [enc2];
+  filas.forEach(f => {
+    const hist = f.hist || mp.map(() => ({ ventas: null, meta: 0, pct: null }));
+    const celdasHist = hist.flatMap(hh => [hh.ventas == null ? null : hh.ventas, hh.meta > 0 ? hh.meta : null, null]);
     hoja2.push([
-      f.ejecutivo, f.supervisor || 'SIN SUPERVISOR', f.dias == null ? '' : f.dias,
-      f.banda, f.prom == null ? '' : Number(f.prom.toFixed(2)),
+      f.ejecutivo, f.supervisor || 'SIN SUPERVISOR', f.dias == null ? null : f.dias,
+      f.banda, f.prom == null ? null : Number(f.prom.toFixed(2)),
       ...celdasHist,
-      f.metaAnt || '', f.meta, f.tipo, f.flags.join(' · ')
+      f.metaAnt || null, f.meta, f.tipo, f.flags.join(' · ')
     ]);
   });
   const ws2 = XLSX.utils.aoa_to_sheet(hoja2);
-  // % de logro como fórmula viva (ventas / meta de ese mes)
-  filas.forEach((f, i) => { mp.forEach((m, k) => { const addr = XLSX.utils.encode_cell({ r: i + 1, c: 7 + k * 3 }); const cV = XLSX.utils.encode_col(5 + k * 3), cM = XLSX.utils.encode_col(6 + k * 3); ws2[addr] = { t: 'n', f: `IF(${cM}${i + 2}>0,${cV}${i + 2}/${cM}${i + 2},"")`, z: '0%' }; }); });
-  ws2['!cols'] = [{ wch: 40 }, { wch: 16 }, { wch: 10 }, { wch: 24 }, { wch: 13 }, ...mp.flatMap(() => [{ wch: 9 }, { wch: 9 }, { wch: 10 }]), { wch: 13 }, { wch: 8 }, { wch: 11 }, { wch: 60 }];
+  // ---- Formato: encabezados por grupo, % como fórmula viva con semáforo, negritas y anchos
+  const HFONT = { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 };
+  const grupo = c => c <= 1 ? '1F3864' : c <= 3 ? '0077A8' : c === 4 ? '5B3A8E' : c < 5 + mp.length * 3 ? '0F766E' : c === 5 + mp.length * 3 ? '595959' : c === 6 + mp.length * 3 ? 'FF7200' : '595959';
+  enc2.forEach((_, c) => { const a = XLSX.utils.encode_cell({ r: 0, c }); ws2[a].s = { font: HFONT, fill: { fgColor: { rgb: grupo(c) } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }; });
+  const cMETA = 6 + mp.length * 3;
+  filas.forEach((f, i) => {
+    const r = i + 1;
+    const bold = c => { const a = XLSX.utils.encode_cell({ r, c }); if (ws2[a]) ws2[a].s = Object.assign({}, ws2[a].s || {}, { font: { bold: true, sz: 10 } }); };
+    bold(0); bold(cMETA);
+    const am = XLSX.utils.encode_cell({ r, c: cMETA }); if (ws2[am]) ws2[am].s = { font: { bold: true, sz: 10, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: 'FF7200' } }, alignment: { horizontal: 'center' } };
+    (f.hist || []).forEach((hh, k) => {
+      const cV = XLSX.utils.encode_col(5 + k * 3), cM = XLSX.utils.encode_col(6 + k * 3);
+      const addr = XLSX.utils.encode_cell({ r, c: 7 + k * 3 });
+      const color = hh.pct == null ? null : hh.pct >= 1 ? 'C6E0B4' : hh.pct >= 0.8 ? 'FFE699' : 'F8CBAD';
+      ws2[addr] = { t: 'n', f: `IF(AND(ISNUMBER(${cM}${r + 1}),${cM}${r + 1}>0),${cV}${r + 1}/${cM}${r + 1},"")`, z: '0%', v: hh.pct == null ? undefined : hh.pct, s: Object.assign({ alignment: { horizontal: 'center' } }, color ? { fill: { fgColor: { rgb: color } } } : {}) };
+      if (hh.pct == null) { ws2[addr].t = 's'; ws2[addr].v = ''; }
+    });
+    // tipo con color suave
+    const at = XLSX.utils.encode_cell({ r, c: cMETA + 1 }); if (ws2[at]) ws2[at].s = { fill: { fgColor: { rgb: f.tipo === 'calculada' ? 'E2EFDA' : f.tipo === 'sin_meta' ? 'F2F2F2' : 'FFF2CC' } }, alignment: { horizontal: 'center' } };
+  });
+  ws2['!cols'] = [{ wch: 40 }, { wch: 14 }, { wch: 9 }, { wch: 24 }, { wch: 11 }, ...mp.flatMap(() => [{ wch: 8 }, { wch: 8 }, { wch: 9 }]), { wch: 11 }, { wch: 8 }, { wch: 11 }, { wch: 60 }];
+  ws2['!rows'] = [{ hpt: 30 }];
+  ws2['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: enc2.length - 1 } }) };
   XLSX.utils.book_append_sheet(wb, ws2, 'Revision');
 
   // Hoja 3: metas de supervisor
