@@ -3019,14 +3019,55 @@ function exportarMetasExcel() {
   XLSX.utils.book_append_sheet(wb, ws2, 'Revision');
 
   // Hoja 3: metas de supervisor
-  const hoja3 = [['Supervisor', 'Meta']];
-  metasSup.forEach(s => hoja3.push([s.supervisor, s.meta_activadas]));
-  hoja3.push(['TOTAL', metasSup.reduce((a, s) => a + s.meta_activadas, 0)]);
-  const ws3 = XLSX.utils.aoa_to_sheet(hoja3);
-  ws3['!cols'] = [{ wch: 20 }, { wch: 10 }];
-  ['A1', 'B1'].forEach(a => { if (ws3[a]) ws3[a].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1F3864' } }, alignment: { horizontal: 'center' } }; });
-  const rT = hoja3.length; ['A', 'B'].forEach(c => { const a = `${c}${rT}`; if (ws3[a]) ws3[a].s = { font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } } }; });
+  // ---- Hoja Supervisores: meta por supervisor + promedio de meta por segmento (fórmulas sobre Revision)
+  const nR = filas.length + 1;
+  const cMetaR = XLSX.utils.encode_col(6 + mp.length * 3), cTipoR = XLSX.utils.encode_col(7 + mp.length * 3), cPromR = 'E', cUltR = XLSX.utils.encode_col(5 + (mp.length - 1) * 3);
+  const RR = c => `Revision!$${c}$2:$${c}$${nR}`;
+  const supsOrd = [...new Set(filas.map(f => f.supervisor || 'SIN SUPERVISOR'))].sort((a, b) => a.localeCompare(b));
+  const enc3 = ['Supervisor', 'Meta', 'Prom. meta nuevos', 'Prom. meta intermedios', 'Prom. meta maduros'];
+  const hoja3 = [enc3]; supsOrd.forEach(s => hoja3.push([s, null, null, null, null])); hoja3.push(['TOTAL', null, null, null, null]);
+  const ws3 = XLSX.utils.aoa_to_sheet(hoja3); const rT = supsOrd.length + 2;
+  const TIPOS = [['C', 'fija_6'], ['D', 'fija_8'], ['E', 'calculada']];
+  supsOrd.forEach((s, i) => { const r = i + 2; ws3[`B${r}`] = { t: 'n', f: `SUMIFS(${RR(cMetaR)},${RR('B')},A${r})` }; TIPOS.forEach(([c, t]) => { ws3[`${c}${r}`] = { t: 'n', f: `IFERROR(AVERAGEIFS(${RR(cMetaR)},${RR('B')},A${r},${RR(cTipoR)},"${t}"),"")`, z: '0.0' }; }); });
+  ws3[`B${rT}`] = { t: 'n', f: `SUM(B2:B${rT - 1})` }; TIPOS.forEach(([c, t]) => { ws3[`${c}${rT}`] = { t: 'n', f: `IFERROR(AVERAGEIFS(${RR(cMetaR)},${RR(cTipoR)},"${t}"),"")`, z: '0.0' }; });
+  ws3['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rT - 1, c: 4 } });
+  ws3['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 16 }]; ws3['!rows'] = [{ hpt: 30 }];
+  [['A1', '1F3864'], ['B1', '1F3864'], ['C1', '0077A8'], ['D1', '5B3A8E'], ['E1', '0F766E']].forEach(([a, col]) => { ws3[a].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: col } }, alignment: { horizontal: 'center', wrapText: true } }; });
+  for (let r = 2; r <= rT; r++) { ['A', 'B'].forEach(c => { if (ws3[`${c}${r}`]) ws3[`${c}${r}`].s = Object.assign({}, ws3[`${c}${r}`].s || {}, { font: { bold: true } }); }); ['C', 'D', 'E'].forEach(c => { if (ws3[`${c}${r}`]) ws3[`${c}${r}`].s = Object.assign({}, ws3[`${c}${r}`].s || {}, { alignment: { horizontal: 'center' } }); }); }
+  ['A', 'B', 'C', 'D', 'E'].forEach(c => { const a = `${c}${rT}`; if (ws3[a]) ws3[a].s = Object.assign({}, ws3[a].s || {}, { font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } } }); });
   XLSX.utils.book_append_sheet(wb, ws3, 'Supervisores');
+  // ---- Hoja Segmentos: meta vs rendimiento por supervisor y segmento (fórmulas sobre Revision)
+  const SEG = [['Nuevos (7-41 d)', 'fija_6', '0077A8', cUltR, 'Vtas último mes', 'Δ meta − último mes'], ['Intermedios (42-89 d)', 'fija_8', '5B3A8E', cUltR, 'Vtas último mes', 'Δ meta − último mes'], ['Maduros (90+ d)', 'calculada', '0F766E', cPromR, 'Prom. ventas 3m', 'Δ meta − ventas']];
+  const enc4 = ['Supervisor', 'Agentes con meta', 'Meta', 'Prom. meta', 'Prom. ventas 3m', 'Δ meta − ventas']; SEG.forEach(s => enc4.push(`${s[0]}: agentes`, 'Meta', 'Prom. meta', s[4], s[5])); enc4.push('Sin meta');
+  const hoja4 = [['Meta por supervisor y segmento vs lo que realmente vendieron (fórmulas sobre la hoja Revision)'], ['Prom. meta = meta del mes por agente del segmento. Maduros: Prom. ventas 3m = promedio real (con peso) de los 3 meses previos. Nuevos e intermedios: referencia = ventas del último mes. Δ positivo = la meta pide más de lo que vendieron; negativo = la meta está por debajo de su rendimiento.'], [], enc4];
+  supsOrd.forEach(s => hoja4.push([s])); hoja4.push(['TOTAL']);
+  const ws4 = XLSX.utils.aoa_to_sheet(hoja4); const rT4 = supsOrd.length + 5;
+  const fmtD = '+0.0;-0.0;0.0';
+  const filaSeg = (r, crit) => {
+    ws4[`B${r}`] = { t: 'n', f: `COUNTIFS(${RR('B')},A${r},${RR(cMetaR)},">0")`.replace(`${RR('B')},A${r},`, crit ? `${RR('B')},A${r},` : '') };
+    ws4[`C${r}`] = { t: 'n', f: crit ? `SUMIFS(${RR(cMetaR)},${RR('B')},A${r})` : `SUM(C5:C${r - 1})` };
+    ws4[`D${r}`] = { t: 'n', f: `IF(B${r}>0,C${r}/B${r},"")`, z: '0.0' };
+    ws4[`E${r}`] = { t: 'n', f: crit ? `IFERROR(AVERAGEIFS(${RR(cPromR)},${RR('B')},A${r},${RR(cMetaR)},">0"),"")` : `IFERROR(AVERAGEIFS(${RR(cPromR)},${RR(cMetaR)},">0"),"")`, z: '0.0' };
+    ws4[`F${r}`] = { t: 'n', f: `IF(OR(D${r}="",E${r}=""),"",D${r}-E${r})`, z: fmtD };
+    SEG.forEach((sg, k) => { const c0 = 7 + k * 5; const cA = XLSX.utils.encode_col(c0 - 1), cB = XLSX.utils.encode_col(c0), cC = XLSX.utils.encode_col(c0 + 1), cD = XLSX.utils.encode_col(c0 + 2), cE = XLSX.utils.encode_col(c0 + 3);
+      ws4[`${cA}${r}`] = { t: 'n', f: crit ? `COUNTIFS(${RR('B')},A${r},${RR(cTipoR)},"${sg[1]}")` : `SUM(${cA}5:${cA}${r - 1})` };
+      ws4[`${cB}${r}`] = { t: 'n', f: crit ? `SUMIFS(${RR(cMetaR)},${RR('B')},A${r},${RR(cTipoR)},"${sg[1]}")` : `SUM(${cB}5:${cB}${r - 1})` };
+      ws4[`${cC}${r}`] = { t: 'n', f: `IF(${cA}${r}>0,${cB}${r}/${cA}${r},"")`, z: '0.0' };
+      ws4[`${cD}${r}`] = { t: 'n', f: crit ? `IFERROR(AVERAGEIFS(${RR(sg[3])},${RR('B')},A${r},${RR(cTipoR)},"${sg[1]}"),"")` : `IFERROR(AVERAGEIFS(${RR(sg[3])},${RR(cTipoR)},"${sg[1]}"),"")`, z: '0.0' };
+      ws4[`${cE}${r}`] = { t: 'n', f: `IF(OR(${cC}${r}="",${cD}${r}=""),"",${cC}${r}-${cD}${r})`, z: fmtD }; });
+    ws4[`V${r}`] = { t: 'n', f: crit ? `COUNTIFS(${RR('B')},A${r},${RR(cTipoR)},"sin_meta")` : `SUM(V5:V${r - 1})` };
+  };
+  supsOrd.forEach((s, i) => filaSeg(i + 5, true)); filaSeg(rT4, false);
+  ws4[`B${rT4}`] = { t: 'n', f: `SUM(B5:B${rT4 - 1})` };
+  ws4['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rT4 - 1, c: enc4.length - 1 } });
+  ws4['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 }, ...SEG.flatMap(() => [{ wch: 9 }, { wch: 8 }, { wch: 9 }, { wch: 10 }, { wch: 9 }]), { wch: 8 }];
+  ws4['!rows'] = [{}, {}, {}, { hpt: 32 }];
+  ws4['A1'].s = { font: { bold: true, sz: 12, color: { rgb: '1F3864' } } }; ws4['A2'].s = { font: { sz: 9, italic: true, color: { rgb: '595959' } } };
+  const col4 = c => c <= 5 ? '1F3864' : c <= 10 ? '0077A8' : c <= 15 ? '5B3A8E' : c <= 20 ? '0F766E' : '595959';
+  enc4.forEach((_, c) => { const a = XLSX.utils.encode_cell({ r: 3, c }); if (ws4[a]) ws4[a].s = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: col4(c) } }, alignment: { horizontal: 'center', wrapText: true } }; });
+  for (let r = 5; r <= rT4; r++) { ['A', 'C'].forEach(c => { if (ws4[`${c}${r}`]) ws4[`${c}${r}`].s = Object.assign({}, ws4[`${c}${r}`].s || {}, { font: { bold: true } }); }); }
+  for (let c = 0; c < enc4.length; c++) { const a = XLSX.utils.encode_cell({ r: rT4 - 1, c }); if (ws4[a]) ws4[a].s = Object.assign({}, ws4[a].s || {}, { font: { bold: true }, fill: { fgColor: { rgb: 'DDEBF7' } } }); }
+  XLSX.utils.book_append_sheet(wb, ws4, 'Segmentos');
 
   XLSX.writeFile(wb, `metas_calculadas_${MESES[mes - 1]}_${anio}.xlsx`);
 }
