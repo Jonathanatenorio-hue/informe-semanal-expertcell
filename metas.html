@@ -296,7 +296,7 @@
       <div>
         <strong>Reglas oficiales</strong> (días cumplidos al día 1 del mes, desde fecha de ingreso en plantilla):
         ≤ 6 días = sin meta · 7–41 días = meta <strong>6</strong> · 42–89 días = meta <strong>8</strong> ·
-        90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + 1, mínimo 12, máximo 18,
+        90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + 1, mínimo 12, máximo 18, brinco máximo de +6 sobre la meta anterior,
         y <strong>nunca desciende</strong> respecto a la meta del mes anterior. Previsualiza antes de guardar; nada se escribe sin tu confirmación.
       </div>
     </div>
@@ -2732,6 +2732,8 @@ async function calcularMetasAuto() {
         if (prom == null) { meta = metaAnt > 0 ? Math.min(18, metaAnt) : 12; flags.push(metaAnt > 0 ? `Sin meses trabajados en el periodo: se sostiene ${metaAnt}` : 'Sin meses trabajados en el periodo: mínima de 12'); }
         else meta = Math.min(18, Math.max(calc, metaAnt)); // nunca desciende, pero el tope de 18 aplica también a la meta sostenida
         if (prom != null && metaAnt > 18) flags.push(`Tope de 18: traía ${metaAnt}`);
+        // Brinco máximo de +6 respecto a la meta anterior (si tenía meta el mes pasado)
+        if (prom != null && metaAnt > 0 && meta > metaAnt + 6) { flags.push(`Brinco limitado a +6: el cálculo daba ${meta} (traía ${metaAnt})`); meta = metaAnt + 6; }
         if (prom != null && metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
         if (prom != null && prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
       }
