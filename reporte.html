@@ -2462,7 +2462,7 @@ async function cargarDatos() {
   plantillaData = plantData;
   document.getElementById('loader-msg').textContent = `Cargando calendario y metas...`;
 
-  const { data: calData } = await db.from('calendario_dias').select('*');
+  const { data: calData } = await db.from('calendario_dias').select('*').range(0, 9999);
   calendarioData = calData || [];
 
   // BLINDAJE: si en el mes en curso o en meses cercanos faltan días en calendario_dias,
@@ -2495,11 +2495,18 @@ async function cargarDatos() {
     }
   })();
 
-  const { data: mSup } = await db.from('metas_supervisor').select('*');
-  metasSupData = mSup || [];
-
-  const { data: mAge } = await db.from('metas_agente').select('*');
-  metasAgeData = mAge || [];
+  // Supabase devuelve máximo 1,000 filas por consulta: estas tablas crecen cada mes, se leen paginadas
+  async function _fetchTodoPaginado(tabla, orden) {
+    const out = []; const page = 1000;
+    for (let from = 0; ; from += page) {
+      let q = db.from(tabla).select('*').range(from, from + page - 1); if (orden) q = q.order(orden, { ascending: true });
+      const { data, error } = await q; if (error) { console.warn('[carga]', tabla, error.message); break; }
+      if (!data || !data.length) break; out.push(...data); if (data.length < page) break;
+    }
+    return out;
+  }
+  metasSupData = await _fetchTodoPaginado('metas_supervisor', 'id');
+  metasAgeData = await _fetchTodoPaginado('metas_agente', 'id');
 
   // Normalizar el TIPO por MONTO de meta (la etiqueta del Excel a veces viene
   // mal grabada, ej. agentes con meta 6 etiquetados como sin_meta):
@@ -6447,12 +6454,10 @@ function _renderAvanceMensualImpl(wActual) {
     if (r.fecha_activacion && r.fecha_activacion <= hoyStr) {
       if (!ultimoDiaConDatosStr || r.fecha_activacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_activacion;
     }
-    if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStr) {
-      if (!ultimoDiaConDatosStr || r.fecha_cancelacion > ultimoDiaConDatosStr) ultimoDiaConDatosStr = r.fecha_cancelacion;
-    }
   });
-  // Fallback: si no hay activaciones ni cancelaciones (caso muy raro, p.ej. mes recién iniciado),
-  // usar fecha_bo como antes.
+  // Las cancelaciones NO adelantan el corte: mesa las corre por la mañana con la fecha del día.
+  if (!ultimoDiaConDatosStr) ventasData.forEach(r => { if (r.fecha_cancelacion && r.fecha_cancelacion <= hoyStr && (!ultimoDiaConDatosStr || r.fecha_cancelacion > ultimoDiaConDatosStr)) ultimoDiaConDatosStr = r.fecha_cancelacion; });
+  // Fallback: si no hay activaciones ni cancelaciones, usar fecha_bo como antes.
   if (!ultimoDiaConDatosStr) {
     ventasData.forEach(r => {
       if (r.fecha_bo && r.fecha_bo <= hoyStr) {
@@ -6554,14 +6559,16 @@ function _renderAvanceMensualImpl(wActual) {
 
   // Mismo criterio acotado al mes seleccionado: usar fecha_activacion y fecha_cancelacion
   // (NO fecha_bo) para determinar el último día con actividad real procesada.
+  // El corte sigue al último día con VENTAS ACTIVADAS cargadas. No se usan las cancelaciones:
+  // mesa de control las corre por la mañana con la fecha del día y adelantarían el corte un día que aún no tiene datos.
   let ultimoDiaConDatosMesSel = null;
   ventasData.forEach(r => {
-    [r.fecha_activacion, r.fecha_cancelacion].forEach(f => {
-      if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr) {
-        if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
-      }
-    });
+    const f = r.fecha_activacion;
+    if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr) {
+      if (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel) ultimoDiaConDatosMesSel = f;
+    }
   });
+  if (!ultimoDiaConDatosMesSel) ventasData.forEach(r => { const f = r.fecha_cancelacion; if (f && f >= iniMesStrEval && f <= finMesStrEval && f <= hoyStr && (!ultimoDiaConDatosMesSel || f > ultimoDiaConDatosMesSel)) ultimoDiaConDatosMesSel = f; });
   // Fallback: solo si el mes no tiene NINGUNA activación/cancelación, recurrir a fecha_bo
   if (!ultimoDiaConDatosMesSel) {
     ventasData.forEach(r => {
