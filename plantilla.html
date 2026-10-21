@@ -272,7 +272,7 @@ const EST_INV = {
   asignada: { t: 'Asignada', c: 'alta' }, disponible: { t: 'Disponible', c: 'cambio' }, compartida: { t: 'Compartida', c: 'gris' },
   externa: { t: 'Externa', c: 'gris' }, revisar: { t: 'Revisar', c: 'reingreso' }, deshabilitada: { t: 'Deshabilitada', c: 'gris' }, baja: { t: 'Dada de baja', c: 'baja' }
 };
-const CUENTA_COMO_TENEMOS = new Set(['asignada', 'disponible', 'compartida', 'externa', 'revisar']);
+const CUENTA_COMO_TENEMOS = new Set(['asignada', 'disponible', 'compartida', 'externa', 'revisar', 'deshabilitada']);  // todo lo que existe; solo 'baja' no cuenta
 
 // ---------- utilidades ----------
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -443,7 +443,7 @@ function renderMatriz() {
       ${hs.map(h => { const on = S.ph.has(p.id + '|' + h.id); return `<td class="ck"><button class="ckb ${on ? 'on' : ''}" data-p="${esc(p.id)}" data-h="${esc(h.id)}" aria-pressed="${on}" aria-label="${esc(p.nombre)}: ${esc(h.nombre)}" ${ed ? '' : 'disabled'}></button></td>`; }).join('')}</tr>`).join('')}</tbody>
     <tfoot>
       <tr><td class="prof"><strong>Necesarias</strong><div class="muted" style="font-size:11px;">según matriz y plantilla activa</div></td>${hs.map(h => `<td class="ctr mono">${necesarias(h.id)}</td>`).join('')}</tr>
-      <tr><td class="prof"><strong>Tenemos</strong><div class="muted" style="font-size:11px;">del inventario, o captura si no hay</div></td>${hs.map(h => `<td class="ctr">${herrConInventario(h.id) ? `<span class="mono" title="Contado del inventario (sin deshabilitadas ni dadas de baja)">${tenemosDe(h)}</span><div class="muted" style="font-size:10px;">inventario</div>` : ed ? `<input type="number" min="0" class="u-tenemos mono" data-h="${esc(h.id)}" value="${h.unidades_existentes ?? ''}" placeholder="—" style="width:62px;text-align:center;" aria-label="Unidades existentes de ${esc(h.nombre)}">` : `<span class="mono">${h.unidades_existentes ?? '—'}</span>`}</td>`).join('')}</tr>
+      <tr><td class="prof"><strong>Tenemos</strong><div class="muted" style="font-size:11px;">del inventario, o captura si no hay</div></td>${hs.map(h => `<td class="ctr">${herrConInventario(h.id) ? `<span class="mono" title="Contado del inventario (todas las unidades excepto las dadas de baja)">${tenemosDe(h)}</span><div class="muted" style="font-size:10px;">inventario</div>` : ed ? `<input type="number" min="0" class="u-tenemos mono" data-h="${esc(h.id)}" value="${h.unidades_existentes ?? ''}" placeholder="—" style="width:62px;text-align:center;" aria-label="Unidades existentes de ${esc(h.nombre)}">` : `<span class="mono">${h.unidades_existentes ?? '—'}</span>`}</td>`).join('')}</tr>
       <tr><td class="prof"><strong>Faltan / sobran</strong></td>${hs.map(h => { const t = tenemosDe(h); if (t == null) return '<td class="ctr muted">—</td>'; const d = t - necesarias(h.id); return `<td class="ctr"><span class="pill ${d < 0 ? 'baja' : d > 0 ? 'reingreso' : 'alta'}">${d < 0 ? 'Faltan ' + (-d) : d > 0 ? 'Sobran ' + d : 'OK'}</span></td>`; }).join('')}</tr>
     </tfoot>`;
 }
@@ -747,7 +747,7 @@ function accionesUnidad(u) {
   if (!S.esDirector) return '';
   const b = (acc, txt, cls = 'sec') => `<button class="btn sm ${cls} u-acc" data-acc="${acc}" data-id="${u.id}">${txt}</button>`;
   const out = [];
-  if (['disponible', 'revisar', 'compartida', 'externa'].includes(u.estado)) out.push(`<select class="u-asignar" data-id="${u.id}" style="max-width:190px;">${opcionesPersona(u.herramienta_id, u.centro)}</select>`);
+  if (['disponible', 'revisar', 'compartida', 'externa', 'deshabilitada'].includes(u.estado)) out.push(`<select class="u-asignar" data-id="${u.id}" style="max-width:190px;">${opcionesPersona(u.herramienta_id, u.centro)}</select>`);
   if (['asignada', 'revisar', 'compartida', 'externa'].includes(u.estado)) out.push(b('liberar', 'Liberar'));
   if (u.estado !== 'compartida' && u.estado !== 'deshabilitada' && u.estado !== 'baja') out.push(b('compartir', 'Compartida'));
   if (u.estado === 'deshabilitada') out.push(b('habilitar', 'Habilitar'));
@@ -784,11 +784,11 @@ function renderInventario() {
     const revisar = todas.filter(u => u.estado === 'revisar');
     const aBajas = todas.filter(u => u.estado === 'asignada' && (S.personal.find(p => p.id_empleado === u.id_empleado) || {}).estatus === 'BAJA');
     const noReq = todas.filter(u => u.estado === 'asignada' && (() => { const p = S.personal.find(x => x.id_empleado === u.id_empleado); return p && p.estatus === 'ACTIVO' && !requiere(p); })());
-    const disp = todas.filter(u => u.estado === 'disponible');
+    const disp = todas.filter(u => u.estado === 'disponible' || u.estado === 'deshabilitada');
     const bloque = (titulo, cls, n, html, ayuda) => `<details ${n ? 'open' : ''} style="margin-top:8px;"><summary><span class="pill ${cls}">${titulo}</span> ${n}${ayuda ? ` <span class="muted" style="font-weight:400;font-size:12px;">· ${ayuda}</span>` : ''}</summary>${n ? html : '<div class="muted" style="font-size:13px;margin:4px 0 8px;">Nada pendiente.</div>'}</details>`;
-    const optsDisp = (centro) => { const o = [...disp].sort((a, b) => (a.centro === centro ? 0 : 1) - (b.centro === centro ? 0 : 1) || a.identificador.localeCompare(b.identificador)); return `<option value="">Elegir unidad disponible…</option>` + o.map(u => `<option value="${u.id}">${esc(u.identificador)} · ${esc(u.centro || '')}${u.tipo ? ' · ' + esc(u.tipo) : ''}</option>`).join(''); };
+    const optsDisp = (centro) => { const o = [...disp].sort((a, b) => (a.centro === centro ? 0 : 1) - (b.centro === centro ? 0 : 1) || a.identificador.localeCompare(b.identificador)); return `<option value="">Elegir unidad disponible…</option>` + o.sort((a, b) => (a.estado === 'disponible' ? 0 : 1) - (b.estado === 'disponible' ? 0 : 1)).map(u => `<option value="${u.id}">${esc(u.identificador)} · ${esc(u.centro || '')}${u.tipo ? ' · ' + esc(u.tipo) : ''}${u.estado === 'deshabilitada' ? ' · deshabilitada (habilitar en Bonsaif)' : ''}</option>`).join(''); };
     pend.innerHTML =
-      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro)}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.length} unidades disponibles`) +
+      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro)}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.filter(u => u.estado === 'disponible').length} disponibles + ${disp.filter(u => u.estado === 'deshabilitada').length} deshabilitadas que se pueden habilitar`) +
       bloque('DUPLICADOS', 'reingreso', dups.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${dups.map(([, us]) => us.map(u => filaUnidad(u)).join('')).join('')}</tbody></table></div>`, 'personas con 2 o más; libera la que sobra') +
       bloque('POR REVISAR', 'reingreso', revisar.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${revisar.map(u => filaUnidad(u)).join('')}</tbody></table></div>`) +
       bloque('ASIGNADAS A BAJAS', 'baja', aBajas.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${aBajas.map(u => filaUnidad(u, ' <span class="pill baja">BAJA</span>')).join('')}</tbody></table></div>`, 'hay que liberarlas') +
@@ -812,6 +812,7 @@ async function asignarUnidad(id, emp) {
   const u = S.inv.find(x => x.id === id); const p = S.personal.find(x => x.id_empleado === emp); if (!u || !p) return;
   const ya = unidadesDe(emp, u.herramienta_id);
   if (ya.length && !confirm(`${p.nombre} ya tiene ${ya.map(x => x.identificador).join(', ')}. ¿Asignarle también ${u.identificador}?`)) return renderInventario();
+  if (u.estado === 'deshabilitada' && !confirm(`${u.identificador} está deshabilitada. Al asignarla queda como asignada; recuerda pedir a Sistemas que la habilite en ${(S.herr.find(h => h.id === u.herramienta_id) || {}).nombre || 'la plataforma'}. ¿Continuar?`)) return renderInventario();
   if (u.centro && p.centro && u.centro !== p.centro && !confirm(`${u.identificador} es de ${u.centro} y ${p.nombre} está en ${p.centro}. ¿Asignar de todos modos (préstamo entre centros)?`)) return renderInventario();
   const nota = u.estado === 'asignada' ? null : (u.notas && u.estado === 'revisar' ? 'Resuelta desde revisar: ' + u.notas : null);
   await cambiarUnidad(id, { estado: 'asignada', id_empleado: emp, uso: null, notas: u.centro && p.centro && u.centro !== p.centro ? `Préstamo de ${u.centro} a ${p.centro}.` : null }, 'asignar', nota);
