@@ -989,40 +989,46 @@ function excelInventario() {
     return [u.identificador, u.centro || '', u.tipo || '', (EST_INV[u.estado] || {}).t || u.estado, p ? p.nombre : '', p ? p.id_empleado : '', p ? (p.rfc || '') : '', p ? (p.puesto || '') : '', p ? nombrePerfil(p.perfil_id) : '', supervisorDe(p), coordinacionDe(p), u.uso || '', u.notas || '']; });
   // Hoja 2: una fila por persona activa y por centro en que necesita la herramienta
   const act = S.personal.filter(p => p.estatus === 'ACTIVO' && p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).sort((a, b) => supervisorDe(a).localeCompare(supervisorDe(b)) || a.nombre.localeCompare(b.nombre));
-  const cabP = ['Persona', 'ID empleado', 'Centro', 'Supervisor', 'Coordinación', 'Perfil', 'Necesita', 'Asignadas', 'Faltan', 'Sobran', 'Identificadores asignados'];
+  const cabP = ['Persona', 'ID empleado', 'Centro', 'Ambiente', 'Préstamo', 'Supervisor', 'Coordinación', 'Perfil', 'Necesita', 'Asignadas', 'Faltan', 'Sobran', 'Identificadores asignados'];
   const filasP = []; const porCentro = !!h.por_centro;
   for (const p of act) {
     const cs = (porCentro && p.ambos_centros) ? ['CC2', 'JV'] : [p.centro || (unidadesDe(p.id_empleado, hid)[0] || {}).centro || ''];
     for (const c of cs) {
       const r = filasP.length + 2; const usC = unidadesDe(p.id_empleado, hid).filter(u => !porCentro || !p.ambos_centros || u.centro === c);
-      filasP.push([p.nombre, p.id_empleado, c, supervisorDe(p), coordinacionDe(p), nombrePerfil(p.perfil_id), 1,
-        { f: porCentro && p.ambos_centros ? `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada",Unidades!$B:$B,C${r})` : `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada")` },
-        { f: `MAX(0,G${r}-H${r})` }, { f: `MAX(0,H${r}-G${r})` }, usC.map(u => u.identificador).join(', ')]);
+      const ambos = porCentro && p.ambos_centros;
+      filasP.push([p.nombre, p.id_empleado, c,
+        // Ambiente = centro de la extensión que tiene asignada (de la hoja Unidades); si es distinto a su centro, es préstamo
+        { f: ambos ? `IF(J${r}>0,C${r},"")` : `IFERROR(INDEX(Unidades!$B:$B,MATCH(B${r},Unidades!$F:$F,0)),"")` },
+        { f: `IF(AND(D${r}<>"",C${r}<>"",D${r}<>C${r}),"Sí","")` },
+        supervisorDe(p), coordinacionDe(p), nombrePerfil(p.perfil_id), 1,
+        { f: ambos ? `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada",Unidades!$B:$B,C${r})` : `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada")` },
+        { f: `MAX(0,I${r}-J${r})` }, { f: `MAX(0,J${r}-I${r})` }, usC.map(u => u.identificador).join(', ')]);
     }
   }
   const nP = filasP.length + 1;
   // Hoja 3: resumen por centro y por supervisor, todo con fórmulas sobre las otras dos hojas
   const est = k => (EST_INV[k] || {}).t;
-  const filasR = [['Por centro', '', '', '', '', '', '', ''], ['Centro', 'Total', 'Asignadas', 'Disponibles', 'Deshabilitadas', 'Otras (compartida / externa / revisar)', 'Necesarias', 'Faltan / sobran']];
-  ['CC2', 'JV'].forEach(c => { const r = filasR.length + 1; filasR.push([c, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"<>${est('baja')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('asignada')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('disponible')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('deshabilitada')}")` }, { f: `B${r}-C${r}-D${r}-E${r}` }, { f: `SUMIFS(Personal!$G$2:$G$${nP},Personal!$C$2:$C$${nP},A${r})` }, { f: `B${r}-G${r}` }]); });
-  const rT = filasR.length + 1; filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F', 'G', 'H'].map(col => ({ f: `SUM(${col}${rT - 2}:${col}${rT - 1})` }))]);
+  const filasR = [['Por centro', '', '', '', '', '', '', ''], ['Centro', 'Total', 'Asignadas', 'Disponibles', 'Deshabilitadas', 'Otras (compartida / externa / revisar)', 'Necesarias', 'Faltan / sobran', 'Prestadas a otro centro']];
+  ['CC2', 'JV'].forEach(c => { const r = filasR.length + 1; filasR.push([c, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"<>${est('baja')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('asignada')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('disponible')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('deshabilitada')}")` }, { f: `B${r}-C${r}-D${r}-E${r}` }, { f: `SUMIFS(Personal!$I$2:$I$${nP},Personal!$C$2:$C$${nP},A${r})` }, { f: `B${r}-G${r}` }, { f: `COUNTIFS(Personal!$D$2:$D$${nP},A${r},Personal!$E$2:$E$${nP},"Sí")` }]); });
+  const rT = filasR.length + 1; filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].map(col => ({ f: `SUM(${col}${rT - 2}:${col}${rT - 1})` }))]);
   filasR.push(['', '', '', '', '', '', '', '']);
   filasR.push(['Por supervisor', '', '', '', '', '', '', '']);
-  filasR.push(['Supervisor', 'Personas', 'Necesitan', 'Asignadas', 'Faltan', 'Sobran', '', '']);
-  const sups = [...new Set(filasP.map(f => f[3]))].sort((a, b) => String(a).localeCompare(String(b)));
+  filasR.push(['Supervisor', 'Personas', 'Necesitan', 'Asignadas', 'Faltan', 'Sobran', 'Con préstamo', '', '']);
+  const sups = [...new Set(filasP.map(f => f[5]))].sort((a, b) => String(a).localeCompare(String(b)));
   const rS0 = filasR.length + 1;
-  sups.forEach(sp => { const r = filasR.length + 1; filasR.push([sp || '(sin supervisor)', { f: `COUNTIFS(Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$G$2:$G$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$H$2:$H$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$I$2:$I$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$J$2:$J$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, '', '']); });
+  sups.forEach(sp => { const r = filasR.length + 1; const k = sp ? `A${r}` : '""'; const rg = col => `Personal!$${col}$2:$${col}$${nP}`;
+    filasR.push([sp || '(sin supervisor)', { f: `COUNTIFS(${rg('F')},${k})` }, { f: `SUMIFS(${rg('I')},${rg('F')},${k})` }, { f: `SUMIFS(${rg('J')},${rg('F')},${k})` }, { f: `SUMIFS(${rg('K')},${rg('F')},${k})` }, { f: `SUMIFS(${rg('L')},${rg('F')},${k})` }, { f: `COUNTIFS(${rg('F')},${k},${rg('E')},"Sí")` }, '', '']); });
   const rS1 = filasR.length; const rTS = filasR.length + 1;
-  filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F'].map(col => ({ f: `SUM(${col}${rS0}:${col}${rS1})` })), '', '']);
+  filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F', 'G'].map(col => ({ f: `SUM(${col}${rS0}:${col}${rS1})` })), '', '']);
   const wsR = XLSX.utils.aoa_to_sheet(filasR);
-  [1, rS0 - 1].forEach(r0 => { for (let c = 0; c < 8; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a] && wsR[a].v !== '') wsR[a].s = B; } });
+  [1, rS0 - 1].forEach(r0 => { for (let c = 0; c < 9; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a] && wsR[a].v !== '') wsR[a].s = B; } });
   [0, rS0 - 2].forEach(r0 => { const a = XLSX.utils.encode_cell({ r: r0, c: 0 }); if (wsR[a]) wsR[a].s = { font: { bold: true, sz: 13, color: { rgb: '002B5C' } } }; });
-  [rT - 1, rTS - 1].forEach(r0 => { for (let c = 0; c < 8; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a]) wsR[a].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E0F2FE' } } }; } });
-  wsR['!cols'] = [{ wch: 34 }, { wch: 10 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }];
+  [rT - 1, rTS - 1].forEach(r0 => { for (let c = 0; c < 9; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a]) wsR[a].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E0F2FE' } } }; } });
+  wsR['!cols'] = [{ wch: 34 }, { wch: 10 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 13 }, { wch: 14 }, { wch: 14 }];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
   XLSX.utils.book_append_sheet(wb, hoja(cabU, filasU, [14, 7, 8, 13, 34, 11, 15, 28, 24, 16, 16, 24, 40]), 'Unidades');
-  XLSX.utils.book_append_sheet(wb, hoja(cabP, filasP, [34, 11, 7, 16, 16, 24, 9, 10, 8, 8, 28]), 'Personal');
+  XLSX.utils.book_append_sheet(wb, hoja(cabP, filasP, [34, 11, 7, 9, 9, 16, 16, 24, 9, 10, 8, 8, 28]), 'Personal');
   XLSX.writeFile(wb, `Inventario_${slug(h.nombre)}_${hoyIso()}.xlsx`);
   logControl('inventario_excel', { herramienta: hid, unidades: unidades.length });
 }
