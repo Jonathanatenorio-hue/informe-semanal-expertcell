@@ -343,6 +343,19 @@ async function cargarInventario() {
 }
 const herrConInventario = hid => S.inv.some(u => u.herramienta_id === hid);
 const unidadesDe = (emp, hid) => S.inv.filter(u => u.id_empleado === emp && u.herramienta_id === hid && u.estado === 'asignada');
+// Cuántas unidades necesita una persona: 1, o una por centro si la herramienta es "una por centro" y la persona cubre ambos
+const centrosRequeridos = (p, h) => (h && h.por_centro && p.ambos_centros) ? ['CC2', 'JV'] : [p.centro || null];
+const cuantasNecesita = (p, hid) => { const h = S.herr.find(x => x.id === hid); return centrosRequeridos(p, h).length; };
+function faltantesDe(p, hid) {
+  const h = S.herr.find(x => x.id === hid); const us = unidadesDe(p.id_empleado, hid);
+  if (h && h.por_centro && p.ambos_centros) return ['CC2', 'JV'].filter(c => !us.some(u => u.centro === c));
+  return us.length ? [] : [p.centro || null];
+}
+function sobrantesDe(p, hid) {
+  const h = S.herr.find(x => x.id === hid); const us = unidadesDe(p.id_empleado, hid);
+  if (h && h.por_centro && p.ambos_centros) { const vistos = new Set(); return us.filter(u => { if (vistos.has(u.centro)) return true; vistos.add(u.centro); return false; }); }
+  return us.slice(1);
+}
 const tenemosDe = h => herrConInventario(h.id) ? S.inv.filter(u => u.herramienta_id === h.id && CUENTA_COMO_TENEMOS.has(u.estado)).length : h.unidades_existentes;
 async function cargarPersonal() {
   S.personal = await traerTodo('personal', '*', 'nombre');
@@ -386,7 +399,7 @@ function renderPersonal() {
         <td class="mono">${p.origen === 'manual' ? '<span class="pill gris" title="Agregada a mano, fuera de la plataforma de gestión">Manual</span>' : p.id_empleado}</td>
         <td><strong>${esc(p.nombre)}</strong></td>
         <td>${rfcCell}</td>
-        <td>${esc(p.centro || 'Ambos')}</td>
+        <td>${esc(p.centro || 'Ambos')}${S.esDirector && p.estatus === 'ACTIVO' ? `<label class="muted" style="display:block;font-size:11px;white-space:nowrap;" title="Necesita una unidad por centro en las herramientas marcadas 'una por centro' (ej. Bonsaif)"><input type="checkbox" class="ambos-chk" data-id="${p.id_empleado}" ${p.ambos_centros ? 'checked' : ''}> cubre ambos</label>` : (p.ambos_centros ? '<div class="muted" style="font-size:11px;">cubre ambos</div>' : '')}</td>
         <td class="muted" style="font-size:12px;">${esc(p.puesto || '')}</td>
         <td>${perfCell}</td>
         <td>${hs.length ? hs.map(h => chipHerr(p, h)).join('') : (p.perfil_id ? '<span class="muted">Ninguna</span>' : '<span class="pill baja">Sin perfil</span>')}</td>
@@ -399,9 +412,19 @@ function chipHerr(p, h) {
   const cls = h.estado === 'en_retiro' ? 'retiro' : '';
   if (!herrConInventario(h.id) || p.estatus !== 'ACTIVO') return `<span class="chip ${cls}">${esc(h.nombre)}</span>`;
   const us = unidadesDe(p.id_empleado, h.id);
+  const fal = faltantesDe(p, h.id), sob = sobrantesDe(p, h.id);
   if (!us.length) return `<span class="chip" style="background:var(--red-bg);color:var(--red);" title="Le corresponde y no tiene unidad asignada">${esc(h.nombre)}: sin asignar</span>`;
-  const st = us.length > 1 ? 'background:var(--amber-bg);color:var(--amber);' : '';
+  const st = sob.length ? 'background:var(--amber-bg);color:var(--amber);' : fal.length ? 'background:var(--red-bg);color:var(--red);' : '';
+  if (fal.length) return `<span class="chip" style="${st}" title="Le falta la de ${fal.join(', ')}">${esc(h.nombre)} · <span class="mono">${us.map(u => esc(u.identificador)).join(', ')}</span> · falta ${fal.join(', ')}</span>`;
   return `<span class="chip ${cls}" style="${st}" title="${us.length > 1 ? 'Tiene ' + us.length + ' unidades' : ''}">${esc(h.nombre)} · <span class="mono">${us.map(u => esc(u.identificador)).join(', ')}</span></span>`;
+}
+async function guardarAmbos(chk) {
+  const id = +chk.dataset.id; const p = S.personal.find(x => x.id_empleado === id); if (!p) return;
+  const v = chk.checked;
+  const { error } = await db.from('personal').update({ ambos_centros: v, actualizado_en: new Date().toISOString() }).eq('id_empleado', id);
+  if (error) { chk.checked = !v; return avisoError(error, 'guardar "cubre ambos" (¿corriste plantilla_paso2c.sql?)'); }
+  await logControl('ambos_centros', { id_empleado: id, nombre: p.nombre, valor: v });
+  p.ambos_centros = v; renderPersonal(); renderMatriz(); renderInventario();
 }
 async function nuevaPersonaManual() {
   const nombre = normTxt(document.getElementById('np2-nombre').value);
@@ -464,7 +487,7 @@ async function guardarPerfil(sel) {
 
 // ---------- CENTRO DE CONTROL ----------
 function necesarias(hid) {
-  return S.personal.filter(p => p.estatus === 'ACTIVO' && p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).length;
+  return S.personal.filter(p => p.estatus === 'ACTIVO' && p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).reduce((n, p) => n + cuantasNecesita(p, hid), 0);
 }
 async function guardarTenemos(inp) {
   const id = inp.dataset.h; const h = S.herr.find(x => x.id === id); if (!h) return;
@@ -507,9 +530,9 @@ async function toggleMatriz(btn) {
 function renderHerr() {
   const ed = S.esDirector; const dis = ed ? '' : 'disabled';
   const act = S.personal.filter(p => p.estatus === 'ACTIVO');
-  const usan = hid => act.filter(p => p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).length;
+  const usan = hid => necesarias(hid);
   document.getElementById('tbl-herr').innerHTML = `
-    <thead><tr><th>Herramienta</th><th>Tipo</th><th>Estado</th><th>La reemplaza</th><th>Responsable</th><th class="ctr">¿Correo?</th><th>Proceso de alta</th><th>Proceso de baja</th><th class="num">Personas</th><th></th></tr></thead>
+    <thead><tr><th>Herramienta</th><th>Tipo</th><th>Estado</th><th>La reemplaza</th><th>Responsable</th><th class="ctr">¿Correo?</th><th class="ctr" title="Quien cubre ambos centros necesita una por centro">Una por centro</th><th>Proceso de alta</th><th>Proceso de baja</th><th class="num">Personas</th><th></th></tr></thead>
     <tbody>${S.herr.map(h => `<tr data-h="${esc(h.id)}">
       <td><input type="text" class="h-nombre" value="${esc(h.nombre)}" style="width:150px" ${dis}></td>
       <td><select class="h-tipo" ${dis}>${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}" ${h.tipo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
@@ -517,6 +540,7 @@ function renderHerr() {
       <td><select class="h-reemplazo" ${dis}><option value="">—</option>${S.herr.filter(x => x.id !== h.id).map(x => `<option value="${esc(x.id)}" ${h.reemplazo_id === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></td>
       <td><input type="text" class="h-resp" value="${esc(h.responsable || '')}" list="dl-resp" placeholder="Por definir" style="width:130px" ${dis}></td>
       <td class="ctr"><input type="checkbox" class="h-correo" ${h.requiere_correo ? 'checked' : ''} ${dis}></td>
+      <td class="ctr"><input type="checkbox" class="h-porcentro" ${h.por_centro ? 'checked' : ''} ${dis}></td>
       <td style="min-width:200px"><textarea class="h-alta" placeholder="Pasos para asignarla" ${dis}>${esc(h.proceso_alta || '')}</textarea></td>
       <td style="min-width:200px"><textarea class="h-baja" placeholder="Pasos para liberarla" ${dis}>${esc(h.proceso_baja || '')}</textarea></td>
       <td class="num mono">${usan(h.id)}</td>
@@ -529,7 +553,7 @@ async function guardarHerr(tr) {
   const upd = {
     nombre: g('.h-nombre').value.trim() || h.nombre, tipo: g('.h-tipo').value, estado: g('.h-estado').value,
     reemplazo_id: g('.h-reemplazo').value || null, responsable: g('.h-resp').value.trim() || null,
-    requiere_correo: g('.h-correo').checked, proceso_alta: g('.h-alta').value.trim() || null, proceso_baja: g('.h-baja').value.trim() || null,
+    requiere_correo: g('.h-correo').checked, por_centro: g('.h-porcentro').checked, proceso_alta: g('.h-alta').value.trim() || null, proceso_baja: g('.h-baja').value.trim() || null,
     actualizado_en: new Date().toISOString()
   };
   if (upd.estado === 'en_retiro' && !upd.reemplazo_id && !confirm('Está en retiro pero no tiene reemplazo. ¿Guardar así?')) return;
@@ -783,7 +807,7 @@ function llenarSelectHerrInv() {
 function opcionesPersona(hid, centroPref) {
   const act = S.personal.filter(p => p.estatus === 'ACTIVO');
   const requiere = p => p.perfil_id && S.ph.has(p.perfil_id + '|' + hid);
-  const falta = act.filter(p => requiere(p) && !unidadesDe(p.id_empleado, hid).length).sort((a, b) => (a.centro === centroPref ? 0 : 1) - (b.centro === centroPref ? 0 : 1) || a.nombre.localeCompare(b.nombre));
+  const falta = act.filter(p => requiere(p) && faltantesDe(p, hid).length).sort((a, b) => (a.centro === centroPref ? 0 : 1) - (b.centro === centroPref ? 0 : 1) || a.nombre.localeCompare(b.nombre));
   const resto = act.filter(p => !falta.includes(p)).sort((a, b) => a.nombre.localeCompare(b.nombre));
   const o = p => `<option value="${p.id_empleado}">${esc(p.nombre)} · ${esc(p.centro || '')}</option>`;
   return `<option value="">Asignar a…</option><optgroup label="Les falta (${falta.length})">${falta.map(o).join('')}</optgroup><optgroup label="Resto del personal">${resto.map(o).join('')}</optgroup>`;
@@ -814,7 +838,7 @@ function renderInventario() {
   if (!h) { st.innerHTML = ''; pend.innerHTML = ''; document.getElementById('tbl-inv').innerHTML = ''; return; }
   const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!fc || p.centro === fc));
   const requiere = p => p.perfil_id && S.ph.has(p.perfil_id + '|' + hid);
-  const nec = act.filter(requiere).length;
+  const nec = act.filter(requiere).reduce((n, p) => n + cuantasNecesita(p, hid), 0);
   const cnt = k => todas.filter(u => u.estado === k).length;
   const ten = todas.filter(u => CUENTA_COMO_TENEMOS.has(u.estado)).length;
   st.innerHTML = [['Total', todas.length, 'var(--att-navy)'], ['Asignadas', cnt('asignada'), 'var(--green)'], ['Disponibles', cnt('disponible'), 'var(--att-blue-dark)'], ['Compartidas / externas', cnt('compartida') + cnt('externa'), '#64748B'], ['Por revisar', cnt('revisar'), 'var(--amber)'], ['Deshabilitadas', cnt('deshabilitada'), '#94A3B8'],
@@ -823,9 +847,10 @@ function renderInventario() {
   if (!S.inv.some(u => u.herramienta_id === hid)) {
     pend.innerHTML = `<div class="alert info"><div>ℹ️</div><div>${esc(h.nombre)} todavía no tiene unidades en el inventario. Agrégalas abajo una por una, o pásame la lista y te preparo la carga.</div></div>`;
   } else {
-    const falta = act.filter(p => requiere(p) && !unidadesDe(p.id_empleado, hid).length);
+    const falta = act.filter(p => requiere(p) && faltantesDe(p, hid).length);
     const porEmp = {}; todas.filter(u => u.estado === 'asignada').forEach(u => (porEmp[u.id_empleado] = porEmp[u.id_empleado] || []).push(u));
-    const dups = Object.entries(porEmp).filter(([, us]) => us.length > 1);
+    // duplicado = tiene más de las que necesita (quien cubre ambos centros en una herramienta "por centro" necesita una de cada centro)
+    const dups = Object.entries(porEmp).filter(([emp]) => { const p = S.personal.find(x => x.id_empleado === +emp); return p && p.estatus === 'ACTIVO' && sobrantesDe(p, hid).length; });
     const revisar = todas.filter(u => u.estado === 'revisar');
     const aBajas = todas.filter(u => u.estado === 'asignada' && (S.personal.find(p => p.id_empleado === u.id_empleado) || {}).estatus === 'BAJA');
     const noReq = todas.filter(u => u.estado === 'asignada' && (() => { const p = S.personal.find(x => x.id_empleado === u.id_empleado); return p && p.estatus === 'ACTIVO' && !requiere(p); })());
@@ -833,8 +858,8 @@ function renderInventario() {
     const bloque = (titulo, cls, n, html, ayuda) => `<details ${n ? 'open' : ''} style="margin-top:8px;"><summary><span class="pill ${cls}">${titulo}</span> ${n}${ayuda ? ` <span class="muted" style="font-weight:400;font-size:12px;">· ${ayuda}</span>` : ''}</summary>${n ? html : '<div class="muted" style="font-size:13px;margin:4px 0 8px;">Nada pendiente.</div>'}</details>`;
     const optsDisp = (centro) => { const o = [...disp].sort((a, b) => (a.centro === centro ? 0 : 1) - (b.centro === centro ? 0 : 1) || a.identificador.localeCompare(b.identificador)); return `<option value="">Elegir unidad disponible…</option>` + o.sort((a, b) => (a.estado === 'disponible' ? 0 : 1) - (b.estado === 'disponible' ? 0 : 1)).map(u => `<option value="${u.id}">${esc(u.identificador)} · ${esc(u.centro || '')}${u.tipo ? ' · ' + esc(u.tipo) : ''}${u.estado === 'deshabilitada' ? ' · deshabilitada (habilitar en Bonsaif)' : ''}</option>`).join(''); };
     pend.innerHTML =
-      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro)}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.filter(u => u.estado === 'disponible').length} disponibles + ${disp.filter(u => u.estado === 'deshabilitada').length} deshabilitadas que se pueden habilitar`) +
-      bloque('DUPLICADOS', 'reingreso', dups.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${dups.map(([, us]) => us.map(u => filaUnidad(u)).join('')).join('')}</tbody></table></div>`, 'personas con 2 o más; libera la que sobra') +
+      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro || 'Ambos')}${p.ambos_centros ? `<div class="muted" style="font-size:11px;">le falta: ${faltantesDe(p, hid).map(c => c || '—').join(', ')}</div>` : ''}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.filter(u => u.estado === 'disponible').length} disponibles + ${disp.filter(u => u.estado === 'deshabilitada').length} deshabilitadas que se pueden habilitar`) +
+      bloque('DUPLICADOS', 'reingreso', dups.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${dups.map(([, us]) => us.map(u => filaUnidad(u)).join('')).join('')}</tbody></table></div>`, 'tienen más de las que necesitan; libera la que sobra') +
       bloque('POR REVISAR', 'reingreso', revisar.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${revisar.map(u => filaUnidad(u)).join('')}</tbody></table></div>`) +
       bloque('ASIGNADAS A BAJAS', 'baja', aBajas.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${aBajas.map(u => filaUnidad(u, ' <span class="pill baja">BAJA</span>')).join('')}</tbody></table></div>`, 'hay que liberarlas') +
       bloque('NO LE CORRESPONDE', 'gris', noReq.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${noReq.map(u => filaUnidad(u, ` <span class="muted" style="font-size:11px;">(${esc(nombrePerfil((S.personal.find(p => p.id_empleado === u.id_empleado) || {}).perfil_id))})</span>`)).join('')}</tbody></table></div>`, 'su perfil no la incluye');
@@ -856,11 +881,13 @@ async function cambiarUnidad(id, cambios, accion, nota) {
 async function asignarUnidad(id, emp) {
   const u = S.inv.find(x => x.id === id); const p = S.personal.find(x => x.id_empleado === emp); if (!u || !p) return;
   const ya = unidadesDe(emp, u.herramienta_id);
-  if (ya.length && !confirm(`${p.nombre} ya tiene ${ya.map(x => x.identificador).join(', ')}. ¿Asignarle también ${u.identificador}?`)) return renderInventario();
+  const hAsig = S.herr.find(h => h.id === u.herramienta_id);
+  const esSegundaValida = hAsig && hAsig.por_centro && p.ambos_centros && !ya.some(x => x.centro === u.centro);
+  if (ya.length && !esSegundaValida && !confirm(`${p.nombre} ya tiene ${ya.map(x => x.identificador).join(', ')}. ¿Asignarle también ${u.identificador}?`)) return renderInventario();
   if (u.estado === 'deshabilitada' && !confirm(`${u.identificador} está deshabilitada. Al asignarla queda como asignada; recuerda pedir a Sistemas que la habilite en ${(S.herr.find(h => h.id === u.herramienta_id) || {}).nombre || 'la plataforma'}. ¿Continuar?`)) return renderInventario();
-  if (u.centro && p.centro && u.centro !== p.centro && !confirm(`${u.identificador} es de ${u.centro} y ${p.nombre} está en ${p.centro}. ¿Asignar de todos modos (préstamo entre centros)?`)) return renderInventario();
+  if (u.centro && p.centro && u.centro !== p.centro && !p.ambos_centros && !confirm(`${u.identificador} es de ${u.centro} y ${p.nombre} está en ${p.centro}. ¿Asignar de todos modos (préstamo entre centros)?`)) return renderInventario();
   const nota = u.estado === 'asignada' ? null : (u.notas && u.estado === 'revisar' ? 'Resuelta desde revisar: ' + u.notas : null);
-  await cambiarUnidad(id, { estado: 'asignada', id_empleado: emp, uso: null, notas: u.centro && p.centro && u.centro !== p.centro ? `Préstamo de ${u.centro} a ${p.centro}.` : null }, 'asignar', nota);
+  await cambiarUnidad(id, { estado: 'asignada', id_empleado: emp, uso: null, notas: u.centro && p.centro && u.centro !== p.centro && !p.ambos_centros ? `Préstamo de ${u.centro} a ${p.centro}.` : null }, 'asignar', nota);
 }
 async function accionUnidad(acc, id) {
   const u = S.inv.find(x => x.id === id); if (!u) return;
@@ -955,6 +982,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tp = document.getElementById('tbl-personal');
   tp.addEventListener('change', e => { if (e.target.classList.contains('perfil-sel')) guardarPerfil(e.target); });
   tp.addEventListener('click', e => { const b = e.target.closest('.baja-manual'); if (b) bajaManual(+b.dataset.id); });
+  tp.addEventListener('change', e => { if (e.target.classList.contains('ambos-chk')) guardarAmbos(e.target); });
   document.getElementById('np2-guardar').addEventListener('click', nuevaPersonaManual);
   tp.addEventListener('focusout', e => { if (e.target.classList.contains('rfc-in')) guardarRfc(e.target); });
   tp.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('rfc-in')) e.target.blur(); });
