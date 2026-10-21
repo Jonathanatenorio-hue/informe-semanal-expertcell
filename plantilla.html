@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plantilla · ExpertCell</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --att-blue: #00A8E0;
+    --att-blue-dark: #0077A8;
+    --att-orange: #FF7200;
+    --att-navy: #002B5C;
+    --bg: #F5F8FB;
+    --card: #FFFFFF;
+    --text: #1a1a1a;
+    --text-soft: #5a6a7a;
+    --border: #E2E8F0;
+    --green: #16A34A;
+    --green-bg: #DCFCE7;
+    --red: #DC2626;
+    --red-bg: #FEE2E2;
+    --amber: #D97706;
+    --amber-bg: #FEF3C7;
+    --blue-bg: #E0F2FE;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; padding: 24px; min-height: 100vh; }
+  .container { max-width: 1280px; margin: 0 auto; }
+  .header { background: linear-gradient(135deg, var(--att-navy) 0%, var(--att-blue-dark) 100%); color: white; border-radius: 16px; padding: 28px 36px; margin-bottom: 20px; }
+  .header h1 { font-size: 24px; font-weight: 700; margin-bottom: 6px; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .header .sesion { margin-top: 8px; font-size: 12px; font-weight: 700; color: #BDE9FA; }
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+  .tab-btn { border: 1px solid var(--border); background: var(--card); color: var(--text-soft); padding: 9px 16px; border-radius: 10px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .tab-btn.active { background: var(--att-navy); color: #fff; border-color: var(--att-navy); }
+  .tab { display: none; }
+  .tab.active { display: block; }
+  .section { background: var(--card); border-radius: 12px; padding: 22px 26px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid var(--border); }
+  .section h2 { font-size: 17px; color: var(--att-navy); margin-bottom: 4px; }
+  .section .desc { font-size: 13px; color: var(--text-soft); margin-bottom: 14px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--att-blue); border-radius: 10px; padding: 12px 14px; }
+  .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-soft); font-weight: 600; }
+  .stat-value { font-size: 24px; font-weight: 700; color: var(--att-navy); font-variant-numeric: tabular-nums; }
+  .stat-sub { font-size: 11px; color: var(--text-soft); }
+  .filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  input[type=text], input[type=date], select, textarea { font: inherit; font-size: 13px; border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; background: #fff; color: var(--text); }
+  textarea { width: 100%; min-height: 56px; resize: vertical; }
+  input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--att-blue); outline-offset: 0; border-color: var(--att-blue); }
+  .btn { border: none; background: var(--att-blue-dark); color: #fff; padding: 9px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: var(--att-navy); }
+  .btn:disabled { background: #94A3B8; cursor: not-allowed; }
+  .btn.sec { background: #fff; color: var(--att-blue-dark); border: 1px solid var(--att-blue-dark); }
+  .btn.sm { padding: 5px 10px; font-size: 12px; }
+  .btn.orange { background: var(--att-orange); }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; max-height: 70vh; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: #F1F5F9; color: var(--att-navy); text-align: left; padding: 9px 10px; font-size: 12px; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: #FAFCFE; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ctr { text-align: center; }
+  .chip { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--blue-bg); color: var(--att-blue-dark); margin: 1px 2px; white-space: nowrap; }
+  .chip.retiro { background: var(--amber-bg); color: var(--amber); text-decoration: line-through; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .pill.alta { background: var(--green-bg); color: var(--green); }
+  .pill.baja { background: var(--red-bg); color: var(--red); }
+  .pill.cambio { background: var(--blue-bg); color: var(--att-blue-dark); }
+  .pill.reingreso { background: var(--amber-bg); color: var(--amber); }
+  .pill.gris { background: #F1F5F9; color: var(--text-soft); }
+  .alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 10px; }
+  .alert.warn { background: var(--amber-bg); color: #7C4A03; }
+  .alert.err { background: var(--red-bg); color: #7F1D1D; }
+  .alert.ok { background: var(--green-bg); color: #14532D; }
+  .alert.info { background: var(--blue-bg); color: #0C4A6E; }
+  .rfc-in { width: 150px; font-family: ui-monospace, Menlo, monospace; text-transform: uppercase; }
+  .rfc-in.falta { border-color: var(--amber); background: var(--amber-bg); }
+  .rfc-in.mal { border-color: var(--red); background: var(--red-bg); }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  .muted { color: var(--text-soft); }
+  /* Matriz */
+  .mtx th.rot { text-align: center; white-space: normal; min-width: 70px; line-height: 1.2; }
+  .mtx th.prof, .mtx td.prof { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 210px; border-right: 1px solid var(--border); }
+  .mtx thead th.prof { background: #F1F5F9; z-index: 3; }
+  .mtx td.ck { text-align: center; padding: 4px; }
+  .ckb { width: 28px; height: 28px; border-radius: 6px; border: 1.5px solid #CBD5E1; background: #fff; cursor: pointer; display: inline-grid; place-items: center; }
+  .ckb:hover { border-color: var(--att-blue); }
+  .ckb.on { background: var(--att-blue-dark); border-color: var(--att-blue-dark); }
+  .ckb.on::after { content: ""; width: 7px; height: 13px; border: solid #fff; border-width: 0 3px 3px 0; transform: rotate(45deg) translate(-1px,-2px); }
+  .ckb:disabled { cursor: default; opacity: .8; }
+  .mtx th.retiro { background: var(--amber-bg); }
+  .tipo-tag { display: block; font-size: 10px; font-weight: 500; color: var(--text-soft); text-transform: uppercase; letter-spacing: .04em; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+  .log { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: #0F172A; color: #E2E8F0; border-radius: 8px; padding: 10px 12px; max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
+  .hidden { display: none !important; }
+  details summary { cursor: pointer; font-weight: 600; color: var(--att-navy); margin: 6px 0; }
+  @media (max-width: 640px) { body { padding: 12px; } .header { padding: 20px; } .section { padding: 16px; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>👥 Plantilla · Centro de control</h1>
+    <div class="subtitle">Personal activo de JV y CC2, perfiles y herramientas que le corresponden a cada quien. La carga semanal detecta altas y bajas.</div>
+    <div class="sesion" id="sesion"></div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab-btn active" data-tab="personal">Personal</button>
+    <button class="tab-btn" data-tab="control">Centro de control</button>
+    <button class="tab-btn" data-tab="carga">Carga semanal</button>
+    <button class="tab-btn" data-tab="movs">Movimientos</button>
+  </div>
+
+  <!-- ===================== PERSONAL ===================== -->
+  <div class="tab active" id="tab-personal">
+    <div class="stats" id="stats-personal"></div>
+    <div class="section">
+      <h2>Personal</h2>
+      <div class="desc">El perfil sale del puesto automáticamente. Si alguien usa otras herramientas (por ejemplo, un asesor de leads), cámbiale el perfil aquí y queda fijo aunque cambie el puesto. El RFC se edita en la celda y se guarda al salir.</div>
+      <div class="filtros">
+        <input type="text" id="f-buscar" placeholder="Buscar nombre, ID o RFC">
+        <select id="f-centro"><option value="">Todos los centros</option><option>CC2</option><option>JV</option></select>
+        <select id="f-perfil"><option value="">Todos los perfiles</option></select>
+        <label class="muted" style="font-size:13px;"><input type="checkbox" id="f-sinrfc"> Solo sin RFC</label>
+        <label class="muted" style="font-size:13px;"><input type="checkbox" id="f-bajas"> Incluir bajas</label>
+        <span class="muted" id="f-conteo" style="margin-left:auto;font-size:13px;"></span>
+      </div>
+      <div class="tbl-wrap"><table id="tbl-personal"></table></div>
+    </div>
+  </div>
+
+  <!-- ===================== CENTRO DE CONTROL ===================== -->
+  <div class="tab" id="tab-control">
+    <div class="section">
+      <h2>Matriz perfil × herramienta</h2>
+      <div class="desc">Un clic marca o quita. Lo marcado es lo que se asigna en un alta y lo que se libera en una baja. Las herramientas inactivas no aparecen; las que están en retiro se ven en ámbar.</div>
+      <div class="tbl-wrap"><table class="mtx" id="tbl-matriz"></table></div>
+    </div>
+
+    <div class="section">
+      <h2>Catálogo de herramientas</h2>
+      <div class="desc">Aquí se habilita, se retira o se desactiva cada herramienta y se documenta cómo se asigna y cómo se libera. "En retiro" es para cuando una app nueva la va a sustituir: indica cuál la reemplaza.</div>
+      <div class="tbl-wrap" style="max-height:none;"><table id="tbl-herr"></table></div>
+      <details style="margin-top:12px;" id="det-nueva-herr">
+        <summary>➕ Agregar herramienta</summary>
+        <div class="grid2" style="margin-top:8px;">
+          <input type="text" id="nh-nombre" placeholder="Nombre (ej. App Nueva)">
+          <select id="nh-tipo"><option value="acceso">Acceso personal</option><option value="reasignable">Reasignable</option><option value="fisica">Física personal</option><option value="lugar">Del lugar</option></select>
+          <input type="text" id="nh-resp" placeholder="Responsable" list="dl-resp">
+          <button class="btn" id="nh-guardar">Agregar</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="section">
+      <h2>Perfiles</h2>
+      <div class="desc">Cada perfil agrupa uno o varios puestos de la plataforma de gestión. Escribe los puestos tal cual vienen en el archivo, separados por coma. Un perfil sin puestos solo se asigna a mano.</div>
+      <div class="tbl-wrap" style="max-height:none;"><table id="tbl-perfiles"></table></div>
+      <details style="margin-top:12px;">
+        <summary>➕ Agregar perfil</summary>
+        <div class="grid2" style="margin-top:8px;">
+          <input type="text" id="np-nombre" placeholder="Nombre del perfil">
+          <input type="text" id="np-puestos" placeholder="Puestos (separados por coma)">
+          <button class="btn" id="np-guardar">Agregar</button>
+        </div>
+      </details>
+    </div>
+
+    <div class="section">
+      <h2>Bitácora de cambios</h2>
+      <div class="desc">Últimos 60 cambios a la matriz, catálogo, perfiles, RFC y cargas.</div>
+      <div class="tbl-wrap" style="max-height:340px;"><table id="tbl-log"></table></div>
+    </div>
+  </div>
+
+  <!-- ===================== CARGA SEMANAL ===================== -->
+  <div class="tab" id="tab-carga">
+    <div class="section">
+      <h2>Carga semanal de plantilla activa</h2>
+      <div class="desc">Sube el Excel de la plataforma de gestión (personal ACTIVO, con ID Empleado y, de preferencia, RFC). Se compara contra lo registrado: quien no viene se marca como baja, quien es nuevo como alta. Primero ves la vista previa y nada se guarda hasta que aplicas.</div>
+      <div class="filtros">
+        <input type="file" id="c-file" accept=".xlsx,.xls">
+        <label class="muted" style="font-size:13px;">Fecha del archivo <input type="date" id="c-fecha"></label>
+        <button class="btn" id="c-procesar" disabled>Ver vista previa</button>
+      </div>
+      <div id="c-alertas"></div>
+      <div class="stats" id="c-stats"></div>
+      <div id="c-detalle"></div>
+      <div id="c-confirmar" class="hidden" style="margin-top:12px;">
+        <label id="c-confirm-lbl" class="hidden" style="display:block;font-size:13px;margin-bottom:8px;"><input type="checkbox" id="c-confirm-chk"> Confirmo que el archivo trae a TODO el personal activo (si no, se darían de baja personas por error).</label>
+        <button class="btn orange" id="c-aplicar">Aplicar carga</button>
+      </div>
+      <div class="log hidden" id="c-log" style="margin-top:12px;"></div>
+    </div>
+    <div class="section">
+      <h2>Cargas anteriores</h2>
+      <div class="tbl-wrap" style="max-height:300px;"><table id="tbl-cargas"></table></div>
+    </div>
+  </div>
+
+  <!-- ===================== MOVIMIENTOS ===================== -->
+  <div class="tab" id="tab-movs">
+    <div class="section">
+      <h2>Movimientos de personal</h2>
+      <div class="desc">Cada alta, baja, reingreso o cambio detectado en las cargas. En el siguiente paso, de aquí saldrán las tareas de asignar y liberar herramientas por responsable.</div>
+      <div class="filtros">
+        <select id="m-tipo"><option value="">Todos los tipos</option><option value="alta">Altas</option><option value="baja">Bajas</option><option value="reingreso">Reingresos</option><option value="cambio">Cambios</option></select>
+        <select id="m-centro"><option value="">Todos los centros</option><option>CC2</option><option>JV</option></select>
+      </div>
+      <div class="tbl-wrap"><table id="tbl-movs"></table></div>
+    </div>
+  </div>
+</div>
+
+<datalist id="dl-resp"><option>Talento Humano</option><option>Sistemas</option><option>Coordinación</option><option>Dirección</option></datalist>
+
+<script>
+const SUPABASE_URL = 'https://hfvbekuerjjigtdekllh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhmdmJla3VlcmpqaWd0ZGVrbGxoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4MDIwMDMsImV4cCI6MjA5MjM3ODAwM30.og9ZKhXmDQjA4V4q2V4ikeYFAjxs9IQc4M-43BuIjB4';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---- Acceso: mismas claves que el reporte maestro (hash SHA-256) ----
+// director → todo · coordinador / clave de centro → solo consulta de Personal de su centro
+const ACCESOS_HASH_P = {
+  'f482a943c8125ddf3e2f98be67523a97ea08474e7507e623dbf124ce62f812e3': 'director',
+  'e2673b641a1f27bd6302b8c042b7df77840819b84586f35d97fa4cd8a5f3990e': 'CC2',
+  '9e44460bb0e9d2846e2169fb2f90a7ec460eac5b435d10c674cc3aa911da5858': 'JV',
+  '4f07679980346c72fe4e0cb4054089d3c6a7d5d8652a6e1c468e50d644538e13': 'coord:Guillermina',
+  '6f93a940498a1a0604e77ce4796dccc6b5223d04aa928adb528f7c08005de389': 'coord:Eduardo'
+};
+const CENTRO_DE_ROL = { 'CC2': 'CC2', 'JV': 'JV', 'coord:Guillermina': 'CC2', 'coord:Eduardo': 'CC2' };
+const TIPOS = { lugar: 'Del lugar', fisica: 'Física personal', reasignable: 'Reasignable', acceso: 'Acceso personal' };
+const ESTADOS = { activa: 'Activa', en_retiro: 'En retiro', inactiva: 'Inactiva' };
+const RFC_RE = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/;
+
+const S = { rol: null, esDirector: false, centro: null, quien: '', personal: [], perfiles: [], herr: [], ph: new Set(), carga: null };
+
+// ---------- utilidades ----------
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const normTxt = v => String(v ?? '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/\s+/g, ' ').trim();
+const hoyIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const fmtF = iso => iso ? iso.split('-').reverse().join('/') : '';
+const slug = t => normTxt(t).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+async function hashClave(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function logControl(accion, detalle) {
+  try { await db.from('control_log').insert({ quien: S.quien, accion, detalle }); } catch (e) { console.warn('[log]', e); }
+}
+async function traerTodo(tabla, select = '*', orden) {
+  const out = []; const paso = 1000;
+  for (let i = 0; ; i += paso) {
+    let q = db.from(tabla).select(select).range(i, i + paso - 1);
+    if (orden) q = q.order(orden);
+    const { data, error } = await q;
+    if (error) throw error;
+    out.push(...(data || []));
+    if (!data || data.length < paso) break;
+  }
+  return out;
+}
+function avisoError(e, donde) {
+  console.error(donde, e);
+  const msg = (e && (e.message || e.details)) || String(e);
+  const hint = /relation .* does not exist|Could not find the table/i.test(msg) ? ' — falta correr el SQL de plantilla_paso1.sql en Supabase.' : '';
+  alert(`No se pudo ${donde}: ${msg}${hint}`);
+}
+
+// ---------- perfiles / herramientas ----------
+function perfilPorPuesto(puesto) {
+  const p = normTxt(puesto);
+  const hit = S.perfiles.find(pf => pf.activo !== false && (pf.puestos || []).some(x => normTxt(x) === p));
+  return hit ? hit.id : null;
+}
+function herrDePerfil(perfilId) {
+  return S.herr.filter(h => h.estado !== 'inactiva' && S.ph.has(perfilId + '|' + h.id));
+}
+const nombrePerfil = id => (S.perfiles.find(p => p.id === id) || {}).nombre || '—';
+
+async function cargarCatalogo() {
+  const [pf, hr, ph] = await Promise.all([
+    traerTodo('perfiles', '*', 'orden'),
+    traerTodo('herramientas', '*', 'orden'),
+    traerTodo('perfil_herramienta', 'perfil_id, herramienta_id')
+  ]);
+  S.perfiles = pf; S.herr = hr; S.ph = new Set(ph.map(r => r.perfil_id + '|' + r.herramienta_id));
+}
+async function cargarPersonal() {
+  S.personal = await traerTodo('personal', '*', 'nombre');
+}
+
+// ---------- PERSONAL ----------
+function renderStats() {
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!S.centro || p.centro === S.centro));
+  const c = k => act.filter(p => p.centro === k).length;
+  const sinRfc = act.filter(p => !p.rfc).length, sinPerfil = act.filter(p => !p.perfil_id).length;
+  document.getElementById('stats-personal').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Activos</div><div class="stat-value">${act.length}</div><div class="stat-sub">${S.centro ? 'centro ' + S.centro : 'JV + CC2'}</div></div>
+    ${S.centro ? '' : `<div class="stat-card"><div class="stat-label">CC2</div><div class="stat-value">${c('CC2')}</div><div class="stat-sub">activos</div></div>
+    <div class="stat-card"><div class="stat-label">JV</div><div class="stat-value">${c('JV')}</div><div class="stat-sub">activos</div></div>`}
+    <div class="stat-card" style="border-left-color:var(--amber)"><div class="stat-label">Sin RFC</div><div class="stat-value" style="color:var(--amber)">${sinRfc}</div><div class="stat-sub">no cruzan con biométrico</div></div>
+    <div class="stat-card" style="border-left-color:${sinPerfil ? 'var(--red)' : 'var(--green)'}"><div class="stat-label">Sin perfil</div><div class="stat-value" style="color:${sinPerfil ? 'var(--red)' : 'var(--green)'}">${sinPerfil}</div><div class="stat-sub">puesto sin perfil definido</div></div>`;
+}
+function renderPersonal() {
+  renderStats();
+  const q = normTxt(document.getElementById('f-buscar').value);
+  const fc = S.centro || document.getElementById('f-centro').value;
+  const fp = document.getElementById('f-perfil').value;
+  const sinRfc = document.getElementById('f-sinrfc').checked;
+  const bajas = document.getElementById('f-bajas').checked;
+  const rows = S.personal.filter(p =>
+    (bajas || p.estatus === 'ACTIVO') && (!fc || p.centro === fc) && (!fp || (fp === '__sin' ? !p.perfil_id : p.perfil_id === fp)) &&
+    (!sinRfc || !p.rfc) && (!q || normTxt(p.nombre).includes(q) || String(p.id_empleado).includes(q) || normTxt(p.rfc).includes(q)));
+  document.getElementById('f-conteo').textContent = `${rows.length} personas`;
+  const optsPerfil = id => `<option value="__auto">Por puesto (automático)</option>` + S.perfiles.filter(p => p.activo !== false || p.id === id).map(p => `<option value="${esc(p.id)}" ${p.id === id ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('');
+  document.getElementById('tbl-personal').innerHTML = `
+    <thead><tr><th>ID</th><th>Nombre</th><th>RFC</th><th>Centro</th><th>Puesto</th><th>Perfil</th><th>Herramientas</th><th>Ingreso</th><th>Estatus</th></tr></thead>
+    <tbody>${rows.map(p => {
+      const hs = p.perfil_id ? herrDePerfil(p.perfil_id) : [];
+      const rfcCell = S.esDirector
+        ? `<input class="rfc-in ${p.rfc ? '' : 'falta'}" data-id="${p.id_empleado}" value="${esc(p.rfc || '')}" maxlength="13" placeholder="Falta RFC" aria-label="RFC de ${esc(p.nombre)}">`
+        : `<span class="mono">${esc(p.rfc || '—')}</span>`;
+      const perfCell = S.esDirector
+        ? `<select class="perfil-sel" data-id="${p.id_empleado}" aria-label="Perfil de ${esc(p.nombre)}">${optsPerfil(p.perfil_id)}</select>${p.perfil_manual ? ' <span class="pill gris" title="Puesto a mano">manual</span>' : ''}`
+        : esc(nombrePerfil(p.perfil_id));
+      return `<tr>
+        <td class="mono">${p.id_empleado}</td>
+        <td><strong>${esc(p.nombre)}</strong></td>
+        <td>${rfcCell}</td>
+        <td>${esc(p.centro || '')}</td>
+        <td class="muted" style="font-size:12px;">${esc(p.puesto || '')}</td>
+        <td>${perfCell}</td>
+        <td>${hs.length ? hs.map(h => `<span class="chip ${h.estado === 'en_retiro' ? 'retiro' : ''}">${esc(h.nombre)}</span>`).join('') : (p.perfil_id ? '<span class="muted">Ninguna</span>' : '<span class="pill baja">Sin perfil</span>')}</td>
+        <td class="mono">${fmtF(p.fecha_ingreso)}</td>
+        <td>${p.estatus === 'ACTIVO' ? '<span class="pill alta">ACTIVO</span>' : `<span class="pill baja">BAJA</span> <span class="muted" style="font-size:11px;">${fmtF(p.fecha_baja_detectada)}</span>`}</td>
+      </tr>`;
+    }).join('')}</tbody>`;
+}
+function llenarFiltroPerfil() {
+  const sel = document.getElementById('f-perfil'); const v = sel.value;
+  sel.innerHTML = `<option value="">Todos los perfiles</option><option value="__sin">Sin perfil</option>` + S.perfiles.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');
+  sel.value = v;
+}
+async function guardarRfc(input) {
+  const id = +input.dataset.id; const p = S.personal.find(x => x.id_empleado === id); if (!p) return;
+  const v = input.value.trim().toUpperCase();
+  if ((p.rfc || '') === v) return;
+  if (v && !RFC_RE.test(v)) { input.classList.add('mal'); input.title = 'Formato de RFC inválido (13 caracteres: 4 letras, 6 dígitos, 3 de homoclave)'; return; }
+  const dup = v && S.personal.find(x => x.rfc === v && x.id_empleado !== id);
+  if (dup && !confirm(`Ese RFC ya lo tiene ${dup.nombre} (ID ${dup.id_empleado}). ¿Guardarlo de todos modos?`)) { input.value = p.rfc || ''; return; }
+  const { error } = await db.from('personal').update({ rfc: v || null, actualizado_en: new Date().toISOString() }).eq('id_empleado', id);
+  if (error) return avisoError(error, 'guardar el RFC');
+  await logControl('rfc', { id_empleado: id, nombre: p.nombre, antes: p.rfc, despues: v || null });
+  p.rfc = v || null; input.classList.remove('mal', 'falta'); if (!v) input.classList.add('falta'); renderStats();
+}
+async function guardarPerfil(sel) {
+  const id = +sel.dataset.id; const p = S.personal.find(x => x.id_empleado === id); if (!p) return;
+  const auto = sel.value === '__auto';
+  const nuevo = auto ? perfilPorPuesto(p.puesto) : sel.value;
+  const { error } = await db.from('personal').update({ perfil_id: nuevo, perfil_manual: !auto, actualizado_en: new Date().toISOString() }).eq('id_empleado', id);
+  if (error) return avisoError(error, 'cambiar el perfil');
+  await logControl('perfil_persona', { id_empleado: id, nombre: p.nombre, antes: p.perfil_id, despues: nuevo, manual: !auto });
+  p.perfil_id = nuevo; p.perfil_manual = !auto; renderPersonal();
+}
+
+// ---------- CENTRO DE CONTROL ----------
+function renderMatriz() {
+  const hs = S.herr.filter(h => h.estado !== 'inactiva');
+  const pfs = S.perfiles.filter(p => p.activo !== false);
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO');
+  const nPerf = id => act.filter(p => p.perfil_id === id).length;
+  const ed = S.esDirector;
+  document.getElementById('tbl-matriz').innerHTML = `
+    <thead><tr><th class="prof">Perfil</th>${hs.map(h => `<th class="rot ${h.estado === 'en_retiro' ? 'retiro' : ''}">${esc(h.nombre)}<span class="tipo-tag">${TIPOS[h.tipo] || h.tipo}${h.estado === 'en_retiro' ? ' · retiro' : ''}</span></th>`).join('')}</tr></thead>
+    <tbody>${pfs.map(p => `<tr><td class="prof"><strong>${esc(p.nombre)}</strong><div class="muted" style="font-size:11px;">${nPerf(p.id)} activo${nPerf(p.id) === 1 ? '' : 's'}</div></td>
+      ${hs.map(h => { const on = S.ph.has(p.id + '|' + h.id); return `<td class="ck"><button class="ckb ${on ? 'on' : ''}" data-p="${esc(p.id)}" data-h="${esc(h.id)}" aria-pressed="${on}" aria-label="${esc(p.nombre)}: ${esc(h.nombre)}" ${ed ? '' : 'disabled'}></button></td>`; }).join('')}</tr>`).join('')}</tbody>
+    <tfoot><tr><td class="prof"><strong>Unidades necesarias</strong></td>${hs.map(h => `<td class="ctr mono">${pfs.reduce((s, p) => s + (S.ph.has(p.id + '|' + h.id) ? nPerf(p.id) : 0), 0)}</td>`).join('')}</tr></tfoot>`;
+}
+async function toggleMatriz(btn) {
+  if (!S.esDirector) return;
+  const p = btn.dataset.p, h = btn.dataset.h, k = p + '|' + h, on = S.ph.has(k);
+  btn.disabled = true;
+  const { error } = on
+    ? await db.from('perfil_herramienta').delete().eq('perfil_id', p).eq('herramienta_id', h)
+    : await db.from('perfil_herramienta').insert({ perfil_id: p, herramienta_id: h });
+  btn.disabled = false;
+  if (error) return avisoError(error, 'actualizar la matriz');
+  on ? S.ph.delete(k) : S.ph.add(k);
+  await logControl(on ? 'matriz_quitar' : 'matriz_agregar', { perfil: p, herramienta: h });
+  renderMatriz(); renderPersonal();
+}
+function renderHerr() {
+  const ed = S.esDirector; const dis = ed ? '' : 'disabled';
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO');
+  const usan = hid => act.filter(p => p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).length;
+  document.getElementById('tbl-herr').innerHTML = `
+    <thead><tr><th>Herramienta</th><th>Tipo</th><th>Estado</th><th>La reemplaza</th><th>Responsable</th><th class="ctr">¿Correo?</th><th>Proceso de alta</th><th>Proceso de baja</th><th class="num">Personas</th><th></th></tr></thead>
+    <tbody>${S.herr.map(h => `<tr data-h="${esc(h.id)}">
+      <td><input type="text" class="h-nombre" value="${esc(h.nombre)}" style="width:150px" ${dis}></td>
+      <td><select class="h-tipo" ${dis}>${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}" ${h.tipo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><select class="h-estado" ${dis}>${Object.entries(ESTADOS).map(([k, v]) => `<option value="${k}" ${h.estado === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><select class="h-reemplazo" ${dis}><option value="">—</option>${S.herr.filter(x => x.id !== h.id).map(x => `<option value="${esc(x.id)}" ${h.reemplazo_id === x.id ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select></td>
+      <td><input type="text" class="h-resp" value="${esc(h.responsable || '')}" list="dl-resp" placeholder="Por definir" style="width:130px" ${dis}></td>
+      <td class="ctr"><input type="checkbox" class="h-correo" ${h.requiere_correo ? 'checked' : ''} ${dis}></td>
+      <td style="min-width:200px"><textarea class="h-alta" placeholder="Pasos para asignarla" ${dis}>${esc(h.proceso_alta || '')}</textarea></td>
+      <td style="min-width:200px"><textarea class="h-baja" placeholder="Pasos para liberarla" ${dis}>${esc(h.proceso_baja || '')}</textarea></td>
+      <td class="num mono">${usan(h.id)}</td>
+      <td>${ed ? '<button class="btn sm h-guardar">Guardar</button>' : ''}</td>
+    </tr>`).join('')}</tbody>`;
+}
+async function guardarHerr(tr) {
+  const id = tr.dataset.h; const h = S.herr.find(x => x.id === id); if (!h) return;
+  const g = c => tr.querySelector(c);
+  const upd = {
+    nombre: g('.h-nombre').value.trim() || h.nombre, tipo: g('.h-tipo').value, estado: g('.h-estado').value,
+    reemplazo_id: g('.h-reemplazo').value || null, responsable: g('.h-resp').value.trim() || null,
+    requiere_correo: g('.h-correo').checked, proceso_alta: g('.h-alta').value.trim() || null, proceso_baja: g('.h-baja').value.trim() || null,
+    actualizado_en: new Date().toISOString()
+  };
+  if (upd.estado === 'en_retiro' && !upd.reemplazo_id && !confirm('Está en retiro pero no tiene reemplazo. ¿Guardar así?')) return;
+  if (upd.estado !== h.estado && upd.estado !== 'activa') {
+    const act = S.personal.filter(p => p.estatus === 'ACTIVO' && p.perfil_id && S.ph.has(p.perfil_id + '|' + id)).length;
+    if (!confirm(`${h.nombre} pasará a "${ESTADOS[upd.estado]}". Hoy la tienen ${act} personas por su perfil. ¿Continuar?`)) return;
+  }
+  const { error } = await db.from('herramientas').update(upd).eq('id', id);
+  if (error) return avisoError(error, 'guardar la herramienta');
+  const antes = { ...h }; Object.assign(h, upd);
+  const cambios = Object.keys(upd).filter(k => k !== 'actualizado_en' && String(antes[k] ?? '') !== String(upd[k] ?? ''));
+  await logControl('herramienta', { id, cambios: Object.fromEntries(cambios.map(k => [k, { antes: antes[k] ?? null, despues: upd[k] ?? null }])) });
+  renderHerr(); renderMatriz(); renderPersonal(); renderLog();
+}
+async function nuevaHerr() {
+  const nombre = document.getElementById('nh-nombre').value.trim(); if (!nombre) return alert('Escribe el nombre de la herramienta.');
+  let id = slug(nombre) || 'h' + Date.now(); if (S.herr.some(h => h.id === id)) id += '_' + Date.now().toString().slice(-4);
+  const row = { id, nombre, tipo: document.getElementById('nh-tipo').value, responsable: document.getElementById('nh-resp').value.trim() || null, orden: (Math.max(0, ...S.herr.map(h => h.orden || 0)) + 10) };
+  const { error } = await db.from('herramientas').insert(row);
+  if (error) return avisoError(error, 'agregar la herramienta');
+  await logControl('herramienta_nueva', row);
+  document.getElementById('nh-nombre').value = ''; document.getElementById('nh-resp').value = '';
+  await cargarCatalogo(); renderControl();
+}
+function renderPerfiles() {
+  const ed = S.esDirector; const dis = ed ? '' : 'disabled';
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO');
+  document.getElementById('tbl-perfiles').innerHTML = `
+    <thead><tr><th>Perfil</th><th>Puestos que caen aquí por default</th><th class="ctr">Activo</th><th class="num">Personas</th><th></th></tr></thead>
+    <tbody>${S.perfiles.map(p => `<tr data-p="${esc(p.id)}">
+      <td><input type="text" class="p-nombre" value="${esc(p.nombre)}" style="width:220px" ${dis}></td>
+      <td><input type="text" class="p-puestos" value="${esc((p.puestos || []).join(', '))}" style="width:100%;min-width:260px" placeholder="Solo asignación manual" ${dis}></td>
+      <td class="ctr"><input type="checkbox" class="p-activo" ${p.activo !== false ? 'checked' : ''} ${dis}></td>
+      <td class="num mono">${act.filter(x => x.perfil_id === p.id).length}</td>
+      <td>${ed ? '<button class="btn sm p-guardar">Guardar</button>' : ''}</td></tr>`).join('')}</tbody>`;
+}
+const parsePuestos = t => [...new Set(String(t || '').split(',').map(x => normTxt(x)).filter(Boolean))];
+async function guardarPerfilCat(tr) {
+  const id = tr.dataset.p; const p = S.perfiles.find(x => x.id === id); if (!p) return;
+  const upd = { nombre: tr.querySelector('.p-nombre').value.trim() || p.nombre, puestos: parsePuestos(tr.querySelector('.p-puestos').value), activo: tr.querySelector('.p-activo').checked };
+  const choque = upd.puestos.map(pu => [pu, S.perfiles.find(o => o.id !== id && (o.puestos || []).some(x => normTxt(x) === pu))]).filter(([, o]) => o);
+  if (choque.length) return alert('Estos puestos ya están en otro perfil: ' + choque.map(([pu, o]) => `${pu} → ${o.nombre}`).join('; '));
+  const { error } = await db.from('perfiles').update(upd).eq('id', id);
+  if (error) return avisoError(error, 'guardar el perfil');
+  await logControl('perfil', { id, antes: { nombre: p.nombre, puestos: p.puestos, activo: p.activo }, despues: upd });
+  Object.assign(p, upd);
+  const afectados = S.personal.filter(x => x.estatus === 'ACTIVO' && !x.perfil_manual && perfilPorPuesto(x.puesto) !== x.perfil_id);
+  if (afectados.length && confirm(`${afectados.length} personas (sin perfil manual) cambiarían de perfil con esta regla de puestos. ¿Reasignarlas ahora?`)) {
+    for (const x of afectados) {
+      const nuevo = perfilPorPuesto(x.puesto);
+      const { error: e } = await db.from('personal').update({ perfil_id: nuevo }).eq('id_empleado', x.id_empleado);
+      if (!e) x.perfil_id = nuevo;
+    }
+    await logControl('perfil_reasignacion', { perfil: id, personas: afectados.length });
+  }
+  renderControl(); renderPersonal(); llenarFiltroPerfil();
+}
+async function nuevoPerfil() {
+  const nombre = document.getElementById('np-nombre').value.trim(); if (!nombre) return alert('Escribe el nombre del perfil.');
+  let id = slug(nombre) || 'p' + Date.now(); if (S.perfiles.some(p => p.id === id)) id += '_' + Date.now().toString().slice(-4);
+  const row = { id, nombre, puestos: parsePuestos(document.getElementById('np-puestos').value), orden: (Math.max(0, ...S.perfiles.map(p => p.orden || 0)) + 10) };
+  const { error } = await db.from('perfiles').insert(row);
+  if (error) return avisoError(error, 'agregar el perfil');
+  await logControl('perfil_nuevo', row);
+  document.getElementById('np-nombre').value = ''; document.getElementById('np-puestos').value = '';
+  await cargarCatalogo(); renderControl(); llenarFiltroPerfil();
+}
+async function renderLog() {
+  const { data, error } = await db.from('control_log').select('*').order('cuando', { ascending: false }).limit(60);
+  const t = document.getElementById('tbl-log');
+  if (error) { t.innerHTML = `<tbody><tr><td class="muted">No se pudo leer la bitácora.</td></tr></tbody>`; return; }
+  const txt = r => {
+    const d = r.detalle || {};
+    switch (r.accion) {
+      case 'matriz_agregar': return `Agregó ${d.herramienta} a ${d.perfil}`;
+      case 'matriz_quitar': return `Quitó ${d.herramienta} de ${d.perfil}`;
+      case 'rfc': return `RFC de ${d.nombre}: ${d.antes || '—'} → ${d.despues || '—'}`;
+      case 'perfil_persona': return `Perfil de ${d.nombre}: ${d.antes || '—'} → ${d.despues || '—'}${d.manual ? ' (manual)' : ''}`;
+      case 'herramienta': return `Herramienta ${d.id}: ` + Object.entries(d.cambios || {}).map(([k, v]) => `${k} ${v.antes ?? '—'} → ${v.despues ?? '—'}`).join('; ');
+      case 'carga_semanal': return `Carga del ${fmtF(d.fecha_archivo)}: ${d.altas} altas, ${d.bajas} bajas, ${d.reingresos} reingresos, ${d.cambios} cambios`;
+      default: return `${r.accion} ${JSON.stringify(d).slice(0, 160)}`;
+    }
+  };
+  t.innerHTML = `<thead><tr><th>Cuándo</th><th>Quién</th><th>Cambio</th></tr></thead><tbody>${(data || []).map(r => `<tr><td class="mono">${new Date(r.cuando).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${esc(r.quien || '')}</td><td>${esc(txt(r))}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">Sin cambios todavía.</td></tr>'}</tbody>`;
+}
+function renderControl() { renderMatriz(); renderHerr(); renderPerfiles(); renderLog(); }
+
+// ---------- CARGA SEMANAL ----------
+function fechaDe(v) {
+  if (v instanceof Date) { if (v.getFullYear() < 1950) return null; return `${v.getFullYear()}-${String(v.getMonth() + 1).padStart(2, '0')}-${String(v.getDate()).padStart(2, '0')}`; }
+  if (typeof v === 'number') { const d = new Date(Math.round((v - 25569) * 86400000)); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; }
+  if (typeof v === 'string' && v.trim()) {
+    const s = v.trim(); let m;
+    if ((m = s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
+    if ((m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  }
+  return null;
+}
+function centroDeTienda(t) { const n = normTxt(t); if (n.includes('CENTER 2')) return 'CC2'; if (n.includes('JUAREZ') || n.includes('JV')) return 'JV'; return null; }
+function leerArchivo(wb) {
+  for (const nom of wb.SheetNames) {
+    const filas = XLSX.utils.sheet_to_json(wb.Sheets[nom], { header: 1, defval: null, raw: true });
+    const hi = filas.findIndex(f => (f || []).some(c => normTxt(c) === 'ID EMPLEADO'));
+    if (hi < 0) continue;
+    const enc = filas[hi].map(c => normTxt(c));
+    const col = (...ns) => { for (const n of ns) { const i = enc.indexOf(n); if (i >= 0) return i; } return -1; };
+    const C = { id: col('ID EMPLEADO'), nombre: col('NOMBRE COMPLETO', 'NOMBRE'), puesto: col('PUESTO'), tienda: col('TIENDA'), ing: col('FECHA INGRESO'), est: col('ESTATUS'), depto: col('DEPARTAMENTO'), rfc: col('RFC') };
+    const out = [];
+    for (const f of filas.slice(hi + 1)) {
+      if (!f || f[C.id] == null || f[C.id] === '') continue;
+      const id = parseInt(String(f[C.id]).replace(/\D/g, ''), 10); if (!id) continue;
+      if (C.est >= 0 && f[C.est] && normTxt(f[C.est]) !== 'ACTIVO') continue;
+      const rfc = C.rfc >= 0 ? normTxt(f[C.rfc]).replace(/\s/g, '') : '';
+      out.push({ id_empleado: id, nombre: String(f[C.nombre] || '').trim(), puesto: C.puesto >= 0 ? String(f[C.puesto] || '').trim() : null, tienda: C.tienda >= 0 ? String(f[C.tienda] || '').trim() : null, centro: C.tienda >= 0 ? centroDeTienda(f[C.tienda]) : null, fecha_ingreso: C.ing >= 0 ? fechaDe(f[C.ing]) : null, departamento: C.depto >= 0 ? String(f[C.depto] || '').trim() || null : null, rfc: rfc || null });
+    }
+    return { hoja: nom, filas: out, traeRfc: C.rfc >= 0 };
+  }
+  return null;
+}
+async function procesarCarga() {
+  const f = document.getElementById('c-file').files[0]; if (!f) return;
+  const fecha = document.getElementById('c-fecha').value || hoyIso();
+  const al = document.getElementById('c-alertas'); al.innerHTML = ''; document.getElementById('c-detalle').innerHTML = ''; document.getElementById('c-stats').innerHTML = '';
+  document.getElementById('c-confirmar').classList.add('hidden');
+  try {
+    const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
+    const r = leerArchivo(wb);
+    if (!r) { al.innerHTML = `<div class="alert err">No encontré una columna "ID Empleado" en ninguna hoja. Hojas: ${esc(wb.SheetNames.join(', '))}</div>`; return; }
+    await Promise.all([cargarPersonal(), cargarCatalogo()]);
+    const porId = new Map(S.personal.map(p => [p.id_empleado, p]));
+    const enArchivo = new Map(); const dupIds = [];
+    r.filas.forEach(x => { if (enArchivo.has(x.id_empleado)) dupIds.push(x.id_empleado); enArchivo.set(x.id_empleado, x); });
+    const altas = [], reingresos = [], cambios = [], bajas = [], rfcCompletados = [], sinCentro = [], puestosSinPerfil = new Set();
+    for (const x of enArchivo.values()) {
+      if (!x.centro) sinCentro.push(x);
+      if (x.puesto && !perfilPorPuesto(x.puesto)) puestosSinPerfil.add(x.puesto);
+      const p = porId.get(x.id_empleado);
+      if (!p) { altas.push(x); continue; }
+      if (p.estatus === 'BAJA') { reingresos.push({ x, p }); continue; }
+      const dif = {};
+      for (const k of ['nombre', 'puesto', 'centro', 'departamento', 'fecha_ingreso']) if (x[k] != null && normTxt(x[k]) !== normTxt(p[k])) dif[k] = { antes: p[k], despues: x[k] };
+      if (x.rfc) { if (!p.rfc) rfcCompletados.push({ x, p }); else if (x.rfc !== p.rfc) dif.rfc = { antes: p.rfc, despues: x.rfc }; }
+      if (Object.keys(dif).length) cambios.push({ x, p, dif });
+    }
+    for (const p of S.personal) if (p.estatus === 'ACTIVO' && !enArchivo.has(p.id_empleado)) bajas.push(p);
+    const activos = S.personal.filter(p => p.estatus === 'ACTIVO').length;
+    const pctArchivo = activos ? enArchivo.size / activos : 1;
+    S.carga = { fecha, archivo: f.name, total: enArchivo.size, altas, reingresos, cambios, bajas, rfcCompletados, presentes: [...enArchivo.keys()], sospechoso: activos > 20 && pctArchivo < 0.8 };
+
+    const avisos = [];
+    if (S.carga.sospechoso) avisos.push(`<div class="alert err"><div>⛔</div><div><strong>El archivo trae ${enArchivo.size} personas y hoy hay ${activos} activos (${Math.round(pctArchivo * 100)}%).</strong> Si el archivo está incompleto, se darían de baja ${bajas.length} personas por error. Revisa antes de aplicar.</div></div>`);
+    if (!r.traeRfc) avisos.push(`<div class="alert warn"><div>⚠️</div><div>El archivo no trae columna <strong>RFC</strong>. Las altas nuevas entrarán sin RFC y no cruzarán con el biométrico hasta capturarlo.</div></div>`);
+    if (puestosSinPerfil.size) avisos.push(`<div class="alert warn"><div>⚠️</div><div><strong>Puestos sin perfil:</strong> ${[...puestosSinPerfil].map(esc).join(', ')}. Quienes tengan ese puesto entrarán sin perfil. Agrégalo a un perfil en Centro de control.</div></div>`);
+    if (sinCentro.length) avisos.push(`<div class="alert warn"><div>⚠️</div><div>${sinCentro.length} personas con una tienda que no reconozco como CC2 ni JV: ${sinCentro.slice(0, 5).map(x => esc(x.nombre + ' (' + x.tienda + ')')).join(', ')}</div></div>`);
+    if (dupIds.length) avisos.push(`<div class="alert warn"><div>⚠️</div><div>IDs repetidos en el archivo (se toma el último renglón): ${dupIds.join(', ')}</div></div>`);
+    if (!avisos.length) avisos.push(`<div class="alert ok"><div>✅</div><div>Archivo leído de la hoja "${esc(r.hoja)}": ${enArchivo.size} personas activas.</div></div>`);
+    al.innerHTML = avisos.join('');
+
+    document.getElementById('c-stats').innerHTML = [
+      ['Altas', altas.length, 'var(--green)'], ['Bajas', bajas.length, 'var(--red)'], ['Reingresos', reingresos.length, 'var(--amber)'],
+      ['Cambios', cambios.length, 'var(--att-blue-dark)'], ['RFC completados', rfcCompletados.length, 'var(--att-blue)'], ['Sin cambios', enArchivo.size - altas.length - reingresos.length - cambios.length, '#94A3B8']
+    ].map(([l, n, c]) => `<div class="stat-card" style="border-left-color:${c}"><div class="stat-label">${l}</div><div class="stat-value" style="color:${c}">${n}</div></div>`).join('');
+
+    const tabla = (titulo, cls, filas, cols) => filas.length ? `<details open><summary><span class="pill ${cls}">${titulo}</span> ${filas.length}</summary><div class="tbl-wrap" style="max-height:320px;margin-bottom:10px;"><table><thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${filas.map(f => `<tr>${cols.map(c => `<td>${c[1](f)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
+    const hsTxt = perfil => perfil ? herrDePerfil(perfil).map(h => `<span class="chip">${esc(h.nombre)}</span>`).join('') : '<span class="pill baja">Sin perfil</span>';
+    document.getElementById('c-detalle').innerHTML =
+      tabla('BAJAS', 'baja', bajas, [['ID', p => `<span class="mono">${p.id_empleado}</span>`], ['Nombre', p => `<strong>${esc(p.nombre)}</strong>`], ['Centro', p => esc(p.centro)], ['Puesto', p => esc(p.puesto)], ['Herramientas a liberar', p => hsTxt(p.perfil_id)]]) +
+      tabla('ALTAS', 'alta', altas, [['ID', x => `<span class="mono">${x.id_empleado}</span>`], ['Nombre', x => `<strong>${esc(x.nombre)}</strong>`], ['RFC', x => x.rfc ? `<span class="mono">${esc(x.rfc)}</span>` : '<span class="pill reingreso">Falta</span>'], ['Centro', x => esc(x.centro || '?')], ['Puesto', x => esc(x.puesto)], ['Perfil', x => esc(nombrePerfil(perfilPorPuesto(x.puesto)))], ['Herramientas a asignar', x => hsTxt(perfilPorPuesto(x.puesto))]]) +
+      tabla('REINGRESOS', 'reingreso', reingresos, [['ID', o => `<span class="mono">${o.x.id_empleado}</span>`], ['Nombre', o => `<strong>${esc(o.x.nombre)}</strong>`], ['Baja anterior', o => fmtF(o.p.fecha_baja_detectada)], ['Puesto', o => esc(o.x.puesto)], ['Herramientas a asignar', o => hsTxt(o.p.perfil_manual ? o.p.perfil_id : perfilPorPuesto(o.x.puesto))]]) +
+      tabla('CAMBIOS', 'cambio', cambios, [['ID', o => `<span class="mono">${o.x.id_empleado}</span>`], ['Nombre', o => `<strong>${esc(o.p.nombre)}</strong>`], ['Qué cambió', o => Object.entries(o.dif).map(([k, v]) => `${esc(k)}: <span class="muted">${esc(v.antes ?? '—')}</span> → <strong>${esc(v.despues ?? '—')}</strong>`).join('<br>')], ['Perfil', o => o.dif.puesto && !o.p.perfil_manual ? `${esc(nombrePerfil(o.p.perfil_id))} → <strong>${esc(nombrePerfil(perfilPorPuesto(o.x.puesto)))}</strong>` : esc(nombrePerfil(o.p.perfil_id))]]);
+
+    const hayAlgo = altas.length + bajas.length + reingresos.length + cambios.length + rfcCompletados.length > 0;
+    if (S.esDirector) {
+      document.getElementById('c-confirmar').classList.remove('hidden');
+      document.getElementById('c-confirm-lbl').classList.toggle('hidden', !S.carga.sospechoso);
+      document.getElementById('c-confirm-chk').checked = false;
+      document.getElementById('c-aplicar').textContent = hayAlgo ? 'Aplicar carga' : 'Registrar carga (sin cambios)';
+    } else al.insertAdjacentHTML('beforeend', '<div class="alert info"><div>ℹ️</div><div>Solo dirección puede aplicar la carga.</div></div>');
+  } catch (e) { avisoError(e, 'leer el archivo'); }
+}
+function logC(t) { const el = document.getElementById('c-log'); el.classList.remove('hidden'); el.textContent += t + '\n'; el.scrollTop = el.scrollHeight; }
+async function aplicarCarga() {
+  const c = S.carga; if (!c || !S.esDirector) return;
+  if (c.sospechoso && !document.getElementById('c-confirm-chk').checked) return alert('Marca la confirmación de que el archivo está completo.');
+  const btn = document.getElementById('c-aplicar'); btn.disabled = true; document.getElementById('c-log').textContent = '';
+  try {
+    const { data: carga, error: e0 } = await db.from('cargas_personal').insert({ fecha_archivo: c.fecha, cargado_por: S.quien, archivo: c.archivo, total_archivo: c.total, altas: c.altas.length, bajas: c.bajas.length, cambios: c.cambios.length, reingresos: c.reingresos.length }).select('id').single();
+    if (e0) throw e0;
+    const movs = [];
+    if (c.altas.length) {
+      logC(`Altas: ${c.altas.length}…`);
+      const rows = c.altas.map(x => ({ ...x, estatus: 'ACTIVO', perfil_id: perfilPorPuesto(x.puesto), perfil_manual: false, primera_carga: c.fecha, ultima_carga: c.fecha }));
+      for (let i = 0; i < rows.length; i += 200) { const { error } = await db.from('personal').insert(rows.slice(i, i + 200)); if (error) throw error; }
+      rows.forEach(x => movs.push({ id_empleado: x.id_empleado, tipo: 'alta', fecha: c.fecha, carga_id: carga.id, detalle: { nombre: x.nombre, centro: x.centro, puesto: x.puesto, perfil: x.perfil_id, fecha_ingreso: x.fecha_ingreso } }));
+    }
+    for (const { x, p } of c.reingresos) {
+      const perfil = p.perfil_manual ? p.perfil_id : perfilPorPuesto(x.puesto);
+      const { error } = await db.from('personal').update({ ...x, estatus: 'ACTIVO', fecha_baja: null, fecha_baja_detectada: null, perfil_id: perfil, rfc: x.rfc || p.rfc, ultima_carga: c.fecha, actualizado_en: new Date().toISOString() }).eq('id_empleado', x.id_empleado);
+      if (error) throw error;
+      movs.push({ id_empleado: x.id_empleado, tipo: 'reingreso', fecha: c.fecha, carga_id: carga.id, detalle: { nombre: x.nombre, baja_anterior: p.fecha_baja_detectada, perfil } });
+    }
+    if (c.reingresos.length) logC(`Reingresos: ${c.reingresos.length}`);
+    for (const { x, p, dif } of c.cambios) {
+      const upd = { ultima_carga: c.fecha, actualizado_en: new Date().toISOString() };
+      Object.keys(dif).forEach(k => upd[k] = x[k]);
+      if (dif.puesto && !p.perfil_manual) upd.perfil_id = perfilPorPuesto(x.puesto);
+      const { error } = await db.from('personal').update(upd).eq('id_empleado', x.id_empleado);
+      if (error) throw error;
+      movs.push({ id_empleado: x.id_empleado, tipo: 'cambio', fecha: c.fecha, carga_id: carga.id, detalle: { nombre: p.nombre, cambios: dif, perfil_antes: p.perfil_id, perfil_despues: upd.perfil_id ?? p.perfil_id } });
+    }
+    if (c.cambios.length) logC(`Cambios: ${c.cambios.length}`);
+    for (const { x } of c.rfcCompletados) { const { error } = await db.from('personal').update({ rfc: x.rfc }).eq('id_empleado', x.id_empleado); if (error) throw error; }
+    if (c.rfcCompletados.length) logC(`RFC completados: ${c.rfcCompletados.length}`);
+    if (c.bajas.length) {
+      logC(`Bajas: ${c.bajas.length}…`);
+      const ids = c.bajas.map(p => p.id_empleado);
+      for (let i = 0; i < ids.length; i += 200) { const { error } = await db.from('personal').update({ estatus: 'BAJA', fecha_baja_detectada: c.fecha, actualizado_en: new Date().toISOString() }).in('id_empleado', ids.slice(i, i + 200)); if (error) throw error; }
+      c.bajas.forEach(p => movs.push({ id_empleado: p.id_empleado, tipo: 'baja', fecha: c.fecha, carga_id: carga.id, detalle: { nombre: p.nombre, centro: p.centro, puesto: p.puesto, perfil: p.perfil_id, herramientas: herrDePerfil(p.perfil_id).map(h => h.id) } }));
+    }
+    const ids = c.presentes;
+    for (let i = 0; i < ids.length; i += 200) { const { error } = await db.from('personal').update({ ultima_carga: c.fecha }).in('id_empleado', ids.slice(i, i + 200)); if (error) throw error; }
+    for (let i = 0; i < movs.length; i += 200) { const { error } = await db.from('movimientos_personal').insert(movs.slice(i, i + 200)); if (error) throw error; }
+    await logControl('carga_semanal', { carga_id: carga.id, fecha_archivo: c.fecha, altas: c.altas.length, bajas: c.bajas.length, reingresos: c.reingresos.length, cambios: c.cambios.length, rfc_completados: c.rfcCompletados.length });
+    logC(`✔ Carga aplicada. ${movs.length} movimientos registrados.`);
+    S.carga = null; document.getElementById('c-confirmar').classList.add('hidden');
+    await cargarPersonal(); renderPersonal(); renderControl(); renderCargas(); renderMovs();
+  } catch (e) { logC('✖ Error: ' + (e.message || e)); avisoError(e, 'aplicar la carga (lo aplicado hasta el error sí quedó; vuelve a procesar el mismo archivo para completar)'); }
+  btn.disabled = false;
+}
+async function renderCargas() {
+  const { data } = await db.from('cargas_personal').select('*').order('cargado_en', { ascending: false }).limit(30);
+  document.getElementById('tbl-cargas').innerHTML = `<thead><tr><th>Fecha archivo</th><th>Cargado</th><th>Por</th><th>Archivo</th><th class="num">Personas</th><th class="num">Altas</th><th class="num">Bajas</th><th class="num">Reingresos</th><th class="num">Cambios</th></tr></thead><tbody>${(data || []).map(r => `<tr><td class="mono">${fmtF(r.fecha_archivo)}</td><td class="mono">${new Date(r.cargado_en).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}</td><td>${esc(r.cargado_por)}</td><td class="muted" style="font-size:12px;">${esc(r.archivo)}</td><td class="num">${r.total_archivo ?? ''}</td><td class="num">${r.altas}</td><td class="num">${r.bajas}</td><td class="num">${r.reingresos}</td><td class="num">${r.cambios}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">Sin cargas.</td></tr>'}</tbody>`;
+}
+
+// ---------- MOVIMIENTOS ----------
+async function renderMovs() {
+  const ft = document.getElementById('m-tipo').value; const fc = S.centro || document.getElementById('m-centro').value;
+  let q = db.from('movimientos_personal').select('*').order('creado_en', { ascending: false }).limit(300);
+  if (ft) q = q.eq('tipo', ft);
+  const { data, error } = await q;
+  const t = document.getElementById('tbl-movs');
+  if (error) { t.innerHTML = '<tbody><tr><td class="muted">No se pudieron leer los movimientos.</td></tr></tbody>'; return; }
+  const porId = new Map(S.personal.map(p => [p.id_empleado, p]));
+  const rows = (data || []).filter(m => !fc || (porId.get(m.id_empleado) || {}).centro === fc);
+  const resumen = m => {
+    const d = m.detalle || {};
+    if (m.tipo === 'cambio') return Object.entries(d.cambios || {}).map(([k, v]) => `${esc(k)}: ${esc(v.antes ?? '—')} → ${esc(v.despues ?? '—')}`).join('<br>');
+    if (m.tipo === 'baja') return 'Liberar: ' + (d.herramientas || []).map(h => `<span class="chip">${esc((S.herr.find(x => x.id === h) || {}).nombre || h)}</span>`).join('');
+    if (m.tipo === 'alta' || m.tipo === 'reingreso') return 'Asignar: ' + herrDePerfil(d.perfil).map(h => `<span class="chip">${esc(h.nombre)}</span>`).join('');
+    return '';
+  };
+  t.innerHTML = `<thead><tr><th>Fecha</th><th>Tipo</th><th>ID</th><th>Nombre</th><th>Centro</th><th>Detalle</th><th>Estado</th></tr></thead><tbody>${rows.map(m => { const p = porId.get(m.id_empleado) || {}; return `<tr><td class="mono">${fmtF(m.fecha)}</td><td><span class="pill ${m.tipo}">${m.tipo.toUpperCase()}</span></td><td class="mono">${m.id_empleado}</td><td><strong>${esc(p.nombre || (m.detalle || {}).nombre || '')}</strong></td><td>${esc(p.centro || '')}</td><td style="font-size:12px;">${resumen(m)}</td><td><span class="pill gris">${esc(m.estado)}</span></td></tr>`; }).join('') || '<tr><td colspan="7" class="muted">Sin movimientos todavía. Aparecerán con la primera carga semanal.</td></tr>'}</tbody>`;
+}
+
+// ---------- arranque ----------
+async function acceso() {
+  let rol = null;
+  const g = sessionStorage.getItem('plantilla_rol_hash');
+  if (g && ACCESOS_HASH_P[g]) rol = ACCESOS_HASH_P[g];
+  while (!rol) {
+    const clave = prompt('🔒 Plantilla — usa la misma clave de tu reporte maestro:');
+    if (clave === null) { document.body.innerHTML = '<div style="padding:70px 20px;text-align:center;font-family:system-ui;"><h2>🔒 Acceso restringido</h2><p style="color:#64748B;">Recarga la página para reintentar.</p></div>'; throw new Error('acceso denegado'); }
+    const h = await hashClave(clave.trim());
+    if (ACCESOS_HASH_P[h]) { rol = ACCESOS_HASH_P[h]; sessionStorage.setItem('plantilla_rol_hash', h); }
+    else alert('Clave inválida o sin permiso.');
+  }
+  S.rol = rol; S.esDirector = rol === 'director'; S.centro = S.esDirector ? null : CENTRO_DE_ROL[rol] || null;
+  S.quien = S.esDirector ? 'Dirección' : rol.startsWith('coord:') ? rol.slice(6) : `Centro ${rol}`;
+  document.getElementById('sesion').textContent = `Sesión: ${S.quien}${S.esDirector ? ' (director)' : ` · solo consulta${S.centro ? ' de ' + S.centro : ''}`}`;
+  if (!S.esDirector) {
+    document.querySelector('.tab-btn[data-tab="carga"]').style.display = 'none';
+    const fc = document.getElementById('f-centro'); if (S.centro) { fc.value = S.centro; fc.disabled = true; }
+    const mc = document.getElementById('m-centro'); if (S.centro) { mc.value = S.centro; mc.disabled = true; }
+    document.getElementById('det-nueva-herr').style.display = 'none';
+    document.querySelectorAll('#tab-control details').forEach(d => d.style.display = 'none');
+  }
+}
+document.addEventListener('DOMContentLoaded', async () => {
+  try { await acceso(); } catch (e) { return; }
+  document.getElementById('tabs').addEventListener('click', e => {
+    const b = e.target.closest('.tab-btn'); if (!b) return;
+    document.querySelectorAll('.tab-btn').forEach(x => x.classList.toggle('active', x === b));
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.id === 'tab-' + b.dataset.tab));
+  });
+  ['f-buscar', 'f-centro', 'f-perfil', 'f-sinrfc', 'f-bajas'].forEach(id => document.getElementById(id).addEventListener(id === 'f-buscar' ? 'input' : 'change', renderPersonal));
+  const tp = document.getElementById('tbl-personal');
+  tp.addEventListener('change', e => { if (e.target.classList.contains('perfil-sel')) guardarPerfil(e.target); });
+  tp.addEventListener('focusout', e => { if (e.target.classList.contains('rfc-in')) guardarRfc(e.target); });
+  tp.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('rfc-in')) e.target.blur(); });
+  document.getElementById('tbl-matriz').addEventListener('click', e => { const b = e.target.closest('.ckb'); if (b) toggleMatriz(b); });
+  document.getElementById('tbl-herr').addEventListener('click', e => { if (e.target.classList.contains('h-guardar')) guardarHerr(e.target.closest('tr')); });
+  document.getElementById('tbl-perfiles').addEventListener('click', e => { if (e.target.classList.contains('p-guardar')) guardarPerfilCat(e.target.closest('tr')); });
+  document.getElementById('nh-guardar').addEventListener('click', nuevaHerr);
+  document.getElementById('np-guardar').addEventListener('click', nuevoPerfil);
+  document.getElementById('c-fecha').value = hoyIso();
+  document.getElementById('c-file').addEventListener('change', e => { document.getElementById('c-procesar').disabled = !e.target.files.length; });
+  document.getElementById('c-procesar').addEventListener('click', procesarCarga);
+  document.getElementById('c-aplicar').addEventListener('click', aplicarCarga);
+  ['m-tipo', 'm-centro'].forEach(id => document.getElementById(id).addEventListener('change', renderMovs));
+  try {
+    await Promise.all([cargarCatalogo(), cargarPersonal()]);
+    llenarFiltroPerfil(); renderPersonal(); renderControl(); renderCargas(); renderMovs();
+  } catch (e) { avisoError(e, 'cargar la información'); }
+});
+</script>
+</body>
+</html>
