@@ -125,6 +125,7 @@
         <input type="text" id="f-buscar" placeholder="Buscar nombre, ID o RFC">
         <select id="f-centro"><option value="">Todos los centros</option><option>CC2</option><option>JV</option></select>
         <select id="f-perfil"><option value="">Todos los perfiles</option></select>
+        <select id="f-sup" aria-label="Supervisor"><option value="">Todos los supervisores</option></select>
         <label class="muted" style="font-size:13px;"><input type="checkbox" id="f-sinrfc"> Solo sin RFC</label>
         <label class="muted" style="font-size:13px;"><input type="checkbox" id="f-bajas"> Incluir bajas</label>
         <span class="muted" id="f-conteo" style="margin-left:auto;font-size:13px;"></span>
@@ -223,7 +224,9 @@
         <select id="i-herr" aria-label="Herramienta"></select>
         <select id="i-centro"><option value="">Todos los centros</option><option>CC2</option><option>JV</option></select>
         <select id="i-estado"><option value="">Todos los estados</option></select>
+        <select id="i-sup" aria-label="Supervisor"><option value="">Todos los supervisores</option></select>
         <input type="text" id="i-buscar" placeholder="Buscar identificador, persona o nota">
+        <button class="btn sec" id="i-excel" title="Descarga todas las unidades de la herramienta, quién las tiene y a quién le falta, con fórmulas">⬇️ Descargar Excel</button>
       </div>
       <div class="stats" id="i-stats"></div>
       <div id="i-pend"></div>
@@ -357,6 +360,29 @@ function sobrantesDe(p, hid) {
   return us.slice(1);
 }
 const tenemosDe = h => herrConInventario(h.id) ? S.inv.filter(u => u.herramienta_id === h.id && CUENTA_COMO_TENEMOS.has(u.estado)).length : h.unidades_existentes;
+// Supervisor = jefe inmediato que trae la plataforma de gestión; se muestra con el nombre corto del reporte si existe
+async function cargarSupervisores() {
+  try { const { data } = await db.from('supervisores_config').select('supervisor, nombre_completo'); S.supCorto = {}; (data || []).forEach(r => { if (r.nombre_completo) S.supCorto[normTxt(r.nombre_completo)] = r.supervisor; }); }
+  catch (e) { S.supCorto = {}; }
+}
+const tituloNombre = t => String(t || '').toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+const etiquetaJefe = n => n ? ((S.supCorto || {})[normTxt(n)] || tituloNombre(n)) : '';
+const supervisorDe = p => p && p.jefe_inmediato ? etiquetaJefe(p.jefe_inmediato) : '';
+function coordinacionDe(p) {
+  if (!p || !p.jefe_inmediato) return '';
+  const jefe = S.personal.find(x => x.estatus === 'ACTIVO' && normTxt(x.nombre) === normTxt(p.jefe_inmediato));
+  if (jefe && jefe.perfil_id === 'supervisor') return etiquetaJefe(jefe.jefe_inmediato);
+  return etiquetaJefe(p.jefe_inmediato);   // quien reporta directo a coordinación (supervisores, staff)
+}
+function llenarFiltrosSupervisor() {
+  const sups = [...new Set(S.personal.filter(p => p.estatus === 'ACTIVO' && (!S.centro || p.centro === S.centro || p.ambos_centros)).map(supervisorDe).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  for (const id of ['f-sup', 'i-sup']) {
+    const el = document.getElementById(id); if (!el) continue; const v = el.value;
+    el.innerHTML = '<option value="">Todos los supervisores</option>' + sups.map(x => `<option value="${esc(x)}">${esc(x)}</option>`).join('') + '<option value="__sin">Sin supervisor</option>';
+    el.value = v;
+  }
+}
+const pasaSup = (p, fs) => !fs || (fs === '__sin' ? !supervisorDe(p) : supervisorDe(p) === fs);
 async function cargarPersonal() {
   S.personal = await traerTodo('personal', '*', 'nombre');
 }
@@ -378,15 +404,16 @@ function renderPersonal() {
   const q = normTxt(document.getElementById('f-buscar').value);
   const fc = S.centro || document.getElementById('f-centro').value;
   const fp = document.getElementById('f-perfil').value;
+  const fs = document.getElementById('f-sup').value;
   const sinRfc = document.getElementById('f-sinrfc').checked;
   const bajas = document.getElementById('f-bajas').checked;
   const rows = S.personal.filter(p =>
-    (bajas || p.estatus === 'ACTIVO') && (!fc || p.centro === fc || p.ambos_centros) && (!fp || (fp === '__sin' ? !p.perfil_id : p.perfil_id === fp)) &&
+    (bajas || p.estatus === 'ACTIVO') && (!fc || p.centro === fc || p.ambos_centros) && (!fp || (fp === '__sin' ? !p.perfil_id : p.perfil_id === fp)) && pasaSup(p, fs) &&
     (!sinRfc || !p.rfc) && (!q || normTxt(p.nombre).includes(q) || String(p.id_empleado).includes(q) || normTxt(p.rfc).includes(q)));
   document.getElementById('f-conteo').textContent = `${rows.length} personas`;
   const optsPerfil = id => `<option value="__auto">Automático (según su puesto)</option>` + S.perfiles.filter(p => p.activo !== false || p.id === id).map(p => `<option value="${esc(p.id)}" ${p.id === id ? 'selected' : ''}>${esc(p.nombre)}</option>`).join('');
   document.getElementById('tbl-personal').innerHTML = `
-    <thead><tr><th>ID</th><th>Nombre</th><th>RFC</th><th>Centro</th><th>Puesto</th><th>Perfil</th><th>Herramientas</th><th>Ingreso</th><th>Estatus</th></tr></thead>
+    <thead><tr><th>ID</th><th>Nombre</th><th>RFC</th><th>Centro</th><th>Supervisor</th><th>Puesto</th><th>Perfil</th><th>Herramientas</th><th>Ingreso</th><th>Estatus</th></tr></thead>
     <tbody>${rows.map(p => {
       const hs = p.perfil_id ? herrDePerfil(p.perfil_id) : [];
       const rfcCell = S.esDirector
@@ -400,6 +427,7 @@ function renderPersonal() {
         <td><strong>${esc(p.nombre)}</strong></td>
         <td>${rfcCell}</td>
         <td>${esc(p.centro || 'Ambos')}${S.esDirector && p.estatus === 'ACTIVO' ? `<label class="muted" style="display:block;font-size:11px;white-space:nowrap;" title="Necesita una unidad por centro en las herramientas marcadas 'una por centro' (ej. Bonsaif)"><input type="checkbox" class="ambos-chk" data-id="${p.id_empleado}" ${p.ambos_centros ? 'checked' : ''}> cubre ambos</label>` : (p.ambos_centros ? '<div class="muted" style="font-size:11px;">cubre ambos</div>' : '')}</td>
+        <td style="font-size:12px;">${esc(supervisorDe(p)) || '<span class="muted">—</span>'}${coordinacionDe(p) && coordinacionDe(p) !== supervisorDe(p) ? `<div class="muted" style="font-size:11px;">${esc(coordinacionDe(p))}</div>` : ''}</td>
         <td class="muted" style="font-size:12px;">${esc(p.puesto || '')}</td>
         <td>${perfCell}</td>
         <td>${hs.length ? hs.map(h => chipHerr(p, h)).join('') : (p.perfil_id ? '<span class="muted">Ninguna</span>' : '<span class="pill baja">Sin perfil</span>')}</td>
@@ -662,14 +690,14 @@ function leerArchivo(wb) {
     if (hi < 0) continue;
     const enc = filas[hi].map(c => normTxt(c));
     const col = (...ns) => { for (const n of ns) { const i = enc.indexOf(n); if (i >= 0) return i; } return -1; };
-    const C = { id: col('ID EMPLEADO'), nombre: col('NOMBRE COMPLETO', 'NOMBRE'), puesto: col('PUESTO'), tienda: col('TIENDA'), ing: col('FECHA INGRESO'), est: col('ESTATUS'), depto: col('DEPARTAMENTO'), rfc: col('RFC') };
+    const C = { id: col('ID EMPLEADO'), nombre: col('NOMBRE COMPLETO', 'NOMBRE EMPLEADO', 'NOMBRE'), puesto: col('PUESTO'), tienda: col('TIENDA', 'CENTRO'), ing: col('FECHA INGRESO'), est: col('ESTATUS'), depto: col('DEPARTAMENTO'), rfc: col('RFC'), jefe: col('JEFE INMEDIATO', 'JEFE DIRECTO') };
     const out = [];
     for (const f of filas.slice(hi + 1)) {
       if (!f || f[C.id] == null || f[C.id] === '') continue;
       const id = parseInt(String(f[C.id]).replace(/\D/g, ''), 10); if (!id) continue;
       if (C.est >= 0 && f[C.est] && normTxt(f[C.est]) !== 'ACTIVO') continue;
       const rfc = C.rfc >= 0 ? normTxt(f[C.rfc]).replace(/\s/g, '') : '';
-      out.push({ id_empleado: id, nombre: String(f[C.nombre] || '').trim(), puesto: C.puesto >= 0 ? String(f[C.puesto] || '').trim() : null, tienda: C.tienda >= 0 ? String(f[C.tienda] || '').trim() : null, centro: C.tienda >= 0 ? centroDeTienda(f[C.tienda]) : null, fecha_ingreso: C.ing >= 0 ? fechaDe(f[C.ing]) : null, departamento: C.depto >= 0 ? String(f[C.depto] || '').trim() || null : null, rfc: rfc || null });
+      out.push({ id_empleado: id, nombre: String(f[C.nombre] || '').trim(), puesto: C.puesto >= 0 ? String(f[C.puesto] || '').trim() : null, tienda: C.tienda >= 0 ? String(f[C.tienda] || '').trim() : null, centro: C.tienda >= 0 ? centroDeTienda(f[C.tienda]) : null, fecha_ingreso: C.ing >= 0 ? fechaDe(f[C.ing]) : null, departamento: C.depto >= 0 ? String(f[C.depto] || '').trim() || null : null, rfc: rfc || null, jefe_inmediato: C.jefe >= 0 ? (normTxt(f[C.jefe]) || null) : null });
     }
     return { hoja: nom, filas: out, traeRfc: C.rfc >= 0 };
   }
@@ -697,7 +725,7 @@ async function procesarCarga() {
       if (p.estatus === 'BAJA') { reingresos.push({ x, p }); continue; }
       const dif = {};
       // a quien cubre ambos centros no se le cambia el centro aunque el archivo traiga uno
-      for (const k of ['nombre', 'puesto', 'centro', 'departamento', 'fecha_ingreso']) if (!(k === 'centro' && p.ambos_centros) && x[k] != null && normTxt(x[k]) !== normTxt(p[k])) dif[k] = { antes: p[k], despues: x[k] };
+      for (const k of ['nombre', 'puesto', 'centro', 'departamento', 'fecha_ingreso', 'jefe_inmediato']) if (!(k === 'centro' && p.ambos_centros) && x[k] != null && normTxt(x[k]) !== normTxt(p[k])) dif[k] = { antes: p[k], despues: x[k] };
       if (x.rfc) { if (!p.rfc) rfcCompletados.push({ x, p }); else if (x.rfc !== p.rfc) dif.rfc = { antes: p.rfc, despues: x.rfc }; }
       if (Object.keys(dif).length) cambios.push({ x, p, dif });
     }
@@ -785,7 +813,7 @@ async function aplicarCarga() {
     await logControl('carga_semanal', { carga_id: carga.id, fecha_archivo: c.fecha, altas: c.altas.length, bajas: c.bajas.length, reingresos: c.reingresos.length, cambios: c.cambios.length, rfc_completados: c.rfcCompletados.length });
     logC(`✔ Carga aplicada. ${movs.length} movimientos registrados.`);
     S.carga = null; document.getElementById('c-confirmar').classList.add('hidden');
-    await cargarPersonal(); renderPersonal(); renderControl(); renderInventario(); renderCargas(); renderMovs();
+    await cargarPersonal(); llenarFiltrosSupervisor(); renderPersonal(); renderControl(); renderInventario(); renderCargas(); renderMovs();
   } catch (e) { logC('✖ Error: ' + (e.message || e)); avisoError(e, 'aplicar la carga (lo aplicado hasta el error sí quedó; vuelve a procesar el mismo archivo para completar)'); }
   btn.disabled = false;
 }
@@ -830,16 +858,20 @@ function accionesUnidad(u) {
 function filaUnidad(u, extra = '') {
   const e = EST_INV[u.estado] || { t: u.estado, c: 'gris' };
   const quien = u.id_empleado ? `<strong>${esc(nombreEmp(u.id_empleado))}</strong>` : (u.uso ? esc(u.uso) : '<span class="muted">—</span>');
-  return `<tr><td class="mono">${esc(u.identificador)}</td><td>${esc(u.centro || '')}</td><td class="muted">${esc(u.tipo || '')}</td><td><span class="pill ${e.c}">${e.t}</span></td><td>${quien}${extra}</td><td style="font-size:12px;max-width:260px;">${esc(u.notas || '')}</td><td>${accionesUnidad(u)}</td></tr>`;
+  const pu = u.id_empleado ? S.personal.find(p => p.id_empleado === u.id_empleado) : null;
+  return `<tr><td class="mono">${esc(u.identificador)}</td><td>${esc(u.centro || '')}</td><td class="muted">${esc(u.tipo || '')}</td><td><span class="pill ${e.c}">${e.t}</span></td><td>${quien}${extra}</td><td style="font-size:12px;">${esc(supervisorDe(pu))}</td><td style="font-size:12px;max-width:260px;">${esc(u.notas || '')}</td><td>${accionesUnidad(u)}</td></tr>`;
 }
-const cabUnidades = '<thead><tr><th>Identificador</th><th>Centro</th><th>Tipo</th><th>Estado</th><th>Quién la usa</th><th>Nota</th><th>Acciones</th></tr></thead>';
+const cabUnidades = '<thead><tr><th>Identificador</th><th>Centro</th><th>Tipo</th><th>Estado</th><th>Quién la usa</th><th>Supervisor</th><th>Nota</th><th>Acciones</th></tr></thead>';
 function renderInventario() {
   const hid = document.getElementById('i-herr').value; const h = S.herr.find(x => x.id === hid);
   const fc = S.centro || document.getElementById('i-centro').value, fe = document.getElementById('i-estado').value, q = normTxt(document.getElementById('i-buscar').value);
-  const todas = S.inv.filter(u => u.herramienta_id === hid && (!fc || u.centro === fc));
+  const fs = document.getElementById('i-sup').value;
+  const persDe = u => S.personal.find(p => p.id_empleado === u.id_empleado);
+  // con filtro de supervisor solo se ven las unidades asignadas a su equipo
+  const todas = S.inv.filter(u => u.herramienta_id === hid && (!fc || u.centro === fc) && (!fs || (u.id_empleado && pasaSup(persDe(u), fs))));
   const st = document.getElementById('i-stats'), pend = document.getElementById('i-pend');
   if (!h) { st.innerHTML = ''; pend.innerHTML = ''; document.getElementById('tbl-inv').innerHTML = ''; return; }
-  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!fc || p.centro === fc || p.ambos_centros));
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!fc || p.centro === fc || p.ambos_centros) && pasaSup(p, fs));
   // Con filtro de centro, cada persona cuenta solo lo que necesita EN ese centro:
   // quien cubre ambos en una herramienta "una por centro" necesita 1 aquí y 1 en el otro; así CC2 + JV = total.
   const centrosDeNecesidad = p => {
@@ -872,15 +904,15 @@ function renderInventario() {
     const bloque = (titulo, cls, n, html, ayuda) => `<details ${n ? 'open' : ''} style="margin-top:8px;"><summary><span class="pill ${cls}">${titulo}</span> ${n}${ayuda ? ` <span class="muted" style="font-weight:400;font-size:12px;">· ${ayuda}</span>` : ''}</summary>${n ? html : '<div class="muted" style="font-size:13px;margin:4px 0 8px;">Nada pendiente.</div>'}</details>`;
     const optsDisp = (centro) => { const o = [...disp].sort((a, b) => (a.centro === centro ? 0 : 1) - (b.centro === centro ? 0 : 1) || a.identificador.localeCompare(b.identificador)); return `<option value="">Elegir unidad disponible…</option>` + o.sort((a, b) => (a.estado === 'disponible' ? 0 : 1) - (b.estado === 'disponible' ? 0 : 1)).map(u => `<option value="${u.id}">${esc(u.identificador)} · ${esc(u.centro || '')}${u.tipo ? ' · ' + esc(u.tipo) : ''}${u.estado === 'deshabilitada' ? ' · deshabilitada (habilitar en Bonsaif)' : ''}</option>`).join(''); };
     pend.innerHTML =
-      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro || 'Ambos')}${p.ambos_centros ? `<div class="muted" style="font-size:11px;">le falta: ${faltaEnFiltro(p).map(c => c || '—').join(', ')}</div>` : ''}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro || faltaEnFiltro(p)[0] || fc)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.filter(u => u.estado === 'disponible').length} disponibles + ${disp.filter(u => u.estado === 'deshabilitada').length} deshabilitadas que se pueden habilitar${fc ? ' (de ambos centros)' : ''}`) +
+      bloque('LES FALTA', 'baja', falta.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table><thead><tr><th>Persona</th><th>Centro</th><th>Supervisor</th><th>Perfil</th><th>Ingreso</th><th>Asignar</th></tr></thead><tbody>${falta.map(p => `<tr><td><strong>${esc(p.nombre)}</strong></td><td>${esc(p.centro || 'Ambos')}${p.ambos_centros ? `<div class="muted" style="font-size:11px;">le falta: ${faltaEnFiltro(p).map(c => c || '—').join(', ')}</div>` : ''}</td><td style="font-size:12px;">${esc(supervisorDe(p))}</td><td>${esc(nombrePerfil(p.perfil_id))}</td><td class="mono">${fmtF(p.fecha_ingreso)}</td><td>${S.esDirector ? (disp.length ? `<select class="p-asignar" data-emp="${p.id_empleado}">${optsDisp(p.centro || faltaEnFiltro(p)[0] || fc)}</select>` : '<span class="muted">No hay unidades disponibles</span>') : ''}</td></tr>`).join('')}</tbody></table></div>`, `${disp.filter(u => u.estado === 'disponible').length} disponibles + ${disp.filter(u => u.estado === 'deshabilitada').length} deshabilitadas que se pueden habilitar${fc ? ' (de ambos centros)' : ''}`) +
       bloque('DUPLICADOS', 'reingreso', dups.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${dups.map(([, us]) => us.map(u => filaUnidad(u)).join('')).join('')}</tbody></table></div>`, 'tienen más de las que necesitan; libera la que sobra') +
       bloque('POR REVISAR', 'reingreso', revisar.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${revisar.map(u => filaUnidad(u)).join('')}</tbody></table></div>`) +
       bloque('ASIGNADAS A BAJAS', 'baja', aBajas.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${aBajas.map(u => filaUnidad(u, ' <span class="pill baja">BAJA</span>')).join('')}</tbody></table></div>`, 'hay que liberarlas') +
       bloque('NO LE CORRESPONDE', 'gris', noReq.length, `<div class="tbl-wrap" style="max-height:340px;margin-bottom:8px;"><table>${cabUnidades}<tbody>${noReq.map(u => filaUnidad(u, ` <span class="muted" style="font-size:11px;">(${esc(nombrePerfil((S.personal.find(p => p.id_empleado === u.id_empleado) || {}).perfil_id))})</span>`)).join('')}</tbody></table></div>`, 'su perfil no la incluye');
   }
-  const filas = todas.filter(u => (!fe || u.estado === fe) && (!q || normTxt(u.identificador).includes(q) || normTxt(nombreEmp(u.id_empleado)).includes(q) || normTxt(u.uso).includes(q) || normTxt(u.notas).includes(q)));
+  const filas = todas.filter(u => (!fe || u.estado === fe) && (!q || normTxt(u.identificador).includes(q) || normTxt(nombreEmp(u.id_empleado)).includes(q) || normTxt(u.uso).includes(q) || normTxt(u.notas).includes(q) || normTxt(supervisorDe(persDe(u))).includes(q)));
   document.getElementById('i-desc-unidades').textContent = `${filas.length} de ${todas.length} unidades de ${h.nombre}.`;
-  document.getElementById('tbl-inv').innerHTML = cabUnidades + `<tbody>${filas.map(u => filaUnidad(u)).join('') || '<tr><td colspan="7" class="muted">Sin unidades con este filtro.</td></tr>'}</tbody>`;
+  document.getElementById('tbl-inv').innerHTML = cabUnidades + `<tbody>${filas.map(u => filaUnidad(u)).join('') || '<tr><td colspan="8" class="muted">Sin unidades con este filtro.</td></tr>'}</tbody>`;
 }
 async function cambiarUnidad(id, cambios, accion, nota) {
   const u = S.inv.find(x => x.id === id); if (!u) return;
@@ -939,6 +971,62 @@ async function nuevaUnidad() {
   llenarSelectHerrInv(); renderInventario(); renderMatriz();
 }
 
+// ---------- EXCEL DE INVENTARIO (fórmulas vivas) ----------
+function excelInventario() {
+  const hid = document.getElementById('i-herr').value; const h = S.herr.find(x => x.id === hid); if (!h) return;
+  const unidades = S.inv.filter(u => u.herramienta_id === hid).sort((a, b) => (a.centro || '').localeCompare(b.centro || '') || a.identificador.localeCompare(b.identificador));
+  const B = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '002B5C' } }, alignment: { vertical: 'center', wrapText: true } };
+  const hoja = (cab, filas, anchos) => {
+    const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
+    cab.forEach((_, i) => { const c = XLSX.utils.encode_cell({ r: 0, c: i }); if (ws[c]) ws[c].s = B; });
+    ws['!cols'] = anchos.map(w => ({ wch: w })); ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: filas.length, c: cab.length - 1 } }) };
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 }; ws['!views'] = [{ state: 'frozen', ySplit: 1 }];
+    return ws;
+  };
+  // Hoja 1: unidades
+  const cabU = ['Identificador', 'Centro', 'Tipo', 'Estado', 'Persona', 'ID empleado', 'RFC', 'Puesto', 'Perfil', 'Supervisor', 'Coordinación', 'Uso', 'Nota'];
+  const filasU = unidades.map(u => { const p = u.id_empleado ? S.personal.find(x => x.id_empleado === u.id_empleado) : null;
+    return [u.identificador, u.centro || '', u.tipo || '', (EST_INV[u.estado] || {}).t || u.estado, p ? p.nombre : '', p ? p.id_empleado : '', p ? (p.rfc || '') : '', p ? (p.puesto || '') : '', p ? nombrePerfil(p.perfil_id) : '', supervisorDe(p), coordinacionDe(p), u.uso || '', u.notas || '']; });
+  // Hoja 2: una fila por persona activa y por centro en que necesita la herramienta
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && p.perfil_id && S.ph.has(p.perfil_id + '|' + hid)).sort((a, b) => supervisorDe(a).localeCompare(supervisorDe(b)) || a.nombre.localeCompare(b.nombre));
+  const cabP = ['Persona', 'ID empleado', 'Centro', 'Supervisor', 'Coordinación', 'Perfil', 'Necesita', 'Asignadas', 'Faltan', 'Sobran', 'Identificadores asignados'];
+  const filasP = []; const porCentro = !!h.por_centro;
+  for (const p of act) {
+    const cs = (porCentro && p.ambos_centros) ? ['CC2', 'JV'] : [p.centro || (unidadesDe(p.id_empleado, hid)[0] || {}).centro || ''];
+    for (const c of cs) {
+      const r = filasP.length + 2; const usC = unidadesDe(p.id_empleado, hid).filter(u => !porCentro || !p.ambos_centros || u.centro === c);
+      filasP.push([p.nombre, p.id_empleado, c, supervisorDe(p), coordinacionDe(p), nombrePerfil(p.perfil_id), 1,
+        { f: porCentro && p.ambos_centros ? `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada",Unidades!$B:$B,C${r})` : `COUNTIFS(Unidades!$F:$F,B${r},Unidades!$D:$D,"Asignada")` },
+        { f: `MAX(0,G${r}-H${r})` }, { f: `MAX(0,H${r}-G${r})` }, usC.map(u => u.identificador).join(', ')]);
+    }
+  }
+  const nP = filasP.length + 1;
+  // Hoja 3: resumen por centro y por supervisor, todo con fórmulas sobre las otras dos hojas
+  const est = k => (EST_INV[k] || {}).t;
+  const filasR = [['Por centro', '', '', '', '', '', '', ''], ['Centro', 'Total', 'Asignadas', 'Disponibles', 'Deshabilitadas', 'Otras (compartida / externa / revisar)', 'Necesarias', 'Faltan / sobran']];
+  ['CC2', 'JV'].forEach(c => { const r = filasR.length + 1; filasR.push([c, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"<>${est('baja')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('asignada')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('disponible')}")` }, { f: `COUNTIFS(Unidades!$B:$B,A${r},Unidades!$D:$D,"${est('deshabilitada')}")` }, { f: `B${r}-C${r}-D${r}-E${r}` }, { f: `SUMIFS(Personal!$G$2:$G$${nP},Personal!$C$2:$C$${nP},A${r})` }, { f: `B${r}-G${r}` }]); });
+  const rT = filasR.length + 1; filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F', 'G', 'H'].map(col => ({ f: `SUM(${col}${rT - 2}:${col}${rT - 1})` }))]);
+  filasR.push(['', '', '', '', '', '', '', '']);
+  filasR.push(['Por supervisor', '', '', '', '', '', '', '']);
+  filasR.push(['Supervisor', 'Personas', 'Necesitan', 'Asignadas', 'Faltan', 'Sobran', '', '']);
+  const sups = [...new Set(filasP.map(f => f[3]))].sort((a, b) => String(a).localeCompare(String(b)));
+  const rS0 = filasR.length + 1;
+  sups.forEach(sp => { const r = filasR.length + 1; filasR.push([sp || '(sin supervisor)', { f: `COUNTIFS(Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$G$2:$G$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$H$2:$H$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$I$2:$I$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, { f: `SUMIFS(Personal!$J$2:$J$${nP},Personal!$D$2:$D$${nP},${sp ? `A${r}` : '""'})` }, '', '']); });
+  const rS1 = filasR.length; const rTS = filasR.length + 1;
+  filasR.push(['Total', ...['B', 'C', 'D', 'E', 'F'].map(col => ({ f: `SUM(${col}${rS0}:${col}${rS1})` })), '', '']);
+  const wsR = XLSX.utils.aoa_to_sheet(filasR);
+  [1, rS0 - 1].forEach(r0 => { for (let c = 0; c < 8; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a] && wsR[a].v !== '') wsR[a].s = B; } });
+  [0, rS0 - 2].forEach(r0 => { const a = XLSX.utils.encode_cell({ r: r0, c: 0 }); if (wsR[a]) wsR[a].s = { font: { bold: true, sz: 13, color: { rgb: '002B5C' } } }; });
+  [rT - 1, rTS - 1].forEach(r0 => { for (let c = 0; c < 8; c++) { const a = XLSX.utils.encode_cell({ r: r0, c }); if (wsR[a]) wsR[a].s = { font: { bold: true }, fill: { fgColor: { rgb: 'E0F2FE' } } }; } });
+  wsR['!cols'] = [{ wch: 34 }, { wch: 10 }, { wch: 11 }, { wch: 12 }, { wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, wsR, 'Resumen');
+  XLSX.utils.book_append_sheet(wb, hoja(cabU, filasU, [14, 7, 8, 13, 34, 11, 15, 28, 24, 16, 16, 24, 40]), 'Unidades');
+  XLSX.utils.book_append_sheet(wb, hoja(cabP, filasP, [34, 11, 7, 16, 16, 24, 9, 10, 8, 8, 28]), 'Personal');
+  XLSX.writeFile(wb, `Inventario_${slug(h.nombre)}_${hoyIso()}.xlsx`);
+  logControl('inventario_excel', { herramienta: hid, unidades: unidades.length });
+}
+
 // ---------- MOVIMIENTOS ----------
 async function renderMovs() {
   const ft = document.getElementById('m-tipo').value; const fc = S.centro || document.getElementById('m-centro').value;
@@ -992,7 +1080,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelectorAll('.tab-btn').forEach(x => x.classList.toggle('active', x === b));
     document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x.id === 'tab-' + b.dataset.tab));
   });
-  ['f-buscar', 'f-centro', 'f-perfil', 'f-sinrfc', 'f-bajas'].forEach(id => document.getElementById(id).addEventListener(id === 'f-buscar' ? 'input' : 'change', renderPersonal));
+  ['f-buscar', 'f-centro', 'f-perfil', 'f-sup', 'f-sinrfc', 'f-bajas'].forEach(id => document.getElementById(id).addEventListener(id === 'f-buscar' ? 'input' : 'change', renderPersonal));
   const tp = document.getElementById('tbl-personal');
   tp.addEventListener('change', e => { if (e.target.classList.contains('perfil-sel')) guardarPerfil(e.target); });
   tp.addEventListener('click', e => { const b = e.target.closest('.baja-manual'); if (b) bajaManual(+b.dataset.id); });
@@ -1011,7 +1099,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('c-procesar').addEventListener('click', procesarCarga);
   document.getElementById('c-aplicar').addEventListener('click', aplicarCarga);
   ['m-tipo', 'm-centro'].forEach(id => document.getElementById(id).addEventListener('change', renderMovs));
-  ['i-herr', 'i-centro', 'i-estado'].forEach(id => document.getElementById(id).addEventListener('change', renderInventario));
+  document.getElementById('i-excel').addEventListener('click', excelInventario);
+  ['i-herr', 'i-centro', 'i-estado', 'i-sup'].forEach(id => document.getElementById(id).addEventListener('change', renderInventario));
   document.getElementById('i-buscar').addEventListener('input', renderInventario);
   const tabInv = document.getElementById('tab-inv');
   tabInv.addEventListener('click', e => { const b = e.target.closest('.u-acc'); if (b) accionUnidad(b.dataset.acc, +b.dataset.id); });
@@ -1021,8 +1110,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   document.getElementById('nu-guardar').addEventListener('click', nuevaUnidad);
   try {
-    await Promise.all([cargarCatalogo(), cargarPersonal(), cargarInventario()]);
-    llenarFiltroPerfil(); llenarSelectHerrInv(); renderPersonal(); renderControl(); renderInventario(); renderCargas(); renderMovs();
+    await Promise.all([cargarCatalogo(), cargarPersonal(), cargarInventario(), cargarSupervisores()]);
+    llenarFiltroPerfil(); llenarFiltrosSupervisor(); llenarSelectHerrInv(); renderPersonal(); renderControl(); renderInventario(); renderCargas(); renderMovs();
   } catch (e) { avisoError(e, 'cargar la información'); }
 });
 </script>
