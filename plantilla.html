@@ -225,6 +225,7 @@
         <select id="i-centro"><option value="">Todos los centros</option><option>CC2</option><option>JV</option></select>
         <select id="i-estado"><option value="">Todos los estados</option></select>
         <select id="i-sup" aria-label="Supervisor"><option value="">Todos los supervisores</option></select>
+        <select id="i-perfil" aria-label="Perfil"><option value="">Todos los perfiles</option></select>
         <input type="text" id="i-buscar" placeholder="Buscar identificador, persona o nota">
         <button class="btn sec" id="i-excel" title="Descarga todas las unidades de la herramienta, quién las tiene y a quién le falta, con fórmulas">⬇️ Descargar Excel</button>
       </div>
@@ -490,6 +491,8 @@ function llenarFiltroPerfil() {
   const sel = document.getElementById('f-perfil'); const v = sel.value;
   sel.innerHTML = `<option value="">Todos los perfiles</option><option value="__sin">Sin perfil</option>` + S.perfiles.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');
   sel.value = v;
+  const ip = document.getElementById('i-perfil');
+  if (ip) { const vi = ip.value; ip.innerHTML = '<option value="">Todos los perfiles</option>' + S.perfiles.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join(''); ip.value = vi; }
   const s2 = document.getElementById('np2-perfil');
   if (s2) s2.innerHTML = '<option value="">Perfil según puesto</option>' + S.perfiles.filter(p => p.activo !== false).map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');
 }
@@ -859,19 +862,21 @@ function filaUnidad(u, extra = '') {
   const e = EST_INV[u.estado] || { t: u.estado, c: 'gris' };
   const quien = u.id_empleado ? `<strong>${esc(nombreEmp(u.id_empleado))}</strong>` : (u.uso ? esc(u.uso) : '<span class="muted">—</span>');
   const pu = u.id_empleado ? S.personal.find(p => p.id_empleado === u.id_empleado) : null;
-  return `<tr><td class="mono">${esc(u.identificador)}</td><td>${esc(u.centro || '')}</td><td class="muted">${esc(u.tipo || '')}</td><td><span class="pill ${e.c}">${e.t}</span></td><td>${quien}${extra}</td><td style="font-size:12px;">${esc(supervisorDe(pu))}</td><td style="font-size:12px;max-width:260px;">${esc(u.notas || '')}</td><td>${accionesUnidad(u)}</td></tr>`;
+  return `<tr><td class="mono">${esc(u.identificador)}</td><td>${esc(u.centro || '')}</td><td class="muted">${esc(u.tipo || '')}</td><td><span class="pill ${e.c}">${e.t}</span></td><td>${quien}${extra}</td><td style="font-size:12px;">${pu ? esc(nombrePerfil(pu.perfil_id)) : ''}</td><td style="font-size:12px;">${esc(supervisorDe(pu))}</td><td style="font-size:12px;max-width:260px;">${esc(u.notas || '')}</td><td>${accionesUnidad(u)}</td></tr>`;
 }
-const cabUnidades = '<thead><tr><th>Identificador</th><th>Centro</th><th>Tipo</th><th>Estado</th><th>Quién la usa</th><th>Supervisor</th><th>Nota</th><th>Acciones</th></tr></thead>';
+const cabUnidades = '<thead><tr><th>Identificador</th><th>Centro</th><th>Tipo</th><th>Estado</th><th>Quién la usa</th><th>Perfil</th><th>Supervisor</th><th>Nota</th><th>Acciones</th></tr></thead>';
 function renderInventario() {
   const hid = document.getElementById('i-herr').value; const h = S.herr.find(x => x.id === hid);
   const fc = S.centro || document.getElementById('i-centro').value, fe = document.getElementById('i-estado').value, q = normTxt(document.getElementById('i-buscar').value);
   const fs = document.getElementById('i-sup').value;
+  const fpf = document.getElementById('i-perfil').value;
   const persDe = u => S.personal.find(p => p.id_empleado === u.id_empleado);
+  const pasaPerfil = p => !fpf || (p && p.perfil_id === fpf);
   // con filtro de supervisor solo se ven las unidades asignadas a su equipo
-  const todas = S.inv.filter(u => u.herramienta_id === hid && (!fc || u.centro === fc) && (!fs || (u.id_empleado && pasaSup(persDe(u), fs))));
+  const todas = S.inv.filter(u => u.herramienta_id === hid && (!fc || u.centro === fc) && (!fs || (u.id_empleado && pasaSup(persDe(u), fs))) && (!fpf || (u.id_empleado && pasaPerfil(persDe(u)))));
   const st = document.getElementById('i-stats'), pend = document.getElementById('i-pend');
   if (!h) { st.innerHTML = ''; pend.innerHTML = ''; document.getElementById('tbl-inv').innerHTML = ''; return; }
-  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!fc || p.centro === fc || p.ambos_centros) && pasaSup(p, fs));
+  const act = S.personal.filter(p => p.estatus === 'ACTIVO' && (!fc || p.centro === fc || p.ambos_centros) && pasaSup(p, fs) && pasaPerfil(p));
   // Con filtro de centro, cada persona cuenta solo lo que necesita EN ese centro:
   // quien cubre ambos en una herramienta "una por centro" necesita 1 aquí y 1 en el otro; así CC2 + JV = total.
   const centrosDeNecesidad = p => {
@@ -912,7 +917,7 @@ function renderInventario() {
   }
   const filas = todas.filter(u => (!fe || u.estado === fe) && (!q || normTxt(u.identificador).includes(q) || normTxt(nombreEmp(u.id_empleado)).includes(q) || normTxt(u.uso).includes(q) || normTxt(u.notas).includes(q) || normTxt(supervisorDe(persDe(u))).includes(q)));
   document.getElementById('i-desc-unidades').textContent = `${filas.length} de ${todas.length} unidades de ${h.nombre}.`;
-  document.getElementById('tbl-inv').innerHTML = cabUnidades + `<tbody>${filas.map(u => filaUnidad(u)).join('') || '<tr><td colspan="8" class="muted">Sin unidades con este filtro.</td></tr>'}</tbody>`;
+  document.getElementById('tbl-inv').innerHTML = cabUnidades + `<tbody>${filas.map(u => filaUnidad(u)).join('') || '<tr><td colspan="9" class="muted">Sin unidades con este filtro.</td></tr>'}</tbody>`;
 }
 async function cambiarUnidad(id, cambios, accion, nota) {
   const u = S.inv.find(x => x.id === id); if (!u) return;
@@ -1106,7 +1111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('c-aplicar').addEventListener('click', aplicarCarga);
   ['m-tipo', 'm-centro'].forEach(id => document.getElementById(id).addEventListener('change', renderMovs));
   document.getElementById('i-excel').addEventListener('click', excelInventario);
-  ['i-herr', 'i-centro', 'i-estado', 'i-sup'].forEach(id => document.getElementById(id).addEventListener('change', renderInventario));
+  ['i-herr', 'i-centro', 'i-estado', 'i-sup', 'i-perfil'].forEach(id => document.getElementById(id).addEventListener('change', renderInventario));
   document.getElementById('i-buscar').addEventListener('input', renderInventario);
   const tabInv = document.getElementById('tab-inv');
   tabInv.addEventListener('click', e => { const b = e.target.closest('.u-acc'); if (b) accionUnidad(b.dataset.acc, +b.dataset.id); });
