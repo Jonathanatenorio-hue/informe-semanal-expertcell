@@ -130,6 +130,18 @@
         <span class="muted" id="f-conteo" style="margin-left:auto;font-size:13px;"></span>
       </div>
       <div class="tbl-wrap"><table id="tbl-personal"></table></div>
+      <details style="margin-top:12px;" id="det-nueva-persona">
+        <summary>➕ Agregar persona fuera de la plantilla de gestión</summary>
+        <div class="desc" style="margin-top:6px;">Para quien usa herramientas pero no viene en el archivo de la plataforma de gestión (por ejemplo, Sistemas). Nunca se da de baja sola en la carga semanal; se da de baja aquí con su botón.</div>
+        <div class="grid2">
+          <input type="text" id="np2-nombre" placeholder="Nombre completo">
+          <input type="text" id="np2-rfc" class="rfc-in" placeholder="RFC (opcional)" maxlength="13" style="width:auto;">
+          <input type="text" id="np2-puesto" placeholder="Puesto (ej. SISTEMAS)">
+          <select id="np2-centro"><option value="">Ambos centros</option><option>CC2</option><option>JV</option></select>
+          <select id="np2-perfil"></select>
+          <button class="btn" id="np2-guardar">Agregar</button>
+        </div>
+      </details>
     </div>
   </div>
 
@@ -371,15 +383,15 @@ function renderPersonal() {
         ? `<select class="perfil-sel" data-id="${p.id_empleado}" aria-label="Perfil de ${esc(p.nombre)}">${optsPerfil(p.perfil_id)}</select>${p.perfil_manual ? ' <span class="pill gris" title="Perfil fijado a mano: las cargas semanales no lo cambian mientras siga en el mismo puesto">🔒 manual</span>' : ''}`
         : esc(nombrePerfil(p.perfil_id));
       return `<tr>
-        <td class="mono">${p.id_empleado}</td>
+        <td class="mono">${p.origen === 'manual' ? '<span class="pill gris" title="Agregada a mano, fuera de la plataforma de gestión">Manual</span>' : p.id_empleado}</td>
         <td><strong>${esc(p.nombre)}</strong></td>
         <td>${rfcCell}</td>
-        <td>${esc(p.centro || '')}</td>
+        <td>${esc(p.centro || 'Ambos')}</td>
         <td class="muted" style="font-size:12px;">${esc(p.puesto || '')}</td>
         <td>${perfCell}</td>
         <td>${hs.length ? hs.map(h => chipHerr(p, h)).join('') : (p.perfil_id ? '<span class="muted">Ninguna</span>' : '<span class="pill baja">Sin perfil</span>')}</td>
         <td class="mono">${fmtF(p.fecha_ingreso)}</td>
-        <td>${p.estatus === 'ACTIVO' ? '<span class="pill alta">ACTIVO</span>' : `<span class="pill baja">BAJA</span> <span class="muted" style="font-size:11px;">${fmtF(p.fecha_baja_detectada)}</span>`}</td>
+        <td>${p.estatus === 'ACTIVO' ? '<span class="pill alta">ACTIVO</span>' + (p.origen === 'manual' && S.esDirector ? ` <button class="btn sm sec baja-manual" data-id="${p.id_empleado}">Dar de baja</button>` : '') : `<span class="pill baja">BAJA</span> <span class="muted" style="font-size:11px;">${fmtF(p.fecha_baja_detectada)}</span>`}</td>
       </tr>`;
     }).join('')}</tbody>`;
 }
@@ -391,10 +403,42 @@ function chipHerr(p, h) {
   const st = us.length > 1 ? 'background:var(--amber-bg);color:var(--amber);' : '';
   return `<span class="chip ${cls}" style="${st}" title="${us.length > 1 ? 'Tiene ' + us.length + ' unidades' : ''}">${esc(h.nombre)} · <span class="mono">${us.map(u => esc(u.identificador)).join(', ')}</span></span>`;
 }
+async function nuevaPersonaManual() {
+  const nombre = normTxt(document.getElementById('np2-nombre').value);
+  const rfc = document.getElementById('np2-rfc').value.trim().toUpperCase() || null;
+  const puesto = normTxt(document.getElementById('np2-puesto').value) || null;
+  const centro = document.getElementById('np2-centro').value || null;
+  const perfil_id = document.getElementById('np2-perfil').value || perfilPorPuesto(puesto);
+  if (!nombre) return alert('Escribe el nombre.');
+  if (rfc && !RFC_RE.test(rfc)) return alert('El RFC no tiene formato válido.');
+  if (S.personal.some(p => p.estatus === 'ACTIVO' && normTxt(p.nombre) === nombre)) return alert('Ya hay una persona activa con ese nombre.');
+  const id = Math.min(0, ...S.personal.map(p => p.id_empleado)) - 1;
+  const row = { id_empleado: id, nombre, rfc, puesto, centro, estatus: 'ACTIVO', perfil_id, perfil_manual: !!document.getElementById('np2-perfil').value, origen: 'manual', primera_carga: hoyIso(), ultima_carga: hoyIso() };
+  const { error } = await db.from('personal').insert(row);
+  if (error) return avisoError(error, 'agregar la persona (¿corriste plantilla_paso2b.sql?)');
+  await db.from('movimientos_personal').insert({ id_empleado: id, tipo: 'alta', fecha: hoyIso(), detalle: { nombre, puesto, centro, perfil: perfil_id, origen: 'manual' } });
+  await logControl('persona_manual_alta', row);
+  S.personal.push(row); ['np2-nombre', 'np2-rfc', 'np2-puesto'].forEach(i => document.getElementById(i).value = '');
+  renderPersonal(); renderControl(); renderInventario(); renderMovs();
+}
+async function bajaManual(id) {
+  const p = S.personal.find(x => x.id_empleado === id); if (!p) return;
+  const us = S.inv.filter(u => u.id_empleado === id && u.estado === 'asignada');
+  if (!confirm(`¿Dar de baja a ${p.nombre}?${us.length ? ` Tiene ${us.length} unidades asignadas que quedarán pendientes de liberar en Inventario.` : ''}`)) return;
+  const hoy = hoyIso();
+  const { error } = await db.from('personal').update({ estatus: 'BAJA', fecha_baja: hoy, fecha_baja_detectada: hoy, actualizado_en: new Date().toISOString() }).eq('id_empleado', id);
+  if (error) return avisoError(error, 'dar de baja');
+  await db.from('movimientos_personal').insert({ id_empleado: id, tipo: 'baja', fecha: hoy, detalle: { nombre: p.nombre, perfil: p.perfil_id, origen: 'manual', herramientas: herrDePerfil(p.perfil_id).map(h => h.id) } });
+  await logControl('persona_manual_baja', { id_empleado: id, nombre: p.nombre });
+  Object.assign(p, { estatus: 'BAJA', fecha_baja: hoy, fecha_baja_detectada: hoy });
+  renderPersonal(); renderControl(); renderInventario(); renderMovs();
+}
 function llenarFiltroPerfil() {
   const sel = document.getElementById('f-perfil'); const v = sel.value;
   sel.innerHTML = `<option value="">Todos los perfiles</option><option value="__sin">Sin perfil</option>` + S.perfiles.map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');
   sel.value = v;
+  const s2 = document.getElementById('np2-perfil');
+  if (s2) s2.innerHTML = '<option value="">Perfil según puesto</option>' + S.perfiles.filter(p => p.activo !== false).map(p => `<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');
 }
 async function guardarRfc(input) {
   const id = +input.dataset.id; const p = S.personal.find(x => x.id_empleado === id); if (!p) return;
@@ -630,8 +674,9 @@ async function procesarCarga() {
       if (x.rfc) { if (!p.rfc) rfcCompletados.push({ x, p }); else if (x.rfc !== p.rfc) dif.rfc = { antes: p.rfc, despues: x.rfc }; }
       if (Object.keys(dif).length) cambios.push({ x, p, dif });
     }
-    for (const p of S.personal) if (p.estatus === 'ACTIVO' && !enArchivo.has(p.id_empleado)) bajas.push(p);
-    const activos = S.personal.filter(p => p.estatus === 'ACTIVO').length;
+    // Las personas agregadas a mano (fuera de la plataforma de gestión) nunca se dan de baja por no venir en el archivo
+    for (const p of S.personal) if (p.estatus === 'ACTIVO' && p.origen !== 'manual' && !enArchivo.has(p.id_empleado)) bajas.push(p);
+    const activos = S.personal.filter(p => p.estatus === 'ACTIVO' && p.origen !== 'manual').length;
     const pctArchivo = activos ? enArchivo.size / activos : 1;
     S.carga = { fecha, archivo: f.name, total: enArchivo.size, altas, reingresos, cambios, bajas, rfcCompletados, presentes: [...enArchivo.keys()], sospechoso: activos > 20 && pctArchivo < 0.8 };
 
@@ -894,6 +939,7 @@ async function acceso() {
     const mc = document.getElementById('m-centro'); if (S.centro) { mc.value = S.centro; mc.disabled = true; }
     const ic = document.getElementById('i-centro'); if (S.centro) { ic.value = S.centro; ic.disabled = true; }
     document.getElementById('det-nueva-unidad').style.display = 'none';
+    document.getElementById('det-nueva-persona').style.display = 'none';
     document.getElementById('det-nueva-herr').style.display = 'none';
     document.querySelectorAll('#tab-control details').forEach(d => d.style.display = 'none');
   }
@@ -908,6 +954,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   ['f-buscar', 'f-centro', 'f-perfil', 'f-sinrfc', 'f-bajas'].forEach(id => document.getElementById(id).addEventListener(id === 'f-buscar' ? 'input' : 'change', renderPersonal));
   const tp = document.getElementById('tbl-personal');
   tp.addEventListener('change', e => { if (e.target.classList.contains('perfil-sel')) guardarPerfil(e.target); });
+  tp.addEventListener('click', e => { const b = e.target.closest('.baja-manual'); if (b) bajaManual(+b.dataset.id); });
+  document.getElementById('np2-guardar').addEventListener('click', nuevaPersonaManual);
   tp.addEventListener('focusout', e => { if (e.target.classList.contains('rfc-in')) guardarRfc(e.target); });
   tp.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.classList.contains('rfc-in')) e.target.blur(); });
   document.getElementById('tbl-matriz').addEventListener('click', e => { const b = e.target.closest('.ckb'); if (b) toggleMatriz(b); });
