@@ -2544,7 +2544,7 @@ async function cargarDatos() {
     (_entregasCache || []).forEach(e => {
       const _estE = String((e && e.estatus_entrega) || '').toUpperCase();
       // Solo entregas CONCLUIDAS descuentan DHL: programadas/en ruta esperan a entregarse.
-      if (e && e.folio && (e.fecha_entregado || _estE.includes('ENTREG') || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+      if (e && e.folio && (e.fecha_entregado || (_estE.includes('ENTREGADO') || _estE.includes('ENTREGADA')) || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
     });
     // Las entregas llegan DESPUÉS del primer render: recalcular el detalle
     // por agente con el ajuste DHL ya disponible (mismo motor que Comisiones).
@@ -8291,9 +8291,14 @@ function simVentasBase(ejecutivo, anio, mes) {
   const tr = ventasData.filter(v => v.ejecutivo === ejecutivo && (v.estatus === 'en_transito' || v.estatus === 'por_activar'));
   return { act, tr };
 }
-function simCalc(ejecutivo, anio, mes, ventas) {
+function simCalc(ejecutivo, anio, mes, ventas, dhlExtra) {
   const p = (plantillaData || []).find(x => x.nombre === ejecutivo) || {};
-  const c = _comCalcularAgenteMes(ejecutivo, p.fecha_ingreso || null, p.fecha_baja || null, anio, mes, ventas);
+  // dhlExtra: folios en tránsito que van por DHL (con guía) → se anticipa su descuento
+  const _orig = _dhlFolios;
+  if (dhlExtra && dhlExtra.size) { const ex = []; dhlExtra.forEach(f => { ex.push(f); const nf = Number(f); if (!isNaN(nf)) ex.push(nf); }); _dhlFolios = new Set([...(_orig || []), ...ex]); }
+  let c;
+  try { c = _comCalcularAgenteMes(ejecutivo, p.fecha_ingreso || null, p.fecha_baja || null, anio, mes, ventas); }
+  finally { _dhlFolios = _orig; }
   return { com: (c.comisionPlanes || 0) + (c.bonoAcelerador || 0), cuotas: c.cuotasTotales || 0, nivel: c.nivelAlcanzado || 0, lbl: c.etiquetaNivel || '—', esNuevo: !!c.esNuevo };
 }
 function simPlanDefault(act) {
@@ -8319,17 +8324,23 @@ function simEscenarios(ejecutivo, anio, mes, plan, n) {
   // Si el tránsito no trae plan en ventas_detalle, se busca en el detalle de
   // programación (entregas_detalle, que sí lo trae) por folio.
   let trSinPlan = 0;
-  const planPorFolio = {};
-  (_entregasCache || []).forEach(e => { if (e && e.folio && e.plan) planPorFolio[String(e.folio)] = e.plan; });
+  const planPorFolio = {}, dhlTr = new Set();
+  const trFolios = new Set(tr.map(v => String(v.folio)));
+  (_entregasCache || []).forEach(e => {
+    if (!e || !e.folio) return;
+    if (e.plan) planPorFolio[String(e.folio)] = e.plan;
+    // Tránsito que ya va por DHL (tiene guía o costo de guía): se anticipa el descuento
+    if (trFolios.has(String(e.folio)) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) dhlTr.add(String(e.folio));
+  });
   const conTr = act.concat(tr.map(v => {
     let k = _comNormalizarPlan(v.plan);
     if (!COMISION_ESQUEMA_2026[k] && v.folio && planPorFolio[String(v.folio)]) k = _comNormalizarPlan(planPorFolio[String(v.folio)]);
     if (COMISION_ESQUEMA_2026[k]) return { ejecutivo, plan: k, folio: v.folio, estatus: 'activada' };
     trSinPlan++; return { ejecutivo, plan, folio: v.folio, estatus: 'activada' };
   }));
-  const t = simCalc(ejecutivo, anio, mes, conTr);
+  const t = simCalc(ejecutivo, anio, mes, conTr, dhlTr);
   const extra = []; for (let i = 0; i < n; i++) extra.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
-  const m = simCalc(ejecutivo, anio, mes, conTr.concat(extra));
+  const m = simCalc(ejecutivo, anio, mes, conTr.concat(extra), dhlTr);
   const esc = [
     { k: 'hoy', titulo: 'Hoy (activadas)', nv: act.length, ...hoy },
     { k: 'tr', titulo: `Si activa su tránsito (${tr.length})`, nv: conTr.length, ...t },
@@ -8342,18 +8353,18 @@ function simEscenarios(ejecutivo, anio, mes, plan, n) {
     const faltan = next - t.cuotas;
     const k = Math.ceil(faltan - 1e-9);
     const ex = []; for (let i = 0; i < k; i++) ex.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
-    const cross = simCalc(ejecutivo, anio, mes, conTr.concat(ex));
+    const cross = simCalc(ejecutivo, anio, mes, conTr.concat(ex), dhlTr);
     salto = { next, lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next)], faltan, faltanHoy: next - hoy.cuotas, k, comCross: cross.com, delta: cross.com - t.com, texto: simTextoFaltan(faltan) };
     // segundo escalón
     const next2 = SIM_BRACKETS.find(b => b > next);
     if (next2) {
       const k2 = Math.ceil(next2 - t.cuotas - 1e-9); const ex2 = []; for (let i = 0; i < k2; i++) ex2.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
-      const c2 = simCalc(ejecutivo, anio, mes, conTr.concat(ex2));
+      const c2 = simCalc(ejecutivo, anio, mes, conTr.concat(ex2), dhlTr);
       salto.next2 = { lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next2)], k: k2, delta: c2.com - t.com };
     }
   }
   const brincaConTransito = t.nivel > hoy.nivel;
-  return { act, tr, esc, salto, plan, n, hoy, t, brincaConTransito, trSinPlan };
+  return { act, tr, esc, salto, plan, n, hoy, t, brincaConTransito, trSinPlan, dhlTr: dhlTr.size };
 }
 function simMesSel() {
   const d = window.__detalleAgentesData || window.__avanceData || {};
@@ -8400,7 +8411,7 @@ function simRenderBox(ejecutivo, plan, n) {
       </div>
       <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">${cards}</div>
       ${saltoHTML}
-      <div style="font-size:10px; color:var(--text-soft); margin-top:6px;">Tránsito al 100% (en tu centro activa ~95% de lo programado) y solo cuenta si activa dentro del mes.${r.trSinPlan ? ` ${r.trSinPlan} venta${r.trSinPlan === 1 ? '' : 's'} en tránsito sin plan en el detalle de programación: se simula${r.trSinPlan === 1 ? '' : 'n'} con el plan elegido.` : ''} Comisión variable sin sueldo base; el descuento DHL aplica si ya se cargaron las entregas.</div>
+      <div style="font-size:10px; color:var(--text-soft); margin-top:6px;">Tránsito al 100% (en tu centro activa ~95% de lo programado) y solo cuenta si activa dentro del mes.${r.trSinPlan ? ` ${r.trSinPlan} venta${r.trSinPlan === 1 ? '' : 's'} en tránsito sin plan en el detalle de programación: se simula${r.trSinPlan === 1 ? '' : 'n'} con el plan elegido.` : ''} Comisión variable sin sueldo base. Descuento DHL: aplicado a lo entregado con guía${r.dhlTr ? ` y anticipado a ${r.dhlTr} venta${r.dhlTr === 1 ? '' : 's'} en tránsito que ya va${r.dhlTr === 1 ? '' : 'n'} por DHL` : ''}; las ventas simuladas (+N) no lo incluyen.</div>
     </div>`;
 }
 function simRefrescar() {
@@ -20614,7 +20625,7 @@ function renderComisiones() {
       (_entregasCache || []).forEach(e => {
         const _estE = String((e && e.estatus_entrega) || '').toUpperCase();
       // Solo entregas CONCLUIDAS descuentan DHL: programadas/en ruta esperan a entregarse.
-      if (e && e.folio && (e.fecha_entregado || _estE.includes('ENTREG') || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
+      if (e && e.folio && (e.fecha_entregado || (_estE.includes('ENTREGADO') || _estE.includes('ENTREGADA')) || _estE.includes('CANC')) && (e.guia || (parseFloat(e.costo_guia) || 0) > 0 || (parseFloat(e.total_guia) || 0) > 0)) _dhlFolios.add(e.folio);
       });
       setTimeout(() => {
         try {
