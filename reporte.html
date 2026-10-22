@@ -8384,7 +8384,8 @@ function simRenderBox(ejecutivo, plan, n) {
       <div style="font-size:10.5px; color:var(--text-soft); font-weight:600;">${e.titulo}</div>
       <div style="font-size:20px; font-weight:800; color:var(--att-navy); margin:2px 0;">${fmt(e.com)}</div>
       <div style="font-size:10.5px; color:var(--text-soft);">${e.nv} ventas · ${e.cuotas % 1 === 0 ? e.cuotas : e.cuotas.toFixed(1)} cuotas · ${e.nivel > 0 ? 'Bracket ' + SIM_BRACKET_LBL[e.nivel - 1] : 'Sin bracket'}</div>
-      ${i > 0 ? `<div style="font-size:11px; font-weight:700; color:${e.com - r.esc[0].com > 0 ? 'var(--green)' : 'var(--text-soft)'};">${e.com - r.esc[0].com >= 0 ? '+' : ''}${fmt(e.com - r.esc[0].com)} vs hoy</div>` : ''}
+      ${i === 1 ? `<div style="font-size:11px; font-weight:700; color:${e.com - r.esc[0].com > 0 ? 'var(--green)' : 'var(--text-soft)'};">${e.com - r.esc[0].com >= 0 ? '+' : ''}${fmt(e.com - r.esc[0].com)} vs hoy</div>` : ''}
+      ${i === 2 ? `<div style="font-size:13px; font-weight:800; color:${e.com - r.esc[1].com > 0 ? 'var(--green)' : 'var(--text-soft)'};">+${fmt(e.com - r.esc[1].com)} por ${r.n === 1 ? 'esa venta' : 'esas ' + r.n + ' ventas'}</div><div style="font-size:10px; color:var(--text-soft);">(+${fmt(e.com - r.esc[0].com)} vs hoy)</div>` : ''}
     </div>`).join('');
   let saltoHTML = '';
   if (r.salto) {
