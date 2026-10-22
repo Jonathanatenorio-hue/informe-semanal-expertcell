@@ -364,7 +364,9 @@ function sobrantesDe(p, hid) {
   return us.slice(k);
 }
 // En accesos personales (ATTUID, Global...) lo que está "por revisar" no se puede reutilizar: no cuenta como "Tenemos"
-const cuentaComoTenemos = (u, h) => CUENTA_COMO_TENEMOS.has(u.estado) && !(u.estado === 'revisar' && h && h.tipo === 'acceso');
+// En accesos personales (ATTUID, Global...) solo cuenta lo que se puede usar para la gente de la plantilla:
+// lo "por revisar" (bajas) y lo "compartido" (p. ej. prestado a Arena) no cuenta como "Tenemos".
+const cuentaComoTenemos = (u, h) => CUENTA_COMO_TENEMOS.has(u.estado) && !(h && h.tipo === 'acceso' && (u.estado === 'revisar' || u.estado === 'compartida'));
 const tenemosDe = h => herrConInventario(h.id) ? S.inv.filter(u => u.herramienta_id === h.id && cuentaComoTenemos(u, h)).length : h.unidades_existentes;
 // Supervisor = jefe inmediato que trae la plataforma de gestión; se muestra con el nombre corto del reporte si existe
 async function cargarSupervisores() {
