@@ -8245,7 +8245,9 @@ function renderDetalleAgentesConMes(mesKey) {
   barraDescarga += `<div style="font-size:10.5px; color:#0C4A6E; opacity:0.8; margin-left:auto;">Cada Excel incluye Dashboard + Detalle por supervisor</div>`;
   barraDescarga += `</div>`;
 
-  document.getElementById('avance-detalle-agentes').innerHTML = barraDescarga + html;
+  let simBrincarHTML = '';
+  try { simBrincarHTML = simRenderBrincar(agentesPorSup, anioSel, mesSel); } catch (e) { console.warn('[sim]', e); }
+  document.getElementById('avance-detalle-agentes').innerHTML = barraDescarga + simBrincarHTML + html;
 
   // Wires de descarga masiva
   document.querySelectorAll('.btn-descarga-coord').forEach(btn => {
@@ -8277,6 +8279,187 @@ function renderDetalleAgentesConMes(mesKey) {
     };
   });
 }
+
+
+// ===================== SIMULADOR DE COMISIONES (reporte-303) =====================
+// Escenarios: hoy (activadas del mes) → + tránsito (en_transito/por_activar, 100%)
+// → + N ventas más del plan elegido. Usa el motor oficial _comCalcularAgenteMes,
+// así que respeta cuotas (medios 0.5), esquema del mes y descuento DHL cargado.
+const SIM_BRACKETS = [6, 12, 16, 20, 25];
+const SIM_BRACKET_LBL = ['6-11', '12-15', '16-19', '20-24', '25+'];
+function simVentasBase(ejecutivo, anio, mes) {
+  const ms = `${anio}-${String(mes).padStart(2, '0')}`;
+  const act = ventasData.filter(v => v.ejecutivo === ejecutivo && v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms));
+  const tr = ventasData.filter(v => v.ejecutivo === ejecutivo && (v.estatus === 'en_transito' || v.estatus === 'por_activar'));
+  return { act, tr };
+}
+function simCalc(ejecutivo, anio, mes, ventas) {
+  const p = (plantillaData || []).find(x => x.nombre === ejecutivo) || {};
+  const c = _comCalcularAgenteMes(ejecutivo, p.fecha_ingreso || null, p.fecha_baja || null, anio, mes, ventas);
+  return { com: (c.comisionPlanes || 0) + (c.bonoAcelerador || 0), cuotas: c.cuotasTotales || 0, nivel: c.nivelAlcanzado || 0, lbl: c.etiquetaNivel || '—', esNuevo: !!c.esNuevo };
+}
+function simPlanDefault(act) {
+  const cnt = {};
+  act.forEach(v => { const k = _comNormalizarPlan(v.plan); const e = COMISION_ESQUEMA_2026[k]; if (e && e.cuota === 1) cnt[k] = (cnt[k] || 0) + 1; });
+  const best = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0];
+  return best ? best[0] : 'ATT AZUL 3';
+}
+function simTextoFaltan(f) {
+  if (f <= 0) return 'ya lo alcanza';
+  const ent = Math.floor(f + 1e-9), medio = (f - ent) > 1e-9;
+  if (!medio) return `${ent} venta${ent === 1 ? '' : 's'} normal${ent === 1 ? '' : 'es'}`;
+  if (ent === 0) return '1 Azul (medio)';
+  return `${ent + 1} normales, o ${ent} normal${ent === 1 ? '' : 'es'} + 1 Azul`;
+}
+function simEscenarios(ejecutivo, anio, mes, plan, n) {
+  const { act, tr } = simVentasBase(ejecutivo, anio, mes);
+  plan = plan || simPlanDefault(act);
+  n = Math.max(0, parseInt(n) || 0);
+  const hoy = simCalc(ejecutivo, anio, mes, act);
+  const conTr = act.concat(tr.map(v => ({ ejecutivo, plan: v.plan, folio: v.folio })));
+  const t = simCalc(ejecutivo, anio, mes, conTr);
+  const extra = []; for (let i = 0; i < n; i++) extra.push({ ejecutivo, plan, folio: null });
+  const m = simCalc(ejecutivo, anio, mes, conTr.concat(extra));
+  const esc = [
+    { k: 'hoy', titulo: 'Hoy (activadas)', nv: act.length, ...hoy },
+    { k: 'tr', titulo: `Si activa su tránsito (${tr.length})`, nv: conTr.length, ...t },
+    { k: 'mas', titulo: `+ ${n} venta${n === 1 ? '' : 's'} más (${plan.replace('ATT ', '')})`, nv: conTr.length + n, ...m }
+  ];
+  // Siguiente bracket tomando como base el escenario con tránsito
+  const next = SIM_BRACKETS.find(b => b > t.cuotas + 1e-9);
+  let salto = null;
+  if (next) {
+    const faltan = next - t.cuotas;
+    const k = Math.ceil(faltan - 1e-9);
+    const ex = []; for (let i = 0; i < k; i++) ex.push({ ejecutivo, plan, folio: null });
+    const cross = simCalc(ejecutivo, anio, mes, conTr.concat(ex));
+    salto = { next, lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next)], faltan, faltanHoy: next - hoy.cuotas, k, comCross: cross.com, delta: cross.com - t.com, texto: simTextoFaltan(faltan) };
+    // segundo escalón
+    const next2 = SIM_BRACKETS.find(b => b > next);
+    if (next2) {
+      const k2 = Math.ceil(next2 - t.cuotas - 1e-9); const ex2 = []; for (let i = 0; i < k2; i++) ex2.push({ ejecutivo, plan, folio: null });
+      const c2 = simCalc(ejecutivo, anio, mes, conTr.concat(ex2));
+      salto.next2 = { lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next2)], k: k2, delta: c2.com - t.com };
+    }
+  }
+  const brincaConTransito = t.nivel > hoy.nivel;
+  return { act, tr, esc, salto, plan, n, hoy, t, brincaConTransito };
+}
+function simMesSel() {
+  const d = window.__detalleAgentesData || window.__avanceData || {};
+  return { anio: d.anio, mes: d.mes };
+}
+function simRenderBox(ejecutivo, plan, n) {
+  const { anio, mes } = simMesSel();
+  if (!anio) return '';
+  const r = simEscenarios(ejecutivo, anio, mes, plan, n);
+  const fmt = v => '$' + Math.round(v).toLocaleString('es-MX');
+  const planes = Object.keys(COMISION_TARIFAS_AGO).filter(k => COMISION_ESQUEMA_2026[k] && COMISION_ESQUEMA_2026[k].cuota === 1);
+  const opts = planes.map(k => `<option value="${k}" ${k === r.plan ? 'selected' : ''}>${k.replace('ATT ', '')}</option>`).join('');
+  const colBg = ['#F1F5F9', '#FEF3C7', '#DCFCE7'];
+  const cards = r.esc.map((e, i) => `
+    <div style="background:${colBg[i]}; border-radius:10px; padding:10px 12px; min-width:150px; flex:1;">
+      <div style="font-size:10.5px; color:var(--text-soft); font-weight:600;">${e.titulo}</div>
+      <div style="font-size:20px; font-weight:800; color:var(--att-navy); margin:2px 0;">${fmt(e.com)}</div>
+      <div style="font-size:10.5px; color:var(--text-soft);">${e.nv} ventas · ${e.cuotas % 1 === 0 ? e.cuotas : e.cuotas.toFixed(1)} cuotas · ${e.nivel > 0 ? 'Bracket ' + SIM_BRACKET_LBL[e.nivel - 1] : 'Sin bracket'}</div>
+      ${i > 0 ? `<div style="font-size:11px; font-weight:700; color:${e.com - r.esc[0].com > 0 ? 'var(--green)' : 'var(--text-soft)'};">${e.com - r.esc[0].com >= 0 ? '+' : ''}${fmt(e.com - r.esc[0].com)} vs hoy</div>` : ''}
+    </div>`).join('');
+  let saltoHTML = '';
+  if (r.salto) {
+    const s = r.salto;
+    saltoHTML = `
+      <div style="margin-top:10px; padding:10px 12px; background:linear-gradient(90deg,#1E3A8A,#2563EB); color:white; border-radius:10px;">
+        <div style="font-size:12px; opacity:.9;">Siguiente bracket <strong>${s.lbl}</strong> · contando tránsito le faltan <strong>${s.faltan % 1 === 0 ? s.faltan : s.faltan.toFixed(1)} cuotas</strong> (${s.texto})${s.faltanHoy > s.faltan ? ` · sin tránsito: ${s.faltanHoy % 1 === 0 ? s.faltanHoy : s.faltanHoy.toFixed(1)}` : ''}</div>
+        <div style="font-size:16px; font-weight:800; margin-top:4px;">Esa${s.k === 1 ? ' venta vale' : 's ' + s.k + ' ventas valen'} <span style="font-size:22px;">${fmt(s.delta)}</span> más de comisión</div>
+        <div style="font-size:11px; opacity:.85; margin-top:2px;">Porque el bracket re-tarifa TODAS las ventas del mes: pasaría de ${fmt(r.t.com)} a ${fmt(s.comCross)}.${s.next2 ? ` Y a ${s.next2.k} ventas (bracket ${s.next2.lbl}) serían +${fmt(s.next2.delta)}.` : ''}</div>
+      </div>`;
+  } else {
+    saltoHTML = `<div style="margin-top:10px; padding:8px 12px; background:#DCFCE7; border-radius:10px; font-size:12px; color:#166534; font-weight:600;">Ya está en el bracket máximo (25+): cada venta más paga a tarifa tope.</div>`;
+  }
+  return `
+    <div style="border:1px solid #CBD5E1; border-radius:12px; padding:12px 14px; margin-bottom:18px; background:white;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div style="font-weight:700; color:var(--att-navy); font-size:13px;">🧮 Simulador de comisiones · ${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][mes - 1]} ${anio}</div>
+        <div style="display:flex; gap:6px; align-items:center; font-size:12px;">
+          <span>Plan:</span><select id="sim-plan" onchange="simRefrescar()" style="font-size:12px; padding:3px 6px;">${opts}</select>
+          <span>Ventas más:</span>
+          <button onclick="simAjustarN(-1)" style="padding:2px 8px;">−</button>
+          <input id="sim-n" type="number" min="0" max="30" value="${r.n}" onchange="simRefrescar()" style="width:46px; text-align:center; font-size:12px; padding:3px;">
+          <button onclick="simAjustarN(1)" style="padding:2px 8px;">+</button>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">${cards}</div>
+      ${saltoHTML}
+      <div style="font-size:10px; color:var(--text-soft); margin-top:6px;">Tránsito al 100% (en tu centro activa ~95% de lo programado) y solo cuenta si activa dentro del mes. Comisión variable sin sueldo base; el descuento DHL aplica si ya se cargaron las entregas.</div>
+    </div>`;
+}
+function simRefrescar() {
+  const ej = window.__simEjecutivo; if (!ej) return;
+  const plan = (document.getElementById('sim-plan') || {}).value;
+  const n = (document.getElementById('sim-n') || {}).value;
+  const box = document.getElementById('sim-box'); if (box) box.innerHTML = simRenderBox(ej, plan, n);
+}
+function simAjustarN(d) {
+  const inp = document.getElementById('sim-n'); if (!inp) return;
+  inp.value = Math.max(0, (parseInt(inp.value) || 0) + d); simRefrescar();
+}
+// Lista "A punto de brincar": agentes activos a ≤2 cuotas del siguiente bracket (contando tránsito)
+function simRenderBrincar(agentesPorSup, anio, mes) {
+  const filas = [];
+  Object.keys(agentesPorSup).forEach(supK => {
+    (agentesPorSup[supK] || []).forEach(a => {
+      if (!a || !a.ejecutivo || a.esBaja) return;
+      try {
+        const r = simEscenarios(a.ejecutivo, anio, mes, null, 0);
+        if (!r.salto) return;
+        if (r.salto.faltan <= 2 + 1e-9 || r.brincaConTransito) filas.push({ sup: supK, ej: a.ejecutivo, r });
+      } catch (e) {}
+    });
+  });
+  if (!filas.length) return '';
+  filas.sort((a, b) => b.r.salto.delta - a.r.salto.delta);
+  const fmt = v => '$' + Math.round(v).toLocaleString('es-MX');
+  const enJuego = filas.reduce((s, f) => s + f.r.salto.delta, 0);
+  const rows = filas.map((f, i) => {
+    const s = f.r.salto, hoy = f.r.hoy, t = f.r.t;
+    const q = v => (v % 1 === 0 ? v : v.toFixed(1));
+    return `<tr>
+      <td class="num" style="text-align:center; color:var(--text-soft);">${i + 1}</td>
+      <td><a href="javascript:void(0)" class="link-agente" data-agente="${f.ej}" data-supervisor="${f.sup}" style="color:var(--att-blue-dark); font-weight:600; text-decoration:none;">${f.ej}</a></td>
+      <td>${f.sup}</td>
+      <td class="num" style="text-align:center;">${q(hoy.cuotas)}</td>
+      <td class="num" style="text-align:center; color:var(--amber); font-weight:700;">${f.r.tr.length || '—'}</td>
+      <td class="num" style="text-align:center; font-weight:700;">${q(t.cuotas)}</td>
+      <td style="text-align:center; font-size:11px;">${hoy.nivel > 0 ? SIM_BRACKET_LBL[hoy.nivel - 1] : '—'} → <strong>${s.lbl}</strong>${f.r.brincaConTransito ? ' <span title="Con solo activar su tránsito ya sube de bracket" style="color:#D97706;">🚚</span>' : ''}</td>
+      <td class="num" style="text-align:center; font-weight:700; color:var(--att-navy);">${q(s.faltan)}</td>
+      <td class="num" style="text-align:center;">${fmt(hoy.com)}</td>
+      <td class="num" style="text-align:center; font-weight:800; color:var(--green);">+${fmt(s.delta)}</td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="subsection" style="margin-bottom:18px; border:1px solid #BFDBFE; border-radius:12px; padding:12px 14px; background:#F8FAFF;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+        <div style="font-weight:700; color:var(--att-navy);">🚀 A punto de brincar de bracket · ${filas.length} agentes · <span style="color:var(--green);">${fmt(enJuego)} en juego</span></div>
+        <div style="font-size:11px; color:var(--text-soft);">A ≤2 cuotas del siguiente bracket contando su tránsito. Clic en el nombre abre el simulador.</div>
+      </div>
+      <div style="overflow-x:auto; margin-top:8px;">
+        <table style="font-size:12px;">
+          <thead><tr>
+            <th style="text-align:center;">#</th><th>Agente</th><th>Supervisor</th>
+            <th class="num" style="text-align:center;" title="Cuotas activadas (medios = 0.5)">Cuotas hoy</th>
+            <th class="num" style="text-align:center;">Tránsito</th>
+            <th class="num" style="text-align:center;">Cuotas c/ tránsito</th>
+            <th style="text-align:center;">Bracket</th>
+            <th class="num" style="text-align:center;" title="Cuotas que le faltan contando tránsito">Faltan</th>
+            <th class="num" style="text-align:center;">Com. hoy</th>
+            <th class="num" style="text-align:center;" title="Lo que gana de más al cruzar (re-tarifa todas sus ventas)">$ al cruzar</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+// ===================== FIN SIMULADOR =====================
 
 function mostrarHistoricoAgente(ejecutivo, supervisorActual) {
   const modal = document.getElementById('modal-agente');
@@ -8341,7 +8524,10 @@ function mostrarHistoricoAgente(ejecutivo, supervisorActual) {
   const tasaConv = totalProg > 0 ? (totalAct / totalProg * 100).toFixed(1) : 0;
   const tasaCanc = totalProg > 0 ? (totalCanc / totalProg * 100).toFixed(1) : 0;
 
-  let html = `
+  window.__simEjecutivo = ejecutivo;
+  let simBoxHTML = '';
+  try { simBoxHTML = `<div id="sim-box">${simRenderBox(ejecutivo, null, 1)}</div>`; } catch (e) { console.warn('[sim]', e); }
+  let html = simBoxHTML + `
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px;">
       <div class="stat-card">
         <div class="stat-label">Supervisor actual</div>
