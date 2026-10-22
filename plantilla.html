@@ -360,7 +360,9 @@ function sobrantesDe(p, hid) {
   if (h && h.por_centro && p.ambos_centros) { const vistos = new Set(); return us.filter(u => { if (vistos.has(u.centro)) return true; vistos.add(u.centro); return false; }); }
   return us.slice(1);
 }
-const tenemosDe = h => herrConInventario(h.id) ? S.inv.filter(u => u.herramienta_id === h.id && CUENTA_COMO_TENEMOS.has(u.estado)).length : h.unidades_existentes;
+// En accesos personales (ATTUID, Global...) lo que está "por revisar" no se puede reutilizar: no cuenta como "Tenemos"
+const cuentaComoTenemos = (u, h) => CUENTA_COMO_TENEMOS.has(u.estado) && !(u.estado === 'revisar' && h && h.tipo === 'acceso');
+const tenemosDe = h => herrConInventario(h.id) ? S.inv.filter(u => u.herramienta_id === h.id && cuentaComoTenemos(u, h)).length : h.unidades_existentes;
 // Supervisor = jefe inmediato que trae la plataforma de gestión; se muestra con el nombre corto del reporte si existe
 async function cargarSupervisores() {
   try { const { data } = await db.from('supervisores_config').select('supervisor, nombre_completo'); S.supCorto = {}; (data || []).forEach(r => { if (r.nombre_completo) S.supCorto[normTxt(r.nombre_completo)] = r.supervisor; }); }
@@ -457,6 +459,21 @@ async function guardarAmbos(chk) {
   await logControl('ambos_centros', { id_empleado: id, nombre: p.nombre, valor: v });
   p.ambos_centros = v; p.centro = centro; renderPersonal(); renderMatriz(); renderInventario();
 }
+// Al dar de baja a una persona, todo lo que tenía asignado pasa a "Por revisar" con la instrucción según el tipo de herramienta.
+// Nada queda disponible solo: el responsable confirma (Dado de baja / Liberar) cuando ya lo quitó en la plataforma o lo recogió.
+const INSTR_BAJA = { acceso: 'Solicitar baja en la plataforma', reasignable: 'Quitar el acceso y liberar para reasignar', fisica: 'Recoger el equipo', lugar: 'Revisar la estación' };
+async function pasarUnidadesARevisar(personas, fecha) {
+  const ids = new Set(personas.map(p => p.id_empleado)); let n = 0;
+  for (const u of S.inv.filter(x => x.estado === 'asignada' && ids.has(x.id_empleado))) {
+    const p = personas.find(x => x.id_empleado === u.id_empleado); const h = S.herr.find(x => x.id === u.herramienta_id) || {};
+    const nota = `${INSTR_BAJA[h.tipo] || 'Revisar'}: ${p.nombre} (baja ${fmtF(fecha)}).`;
+    const { error } = await db.from('inventario').update({ estado: 'revisar', notas: nota, actualizado_en: new Date().toISOString() }).eq('id', u.id);
+    if (error) throw error;
+    await db.from('inventario_historial').insert({ inventario_id: u.id, accion: 'baja_persona', id_empleado: u.id_empleado, estado_antes: 'asignada', estado_despues: 'revisar', quien: S.quien, nota });
+    Object.assign(u, { estado: 'revisar', notas: nota }); n++;
+  }
+  return n;
+}
 async function nuevaPersonaManual() {
   const nombre = normTxt(document.getElementById('np2-nombre').value);
   const rfc = document.getElementById('np2-rfc').value.trim().toUpperCase() || null;
@@ -484,6 +501,7 @@ async function bajaManual(id) {
   if (error) return avisoError(error, 'dar de baja');
   await db.from('movimientos_personal').insert({ id_empleado: id, tipo: 'baja', fecha: hoy, detalle: { nombre: p.nombre, perfil: p.perfil_id, origen: 'manual', herramientas: herrDePerfil(p.perfil_id).map(h => h.id) } });
   await logControl('persona_manual_baja', { id_empleado: id, nombre: p.nombre });
+  try { await pasarUnidadesARevisar([p], hoy); } catch (e) { avisoError(e, 'pasar sus unidades a revisar'); }
   Object.assign(p, { estatus: 'BAJA', fecha_baja: hoy, fecha_baja_detectada: hoy });
   renderPersonal(); renderControl(); renderInventario(); renderMovs();
 }
@@ -755,7 +773,7 @@ async function procesarCarga() {
     const tabla = (titulo, cls, filas, cols) => filas.length ? `<details open><summary><span class="pill ${cls}">${titulo}</span> ${filas.length}</summary><div class="tbl-wrap" style="max-height:320px;margin-bottom:10px;"><table><thead><tr>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr></thead><tbody>${filas.map(f => `<tr>${cols.map(c => `<td>${c[1](f)}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>` : '';
     const hsTxt = perfil => perfil ? herrDePerfil(perfil).map(h => `<span class="chip">${esc(h.nombre)}</span>`).join('') : '<span class="pill baja">Sin perfil</span>';
     document.getElementById('c-detalle').innerHTML =
-      tabla('BAJAS', 'baja', bajas, [['ID', p => `<span class="mono">${p.id_empleado}</span>`], ['Nombre', p => `<strong>${esc(p.nombre)}</strong>`], ['Centro', p => esc(p.centro)], ['Puesto', p => esc(p.puesto)], ['Herramientas a liberar', p => hsTxt(p.perfil_id) + (S.inv.some(u => u.id_empleado === p.id_empleado && u.estado === 'asignada') ? '<div style="margin-top:4px;font-size:12px;"><strong>Unidades asignadas:</strong> ' + S.inv.filter(u => u.id_empleado === p.id_empleado && u.estado === 'asignada').map(u => `<span class="chip">${esc((S.herr.find(h => h.id === u.herramienta_id) || {}).nombre || u.herramienta_id)} · <span class="mono">${esc(u.identificador)}</span></span>`).join('') + '</div>' : '')]]) +
+      tabla('BAJAS', 'baja', bajas, [['ID', p => `<span class="mono">${p.id_empleado}</span>`], ['Nombre', p => `<strong>${esc(p.nombre)}</strong>`], ['Centro', p => esc(p.centro)], ['Puesto', p => esc(p.puesto)], ['Herramientas a liberar', p => hsTxt(p.perfil_id) + (S.inv.some(u => u.id_empleado === p.id_empleado && u.estado === 'asignada') ? '<div style="margin-top:4px;font-size:12px;"><strong>Al aplicar pasan a "Por revisar":</strong> ' + S.inv.filter(u => u.id_empleado === p.id_empleado && u.estado === 'asignada').map(u => `<span class="chip">${esc((S.herr.find(h => h.id === u.herramienta_id) || {}).nombre || u.herramienta_id)} · <span class="mono">${esc(u.identificador)}</span></span>`).join('') + '</div>' : '')]]) +
       tabla('ALTAS', 'alta', altas, [['ID', x => `<span class="mono">${x.id_empleado}</span>`], ['Nombre', x => `<strong>${esc(x.nombre)}</strong>`], ['RFC', x => x.rfc ? `<span class="mono">${esc(x.rfc)}</span>` : '<span class="pill reingreso">Falta</span>'], ['Centro', x => esc(x.centro || '?')], ['Puesto', x => esc(x.puesto)], ['Perfil', x => esc(nombrePerfil(perfilPorPuesto(x.puesto)))], ['Herramientas a asignar', x => hsTxt(perfilPorPuesto(x.puesto))]]) +
       tabla('REINGRESOS', 'reingreso', reingresos, [['ID', o => `<span class="mono">${o.x.id_empleado}</span>`], ['Nombre', o => `<strong>${esc(o.x.nombre)}</strong>`], ['Baja anterior', o => fmtF(o.p.fecha_baja_detectada)], ['Puesto', o => esc(o.x.puesto)], ['Herramientas a asignar', o => hsTxt(o.p.perfil_manual && normTxt(o.p.puesto) === normTxt(o.x.puesto) ? o.p.perfil_id : perfilPorPuesto(o.x.puesto))]]) +
       tabla('CAMBIOS', 'cambio', cambios, [['ID', o => `<span class="mono">${o.x.id_empleado}</span>`], ['Nombre', o => `<strong>${esc(o.p.nombre)}</strong>`], ['Qué cambió', o => Object.entries(o.dif).map(([k, v]) => `${esc(k)}: <span class="muted">${esc(v.antes ?? '—')}</span> → <strong>${esc(v.despues ?? '—')}</strong>`).join('<br>')], ['Perfil', o => o.dif.puesto ? `${esc(nombrePerfil(o.p.perfil_id))} → <strong>${esc(nombrePerfil(perfilPorPuesto(o.x.puesto)))}</strong>${o.p.perfil_manual ? '<br><span class="muted" style="font-size:11px;">tenía perfil manual; al cambiar de puesto vuelve a automático</span>' : ''}` : esc(nombrePerfil(o.p.perfil_id))]]);
@@ -808,6 +826,8 @@ async function aplicarCarga() {
       logC(`Bajas: ${c.bajas.length}…`);
       const ids = c.bajas.map(p => p.id_empleado);
       for (let i = 0; i < ids.length; i += 200) { const { error } = await db.from('personal').update({ estatus: 'BAJA', fecha_baja_detectada: c.fecha, actualizado_en: new Date().toISOString() }).in('id_empleado', ids.slice(i, i + 200)); if (error) throw error; }
+      const nU = await pasarUnidadesARevisar(c.bajas, c.fecha);
+      if (nU) logC(`Unidades de las bajas pasadas a "Por revisar": ${nU}`);
       c.bajas.forEach(p => movs.push({ id_empleado: p.id_empleado, tipo: 'baja', fecha: c.fecha, carga_id: carga.id, detalle: { nombre: p.nombre, centro: p.centro, puesto: p.puesto, perfil: p.perfil_id, herramientas: herrDePerfil(p.perfil_id).map(h => h.id) } }));
     }
     const ids = c.presentes;
@@ -853,6 +873,7 @@ function accionesUnidad(u) {
   if (['disponible', 'revisar', 'compartida', 'externa', 'deshabilitada'].includes(u.estado)) out.push(`<select class="u-asignar" data-id="${u.id}" style="max-width:190px;">${opcionesPersona(u.herramienta_id, u.centro)}</select>`);
   if (['asignada', 'revisar', 'compartida', 'externa'].includes(u.estado)) out.push(b('liberar', 'Liberar'));
   if (u.estado !== 'compartida' && u.estado !== 'deshabilitada' && u.estado !== 'baja') out.push(b('compartir', 'Compartida'));
+  if (u.estado !== 'baja' && u.estado !== 'asignada') out.push(b('dar_baja', 'Dado de baja', 'sec'));
   if (u.estado === 'deshabilitada') out.push(b('habilitar', 'Habilitar'));
   else if (u.estado !== 'baja') out.push(b('deshabilitar', 'Deshabilitar'));
   out.push(b('historial', 'Historial', 'sec'));
@@ -890,8 +911,8 @@ function renderInventario() {
   const requiere = p => p.perfil_id && S.ph.has(p.perfil_id + '|' + hid);
   const nec = act.filter(requiere).reduce((n, p) => n + necEnFiltro(p), 0);
   const cnt = k => todas.filter(u => u.estado === k).length;
-  const ten = todas.filter(u => CUENTA_COMO_TENEMOS.has(u.estado)).length;
-  st.innerHTML = [['Total', todas.length, 'var(--att-navy)'], ['Asignadas', cnt('asignada'), 'var(--green)'], ['Disponibles', cnt('disponible'), 'var(--att-blue-dark)'], ['Compartidas / externas', cnt('compartida') + cnt('externa'), '#64748B'], ['Por revisar', cnt('revisar'), 'var(--amber)'], ['Deshabilitadas', cnt('deshabilitada'), '#94A3B8'],
+  const ten = todas.filter(u => cuentaComoTenemos(u, h)).length;
+  st.innerHTML = [['Total', todas.length, 'var(--att-navy)'], ['Asignadas', cnt('asignada'), 'var(--green)'], ['Disponibles', cnt('disponible'), 'var(--att-blue-dark)'], ['Compartidas / externas', cnt('compartida') + cnt('externa'), '#64748B'], ['Por revisar', cnt('revisar'), 'var(--amber)'], ['Deshabilitadas', cnt('deshabilitada'), '#94A3B8'], ['Dadas de baja', cnt('baja'), 'var(--red)'],
     ['Necesarias', nec, 'var(--att-navy)'], ['Faltan / sobran', todas.length ? (ten - nec > 0 ? '+' : '') + (ten - nec) : '—', ten - nec < 0 ? 'var(--red)' : 'var(--green)']]
     .map(([l, n, c]) => `<div class="stat-card" style="border-left-color:${c}"><div class="stat-label">${l}</div><div class="stat-value" style="color:${c}">${n}</div></div>`).join('');
   if (!S.inv.some(u => u.herramienta_id === hid)) {
@@ -950,6 +971,10 @@ async function accionUnidad(acc, id) {
   if (acc === 'deshabilitar') {
     if (u.estado === 'asignada' && !confirm(`${u.identificador} está asignada a ${nombreEmp(u.id_empleado)}. ¿Deshabilitarla y quitársela?`)) return;
     return cambiarUnidad(id, { estado: 'deshabilitada', id_empleado: null, uso: null }, 'deshabilitar');
+  }
+  if (acc === 'dar_baja') {
+    if (!confirm(`¿Confirmas que ${u.identificador} ya se dio de baja en la plataforma? Queda como "Dada de baja", ya no cuenta ni se puede asignar.`)) return;
+    return cambiarUnidad(id, { estado: 'baja', id_empleado: null, uso: null, notas: (u.notas ? u.notas + ' ' : '') + `Dada de baja el ${fmtF(hoyIso())}.` }, 'dar_baja', u.notas);
   }
   if (acc === 'habilitar') return cambiarUnidad(id, { estado: 'disponible' }, 'habilitar');
   if (acc === 'compartir') {
