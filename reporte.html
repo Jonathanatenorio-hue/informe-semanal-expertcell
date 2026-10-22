@@ -8338,8 +8338,9 @@ function simEscenarios(ejecutivo, anio, mes, plan, n) {
     if (COMISION_ESQUEMA_2026[k]) return { ejecutivo, plan: k, folio: v.folio, estatus: 'activada' };
     trSinPlan++; return { ejecutivo, plan, folio: v.folio, estatus: 'activada' };
   }));
+  const dhlTrN = dhlTr.size;
   const t = simCalc(ejecutivo, anio, mes, conTr, dhlTr);
-  const extra = []; for (let i = 0; i < n; i++) extra.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
+  const extra = []; for (let i = 0; i < n; i++) { extra.push({ ejecutivo, plan, folio: 'SIM-' + i, estatus: 'activada' }); dhlTr.add('SIM-' + i); }
   const m = simCalc(ejecutivo, anio, mes, conTr.concat(extra), dhlTr);
   const esc = [
     { k: 'hoy', titulo: 'Hoy (activadas)', nv: act.length, ...hoy },
@@ -8352,19 +8353,19 @@ function simEscenarios(ejecutivo, anio, mes, plan, n) {
   if (next) {
     const faltan = next - t.cuotas;
     const k = Math.ceil(faltan - 1e-9);
-    const ex = []; for (let i = 0; i < k; i++) ex.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
+    const ex = []; for (let i = 0; i < k; i++) { ex.push({ ejecutivo, plan, folio: 'SIM-' + i, estatus: 'activada' }); dhlTr.add('SIM-' + i); }
     const cross = simCalc(ejecutivo, anio, mes, conTr.concat(ex), dhlTr);
     salto = { next, lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next)], faltan, faltanHoy: next - hoy.cuotas, k, comCross: cross.com, delta: cross.com - t.com, texto: simTextoFaltan(faltan) };
     // segundo escalón
     const next2 = SIM_BRACKETS.find(b => b > next);
     if (next2) {
-      const k2 = Math.ceil(next2 - t.cuotas - 1e-9); const ex2 = []; for (let i = 0; i < k2; i++) ex2.push({ ejecutivo, plan, folio: null, estatus: 'activada' });
+      const k2 = Math.ceil(next2 - t.cuotas - 1e-9); const ex2 = []; for (let i = 0; i < k2; i++) { ex2.push({ ejecutivo, plan, folio: 'SIM-' + i, estatus: 'activada' }); dhlTr.add('SIM-' + i); }
       const c2 = simCalc(ejecutivo, anio, mes, conTr.concat(ex2), dhlTr);
       salto.next2 = { lbl: SIM_BRACKET_LBL[SIM_BRACKETS.indexOf(next2)], k: k2, delta: c2.com - t.com };
     }
   }
   const brincaConTransito = t.nivel > hoy.nivel;
-  return { act, tr, esc, salto, plan, n, hoy, t, brincaConTransito, trSinPlan, dhlTr: dhlTr.size };
+  return { act, tr, esc, salto, plan, n, hoy, t, brincaConTransito, trSinPlan, dhlTr: dhlTrN };
 }
 function simMesSel() {
   const d = window.__detalleAgentesData || window.__avanceData || {};
@@ -8411,7 +8412,7 @@ function simRenderBox(ejecutivo, plan, n) {
       </div>
       <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">${cards}</div>
       ${saltoHTML}
-      <div style="font-size:10px; color:var(--text-soft); margin-top:6px;">Tránsito al 100% (en tu centro activa ~95% de lo programado) y solo cuenta si activa dentro del mes.${r.trSinPlan ? ` ${r.trSinPlan} venta${r.trSinPlan === 1 ? '' : 's'} en tránsito sin plan en el detalle de programación: se simula${r.trSinPlan === 1 ? '' : 'n'} con el plan elegido.` : ''} Comisión variable sin sueldo base. Descuento DHL: aplicado a lo entregado con guía${r.dhlTr ? ` y anticipado a ${r.dhlTr} venta${r.dhlTr === 1 ? '' : 's'} en tránsito que ya va${r.dhlTr === 1 ? '' : 'n'} por DHL` : ''}; las ventas simuladas (+N) no lo incluyen.</div>
+      <div style="font-size:10px; color:var(--text-soft); margin-top:6px;">Tránsito al 100% (en tu centro activa ~95% de lo programado) y solo cuenta si activa dentro del mes.${r.trSinPlan ? ` ${r.trSinPlan} venta${r.trSinPlan === 1 ? '' : 's'} en tránsito sin plan en el detalle de programación: se simula${r.trSinPlan === 1 ? '' : 'n'} con el plan elegido.` : ''} Comisión variable sin sueldo base. Descuento DHL: aplicado a lo entregado con guía${r.dhlTr ? `, anticipado a ${r.dhlTr} venta${r.dhlTr === 1 ? '' : 's'} en tránsito que ya va${r.dhlTr === 1 ? '' : 'n'} por DHL` : ''} y asumido en las ventas simuladas (+N), así el monto es el mínimo que cobraría.</div>
     </div>`;
 }
 function simRefrescar() {
