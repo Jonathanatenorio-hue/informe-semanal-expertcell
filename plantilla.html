@@ -921,7 +921,7 @@ function renderInventario() {
   const cnt = k => todas.filter(u => u.estado === k && !esPerdido(u)).length;
   const ten = todas.filter(u => cuentaComoTenemos(u, h)).length;
   const nPerd = todas.filter(u => esPerdido(u) && u.estado === 'revisar').length;
-  st.innerHTML = [['Total', todas.filter(u => !esPerdido(u)).length, 'var(--att-navy)'], ['Asignadas', cnt('asignada'), 'var(--green)'], ['Disponibles', cnt('disponible'), 'var(--att-blue-dark)'], ['Compartidas / externas', cnt('compartida') + cnt('externa'), '#64748B'], ['Por revisar', cnt('revisar'), 'var(--amber)'], ...(nPerd ? [['Perdidos (no cuentan)', nPerd, 'var(--red)']] : []), ['Deshabilitadas', cnt('deshabilitada'), '#94A3B8'], ['Dadas de baja', cnt('baja'), 'var(--red)'],
+  st.innerHTML = [['Total vigentes', todas.filter(u => !esPerdido(u) && u.estado !== 'baja').length, 'var(--att-navy)'], ['Asignadas', cnt('asignada'), 'var(--green)'], ['Disponibles', cnt('disponible'), 'var(--att-blue-dark)'], ['Compartidas / externas', cnt('compartida') + cnt('externa'), '#64748B'], ['Por revisar', cnt('revisar'), 'var(--amber)'], ...(nPerd ? [['Perdidos (no cuentan)', nPerd, 'var(--red)']] : []), ['Deshabilitadas', cnt('deshabilitada'), '#94A3B8'], ['Dadas de baja', cnt('baja'), 'var(--red)'],
     ['Necesarias', nec, 'var(--att-navy)'], ['Faltan / sobran', todas.length ? (ten - nec > 0 ? '+' : '') + (ten - nec) : '—', ten - nec < 0 ? 'var(--red)' : 'var(--green)']]
     .map(([l, n, c]) => `<div class="stat-card" style="border-left-color:${c}"><div class="stat-label">${l}</div><div class="stat-value" style="color:${c}">${n}</div></div>`).join('');
   if (!S.inv.some(u => u.herramienta_id === hid)) {
