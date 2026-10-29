@@ -102,7 +102,7 @@
 <body>
 <div class="container">
   <div class="header">
-    <h1>👥 Plantilla · Centro de control</h1>
+    <h1>👥 Plantilla · Centro de control <span style="font-size:12px;font-weight:500;opacity:.7;">versión 28-oct</span></h1>
     <div class="subtitle">Personal activo de JV y CC2, perfiles y herramientas que le corresponden a cada quien. La carga semanal detecta altas y bajas.</div>
     <div class="sesion" id="sesion"></div>
   </div>
@@ -719,7 +719,10 @@ function leerArchivo(wb) {
     if (hi < 0) continue;
     const enc = filas[hi].map(c => normTxt(c));
     const col = (...ns) => { for (const n of ns) { const i = enc.indexOf(n); if (i >= 0) return i; } return -1; };
-    const C = { id: col('ID EMPLEADO'), nombre: col('NOMBRE COMPLETO', 'NOMBRE EMPLEADO', 'NOMBRE'), puesto: col('PUESTO'), tienda: col('TIENDA', 'CENTRO'), ing: col('FECHA INGRESO'), est: col('ESTATUS'), depto: col('DEPARTAMENTO'), rfc: col('RFC'), jefe: col('JEFE INMEDIATO', 'JEFE DIRECTO') };
+    const C = { id: col('ID EMPLEADO'), nombre: col('NOMBRE COMPLETO', 'NOMBRE EMPLEADO', 'NOMBRE'), puesto: col('PUESTO', 'PUESTO GLOBAL', 'PUESTO HOMOLOGADO'), tienda: col('TIENDA', 'CENTRO'), ing: col('FECHA INGRESO'), est: col('ESTATUS'), depto: col('DEPARTAMENTO'), rfc: col('RFC'), jefe: col('JEFE INMEDIATO', 'JEFE DIRECTO') };
+    // si falta una columna clave no se lee nada: así una carga nunca borra nombres, centros ni puestos
+    const faltan = [['nombre', 'Nombre Empleado'], ['tienda', 'Centro'], ['puesto', 'Puesto GLOBAL'], ['est', 'Estatus']].filter(([k]) => C[k] < 0).map(([, n]) => n);
+    if (faltan.length) return { hoja: nom, error: `En la hoja "${nom}" no encontré las columnas: ${faltan.join(', ')}. Columnas que sí vienen: ${filas[hi].filter(Boolean).join(', ')}` };
     const out = [];
     for (const f of filas.slice(hi + 1)) {
       if (!f || f[C.id] == null || f[C.id] === '') continue;
@@ -741,6 +744,7 @@ async function procesarCarga() {
     const wb = XLSX.read(await f.arrayBuffer(), { cellDates: true });
     const r = leerArchivo(wb);
     if (!r) { al.innerHTML = `<div class="alert err">No encontré una columna "ID Empleado" en ninguna hoja. Hojas: ${esc(wb.SheetNames.join(', '))}</div>`; return; }
+    if (r.error) { al.innerHTML = `<div class="alert err"><div>⛔</div><div>${esc(r.error)}. No se aplicó nada.</div></div>`; return; }
     await Promise.all([cargarPersonal(), cargarCatalogo()]);
     const porId = new Map(S.personal.map(p => [p.id_empleado, p]));
     const enArchivo = new Map(); const dupIds = [];
@@ -754,7 +758,7 @@ async function procesarCarga() {
       if (p.estatus === 'BAJA') { reingresos.push({ x, p }); continue; }
       const dif = {};
       // a quien cubre ambos centros no se le cambia el centro aunque el archivo traiga uno
-      for (const k of ['nombre', 'puesto', 'centro', 'departamento', 'fecha_ingreso', 'jefe_inmediato']) if (!(k === 'centro' && p.ambos_centros) && x[k] != null && normTxt(x[k]) !== normTxt(p[k])) dif[k] = { antes: p[k], despues: x[k] };
+      for (const k of ['nombre', 'puesto', 'centro', 'departamento', 'fecha_ingreso', 'jefe_inmediato']) if (!(k === 'centro' && p.ambos_centros) && x[k] != null && String(x[k]).trim() !== '' && normTxt(x[k]) !== normTxt(p[k])) dif[k] = { antes: p[k], despues: x[k] };
       if (x.rfc) { if (!p.rfc) rfcCompletados.push({ x, p }); else if (x.rfc !== p.rfc) dif.rfc = { antes: p.rfc, despues: x.rfc }; }
       if (Object.keys(dif).length) cambios.push({ x, p, dif });
     }
