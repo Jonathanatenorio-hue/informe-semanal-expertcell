@@ -102,7 +102,7 @@
 <body>
 <div class="container">
   <div class="header">
-    <h1>👥 Plantilla · Centro de control <span style="font-size:12px;font-weight:500;opacity:.7;">versión 28-oct</span></h1>
+    <h1>👥 Plantilla · Centro de control <span style="font-size:12px;font-weight:500;opacity:.7;">versión 29-oct</span></h1>
     <div class="subtitle">Personal activo de JV y CC2, perfiles y herramientas que le corresponden a cada quien. La carga semanal detecta altas y bajas.</div>
     <div class="sesion" id="sesion"></div>
   </div>
@@ -1019,7 +1019,8 @@ async function nuevaUnidad() {
 // ---------- EXCEL DE INVENTARIO (fórmulas vivas) ----------
 function excelInventario() {
   const hid = document.getElementById('i-herr').value; const h = S.herr.find(x => x.id === hid); if (!h) return;
-  const unidades = S.inv.filter(u => u.herramienta_id === hid).sort((a, b) => (a.centro || '').localeCompare(b.centro || '') || a.identificador.localeCompare(b.identificador));
+  // solo lo vigente: las dadas de baja ya no existen y no se descargan
+  const unidades = S.inv.filter(u => u.herramienta_id === hid && u.estado !== 'baja').sort((a, b) => (a.centro || '').localeCompare(b.centro || '') || a.identificador.localeCompare(b.identificador));
   const B = { font: { bold: true, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '002B5C' } }, alignment: { vertical: 'center', wrapText: true } };
   const hoja = (cab, filas, anchos) => {
     const ws = XLSX.utils.aoa_to_sheet([cab, ...filas]);
