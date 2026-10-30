@@ -5798,7 +5798,8 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
     <div class="legend-item"><div class="legend-swatch" style="background:#00A8E0;"></div>W${wActual}</div>
   `;
 
-  const ordenados = [...SUPERVISORES].sort((a, b) => actual.porSup[b].act - actual.porSup[a].act);
+  // Se usan los supervisores con los que se calcularon las cifras (otros render pueden haber cambiado SUPERVISORES por fecha)
+  const ordenados = Object.keys(actual.porSup || {}).filter(s => anterior.porSup && anterior.porSup[s]).sort((a, b) => actual.porSup[b].act - actual.porSup[a].act);
 
   const ctx = document.getElementById('chart-sup');
   if (window.__chartSup) window.__chartSup.destroy();
@@ -13772,7 +13773,7 @@ function renderFlujoConFiltro(periodo) {
 
   const porSup = {};
   SUPERVISORES.forEach(s => { porSup[s] = []; });
-  datos.forEach(r => { porSup[r.supervisor].push(r.dias); });
+  datos.forEach(r => { if (porSup[r.supervisor]) porSup[r.supervisor].push(r.dias); });
 
   const filasSup = SUPERVISORES.map(s => {
     const dias = porSup[s];
@@ -16975,13 +16976,13 @@ function renderHistoricoMensual() {
     // Cumplido: activadas en el mes
     const porSup = {};
     SUPERVISORES.forEach(s => { porSup[s] = { meta: 0, cumplido: 0 }; });
-    metasMes.forEach(m => { porSup[m.supervisor].meta = m.meta_activadas; });
+    metasMes.forEach(m => { if (porSup[m.supervisor]) porSup[m.supervisor].meta = m.meta_activadas; });
 
     let cumplidoTotal = 0;
     ventasData.forEach(r => {
       if (!r.fecha_activacion) return;
       if (r.fecha_activacion < iniMes || r.fecha_activacion > finMes) return;
-      if (!SUPERVISORES.includes(r.supervisor)) return;
+      if (!SUPERVISORES.includes(r.supervisor) || !porSup[r.supervisor]) return;
       cumplidoTotal++;
       porSup[r.supervisor].cumplido++;
     });
