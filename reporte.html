@@ -1067,6 +1067,7 @@
         <button class="nav-btn" data-target="sec-comparativo">📈 Comparativo</button>
         <button class="nav-btn" data-target="sec-logistica">📦 Logística</button>
         <button class="nav-btn" data-target="sec-comisiones">💰 Comisiones</button>
+        <button class="nav-btn" data-target="sec-mi-esquema">🎯 Mi esquema</button>
         <button class="nav-btn" data-target="sec-productividad">👥 Productividad</button>
         <button class="nav-btn" data-target="sec-mapas">🗓️ Mapas de calor</button>
         <button class="nav-btn" data-target="sec-whatif">🔮 What-if</button>
@@ -1217,6 +1218,22 @@
             <div style="font-size:11px; color:var(--text-soft); margin-top:8px;">Procesa todo el histórico de entregas. Hacer clic cuando lo necesites.</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- MI ESQUEMA (solo director) -->
+    <div class="section collapsible" id="sec-mi-esquema">
+      <div class="section-title">🎯 Mi esquema de comisión (dirección)</div>
+      <div class="section-body">
+        <div class="section-subtitle">Comisión = 20% de la renta sin impuestos (precio × 0.837) de todas las activadas del mes, <strong>solo si la productividad general del mes es ≥ 12</strong>. Si se logra, cobras comisión − sueldo; si no, solo el sueldo. Esta sección únicamente la ve la clave de director.</div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; font-size:12px;">
+          <label>Mes: <select id="me-mes" style="padding:4px 8px;"></select></label>
+          <label>% comisión: <input id="me-pct" type="number" step="0.01" value="0.2" style="width:60px; padding:4px;"></label>
+          <label>Umbral productividad: <input id="me-umbral" type="number" step="0.1" value="12" style="width:60px; padding:4px;"></label>
+          <label>Sueldo: <input id="me-sueldo" type="number" step="1000" value="100000" style="width:90px; padding:4px;"></label>
+          <button id="me-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel guía</button>
+        </div>
+        <div id="me-contenido"></div>
       </div>
     </div>
 
@@ -5798,8 +5815,7 @@ function renderComparativoSup(actual, anterior, wActual, wAnterior) {
     <div class="legend-item"><div class="legend-swatch" style="background:#00A8E0;"></div>W${wActual}</div>
   `;
 
-  // Se usan los supervisores con los que se calcularon las cifras (otros render pueden haber cambiado SUPERVISORES por fecha)
-  const ordenados = Object.keys(actual.porSup || {}).filter(s => anterior.porSup && anterior.porSup[s]).sort((a, b) => actual.porSup[b].act - actual.porSup[a].act);
+  const ordenados = [...SUPERVISORES].sort((a, b) => actual.porSup[b].act - actual.porSup[a].act);
 
   const ctx = document.getElementById('chart-sup');
   if (window.__chartSup) window.__chartSup.destroy();
@@ -7320,6 +7336,7 @@ function renderAvanceUI() {
 
   renderTendenciaMes();
   renderDetalleAgentes();
+  try { if ((window.__accesoModo || 'director') === 'director') renderMiEsquema(); } catch (e) { console.warn('[MiEsquema]', e); }
 }
 
 function renderTendenciaMes() {
@@ -8280,7 +8297,192 @@ function renderDetalleAgentesConMes(mesKey) {
 }
 
 
-// ===================== SIMULADOR DE COMISIONES (reporte-303) =====================
+// ===================== MI ESQUEMA DE COMISIÓN — DIRECCIÓN (reporte-304) =====================
+// 20% de la renta sin impuestos de las activadas del mes, condicionado a productividad
+// general ≥ umbral (misma productividad del Análisis Anual Global: ventas / agentes
+// ponderados, a ritmo en el mes en curso). Neto = comisión − sueldo si se logra.
+function _meParams() {
+  const g = (id, d) => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? d : v; };
+  const p = { pct: g('me-pct', 0.2), umbral: g('me-umbral', 12), sueldo: g('me-sueldo', 100000) };
+  try { localStorage.setItem('me_params', JSON.stringify(p)); } catch (e) {}
+  return p;
+}
+function _meRestaurarParams() {
+  try {
+    const p = JSON.parse(localStorage.getItem('me_params') || 'null'); if (!p) return;
+    [['me-pct', p.pct], ['me-umbral', p.umbral], ['me-sueldo', p.sueldo]].forEach(([id, v]) => { const el = document.getElementById(id); if (el && v != null) el.value = v; });
+  } catch (e) {}
+}
+function _meRenta(v) {
+  const r = parseFloat(v.renta_sin_impuestos); if (!isNaN(r) && r > 0) return r;
+  const pr = parseFloat(v.precio); return !isNaN(pr) ? pr * 0.837 : 0;
+}
+function meCalcular(anio, mes, P) {
+  const ms = `${anio}-${String(mes).padStart(2, '0')}`;
+  const act = (ventasData || []).filter(v => v.estatus === 'activada' && v.fecha_activacion && String(v.fecha_activacion).startsWith(ms));
+  const renta = act.reduce((s, v) => s + _meRenta(v), 0);
+  const comBruta = renta * P.pct;
+  const porPlan = {}; act.forEach(v => { const k = _comNormalizarPlan(v.plan) || '—'; const o = porPlan[k] || (porPlan[k] = { n: 0, renta: 0 }); o.n++; o.renta += _meRenta(v); });
+  const filas = _calcularAnalisisAnualGlobal(anio);
+  const f = filas.find(x => x.mes === mes && !x.esMesFuturo) || {};
+  const prod = f.prodGeneral || 0, agentes = f.totalAgentes || 0, dT = f.diasTrans || 0, dH = f.diasHabilesMes || 0;
+  const ventasMeta = f.ventas || 0; // ventas de agentes dentro de la plantilla medida
+  const enCurso = !!f.esMesEnCurso;
+  const req = P.umbral * agentes;                       // ventas necesarias en el mes para el umbral
+  const faltan = Math.max(req - ventasMeta, 0);
+  const dR = Math.max(dH - dT, 0);
+  const ritmoAct = dT > 0 ? ventasMeta / dT : 0;
+  const ritmoReq = dR > 0 ? faltan / dR : (faltan > 0 ? Infinity : 0);
+  const rentaProm = act.length ? renta / act.length : 0;
+  const proyVentas = enCurso && dT > 0 ? ventasMeta / dT * dH : ventasMeta;
+  const proyActTot = enCurso && dT > 0 ? act.length / dT * dH : act.length;
+  const cumple = prod >= P.umbral;
+  const proyCom = proyActTot * rentaProm * P.pct;
+  const neto = cumple ? comBruta - P.sueldo : 0;
+  const netoProy = (proyVentas >= req - 1e-9) ? proyCom - P.sueldo : 0;
+  // Por supervisor: productividad a ritmo y ventas que faltan para el umbral
+  const sups = SUPERVISORES.map(sup => {
+    const fs = (_calcularAnalisisAnualSupervisor(sup, anio) || []).find(x => x.mes === mes && !x.esMesFuturo);
+    if (!fs) return null;
+    const reqS = P.umbral * (fs.totalAgentes || 0), faltanS = Math.max(reqS - (fs.ventas || 0), 0);
+    return { sup, prod: fs.prodGeneral || 0, agentes: fs.totalAgentes || 0, ventas: fs.ventas || 0, req: reqS, faltan: faltanS, ritmoReq: dR > 0 ? faltanS / dR : 0, aporte: (fs.ventas || 0) - reqS };
+  }).filter(Boolean).sort((a, b) => a.aporte - b.aporte);
+  return { anio, mes, act: act.length, renta, comBruta, porPlan, prod, agentes, dT, dH, dR, ventasMeta, req, faltan, ritmoAct, ritmoReq, rentaProm, proyVentas, proyActTot, proyCom, cumple, neto, netoProy, enCurso, sups };
+}
+function renderMiEsquema() {
+  const cont = document.getElementById('me-contenido'); if (!cont || !window.__avanceData) return;
+  _meRestaurarParams();
+  const sel = document.getElementById('me-mes');
+  if (sel && !sel.options.length) {
+    const A = window.__avanceData.anio, M = window.__avanceData.mes;
+    const noms = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    for (let m = 1; m <= M; m++) sel.add(new Option(`${noms[m - 1]} ${A}`, `${A}-${m}`));
+    sel.value = `${A}-${M}`;
+    sel.onchange = renderMiEsquema;
+    ['me-pct', 'me-umbral', 'me-sueldo'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = renderMiEsquema; });
+    const b = document.getElementById('me-btn-excel'); if (b) b.onclick = exportarMiEsquemaExcel;
+  }
+  const [anio, mes] = (sel ? sel.value : `${window.__avanceData.anio}-${window.__avanceData.mes}`).split('-').map(Number);
+  const P = _meParams();
+  const r = meCalcular(anio, mes, P);
+  window.__miEsquema = r;
+  const $ = v => '$' + Math.round(v).toLocaleString('es-MX');
+  const n1 = v => (Math.round(v * 10) / 10).toLocaleString('es-MX');
+  const semColor = r.cumple ? '#166534' : (r.prod >= P.umbral * 0.9 ? '#92400E' : '#991B1B');
+  const semBg = r.cumple ? '#DCFCE7' : (r.prod >= P.umbral * 0.9 ? '#FEF3C7' : '#FEE2E2');
+  const card = (t, v, sub, bg) => `<div style="background:${bg || '#F1F5F9'}; border-radius:10px; padding:10px 12px; min-width:150px; flex:1;"><div style="font-size:10.5px; color:var(--text-soft); font-weight:600;">${t}</div><div style="font-size:20px; font-weight:800; color:var(--att-navy); margin:2px 0;">${v}</div><div style="font-size:10.5px; color:var(--text-soft);">${sub || ''}</div></div>`;
+  let html = `<div style="display:flex; gap:10px; flex-wrap:wrap;">
+    ${card('Activadas del mes', r.act, `${r.enCurso ? 'al corte · ' : ''}renta prom. ${$(r.rentaProm)}`)}
+    ${card('Renta sin impuestos', $(r.renta), 'precio × 0.837')}
+    ${card(`Comisión bruta (${(P.pct * 100).toFixed(0)}%)`, $(r.comBruta), r.enCurso ? `proyectada al cierre: ${$(r.proyCom)}` : 'mes cerrado')}
+    ${card('Productividad general', n1(r.prod), `${r.enCurso ? 'a ritmo · ' : ''}${n1(r.agentes)} agentes · umbral ${P.umbral}`, semBg)}
+    ${card(r.enCurso ? 'Neto proyectado' : 'Neto del mes', $(r.enCurso ? r.netoProy : r.neto), r.enCurso ? (r.proyVentas >= r.req ? 'va para cumplir el umbral' : 'HOY NO cumple el umbral → solo sueldo') : (r.cumple ? `comisión − sueldo ${$(P.sueldo)}` : 'no se logró el umbral → solo sueldo'), semBg)}
+  </div>`;
+  // Guía del día
+  const vExtra = r.rentaProm * P.pct;
+  html += `<div style="margin-top:12px; padding:12px 14px; background:linear-gradient(90deg,#1E3A8A,#2563EB); color:white; border-radius:10px;">
+    <div style="font-weight:800; font-size:14px;">📌 Guía de hoy</div>
+    <div style="font-size:12.5px; margin-top:6px; line-height:1.6;">
+      ${r.enCurso ? `
+      • Para cerrar con productividad ${P.umbral} necesitas <strong>${Math.ceil(r.req)} ventas</strong> de la plantilla medida (${n1(r.agentes)} agentes × ${P.umbral}); llevas <strong>${Math.round(r.ventasMeta)}</strong>, faltan <strong>${Math.ceil(r.faltan)}</strong> en ${n1(r.dR)} días hábiles → <strong>${isFinite(r.ritmoReq) ? n1(r.ritmoReq) : '∞'} ventas/día</strong> (ritmo actual ${n1(r.ritmoAct)}/día). ${r.ritmoAct >= r.ritmoReq ? '✅ Vas en ritmo.' : `⚠️ Hay que subir <strong>${n1(r.ritmoReq - r.ritmoAct)} ventas/día</strong>.`}<br>
+      • El umbral es todo o nada: cruzarlo vale <strong>${$(r.proyCom)}</strong> de comisión proyectada (no cruzarlo vale $0). Cada venta extra arriba del umbral suma ≈ <strong>${$(vExtra)}</strong>.<br>
+      • Mezcla: por venta, Black ≈ ${$(690.49 * P.pct)} · Oro ≈ ${$(607.1 * P.pct)} · Plata ≈ ${$(544.05 * P.pct)} · Azul 3 ≈ ${$(460.35 * P.pct)} · Azul 2 ≈ ${$(364.1 * P.pct)}. Subir un Azul 2 a Plata vale ${$((544.05 - 364.1) * P.pct)} más.<br>
+      • La productividad divide entre agentes CON meta: bajas sin procesar en plantilla y agentes con 0 ventas te bajan el promedio. Revisa abajo qué supervisores están por debajo del umbral: ahí está el empuje.`
+      : `• Mes cerrado: productividad ${n1(r.prod)} ${r.cumple ? '≥' : '<'} ${P.umbral} → ${r.cumple ? `comisión ${$(r.comBruta)} − sueldo ${$(P.sueldo)} = <strong>${$(r.neto)}</strong>` : 'solo sueldo'}.`}
+    </div></div>`;
+  // Tabla por supervisor
+  html += `<div style="font-weight:700; color:var(--att-navy); margin:14px 0 6px;">Por supervisor · quién jala la productividad hacia abajo</div>
+  <div style="overflow-x:auto;"><table style="font-size:12px;"><thead><tr>
+    <th>Supervisor</th><th class="num" style="text-align:center;">Agentes (pond.)</th><th class="num" style="text-align:center;">Ventas</th><th class="num" style="text-align:center;">Productividad${r.enCurso ? ' (ritmo)' : ''}</th><th class="num" style="text-align:center;">Necesita (×${P.umbral})</th><th class="num" style="text-align:center;">Faltan</th><th class="num" style="text-align:center;">Ventas/día req.</th><th class="num" style="text-align:center;" title="Ventas por arriba (+) o por debajo (−) de su cuota para el umbral">Aporte al umbral</th>
+  </tr></thead><tbody>
+  ${r.sups.map(x => `<tr>
+    <td style="font-weight:600;">${x.sup}</td><td class="num" style="text-align:center;">${n1(x.agentes)}</td><td class="num" style="text-align:center;">${Math.round(x.ventas)}</td>
+    <td class="num" style="text-align:center; font-weight:700; color:${x.prod >= P.umbral ? 'var(--green)' : 'var(--red)'};">${n1(x.prod)}</td>
+    <td class="num" style="text-align:center;">${Math.ceil(x.req)}</td><td class="num" style="text-align:center; font-weight:700;">${Math.ceil(x.faltan) || '—'}</td>
+    <td class="num" style="text-align:center;">${r.enCurso ? n1(x.ritmoReq) : '—'}</td>
+    <td class="num" style="text-align:center; font-weight:700; color:${x.aporte >= 0 ? 'var(--green)' : 'var(--red)'};">${x.aporte >= 0 ? '+' : ''}${Math.round(x.aporte)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+  // Por plan
+  const planes = Object.entries(r.porPlan).sort((a, b) => b[1].renta - a[1].renta);
+  html += `<div style="font-weight:700; color:var(--att-navy); margin:14px 0 6px;">Por plan · de dónde sale la comisión</div>
+  <div style="overflow-x:auto;"><table style="font-size:12px;"><thead><tr><th>Plan</th><th class="num" style="text-align:center;">Ventas</th><th class="num" style="text-align:center;">Renta sin imp.</th><th class="num" style="text-align:center;">Comisión</th><th class="num" style="text-align:center;">Com. por venta</th></tr></thead><tbody>
+  ${planes.map(([k, o]) => `<tr><td>${k}</td><td class="num" style="text-align:center;">${o.n}</td><td class="num" style="text-align:center;">${$(o.renta)}</td><td class="num" style="text-align:center;">${$(o.renta * P.pct)}</td><td class="num" style="text-align:center;">${$(o.renta / o.n * P.pct)}</td></tr>`).join('')}
+  <tr style="font-weight:700; background:#F1F5F9;"><td>Total</td><td class="num" style="text-align:center;">${r.act}</td><td class="num" style="text-align:center;">${$(r.renta)}</td><td class="num" style="text-align:center;">${$(r.comBruta)}</td><td class="num" style="text-align:center;">${$(r.rentaProm * P.pct)}</td></tr>
+  </tbody></table></div>`;
+  cont.innerHTML = html;
+}
+function exportarMiEsquemaExcel() {
+  const r = window.__miEsquema; if (!r) return;
+  const P = _meParams();
+  const wb = new ExcelJS.Workbook();
+  const H = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF00205B' } };
+  const Y = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } };
+  const hdr = (ws, row, cols) => { const rr = ws.getRow(row); cols.forEach((c, i) => { const cell = rr.getCell(i + 1); cell.value = c; cell.fill = H; cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; cell.alignment = { horizontal: 'center', wrapText: true }; }); };
+  // Hoja Guía
+  const ws = wb.addWorksheet('Guia');
+  ws.columns = [{ width: 44 }, { width: 18 }, { width: 70 }];
+  ws.getCell('A1').value = `Mi esquema de comisión · ${r.mes}/${r.anio}`; ws.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF00205B' } };
+  hdr(ws, 3, ['Parámetro', 'Valor', 'Nota']);
+  const params = [['% comisión', P.pct, 'sobre renta sin impuestos'], ['Umbral productividad', P.umbral, 'productividad general del mes (ventas ÷ agentes ponderados)'], ['Sueldo', P.sueldo, 'se resta de la comisión cuando se cumple'],
+    ['Activadas del mes', r.act, r.enCurso ? 'al corte' : 'mes cerrado'], ['Renta sin impuestos', r.renta, 'suma de precio × 0.837'], ['Agentes con meta (ponderados)', r.agentes, 'del Análisis Anual Global'], ['Ventas de la plantilla medida', r.ventasMeta, ''], ['Días hábiles del mes', r.dH, ''], ['Días transcurridos', r.dT, ''], ['Renta promedio por venta', r.act ? r.renta / r.act : 0, '']];
+  params.forEach((p, i) => { const row = 4 + i; ws.getCell(row, 1).value = p[0]; ws.getCell(row, 2).value = p[1]; ws.getCell(row, 3).value = p[2]; if (i < 3) ws.getCell(row, 2).fill = Y; });
+  // Cálculos con fórmulas (B4 pct, B5 umbral, B6 sueldo, B7 act, B8 renta, B9 agentes, B10 ventasMeta, B11 dH, B12 dT, B13 rentaProm)
+  hdr(ws, 15, ['Cálculo', 'Resultado', 'Fórmula']);
+  const calc = [
+    ['Comisión bruta', '=B8*B4', 'renta × %'],
+    ['Días restantes', '=MAX(B11-B12,0)', ''],
+    ['Productividad (a ritmo si está en curso)', '=IF(AND(B9>0,B12>0),B10/B9/B12*B11,0)', 'ventas ÷ agentes ÷ días transcurridos × días del mes'],
+    ['Ventas necesarias para el umbral', '=B5*B9', 'umbral × agentes'],
+    ['Faltan', '=MAX(B19-B10,0)', ''],
+    ['Ventas/día requeridas', '=IF(B17>0,B20/B17,IF(B20>0,"no alcanza",0))', ''],
+    ['Ritmo actual (ventas/día)', '=IF(B12>0,B10/B12,0)', ''],
+    ['Ventas proyectadas al cierre', '=IF(B12>0,B10/B12*B11,B10)', ''],
+    ['Activadas proyectadas al cierre (todas)', '=IF(B12>0,B7/B12*B11,B7)', ''],
+    ['Comisión proyectada', '=B24*B13*B4', ''],
+    ['¿Cumple el umbral (proyección)?', '=IF(B23>=B19,"SÍ","NO")', ''],
+    ['Neto proyectado', '=IF(B26="SÍ",B25-B6,0)', 'comisión − sueldo; $0 si no cumple'],
+    ['Valor de cada venta extra', '=B13*B4', 'solo cuenta si se cruza el umbral'],
+  ];
+  calc.forEach((c, i) => { const row = 16 + i; ws.getCell(row, 1).value = c[0]; ws.getCell(row, 2).value = { formula: c[1].slice(1) }; ws.getCell(row, 3).value = c[2]; });
+  ['B8', 'B13', 'B16', 'B25', 'B27', 'B28', 'B6'].forEach(a => ws.getCell(a).numFmt = '$#,##0');
+  ['B18', 'B21', 'B22'].forEach(a => ws.getCell(a).numFmt = '0.0');
+  // Hoja supervisores
+  const ws2 = wb.addWorksheet('Supervisores');
+  ws2.columns = [{ width: 16 }, { width: 14 }, { width: 10 }, { width: 14 }, { width: 12 }, { width: 10 }, { width: 14 }, { width: 14 }];
+  hdr(ws2, 1, ['Supervisor', 'Agentes (pond.)', 'Ventas', 'Productividad', 'Necesita', 'Faltan', 'Ventas/día req.', 'Aporte al umbral']);
+  r.sups.forEach((x, i) => {
+    const row = 2 + i;
+    ws2.getCell(row, 1).value = x.sup; ws2.getCell(row, 2).value = x.agentes; ws2.getCell(row, 3).value = x.ventas;
+    ws2.getCell(row, 4).value = { formula: `IF(AND(B${row}>0,Guia!$B$12>0),C${row}/B${row}/Guia!$B$12*Guia!$B$11,0)` };
+    ws2.getCell(row, 5).value = { formula: `Guia!$B$5*B${row}` };
+    ws2.getCell(row, 6).value = { formula: `MAX(E${row}-C${row},0)` };
+    ws2.getCell(row, 7).value = { formula: `IF(Guia!$B$17>0,F${row}/Guia!$B$17,0)` };
+    ws2.getCell(row, 8).value = { formula: `C${row}-E${row}` };
+    [2, 4, 5, 6, 7, 8].forEach(c => ws2.getCell(row, c).numFmt = '0.0');
+  });
+  const tr = 2 + r.sups.length;
+  ws2.getCell(tr, 1).value = 'TOTAL'; ws2.getCell(tr, 1).font = { bold: true };
+  ws2.getCell(tr, 2).value = { formula: `SUM(B2:B${tr - 1})` }; ws2.getCell(tr, 3).value = { formula: `SUM(C2:C${tr - 1})` };
+  ws2.getCell(tr, 4).value = { formula: `IF(AND(B${tr}>0,Guia!$B$12>0),C${tr}/B${tr}/Guia!$B$12*Guia!$B$11,0)` };
+  ws2.getCell(tr, 5).value = { formula: `SUM(E2:E${tr - 1})` }; ws2.getCell(tr, 6).value = { formula: `MAX(E${tr}-C${tr},0)` }; ws2.getCell(tr, 8).value = { formula: `C${tr}-E${tr}` };
+  [2, 4, 5, 6, 8].forEach(c => ws2.getCell(tr, c).numFmt = '0.0');
+  // Hoja planes
+  const ws3 = wb.addWorksheet('Planes');
+  ws3.columns = [{ width: 20 }, { width: 10 }, { width: 16 }, { width: 14 }, { width: 14 }];
+  hdr(ws3, 1, ['Plan', 'Ventas', 'Renta sin imp.', 'Comisión', 'Com. por venta']);
+  const planes = Object.entries(r.porPlan).sort((a, b) => b[1].renta - a[1].renta);
+  planes.forEach(([k, o], i) => { const row = 2 + i; ws3.getCell(row, 1).value = k; ws3.getCell(row, 2).value = o.n; ws3.getCell(row, 3).value = o.renta; ws3.getCell(row, 4).value = { formula: `C${row}*Guia!$B$4` }; ws3.getCell(row, 5).value = { formula: `IF(B${row}>0,D${row}/B${row},0)` }; [3, 4, 5].forEach(c => ws3.getCell(row, c).numFmt = '$#,##0'); });
+  const pr = 2 + planes.length;
+  ws3.getCell(pr, 1).value = 'TOTAL'; ws3.getCell(pr, 1).font = { bold: true }; ws3.getCell(pr, 2).value = { formula: `SUM(B2:B${pr - 1})` }; ws3.getCell(pr, 3).value = { formula: `SUM(C2:C${pr - 1})` }; ws3.getCell(pr, 4).value = { formula: `SUM(D2:D${pr - 1})` }; ws3.getCell(pr, 5).value = { formula: `IF(B${pr}>0,D${pr}/B${pr},0)` };
+  [3, 4, 5].forEach(c => ws3.getCell(pr, c).numFmt = '$#,##0');
+  wb.xlsx.writeBuffer().then(buf => {
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `Mi_esquema_${r.anio}-${String(r.mes).padStart(2, '0')}.xlsx`; a.click();
+  });
+}
+// ===================== FIN MI ESQUEMA =====================
+
+// ===================== SIMULADOR DE COMISIONES (reporte-304) =====================
 // Escenarios: hoy (activadas del mes) → + tránsito (en_transito/por_activar, 100%)
 // → + N ventas más del plan elegido. Usa el motor oficial _comCalcularAgenteMes,
 // así que respeta cuotas (medios 0.5), esquema del mes y descuento DHL cargado.
@@ -13773,7 +13975,7 @@ function renderFlujoConFiltro(periodo) {
 
   const porSup = {};
   SUPERVISORES.forEach(s => { porSup[s] = []; });
-  datos.forEach(r => { if (porSup[r.supervisor]) porSup[r.supervisor].push(r.dias); });
+  datos.forEach(r => { porSup[r.supervisor].push(r.dias); });
 
   const filasSup = SUPERVISORES.map(s => {
     const dias = porSup[s];
@@ -16976,13 +17178,13 @@ function renderHistoricoMensual() {
     // Cumplido: activadas en el mes
     const porSup = {};
     SUPERVISORES.forEach(s => { porSup[s] = { meta: 0, cumplido: 0 }; });
-    metasMes.forEach(m => { if (porSup[m.supervisor]) porSup[m.supervisor].meta = m.meta_activadas; });
+    metasMes.forEach(m => { porSup[m.supervisor].meta = m.meta_activadas; });
 
     let cumplidoTotal = 0;
     ventasData.forEach(r => {
       if (!r.fecha_activacion) return;
       if (r.fecha_activacion < iniMes || r.fecha_activacion > finMes) return;
-      if (!SUPERVISORES.includes(r.supervisor) || !porSup[r.supervisor]) return;
+      if (!SUPERVISORES.includes(r.supervisor)) return;
       cumplidoTotal++;
       porSup[r.supervisor].cumplido++;
     });
@@ -17630,7 +17832,7 @@ function aplicarFiltroAcceso() {
   if (modo === 'director') return;
 
   // Secciones exclusivas de dirección: ocultas para todo acceso que no sea director
-  ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos'].forEach(id => {
+  ['sec-mapas', 'sec-whatif', 'sec-historico', 'sec-proyeccion-anual', 'sec-atipicos', 'sec-mi-esquema'].forEach(id => {
     const s = document.getElementById(id);
     if (s) s.style.display = 'none';
     const b = document.querySelector(`.nav-btn[data-target="${id}"]`);
