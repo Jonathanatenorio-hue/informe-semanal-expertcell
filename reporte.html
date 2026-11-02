@@ -1229,7 +1229,8 @@
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px; font-size:12px;">
           <label>Mes: <select id="me-mes" style="padding:4px 8px;"></select></label>
           <label>% comisión: <input id="me-pct" type="number" step="0.01" value="0.2" style="width:60px; padding:4px;"></label>
-          <label>Umbral productividad: <input id="me-umbral" type="number" step="0.1" value="12" style="width:60px; padding:4px;"></label>
+          <label>Productividad: <select id="me-modo" style="padding:4px 8px;"><option value="general">General (todos con meta)</option><option value="maduros">Solo maduros (90+ días)</option></select></label>
+          <label>Umbral: <input id="me-umbral" type="number" step="0.1" value="12" style="width:60px; padding:4px;"></label>
           <label>Sueldo: <input id="me-sueldo" type="number" step="1000" value="100000" style="width:90px; padding:4px;"></label>
           <button id="me-btn-excel" style="padding:6px 14px; background:#16A34A; color:white; border:0; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer;">📊 Excel guía</button>
         </div>
@@ -2102,14 +2103,13 @@ function calcularSupervisoresVigentes(fechaConsultaStr) {
     return [...SUPERVISORES_ALL];
   }
 
-  // Calcular rango: incluir supervisores vigentes en los últimos 90 días Y los próximos 30 días.
-  // Esto evita que al cambiar de mes en el reporte (ej. abril) desaparezcan supervisores que
-  // estaban vigentes ese mes (Luisa) o que aparezcan los nuevos del mes siguiente (Carmen, Emilio).
-  const fechaRef = new Date(fechaConsultaStr + 'T12:00:00');
-  const desde = new Date(fechaRef); desde.setDate(desde.getDate() - 90);
-  const hasta = new Date(fechaRef); hasta.setDate(hasta.getDate() + 30);
-  const desdeStr = desde.toISOString().split('T')[0];
-  const hastaStr = hasta.toISOString().split('T')[0];
+  // Vigentes en el MES de la fecha consultada: un supervisor aparece solo en los
+  // meses en los que su rango (fecha_inicio..fecha_fin) se solapa con ese mes.
+  // (Antes se usaba una ventana de −90/+30 días y los que ya salieron seguían
+  // apareciendo dos o tres meses después.)
+  const _y = parseInt(fechaConsultaStr.slice(0, 4)), _m = parseInt(fechaConsultaStr.slice(5, 7));
+  const desdeStr = `${_y}-${String(_m).padStart(2, '0')}-01`;
+  const hastaStr = `${_y}-${String(_m).padStart(2, '0')}-${String(new Date(_y, _m, 0).getDate()).padStart(2, '0')}`;
 
   const vigentes = supConfigData.filter(s => {
     const ini = s.fecha_inicio || '2020-01-01';
@@ -8297,20 +8297,21 @@ function renderDetalleAgentesConMes(mesKey) {
 }
 
 
-// ===================== MI ESQUEMA DE COMISIÓN — DIRECCIÓN (reporte-304) =====================
+// ===================== MI ESQUEMA DE COMISIÓN — DIRECCIÓN (reporte-305) =====================
 // 20% de la renta sin impuestos de las activadas del mes, condicionado a productividad
 // general ≥ umbral (misma productividad del Análisis Anual Global: ventas / agentes
 // ponderados, a ritmo en el mes en curso). Neto = comisión − sueldo si se logra.
 function _meParams() {
   const g = (id, d) => { const el = document.getElementById(id); const v = el ? parseFloat(el.value) : NaN; return isNaN(v) ? d : v; };
-  const p = { pct: g('me-pct', 0.2), umbral: g('me-umbral', 12), sueldo: g('me-sueldo', 100000) };
+  const modoEl = document.getElementById('me-modo');
+  const p = { pct: g('me-pct', 0.2), umbral: g('me-umbral', 12), sueldo: g('me-sueldo', 100000), modo: modoEl ? modoEl.value : 'general' };
   try { localStorage.setItem('me_params', JSON.stringify(p)); } catch (e) {}
   return p;
 }
 function _meRestaurarParams() {
   try {
     const p = JSON.parse(localStorage.getItem('me_params') || 'null'); if (!p) return;
-    [['me-pct', p.pct], ['me-umbral', p.umbral], ['me-sueldo', p.sueldo]].forEach(([id, v]) => { const el = document.getElementById(id); if (el && v != null) el.value = v; });
+    [['me-pct', p.pct], ['me-umbral', p.umbral], ['me-sueldo', p.sueldo], ['me-modo', p.modo]].forEach(([id, v]) => { const el = document.getElementById(id); if (el && v != null) el.value = v; });
   } catch (e) {}
 }
 function _meRenta(v) {
@@ -8325,8 +8326,9 @@ function meCalcular(anio, mes, P) {
   const porPlan = {}; act.forEach(v => { const k = _comNormalizarPlan(v.plan) || '—'; const o = porPlan[k] || (porPlan[k] = { n: 0, renta: 0 }); o.n++; o.renta += _meRenta(v); });
   const filas = _calcularAnalisisAnualGlobal(anio);
   const f = filas.find(x => x.mes === mes && !x.esMesFuturo) || {};
-  const prod = f.prodGeneral || 0, agentes = f.totalAgentes || 0, dT = f.diasTrans || 0, dH = f.diasHabilesMes || 0;
-  const ventasMeta = f.ventas || 0; // ventas de agentes dentro de la plantilla medida
+  const mad = P.modo === 'maduros';
+  const prod = (mad ? f.prodMaduros : f.prodGeneral) || 0, agentes = (mad ? f.agentesMaduros : f.totalAgentes) || 0, dT = f.diasTrans || 0, dH = f.diasHabilesMes || 0;
+  const ventasMeta = (mad ? f.ventasMaduros : f.ventas) || 0; // ventas de la plantilla medida (general o solo maduros)
   const enCurso = !!f.esMesEnCurso;
   const req = P.umbral * agentes;                       // ventas necesarias en el mes para el umbral
   const faltan = Math.max(req - ventasMeta, 0);
@@ -8341,11 +8343,16 @@ function meCalcular(anio, mes, P) {
   const neto = cumple ? comBruta - P.sueldo : 0;
   const netoProy = (proyVentas >= req - 1e-9) ? proyCom - P.sueldo : 0;
   // Por supervisor: productividad a ritmo y ventas que faltan para el umbral
-  const sups = SUPERVISORES.map(sup => {
+  // Solo supervisores vigentes en ese mes (rango de supervisores_config solapa el mes)
+  const iniM = `${ms}-01`, finM = `${ms}-${String(new Date(anio, mes, 0).getDate()).padStart(2, '0')}`;
+  const vigMes = new Set((supConfigData || []).filter(c => (c.fecha_inicio || '2020-01-01') <= finM && (c.fecha_fin || '9999-12-31') >= iniM).map(c => c.supervisor));
+  const sups = SUPERVISORES.filter(sup => !vigMes.size || vigMes.has(sup)).map(sup => {
     const fs = (_calcularAnalisisAnualSupervisor(sup, anio) || []).find(x => x.mes === mes && !x.esMesFuturo);
     if (!fs) return null;
-    const reqS = P.umbral * (fs.totalAgentes || 0), faltanS = Math.max(reqS - (fs.ventas || 0), 0);
-    return { sup, prod: fs.prodGeneral || 0, agentes: fs.totalAgentes || 0, ventas: fs.ventas || 0, req: reqS, faltan: faltanS, ritmoReq: dR > 0 ? faltanS / dR : 0, aporte: (fs.ventas || 0) - reqS };
+    const agS = (mad ? fs.agentesMaduros : fs.totalAgentes) || 0, vS = (mad ? fs.ventasMaduros : fs.ventas) || 0, pS = (mad ? fs.prodMaduros : fs.prodGeneral) || 0;
+    if (!agS && !vS) return null;
+    const reqS = P.umbral * agS, faltanS = Math.max(reqS - vS, 0);
+    return { sup, prod: pS, agentes: agS, ventas: vS, req: reqS, faltan: faltanS, ritmoReq: dR > 0 ? faltanS / dR : 0, aporte: vS - reqS };
   }).filter(Boolean).sort((a, b) => a.aporte - b.aporte);
   return { anio, mes, act: act.length, renta, comBruta, porPlan, prod, agentes, dT, dH, dR, ventasMeta, req, faltan, ritmoAct, ritmoReq, rentaProm, proyVentas, proyActTot, proyCom, cumple, neto, netoProy, enCurso, sups };
 }
@@ -8359,7 +8366,7 @@ function renderMiEsquema() {
     for (let m = 1; m <= M; m++) sel.add(new Option(`${noms[m - 1]} ${A}`, `${A}-${m}`));
     sel.value = `${A}-${M}`;
     sel.onchange = renderMiEsquema;
-    ['me-pct', 'me-umbral', 'me-sueldo'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = renderMiEsquema; });
+    ['me-pct', 'me-umbral', 'me-sueldo', 'me-modo'].forEach(id => { const el = document.getElementById(id); if (el) el.onchange = renderMiEsquema; });
     const b = document.getElementById('me-btn-excel'); if (b) b.onclick = exportarMiEsquemaExcel;
   }
   const [anio, mes] = (sel ? sel.value : `${window.__avanceData.anio}-${window.__avanceData.mes}`).split('-').map(Number);
@@ -8375,7 +8382,7 @@ function renderMiEsquema() {
     ${card('Activadas del mes', r.act, `${r.enCurso ? 'al corte · ' : ''}renta prom. ${$(r.rentaProm)}`)}
     ${card('Renta sin impuestos', $(r.renta), 'precio × 0.837')}
     ${card(`Comisión bruta (${(P.pct * 100).toFixed(0)}%)`, $(r.comBruta), r.enCurso ? `proyectada al cierre: ${$(r.proyCom)}` : 'mes cerrado')}
-    ${card('Productividad general', n1(r.prod), `${r.enCurso ? 'a ritmo · ' : ''}${n1(r.agentes)} agentes · umbral ${P.umbral}`, semBg)}
+    ${card(P.modo === 'maduros' ? 'Productividad maduros' : 'Productividad general', n1(r.prod), `${r.enCurso ? 'a ritmo · ' : ''}${n1(r.agentes)} agentes${P.modo === 'maduros' ? ' maduros' : ''} · umbral ${P.umbral}`, semBg)}
     ${card(r.enCurso ? 'Neto proyectado' : 'Neto del mes', $(r.enCurso ? r.netoProy : r.neto), r.enCurso ? (r.proyVentas >= r.req ? 'va para cumplir el umbral' : 'HOY NO cumple el umbral → solo sueldo') : (r.cumple ? `comisión − sueldo ${$(P.sueldo)}` : 'no se logró el umbral → solo sueldo'), semBg)}
   </div>`;
   // Guía del día
@@ -8384,7 +8391,7 @@ function renderMiEsquema() {
     <div style="font-weight:800; font-size:14px;">📌 Guía de hoy</div>
     <div style="font-size:12.5px; margin-top:6px; line-height:1.6;">
       ${r.enCurso ? `
-      • Para cerrar con productividad ${P.umbral} necesitas <strong>${Math.ceil(r.req)} ventas</strong> de la plantilla medida (${n1(r.agentes)} agentes × ${P.umbral}); llevas <strong>${Math.round(r.ventasMeta)}</strong>, faltan <strong>${Math.ceil(r.faltan)}</strong> en ${n1(r.dR)} días hábiles → <strong>${isFinite(r.ritmoReq) ? n1(r.ritmoReq) : '∞'} ventas/día</strong> (ritmo actual ${n1(r.ritmoAct)}/día). ${r.ritmoAct >= r.ritmoReq ? '✅ Vas en ritmo.' : `⚠️ Hay que subir <strong>${n1(r.ritmoReq - r.ritmoAct)} ventas/día</strong>.`}<br>
+      • Para cerrar con productividad ${P.umbral} necesitas <strong>${Math.ceil(r.req)} ventas</strong> de ${P.modo === 'maduros' ? 'los maduros' : 'la plantilla medida'} (${n1(r.agentes)} agentes × ${P.umbral}); llevas <strong>${Math.round(r.ventasMeta)}</strong>, faltan <strong>${Math.ceil(r.faltan)}</strong> en ${n1(r.dR)} días hábiles → <strong>${isFinite(r.ritmoReq) ? n1(r.ritmoReq) : '∞'} ventas/día</strong> (ritmo actual ${n1(r.ritmoAct)}/día). ${r.ritmoAct >= r.ritmoReq ? '✅ Vas en ritmo.' : `⚠️ Hay que subir <strong>${n1(r.ritmoReq - r.ritmoAct)} ventas/día</strong>.`}<br>
       • El umbral es todo o nada: cruzarlo vale <strong>${$(r.proyCom)}</strong> de comisión proyectada (no cruzarlo vale $0). Cada venta extra arriba del umbral suma ≈ <strong>${$(vExtra)}</strong>.<br>
       • Mezcla: por venta, Black ≈ ${$(690.49 * P.pct)} · Oro ≈ ${$(607.1 * P.pct)} · Plata ≈ ${$(544.05 * P.pct)} · Azul 3 ≈ ${$(460.35 * P.pct)} · Azul 2 ≈ ${$(364.1 * P.pct)}. Subir un Azul 2 a Plata vale ${$((544.05 - 364.1) * P.pct)} más.<br>
       • La productividad divide entre agentes CON meta: bajas sin procesar en plantilla y agentes con 0 ventas te bajan el promedio. Revisa abajo qué supervisores están por debajo del umbral: ahí está el empuje.`
@@ -8393,7 +8400,7 @@ function renderMiEsquema() {
   // Tabla por supervisor
   html += `<div style="font-weight:700; color:var(--att-navy); margin:14px 0 6px;">Por supervisor · quién jala la productividad hacia abajo</div>
   <div style="overflow-x:auto;"><table style="font-size:12px;"><thead><tr>
-    <th>Supervisor</th><th class="num" style="text-align:center;">Agentes (pond.)</th><th class="num" style="text-align:center;">Ventas</th><th class="num" style="text-align:center;">Productividad${r.enCurso ? ' (ritmo)' : ''}</th><th class="num" style="text-align:center;">Necesita (×${P.umbral})</th><th class="num" style="text-align:center;">Faltan</th><th class="num" style="text-align:center;">Ventas/día req.</th><th class="num" style="text-align:center;" title="Ventas por arriba (+) o por debajo (−) de su cuota para el umbral">Aporte al umbral</th>
+    <th>Supervisor</th><th class="num" style="text-align:center;">Agentes${P.modo === 'maduros' ? ' maduros' : ''} (pond.)</th><th class="num" style="text-align:center;">Ventas${P.modo === 'maduros' ? ' maduros' : ''}</th><th class="num" style="text-align:center;">Productividad${r.enCurso ? ' (ritmo)' : ''}</th><th class="num" style="text-align:center;">Necesita (×${P.umbral})</th><th class="num" style="text-align:center;">Faltan</th><th class="num" style="text-align:center;">Ventas/día req.</th><th class="num" style="text-align:center;" title="Ventas por arriba (+) o por debajo (−) de su cuota para el umbral">Aporte al umbral</th>
   </tr></thead><tbody>
   ${r.sups.map(x => `<tr>
     <td style="font-weight:600;">${x.sup}</td><td class="num" style="text-align:center;">${n1(x.agentes)}</td><td class="num" style="text-align:center;">${Math.round(x.ventas)}</td>
@@ -8423,8 +8430,8 @@ function exportarMiEsquemaExcel() {
   ws.columns = [{ width: 44 }, { width: 18 }, { width: 70 }];
   ws.getCell('A1').value = `Mi esquema de comisión · ${r.mes}/${r.anio}`; ws.getCell('A1').font = { bold: true, size: 14, color: { argb: 'FF00205B' } };
   hdr(ws, 3, ['Parámetro', 'Valor', 'Nota']);
-  const params = [['% comisión', P.pct, 'sobre renta sin impuestos'], ['Umbral productividad', P.umbral, 'productividad general del mes (ventas ÷ agentes ponderados)'], ['Sueldo', P.sueldo, 'se resta de la comisión cuando se cumple'],
-    ['Activadas del mes', r.act, r.enCurso ? 'al corte' : 'mes cerrado'], ['Renta sin impuestos', r.renta, 'suma de precio × 0.837'], ['Agentes con meta (ponderados)', r.agentes, 'del Análisis Anual Global'], ['Ventas de la plantilla medida', r.ventasMeta, ''], ['Días hábiles del mes', r.dH, ''], ['Días transcurridos', r.dT, ''], ['Renta promedio por venta', r.act ? r.renta / r.act : 0, '']];
+  const params = [['% comisión', P.pct, 'sobre renta sin impuestos'], ['Umbral productividad', P.umbral, (P.modo === 'maduros' ? 'productividad de MADUROS' : 'productividad GENERAL') + ' (ventas ÷ agentes ponderados)'], ['Sueldo', P.sueldo, 'se resta de la comisión cuando se cumple'],
+    ['Activadas del mes', r.act, r.enCurso ? 'al corte' : 'mes cerrado'], ['Renta sin impuestos', r.renta, 'suma de precio × 0.837'], [P.modo === 'maduros' ? 'Agentes maduros (ponderados)' : 'Agentes con meta (ponderados)', r.agentes, 'del Análisis Anual Global'], ['Ventas de la plantilla medida', r.ventasMeta, ''], ['Días hábiles del mes', r.dH, ''], ['Días transcurridos', r.dT, ''], ['Renta promedio por venta', r.act ? r.renta / r.act : 0, '']];
   params.forEach((p, i) => { const row = 4 + i; ws.getCell(row, 1).value = p[0]; ws.getCell(row, 2).value = p[1]; ws.getCell(row, 3).value = p[2]; if (i < 3) ws.getCell(row, 2).fill = Y; });
   // Cálculos con fórmulas (B4 pct, B5 umbral, B6 sueldo, B7 act, B8 renta, B9 agentes, B10 ventasMeta, B11 dH, B12 dT, B13 rentaProm)
   hdr(ws, 15, ['Cálculo', 'Resultado', 'Fórmula']);
@@ -8482,7 +8489,7 @@ function exportarMiEsquemaExcel() {
 }
 // ===================== FIN MI ESQUEMA =====================
 
-// ===================== SIMULADOR DE COMISIONES (reporte-304) =====================
+// ===================== SIMULADOR DE COMISIONES (reporte-305) =====================
 // Escenarios: hoy (activadas del mes) → + tránsito (en_transito/por_activar, 100%)
 // → + N ventas más del plan elegido. Usa el motor oficial _comCalcularAgenteMes,
 // así que respeta cuotas (medios 0.5), esquema del mes y descuento DHL cargado.
