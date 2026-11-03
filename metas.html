@@ -295,10 +295,21 @@
       <div>📐</div>
       <div>
         <strong>Reglas oficiales</strong> (días cumplidos al día 1 del mes, desde fecha de ingreso en plantilla):
-        ≤ 6 días = sin meta · 7–41 días = meta <strong>6</strong> · 42–89 días = meta <strong>8</strong> ·
-        90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + 1, mínimo 12, máximo 18, brinco máximo de +6 sobre la meta anterior,
+        ≤ 6 días = sin meta · 7–41 días = meta <strong>nuevos</strong> · 42–89 días = meta <strong>intermedios</strong> (valores en Parámetros) ·
+        90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + incremento, con mínimo, máximo y brinco máximo configurables en Parámetros,
         y <strong>nunca desciende</strong> respecto a la meta del mes anterior. Previsualiza antes de guardar; nada se escribe sin tu confirmación.
       </div>
+    </div>
+    <div style="margin:10px 0; padding:10px 12px; border:1px solid #CBD5E1; border-radius:8px; background:#F8FAFC; font-size:13px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;">
+      <strong>Parámetros:</strong>
+      <label>Nuevos (7-41 d) <input id="pm-nuevo" type="number" min="0" step="1" style="width:56px;"></label>
+      <label>Intermedios (42-89 d) <input id="pm-medio" type="number" min="0" step="1" style="width:56px;"></label>
+      <label>Maduros: mínimo <input id="pm-min" type="number" min="0" step="1" style="width:56px;"></label>
+      <label>máximo <input id="pm-max" type="number" min="0" step="1" style="width:56px;"></label>
+      <label>+ sobre promedio <input id="pm-plus" type="number" min="0" step="1" style="width:56px;"></label>
+      <label>brinco máx. <input id="pm-brinco" type="number" min="0" step="1" style="width:56px;"></label>
+      <button id="btn-pm-guardar" type="button" style="padding:4px 10px;">💾 Guardar parámetros</button>
+      <span id="pm-status" style="color:#64748B;"></span>
     </div>
     <div class="periodo-selector">
       <label>Calcular metas de:</label>
@@ -2610,7 +2621,43 @@ function _calcInicializarSelector() {
   sel.value = `${o.anio}-${o.mes}`;
 }
 
+// ===== Parámetros del calculador (tabla parametros_metas, fila id='default'; respaldo localStorage) =====
+const PM_DEFAULT = { meta_nuevo: 6, meta_medio: 8, meta_min: 12, meta_max: 18, plus_prom: 1, brinco_max: 6 };
+let PM = { ...PM_DEFAULT };
+function _pmLeerInputs() {
+  const g = (id, d) => { const v = parseInt((document.getElementById(id) || {}).value); return isNaN(v) ? d : v; };
+  return { meta_nuevo: g('pm-nuevo', PM.meta_nuevo), meta_medio: g('pm-medio', PM.meta_medio), meta_min: g('pm-min', PM.meta_min), meta_max: g('pm-max', PM.meta_max), plus_prom: g('pm-plus', PM.plus_prom), brinco_max: g('pm-brinco', PM.brinco_max) };
+}
+function _pmPintar() {
+  [['pm-nuevo', PM.meta_nuevo], ['pm-medio', PM.meta_medio], ['pm-min', PM.meta_min], ['pm-max', PM.meta_max], ['pm-plus', PM.plus_prom], ['pm-brinco', PM.brinco_max]].forEach(([id, v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+}
+async function pmCargar() {
+  try { const l = JSON.parse(localStorage.getItem('parametros_metas') || 'null'); if (l) PM = { ...PM_DEFAULT, ...l }; } catch (e) {}
+  try {
+    const { data, error } = await db.from('parametros_metas').select('*').eq('id', 'default').maybeSingle();
+    if (!error && data) PM = { ...PM_DEFAULT, meta_nuevo: data.meta_nuevo, meta_medio: data.meta_medio, meta_min: data.meta_min, meta_max: data.meta_max, plus_prom: data.plus_prom, brinco_max: data.brinco_max };
+  } catch (e) {}
+  _pmPintar();
+}
+async function pmGuardar() {
+  PM = _pmLeerInputs();
+  const st = document.getElementById('pm-status');
+  try { localStorage.setItem('parametros_metas', JSON.stringify(PM)); } catch (e) {}
+  try {
+    const { error } = await db.from('parametros_metas').upsert({ id: 'default', ...PM, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+    if (error) throw error;
+    if (st) st.textContent = '✔ Guardados en Supabase (aplican a todos los que generen metas)';
+  } catch (e) {
+    if (st) st.textContent = '⚠️ Guardados solo en este navegador (crea la tabla parametros_metas con el SQL): ' + (e.message || e);
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.getElementById('btn-pm-guardar'); if (b) b.onclick = pmGuardar;
+  pmCargar();
+});
+
 async function calcularMetasAuto() {
+  PM = _pmLeerInputs();
   const sel = document.getElementById('calc-mes-select');
   const status = document.getElementById('calc-status');
   const btn = document.getElementById('btn-calc-metas');
@@ -2708,9 +2755,9 @@ async function calcularMetasAuto() {
       if (dias <= 6) {
         banda = 'Sin meta (≤6 días)'; meta = 0; tipo = 'sin_meta';
       } else if (dias <= 41) {
-        banda = 'Nuevo (7-41 días)'; meta = 6; tipo = 'fija_6';
+        banda = 'Nuevo (7-41 días)'; meta = PM.meta_nuevo; tipo = 'fija_6';
       } else if (dias <= 89) {
-        banda = 'Intermedio (42-89 días)'; meta = 8; tipo = 'fija_8';
+        banda = 'Intermedio (42-89 días)'; meta = PM.meta_medio; tipo = 'fija_8';
       } else {
         banda = 'Maduro (90+ días)'; tipo = 'calculada';
         // Promedio de peso de los meses previos en los que ya estaba ingresado
@@ -2728,14 +2775,14 @@ async function calcularMetasAuto() {
         if (excluidos.length) flags.push(`🏥 Excluido del promedio: ${excluidos.join(', ')}`);
         if (n > 0 && n < 3) flags.push(`Solo ${n} mes(es) de historia para el promedio`);
         const metaAnt = metaAntMap[p.nombre] || 0;
-        const calc = prom == null ? 0 : Math.min(18, Math.max(12, Math.round(prom + 1)));
-        if (prom == null) { meta = metaAnt > 0 ? Math.min(18, metaAnt) : 12; flags.push(metaAnt > 0 ? `Sin meses trabajados en el periodo: se sostiene ${metaAnt}` : 'Sin meses trabajados en el periodo: mínima de 12'); }
-        else meta = Math.min(18, Math.max(calc, metaAnt)); // nunca desciende, pero el tope de 18 aplica también a la meta sostenida
-        if (prom != null && metaAnt > 18) flags.push(`Tope de 18: traía ${metaAnt}`);
+        const calc = prom == null ? 0 : Math.min(PM.meta_max, Math.max(PM.meta_min, Math.round(prom + PM.plus_prom)));
+        if (prom == null) { meta = metaAnt > 0 ? Math.min(PM.meta_max, metaAnt) : PM.meta_min; flags.push(metaAnt > 0 ? `Sin meses trabajados en el periodo: se sostiene ${metaAnt}` : `Sin meses trabajados en el periodo: mínima de ${PM.meta_min}`); }
+        else meta = Math.min(PM.meta_max, Math.max(calc, metaAnt)); // nunca desciende, pero el tope aplica también a la meta sostenida
+        if (prom != null && metaAnt > PM.meta_max) flags.push(`Tope de ${PM.meta_max}: traía ${metaAnt}`);
         // Brinco máximo de +6 respecto a la meta anterior (si tenía meta el mes pasado)
-        if (prom != null && metaAnt > 0 && meta > metaAnt + 6) { flags.push(`Brinco limitado a +6: el cálculo daba ${meta} (traía ${metaAnt})`); meta = metaAnt + 6; }
+        if (prom != null && metaAnt > 0 && meta > metaAnt + PM.brinco_max) { flags.push(`Brinco limitado a +${PM.brinco_max}: el cálculo daba ${meta} (traía ${metaAnt})`); meta = metaAnt + PM.brinco_max; }
         if (prom != null && metaAnt > calc) flags.push(`Sostiene ${metaAnt} del mes anterior (cálculo daba ${calc})`);
-        if (prom != null && prom < 12 && metaAnt <= 12) flags.push('Promedio bajo: se asigna la mínima de 12');
+        if (prom != null && prom < PM.meta_min && metaAnt <= PM.meta_min) flags.push(`Promedio bajo: se asigna la mínima de ${PM.meta_min}`);
       }
 
       // 🏖️ Prorrateo por vacaciones VALIDADAS (redondeo estándar: .5 sube)
