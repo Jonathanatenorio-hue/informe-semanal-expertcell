@@ -1397,6 +1397,24 @@ async function cargarASupabase() {
       log(`Progreso: ${insertados}/${total} registros`, 'info');
     }
 
+    // ===== Ajustes manuales por folio (tabla ajustes_folio) =====
+    // Dirección puede fijar una fecha de activación distinta a la del archivo
+    // (p. ej. venta activada el 2-nov que debe contar el 31-oct). Se reaplica
+    // en CADA carga para que el archivo del día no la pise.
+    try {
+      const { data: ajustes, error: eAj } = await db.from('ajustes_folio').select('folio, fecha_activacion, motivo');
+      if (eAj) { if (!/ajustes_folio/i.test(eAj.message || '')) log('Aviso: no se pudieron leer ajustes_folio: ' + eAj.message, 'warn'); }
+      else if (ajustes && ajustes.length) {
+        let nAj = 0;
+        for (const a of ajustes) {
+          if (!a || !a.folio || !a.fecha_activacion) continue;
+          const { error: eU } = await db.from('ventas_detalle').update({ fecha_activacion: a.fecha_activacion }).eq('folio', String(a.folio));
+          if (eU) log(`Aviso: ajuste del folio ${a.folio} no aplicado: ${eU.message}`, 'warn'); else nAj++;
+        }
+        if (nAj) log(`🛠️ ${nAj} ajuste(s) manual(es) de fecha reaplicado(s) desde ajustes_folio`, 'ok');
+      }
+    } catch (eAj2) { log('Aviso: ajustes_folio: ' + (eAj2.message || eAj2), 'warn'); }
+
     progressBar.style.width = '100%';
     log(`Carga completa: ${insertados} registros procesados (upsert por folio)`, 'ok');
 
@@ -1467,7 +1485,7 @@ async function cargarASupabase() {
           const NUEVAS = ['programacion', 'fecha_bo', 'fecha_creacion', 'cargo_transporte', 'recargo_combustible', 'proteccion_envio', 'area_remota', 'vav_tax', 'descuento_guia'];
           if (e && /column|columna|schema cache/i.test(e.message || '')) {
             // Alguna columna nueva aún no existe en entregas_detalle: reintentar sin las nuevas y avisar
-            if (!window.__avisoCols) { log('⚠️ entregas_detalle no tiene las columnas nuevas de logística (' + (e.message || '') + '). Corre el SQL de index-187; mientras, se carga sin ellas.', 'warn'); window.__avisoCols = true; }
+            if (!window.__avisoCols) { log('⚠️ entregas_detalle no tiene las columnas nuevas de logística (' + (e.message || '') + '). Corre el SQL de index-188; mientras, se carga sin ellas.', 'warn'); window.__avisoCols = true; }
             batch = batch.map(r => { const c = { ...r }; NUEVAS.forEach(k => delete c[k]); return c; });
             ({ error: e } = await db.from('entregas_detalle').insert(batch));
           }
