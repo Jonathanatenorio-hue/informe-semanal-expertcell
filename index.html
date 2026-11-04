@@ -1402,16 +1402,24 @@ async function cargarASupabase() {
     // (p. ej. venta activada el 2-nov que debe contar el 31-oct). Se reaplica
     // en CADA carga para que el archivo del día no la pise.
     try {
-      const { data: ajustes, error: eAj } = await db.from('ajustes_folio').select('folio, fecha_activacion, motivo');
+      // Columnas opcionales: estatus (p. ej. 'activada' para una venta que el archivo
+      // marca cancelada por error → además limpia fecha_cancelacion) y fecha_activacion.
+      let ajustes = null, eAj = null;
+      ({ data: ajustes, error: eAj } = await db.from('ajustes_folio').select('folio, fecha_activacion, estatus, motivo'));
+      if (eAj && /estatus/i.test(eAj.message || '')) ({ data: ajustes, error: eAj } = await db.from('ajustes_folio').select('folio, fecha_activacion, motivo'));
       if (eAj) { if (!/ajustes_folio/i.test(eAj.message || '')) log('Aviso: no se pudieron leer ajustes_folio: ' + eAj.message, 'warn'); }
       else if (ajustes && ajustes.length) {
         let nAj = 0;
         for (const a of ajustes) {
-          if (!a || !a.folio || !a.fecha_activacion) continue;
-          const { error: eU } = await db.from('ventas_detalle').update({ fecha_activacion: a.fecha_activacion }).eq('folio', String(a.folio));
+          if (!a || !a.folio) continue;
+          const upd = {};
+          if (a.fecha_activacion) upd.fecha_activacion = a.fecha_activacion;
+          if (a.estatus) { upd.estatus = a.estatus; if (a.estatus === 'activada') upd.fecha_cancelacion = null; }
+          if (!Object.keys(upd).length) continue;
+          const { error: eU } = await db.from('ventas_detalle').update(upd).eq('folio', String(a.folio));
           if (eU) log(`Aviso: ajuste del folio ${a.folio} no aplicado: ${eU.message}`, 'warn'); else nAj++;
         }
-        if (nAj) log(`🛠️ ${nAj} ajuste(s) manual(es) de fecha reaplicado(s) desde ajustes_folio`, 'ok');
+        if (nAj) log(`🛠️ ${nAj} ajuste(s) manual(es) (fecha/estatus) reaplicado(s) desde ajustes_folio`, 'ok');
       }
     } catch (eAj2) { log('Aviso: ajustes_folio: ' + (eAj2.message || eAj2), 'warn'); }
 
