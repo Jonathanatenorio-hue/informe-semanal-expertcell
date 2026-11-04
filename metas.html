@@ -295,7 +295,7 @@
       <div>📐</div>
       <div>
         <strong>Reglas oficiales</strong> (días cumplidos al día 1 del mes, desde fecha de ingreso en plantilla):
-        ≤ 6 días = sin meta · 7–41 días = meta <strong>nuevos</strong> · 42–89 días = meta <strong>intermedios</strong> (valores en Parámetros) ·
+        ≤ 6 días = sin meta · baja dentro de los primeros 5 días del mes = sin meta · 7–41 días = meta <strong>nuevos</strong> · 42–89 días = meta <strong>intermedios</strong> (valores en Parámetros) ·
         90+ días = <strong>calculada</strong>: promedio de ventas (peso) de los últimos 3 meses + incremento, con mínimo, máximo y brinco máximo configurables en Parámetros,
         y <strong>nunca desciende</strong> respecto a la meta del mes anterior. Previsualiza antes de guardar; nada se escribe sin tu confirmación.
       </div>
@@ -2743,6 +2743,9 @@ async function calcularMetasAuto() {
     plantilla.forEach(p => {
       if (!p || !p.nombre) return;
       if (p.fecha_baja && p.fecha_baja < dia1Str) { bajas.push(p.nombre); return; }
+      // Baja dentro de los primeros 5 días del mes: no recibe meta (queda fuera del archivo)
+      const dia5Str = `${anio}-${_calcPad(mes)}-05`;
+      if (p.fecha_baja && p.fecha_baja >= dia1Str && p.fecha_baja <= dia5Str) { bajas.push(`${p.nombre} (baja ${p.fecha_baja}, ≤ día 5: sin meta)`); return; }
       if (!p.fecha_ingreso) {
         filas.push({ ejecutivo: p.nombre, supervisor: p.supervisor || null, dias: null, banda: '⚠️ sin fecha de ingreso', prom: null, metaAnt: metaAntMap[p.nombre] || 0, meta: 0, tipo: 'sin_meta', flags: ['Sin fecha de ingreso en plantilla: revisar'], hist: histDe(p.nombre) });
         return;
@@ -2931,7 +2934,10 @@ function _calcRenderResultado(sinSupervisor, bajas) {
   let avisos = '';
   if (calcState.existePrevio) avisos += `<div class="alert warn"><div>⚠️</div><div>Ya existen metas de ${MESES[mes-1]} ${anio} en Supabase. Al guardar se <strong>reemplazarán</strong> por estas.</div></div>`;
   if (sinSupervisor.length > 0) avisos += `<div class="alert warn"><div>⚠️</div><div><strong>${sinSupervisor.length} agentes sin supervisor</strong> (no se guardarán): ${sinSupervisor.slice(0, 10).join(', ')}${sinSupervisor.length > 10 ? '…' : ''}</div></div>`;
-  if (bajas.length > 0) avisos += `<div class="alert info"><div>ℹ️</div><div>${bajas.length} bajas excluidas del cálculo.</div></div>`;
+  if (bajas.length > 0) {
+    const enMes = bajas.filter(b => b.includes('≤ día 5'));
+    avisos += `<div class="alert info"><div>ℹ️</div><div>${bajas.length} bajas excluidas del cálculo${enMes.length ? ` · <strong>${enMes.length} con baja en los primeros 5 días del mes (sin meta):</strong> ${enMes.join(', ')}` : ''}.</div></div>`;
+  }
   document.getElementById('calc-avisos').innerHTML = avisos;
 
   const filasFlag = filas.filter(f => f.flags.length > 0).length;
